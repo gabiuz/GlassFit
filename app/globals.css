@@ -1,0 +1,32 @@
+@import "tailwindcss";
+
+:root {
+  --grad-light: linear-gradient(to right, #097283, #45c9e3);
+  --grad-dark: linear-gradient(to right, #0f1422, #097283);
+}
+
+@theme {
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --color-black: #0f1422;
+  --color-white: #ffffff;
+  --color-green: #07b6d3;
+  --color-light: #e9f9fb;
+  --color-blue: #06e5ff;
+}
+
+body {
+  font-family: inherit;
+}
+
+.bg-grad-light {
+  background-image: var(--grad-light);
+}
+
+.bg-grad-dark {
+  background-image: var(--grad-dark);
+}
+
+.btn:active {
+  transform: translateY(1px);
+}
