@@ -1,5 +1,3 @@
-import type { CSSProperties, ReactNode, ButtonHTMLAttributes } from "react";
-
 type ButtonVariant =
   | "lightGradWhiteText"
   | "lightGradDarkText"
@@ -13,7 +11,7 @@ type ButtonVariant =
   | "whiteOutline"
   | "blueBtnWhiteText";
 
-const baseStyle: CSSProperties = {
+const baseStyle: React.CSSProperties = {
   display: "flex",
   width: "fit-content",
   alignItems: "center",
@@ -27,7 +25,7 @@ const baseStyle: CSSProperties = {
   letterSpacing: "-0.38px",
 };
 
-const variantStyles: Record<ButtonVariant, CSSProperties> = {
+const variantStyles: Record<ButtonVariant, React.CSSProperties> = {
   lightGradWhiteText: {
     color: "var(--color-white)",
     backgroundImage: "var(--grad-light)",
@@ -76,7 +74,7 @@ const variantStyles: Record<ButtonVariant, CSSProperties> = {
   },
 };
 
-const iconStyle: CSSProperties = {
+const iconStyle: React.CSSProperties = {
   display: "inline-flex",
   width: "1.2rem",
   height: "1.2rem",
@@ -89,9 +87,9 @@ const iconStyle: CSSProperties = {
 
 type ButtonProps = {
   variant?: ButtonVariant;
-  icon?: ReactNode;
+  icon?: React.ReactNode;
   value: string;
-} & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children">;
+} & Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "children">;
 
 export default function Button({
   variant = "lightGradWhiteText",
