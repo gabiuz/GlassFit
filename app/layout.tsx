@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
+import Navbar from "./components/Navbar";
 
 const myFont = localFont({
   src: [
@@ -39,7 +40,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${myFont.className} h-full antialiased`}>
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <div className="flex justify-center">
+          <Navbar />
+        </div>
+        {children}
+      </body>
     </html>
   );
 }
