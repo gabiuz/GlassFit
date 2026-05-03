@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
-import Navbar from "./components/Navbar";
+import Navbar from "./components/ui/Navbar";
+import Footer from "./components/ui/Footer";
 
 const myFont = localFont({
   src: [
@@ -45,6 +46,7 @@ export default function RootLayout({
           <Navbar />
         </div>
         {children}
+        <Footer />
       </body>
     </html>
   );
