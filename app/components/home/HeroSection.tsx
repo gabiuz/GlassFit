@@ -21,7 +21,7 @@ const navbarIcons = [
 
 export default function HeroSection() {
   return (
-    <section className="bg-white-20">
+    <section className="relative z-0 bg-white-20">
       <div className="bg-grad-dark py-2.5 font-normal text-white">
         <div className="flex flex-wrap justify-center items-center gap-6.25">
           {navbarIcons.map((icon) => (
@@ -38,7 +38,7 @@ export default function HeroSection() {
           ))}
         </div>
       </div>
-      <div className="relative h-screen">
+      <div className="relative min-h-[120vh]">
         <div className="absolute inset-0 overflow-hidden">
           <video
             className="absolute inset-0 h-full w-full object-cover"
@@ -51,6 +51,18 @@ export default function HeroSection() {
           </video>
           <div className="absolute inset-0 bg-white/70"></div>
         </div>
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-24 shadow-[inset_0_-26px_30px_-26px_rgba(0,0,0,0.25)]"></div>
+        <div className="pointer-events-none absolute bottom-0 right-0 z-20 h-28 w-[40%] filter-[drop-shadow(0_-2px_24px_rgba(0,0,0,0.25))]">
+          <div className="h-full w-full bg-white [clip-path:polygon(40%_0,100%_0,100%_100%,0_100%)]"></div>
+        </div>
+        <Image
+          src="/glass_door.svg"
+          alt=""
+          width={2000}
+          height={1125}
+          aria-hidden="true"
+          className="pointer-events-none absolute -bottom-26 right-0 z-30 h-236.5 w-167.5"
+        />
         <div className="relative z-10">
           <div className="pl-27 pt-57 flex justify-start items-start ">
             <div className="flex flex-col gap-8.5">
@@ -77,8 +89,8 @@ export default function HeroSection() {
                 <Button
                   variant="lightGradWhiteText"
                   value="Start Visualizing"
-                  leftArrow={null}
-                  rightArrow={
+                  leftIcon={null}
+                  rightIcon={
                     <Image
                       src="/right_arrow.svg"
                       width={25}
@@ -90,20 +102,10 @@ export default function HeroSection() {
                 <Button
                   variant="blackBtnWhiteText"
                   value="View Sample Review"
-                  leftArrow={null}
-                  rightArrow={null}
+                  leftIcon={null}
+                  rightIcon={null}
                 ></Button>
               </div>
-            </div>
-            <div>
-              <Image
-                src="/glass_door.svg"
-                alt=""
-                width={2000}
-                height={1125}
-                aria-hidden="true"
-                className="w-167.5 h-236.5 pb-20 -mt-26"
-              />
             </div>
           </div>
         </div>
