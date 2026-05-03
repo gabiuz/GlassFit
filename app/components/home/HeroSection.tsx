@@ -38,58 +38,72 @@ export default function HeroSection() {
           ))}
         </div>
       </div>
-      <div className="relative h-screen overflow-hidden">
-        <video
-          className="absolute inset-0 h-full w-full object-cover"
-          autoPlay
-          loop
-          muted
-          playsInline
-        >
-          <source src="/hero_video.mp4" type="video/mp4" />
-        </video>
-        <div className="absolute inset-0 bg-white/70"></div>
+      <div className="relative h-screen">
+        <div className="absolute inset-0 overflow-hidden">
+          <video
+            className="absolute inset-0 h-full w-full object-cover"
+            autoPlay
+            loop
+            muted
+            playsInline
+          >
+            <source src="/hero_video.mp4" type="video/mp4" />
+          </video>
+          <div className="absolute inset-0 bg-white/70"></div>
+        </div>
         <div className="relative z-10">
-          <div className="pl-27 pt-57 flex flex-col gap-8.5">
-            <div className="flex flex-col gap-2.5">
-              <h3 className="text-green text-3xl font-normal leading-10 ">
-                See. Fit. Transform.
-              </h3>
-              <h1 className="text-8xl text-black font-medium uppercase leading-[115.20px]">
-                The Future Is
-                <br />
-                <span className="bg-grad-light bg-clip-text text-transparent">
-                  Visualize
-                </span>
-              </h1>
+          <div className="pl-27 pt-57 flex justify-start items-start ">
+            <div className="flex flex-col gap-8.5">
+              <div className="flex flex-col gap-2.5">
+                <h3 className="text-green text-3xl font-normal leading-10 ">
+                  See. Fit. Transform.
+                </h3>
+                <h1 className="text-8xl text-black font-medium uppercase leading-[115.20px]">
+                  The Future Is
+                  <br />
+                  <span className="bg-grad-light bg-clip-text text-transparent">
+                    Visualize
+                  </span>
+                </h1>
+              </div>
+              <div>
+                <p className="text-black text-xl font-normal leading-7">
+                  A smarter way to preview customized fittings using your actual
+                  <br />
+                  space photo
+                </p>
+              </div>
+              <div className="flex gap-3.75">
+                <Button
+                  variant="lightGradWhiteText"
+                  value="Start Visualizing"
+                  leftArrow={null}
+                  rightArrow={
+                    <Image
+                      src="/right_arrow.svg"
+                      width={25}
+                      height={25}
+                      alt=""
+                    ></Image>
+                  }
+                ></Button>
+                <Button
+                  variant="blackBtnWhiteText"
+                  value="View Sample Review"
+                  leftArrow={null}
+                  rightArrow={null}
+                ></Button>
+              </div>
             </div>
             <div>
-              <p className="text-black text-xl font-normal leading-7">
-                A smarter way to preview customized fittings using your actual
-                <br />
-                space photo
-              </p>
-            </div>
-            <div className="flex gap-3.75">
-              <Button
-                variant="lightGradWhiteText"
-                value="Start Visualizing"
-                leftArrow={null}
-                rightArrow={
-                  <Image
-                    src="/right_arrow.svg"
-                    width={25}
-                    height={25}
-                    alt=""
-                  ></Image>
-                }
-              ></Button>
-              <Button
-                variant="blackBtnWhiteText"
-                value="View Sample Review"
-                leftArrow={null}
-                rightArrow={null}
-              ></Button>
+              <Image
+                src="/glass_door.svg"
+                alt=""
+                width={2000}
+                height={1125}
+                aria-hidden="true"
+                className="w-167.5 h-236.5 pb-20 -mt-26"
+              />
             </div>
           </div>
         </div>
