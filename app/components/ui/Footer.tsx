@@ -56,7 +56,7 @@ export default function Footer({ className = "" }: FooterProps) {
               <br />
               <div>
                 <p className="">Contact Number: +639 6767 676</p>
-                <p className="">Email: rrd@gmail.com</p>
+                <p className="">Email: glassfit@gmail.com</p>
               </div>
             </div>
             <div className="flex items-end gap-10.5">
