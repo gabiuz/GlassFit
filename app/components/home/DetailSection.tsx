@@ -1,8 +1,7 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import * as motion from "motion/react-client";
 import Card from "../ui/Card";
-import { AnimatePresence } from "motion/react";
 
 const detailCards = [
   {
@@ -55,31 +54,20 @@ const detailCards = [
   },
 ];
 
-// Number of cards visible in the carousel window at once.
-const VISIBLE_COUNT = 5;
-// Index within the visible window that receives the highlighted style.
-const HIGHLIGHTED_SLOT = 1;
-
 export default function DetailSection() {
-  const total = detailCards.length;
-  const [activeIndex, setActiveIndex] = useState(0);
-
-  useEffect(() => {
-    const id = setInterval(() => {
-      setActiveIndex((prev) => (prev + 1) % total);
-    }, 3500);
-    return () => clearInterval(id);
-  }, [total]);
-
-  // Derive the visible window via modulo — detailCards is never mutated.
-  const visibleCards = Array.from({ length: VISIBLE_COUNT }, (_, i) =>
-    detailCards[(activeIndex + i) % total],
-  );
+  const [middleIndex, setMiddleIndex] = useState(0);
+  const middleSlot = 1;
+  const totalCards = detailCards.length;
+  const visibleCards = Array.from({ length: 3 }, (_, offset) => {
+    const index = (middleIndex - middleSlot + offset + totalCards) % totalCards;
+    return detailCards[index];
+  });
+  const activeFeatureIndex = middleIndex;
 
   return (
     <section className="relative flex flex-col gap-17.5 bg-white py-24 px-28">
       <div className="w-fit flex justify-between items-center gap-12.5">
-        <h2 className="whitespace-nowrap text-5xl font-medium capitalize leading-[57.60px] text-start">
+        <h2 className=" whitespace-nowrap text-5xl font-medium capitalize leading-[57.60px] text-start">
           <span className="bg-grad-light bg-clip-text text-transparent">
             Plan Your Glass and Aluminum
             <br />
@@ -95,32 +83,41 @@ export default function DetailSection() {
         </p>
       </div>
       <div className="overflow-x-hidden overflow-y-visible">
-        <div className="relative flex items-end">
-          <AnimatePresence initial={false} mode="popLayout">
-            {visibleCards.map((card, index) => {
-              const isHighlighted = index === HIGHLIGHTED_SLOT;
-              return (
-                <motion.div
-                  // Stable key — card.number is unique across the dataset.
-                  // AnimatePresence uses this to know exactly which card
-                  // entered and which exited each tick.
-                  key={card.number}
-                  layout
-                  initial={{ x: "100%" }}
-                  animate={{ x: 0 }}
-                  exit={{ x: "-100%" }}
-                  transition={{ type: "spring", stiffness: 180, damping: 24 }}
-                >
-                  <Card
-                    number={card.number}
-                    title={card.title}
-                    description={isHighlighted ? card.description : undefined}
-                    className={isHighlighted ? "w-119.5 bg-grad-light" : ""}
-                  />
-                </motion.div>
-              );
-            })}
-          </AnimatePresence>
+        <div className="flex items-end">
+          {visibleCards.map((card, index) => {
+            const isMiddleCard = index === middleSlot;
+            return (
+              <motion.div
+                key={card.number}
+                layout
+                transition={{ type: "spring", stiffness: 180, damping: 24 }}
+              >
+                <Card
+                  number={card.number}
+                  title={card.title}
+                  description={isMiddleCard ? card.description : undefined}
+                  className={isMiddleCard ? "w-119.5 bg-grad-light" : ""}
+                />
+              </motion.div>
+            );
+          })}
+        </div>
+      </div>
+      <div className="flex items-center justify-center gap-6">
+        <div className="flex items-center gap-3">
+          {detailCards.map((card, index) => {
+            const isActive = index === activeFeatureIndex;
+            return (
+              <button
+                type="button"
+                key={card.number}
+                onClick={() => setMiddleIndex(index)}
+                className={`h-2.5 w-2.5 cursor-pointer rounded-full transition-colors ${
+                  isActive ? "bg-green" : "bg-black/30"
+                }`}
+              />
+            );
+          })}
         </div>
       </div>
     </section>
