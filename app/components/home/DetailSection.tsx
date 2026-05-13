@@ -1,6 +1,5 @@
 "use client";
 import { useState } from "react";
-import * as motion from "motion/react-client";
 import Card from "../ui/Card";
 
 const detailCards = [
@@ -54,15 +53,50 @@ const detailCards = [
   },
 ];
 
+const CARD_WIDTH_REM = 24;
+const ACTIVE_CARD_WIDTH_REM = 29.875;
+const SECTION_INLINE_PADDING_REM = 7;
+
+function wrapIndex(index: number, total: number) {
+  return ((index % total) + total) % total;
+}
+
+function getActiveSlot(totalCards: number) {
+  return Math.floor((totalCards - 1) / 2);
+}
+
+function getLoopedCards<T>(cards: T[], activeIndex: number) {
+  const totalCards = cards.length;
+  const activeSlot = getActiveSlot(totalCards);
+
+  return Array.from({ length: totalCards }, (_, slot) => {
+    const cardIndex = wrapIndex(activeIndex - activeSlot + slot, totalCards);
+
+    return {
+      card: cards[cardIndex],
+      isActive: slot === activeSlot,
+    };
+  });
+}
+
 export default function DetailSection() {
   const [middleIndex, setMiddleIndex] = useState(0);
-  const middleSlot = 1;
   const totalCards = detailCards.length;
-  const visibleCards = Array.from({ length: 3 }, (_, offset) => {
-    const index = (middleIndex - middleSlot + offset + totalCards) % totalCards;
-    return detailCards[index];
-  });
+  const activeSlot = getActiveSlot(totalCards);
+  const activeCardCenterOffsetRem =
+    activeSlot * CARD_WIDTH_REM + ACTIVE_CARD_WIDTH_REM / 2;
+  const carouselCards = getLoopedCards(detailCards, middleIndex);
   const activeFeatureIndex = middleIndex;
+
+  const handlePaginationClick = (nextIndex: number) => {
+    setMiddleIndex((currentIndex) => {
+      if (nextIndex === currentIndex) {
+        return currentIndex;
+      }
+
+      return wrapIndex(nextIndex, totalCards);
+    });
+  };
 
   return (
     <section className="relative flex flex-col gap-17.5 bg-white py-24 px-28">
@@ -82,25 +116,25 @@ export default function DetailSection() {
           before talking to the business.
         </p>
       </div>
-      <div className="overflow-x-hidden overflow-y-visible">
-        <div className="flex items-end">
-          {visibleCards.map((card, index) => {
-            const isMiddleCard = index === middleSlot;
-            return (
-              <motion.div
-                key={card.number}
-                layout
-                transition={{ type: "spring", stiffness: 180, damping: 24 }}
-              >
-                <Card
-                  number={card.number}
-                  title={card.title}
-                  description={isMiddleCard ? card.description : undefined}
-                  className={isMiddleCard ? "w-119.5 bg-grad-light" : ""}
-                />
-              </motion.div>
-            );
-          })}
+      <div className="overflow-x-visible overflow-y-visible">
+        <div
+          className="flex items-end"
+          style={{
+            transform: `translateX(calc(50vw - ${
+              SECTION_INLINE_PADDING_REM + activeCardCenterOffsetRem
+            }rem))`,
+          }}
+        >
+          {carouselCards.map(({ card, isActive }) => (
+            <div key={card.number} className="shrink-0 origin-bottom">
+              <Card
+                number={card.number}
+                title={card.title}
+                description={isActive ? card.description : undefined}
+                className={isActive ? "w-119.5 bg-grad-light" : ""}
+              />
+            </div>
+          ))}
         </div>
       </div>
       <div className="flex items-center justify-center gap-6">
@@ -111,8 +145,8 @@ export default function DetailSection() {
               <button
                 type="button"
                 key={card.number}
-                onClick={() => setMiddleIndex(index)}
-                className={`h-2.5 w-2.5 cursor-pointer rounded-full transition-colors ${
+                onClick={() => handlePaginationClick(index)}
+                className={`h-2.5 w-2.5 cursor-pointer rounded-full ${
                   isActive ? "bg-green" : "bg-black/30"
                 }`}
               />
