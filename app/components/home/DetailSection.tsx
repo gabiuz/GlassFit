@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { motion } from "motion/react";
 import Card from "../ui/Card";
 
 const detailCards = [
@@ -56,6 +57,10 @@ const detailCards = [
 const CARD_WIDTH_REM = 24;
 const ACTIVE_CARD_WIDTH_REM = 29.875;
 const SECTION_INLINE_PADDING_REM = 7;
+const CAROUSEL_TRANSITION = {
+  duration: 0.5,
+  ease: [0.22, 1, 0.36, 1],
+} as const;
 
 function wrapIndex(index: number, total: number) {
   return ((index % total) + total) % total;
@@ -63,6 +68,19 @@ function wrapIndex(index: number, total: number) {
 
 function getActiveSlot(totalCards: number) {
   return Math.floor((totalCards - 1) / 2);
+}
+
+function getShortestDistance(
+  currentIndex: number,
+  nextIndex: number,
+  total: number,
+) {
+  const forwardDistance = wrapIndex(nextIndex - currentIndex, total);
+  const backwardDistance = forwardDistance - total;
+
+  return Math.abs(forwardDistance) <= Math.abs(backwardDistance)
+    ? forwardDistance
+    : backwardDistance;
 }
 
 function getLoopedCards<T>(cards: T[], activeIndex: number) {
@@ -74,27 +92,58 @@ function getLoopedCards<T>(cards: T[], activeIndex: number) {
 
     return {
       card: cards[cardIndex],
-      isActive: slot === activeSlot,
+      cardIndex,
     };
   });
 }
 
 export default function DetailSection() {
-  const [middleIndex, setMiddleIndex] = useState(0);
+  const [carouselState, setCarouselState] = useState({
+    activeIndex: 0,
+    displayIndex: 0,
+    isSliding: false,
+    slideOffsetRem: 0,
+  });
   const totalCards = detailCards.length;
   const activeSlot = getActiveSlot(totalCards);
   const activeCardCenterOffsetRem =
     activeSlot * CARD_WIDTH_REM + ACTIVE_CARD_WIDTH_REM / 2;
-  const carouselCards = getLoopedCards(detailCards, middleIndex);
-  const activeFeatureIndex = middleIndex;
+  const carouselCards = getLoopedCards(detailCards, carouselState.displayIndex);
+  const activeFeatureIndex = carouselState.activeIndex;
 
   const handlePaginationClick = (nextIndex: number) => {
-    setMiddleIndex((currentIndex) => {
-      if (nextIndex === currentIndex) {
-        return currentIndex;
+    setCarouselState((currentState) => {
+      if (nextIndex === currentState.activeIndex) {
+        return currentState;
       }
 
-      return wrapIndex(nextIndex, totalCards);
+      const distance = getShortestDistance(
+        currentState.activeIndex,
+        nextIndex,
+        totalCards,
+      );
+
+      return {
+        activeIndex: wrapIndex(nextIndex, totalCards),
+        displayIndex: currentState.activeIndex,
+        isSliding: true,
+        slideOffsetRem: -distance * CARD_WIDTH_REM,
+      };
+    });
+  };
+
+  const handleSlideComplete = () => {
+    setCarouselState((currentState) => {
+      if (!currentState.isSliding) {
+        return currentState;
+      }
+
+      return {
+        ...currentState,
+        displayIndex: currentState.activeIndex,
+        isSliding: false,
+        slideOffsetRem: 0,
+      };
     });
   };
 
@@ -116,26 +165,40 @@ export default function DetailSection() {
           before talking to the business.
         </p>
       </div>
-      <div className="overflow-x-visible overflow-y-visible">
-        <div
+      <div className="overflow-x-hidden overflow-y-visible">
+        <motion.div
           className="flex items-end"
-          style={{
-            transform: `translateX(calc(50vw - ${
+          animate={{
+            x: `calc(50vw - ${
               SECTION_INLINE_PADDING_REM + activeCardCenterOffsetRem
-            }rem))`,
+            }rem + ${carouselState.slideOffsetRem}rem)`,
+          }}
+          transition={
+            carouselState.isSliding ? CAROUSEL_TRANSITION : { duration: 0 }
+          }
+          onAnimationComplete={handleSlideComplete}
+          style={{
+            transformOrigin: "bottom center",
           }}
         >
-          {carouselCards.map(({ card, isActive }) => (
-            <div key={card.number} className="shrink-0 origin-bottom">
-              <Card
-                number={card.number}
-                title={card.title}
-                description={isActive ? card.description : undefined}
-                className={isActive ? "w-119.5 bg-grad-light" : ""}
-              />
-            </div>
-          ))}
-        </div>
+          {carouselCards.map(({ card, cardIndex }) => {
+            const isActive = cardIndex === carouselState.activeIndex;
+
+            return (
+              <div key={card.number} className="shrink-0 origin-bottom">
+                <Card
+                  number={card.number}
+                  title={card.title}
+                  description={card.description}
+                  isActive={isActive}
+                  className={`transition-[width] duration-500 ease-out ${
+                    isActive ? "w-119.5" : ""
+                  }`}
+                />
+              </div>
+            );
+          })}
+        </motion.div>
       </div>
       <div className="flex items-center justify-center gap-6">
         <div className="flex items-center gap-3">
