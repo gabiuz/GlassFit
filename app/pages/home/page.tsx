@@ -1,5 +1,6 @@
 import IntroSection from "@/app/components/home/IntroSection";
 import DetailSection from "@/app/components/home/DetailSection";
+import ExploreSection from "@/app/components/home/ExploreSection";
 import HeroSection from "../../components/home/HeroSection";
 
 export default function HomePage() {
@@ -8,6 +9,7 @@ export default function HomePage() {
       <HeroSection />
       <IntroSection />
       <DetailSection />
+      <ExploreSection />
     </main>
   );
 }
