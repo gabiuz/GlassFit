@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "motion/react";
 import Card from "../ui/Card";
 
@@ -61,6 +61,7 @@ const CAROUSEL_TRANSITION = {
   duration: 0.5,
   ease: [0.22, 1, 0.36, 1],
 } as const;
+const AUTO_ADVANCE_INTERVAL_MS = 3000;
 
 function wrapIndex(index: number, total: number) {
   return ((index % total) + total) % total;
@@ -147,6 +148,27 @@ export default function DetailSection() {
     });
   };
 
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      setCarouselState((currentState) => {
+        if (currentState.isSliding) {
+          return currentState;
+        }
+
+        const nextIndex = wrapIndex(currentState.activeIndex + 1, totalCards);
+
+        return {
+          activeIndex: nextIndex,
+          displayIndex: currentState.activeIndex,
+          isSliding: true,
+          slideOffsetRem: -CARD_WIDTH_REM,
+        };
+      });
+    }, AUTO_ADVANCE_INTERVAL_MS);
+
+    return () => clearInterval(intervalId);
+  }, [totalCards]);
+
   return (
     <section className="relative flex flex-col gap-17.5 bg-white py-24 px-28">
       <div className="w-fit flex justify-between items-center gap-12.5">
@@ -185,7 +207,10 @@ export default function DetailSection() {
             const isActive = cardIndex === carouselState.activeIndex;
 
             return (
-              <div key={card.number} className="shrink-0 origin-bottom">
+              <div
+                key={card.number}
+                className="flex items-end shrink-0 origin-bottom h-100"
+              >
                 <Card
                   number={card.number}
                   title={card.title}
