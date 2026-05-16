@@ -16,7 +16,7 @@ const baseStyle: React.CSSProperties = {
   width: "fit-content",
   alignItems: "center",
   gap: "15px",
-  padding: "20px 30px",
+  padding: "15px 20px",
   borderRadius: "25px",
   fontWeight: 400,
   fontSize: "20px",
