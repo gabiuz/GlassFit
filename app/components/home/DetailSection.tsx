@@ -56,7 +56,7 @@ const detailCards = [
 
 const CARD_WIDTH_REM = 24;
 const ACTIVE_CARD_WIDTH_REM = 29.875;
-const SECTION_INLINE_PADDING_REM = 7;
+const VISIBLE_CARD_COUNT = 3;
 const CAROUSEL_TRANSITION = {
   duration: 0.5,
   ease: [0.22, 1, 0.36, 1],
@@ -107,6 +107,9 @@ export default function DetailSection() {
   });
   const totalCards = detailCards.length;
   const activeSlot = getActiveSlot(totalCards);
+  const carouselViewportWidthRem =
+    (VISIBLE_CARD_COUNT - 1) * CARD_WIDTH_REM + ACTIVE_CARD_WIDTH_REM;
+  const viewportCenterOffsetRem = carouselViewportWidthRem / 2;
   const activeCardCenterOffsetRem =
     activeSlot * CARD_WIDTH_REM + ACTIVE_CARD_WIDTH_REM / 2;
   const carouselCards = getLoopedCards(detailCards, carouselState.displayIndex);
@@ -171,7 +174,7 @@ export default function DetailSection() {
 
   return (
     <section className="relative flex flex-col gap-17.5 bg-white py-24 px-28">
-      <div className="w-fit flex justify-between items-center gap-12.5">
+      <div className="w-fit mx-auto flex justify-between items-center gap-12.5">
         <h2 className=" whitespace-nowrap text-5xl font-medium capitalize leading-[57.60px] text-start">
           <span className="bg-grad-light bg-clip-text text-transparent">
             Plan Your Glass and Aluminum
@@ -187,12 +190,18 @@ export default function DetailSection() {
           before talking to the business.
         </p>
       </div>
-      <div className="overflow-x-hidden overflow-y-visible">
+      <div
+        className="overflow-x-hidden overflow-y-visible mx-auto"
+        style={{
+          width: `${carouselViewportWidthRem}rem`,
+          maxWidth: "100%",
+        }}
+      >
         <motion.div
           className="flex items-end"
           animate={{
-            x: `calc(50vw - ${
-              SECTION_INLINE_PADDING_REM + activeCardCenterOffsetRem
+            x: `calc(${viewportCenterOffsetRem}rem - ${
+              activeCardCenterOffsetRem
             }rem + ${carouselState.slideOffsetRem}rem)`,
           }}
           transition={
@@ -217,7 +226,7 @@ export default function DetailSection() {
                   description={card.description}
                   isActive={isActive}
                   className={`transition-[width] duration-500 ease-out ${
-                    isActive ? "w-119.5" : ""
+                    isActive ? "w-[29.875rem]" : ""
                   }`}
                 />
               </div>
