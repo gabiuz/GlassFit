@@ -9,7 +9,8 @@ type ButtonVariant =
   | "blueBtnBlackText"
   | "blackOutline"
   | "whiteOutline"
-  | "blueBtnWhiteText";
+  | "blueBtnWhiteText"
+  | "greenBtnWhiteText";
 
 const baseStyle: React.CSSProperties = {
   display: "flex",
@@ -71,6 +72,10 @@ const variantStyles: Record<ButtonVariant, React.CSSProperties> = {
   blueBtnWhiteText: {
     color: "var(--color-white)",
     backgroundColor: "var(--color-blue)",
+  },
+  greenBtnWhiteText: {
+    color: "var(--color-white)",
+    backgroundColor: "var(--color-green)",
   },
 };
 
