@@ -39,7 +39,7 @@ const socialMediaIcons = [
 export default function Footer({ className = "" }: FooterProps) {
   return (
     <footer
-      className={`absolute bottom-0 left-0 w-full bg-white shadow-[inset_0_14px_18px_-12px_rgba(0,0,0,0.25)] ${className}`}
+      className={`w-full bg-white shadow-[inset_0_14px_18px_-12px_rgba(0,0,0,0.25)] ${className}`}
     >
       <div className="mx-auto px-30 py-15">
         <div className="flex flex-col items-center gap-10 md:flex-row md:flex-wrap md:items-start md:justify-center lg:flex-nowrap lg:justify-between">
@@ -56,7 +56,7 @@ export default function Footer({ className = "" }: FooterProps) {
               <br />
               <div>
                 <p className="">Contact Number: +639 6767 676</p>
-                <p className="">Email: rrd@gmail.com</p>
+                <p className="">Email: glassfit@gmail.com</p>
               </div>
             </div>
             <div className="flex items-end gap-10.5">

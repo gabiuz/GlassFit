@@ -16,7 +16,7 @@ const baseStyle: React.CSSProperties = {
   width: "fit-content",
   alignItems: "center",
   gap: "15px",
-  padding: "20px 30px",
+  padding: "15px 20px",
   borderRadius: "25px",
   fontWeight: 400,
   fontSize: "20px",
@@ -87,19 +87,21 @@ const iconStyle: React.CSSProperties = {
 
 type ButtonProps = {
   variant?: ButtonVariant;
-  icon?: React.ReactNode;
+  leftIcon?: React.ReactNode;
+  rightIcon?: React.ReactNode;
   value: string;
 } & Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "children">;
 
 export default function Button({
   variant = "lightGradWhiteText",
-  icon,
+  leftIcon,
+  rightIcon,
   value,
   className,
   style,
   ...props
 }: ButtonProps) {
-  const resolvedIcon = icon ?? (
+  const defaultIcon = (
     <svg
       width="25"
       height="25"
@@ -115,18 +117,24 @@ export default function Button({
       />
     </svg>
   );
+  const resolvedLeftIcon = leftIcon === undefined ? defaultIcon : leftIcon;
+  const resolvedRightIcon = rightIcon === undefined ? defaultIcon : rightIcon;
   const classes = ["btn", className].filter(Boolean).join(" ");
   const mergedStyle = { ...baseStyle, ...variantStyles[variant], ...style };
 
   return (
     <button className={classes} style={mergedStyle} {...props}>
-      <span style={iconStyle} aria-hidden="true">
-        {resolvedIcon}
-      </span>
+      {resolvedLeftIcon !== null ? (
+        <span style={iconStyle} aria-hidden="true">
+          {resolvedLeftIcon}
+        </span>
+      ) : null}
       <span className="btn-label">{value}</span>
-      <span style={iconStyle} aria-hidden="true">
-        {resolvedIcon}
-      </span>
+      {resolvedRightIcon !== null ? (
+        <span style={iconStyle} aria-hidden="true">
+          {resolvedRightIcon}
+        </span>
+      ) : null}
     </button>
   );
 }

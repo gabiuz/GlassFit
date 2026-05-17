@@ -20,7 +20,7 @@ export default function Navbar({ className = "" }: classnamePropse) {
 
   return (
     <nav
-      className={`w-11/12 fixed top-21.5 bg-white/75 border border-green rounded-[30px] px-18.75 py-5 flex justify-between items-center shadow-[-5px_4px_30px_0px_rgba(4,94,109,0.30)] ${className}`}
+      className={`z-100 w-11/12 fixed top-21.5 bg-white/75 border border-green rounded-[30px] px-18.75 py-5 flex justify-between items-center shadow-[-5px_4px_30px_0px_rgba(4,94,109,0.30)] ${className}`}
     >
       <div className="navbar-logo">
         <button className="navbar-icon" aria-label="Menu">
