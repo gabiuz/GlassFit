@@ -3,6 +3,7 @@ import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import * as motion from "motion/react-client";
+import Button from "../shared/Button";
 
 const navLinks = [
   "Home",
@@ -79,24 +80,27 @@ export default function Navbar({ className = "" }: classnamePropse) {
         })}
       </div>
       <div className="flex items-center gap-6.25">
-        <button>
-          <Image
-            src="/settings.svg"
-            alt=""
-            width={35}
-            height={25}
-            aria-hidden="true"
-          />
-        </button>
-        <button>
-          <Image
-            src="/faq.svg"
-            alt=""
-            width={35}
-            height={25}
-            aria-hidden="true"
-          />
-        </button>
+        <Button
+          value="Log In"
+          leftIcon={null}
+          rightIcon={null}
+          variant="blackBtnWhiteText"
+          className="px-5! py-2.5! rounded-[10px]!"
+        ></Button>
+        <Button
+          value="Sign In"
+          leftIcon={
+            <Image
+              src="/navbar_icons/user.svg"
+              alt="user icon"
+              width={27}
+              height={27}
+            ></Image>
+          }
+          rightIcon={null}
+          variant="greenBtnWhiteText"
+          className="px-5! py-2.5! rounded-[10px]!"
+        ></Button>
       </div>
     </nav>
   );
