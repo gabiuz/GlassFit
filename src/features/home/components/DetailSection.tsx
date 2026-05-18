@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { motion } from "motion/react";
-import Card from "../ui/Card";
+import Card from "@/components/ui/Card";
 
 const detailCards = [
   {
@@ -98,7 +98,7 @@ function getLoopedCards<T>(cards: T[], activeIndex: number) {
   });
 }
 
-export default function DetailSection() {
+export function DetailSection() {
   const [carouselState, setCarouselState] = useState({
     activeIndex: 0,
     displayIndex: 0,

@@ -1,7 +1,7 @@
 import Image from "next/image";
-import Button from "../shared/Button";
+import Button from "@/components/shared/Button";
 
-export default function ExploreSection() {
+export function ExploreSection() {
   return (
     <section className="relative bg-grad-dark px-27.5 py-25">
       <div className="flex flex-col items-center gap-20.25">
