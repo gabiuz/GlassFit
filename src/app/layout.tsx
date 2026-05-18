@@ -1,27 +1,31 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
+import { Inter } from "next/font/google";
 import "./globals.css";
-import Navbar from "./components/Navbar";
+import Navbar from "@/components/ui/Navbar";
+import Footer from "@/components/ui/Footer";
+
+const inter = Inter({ subsets: ["latin"] });
 
 const myFont = localFont({
   src: [
     {
-      path: "./public/fonts/MADEOkineSansPERSONALUSE-Regular.otf",
+      path: "../../public/fonts/MADEOkineSansPERSONALUSE-Regular.otf",
       weight: "400",
       style: "normal",
     },
     {
-      path: "./public/fonts/MADEOkineSansPERSONALUSE-Light.otf",
+      path: "../../public/fonts/MADEOkineSansPERSONALUSE-Light.otf",
       weight: "300",
       style: "normal",
     },
     {
-      path: "./public/fonts/MADEOkineSansPERSONALUSE-Medium.otf",
+      path: "../../public/fonts/MADEOkineSansPERSONALUSE-Medium.otf",
       weight: "500",
       style: "normal",
     },
     {
-      path: "./public/fonts/MADEOkineSansPERSONALUSE-Bold.otf",
+      path: "../../public/fonts/MADEOkineSansPERSONALUSE-Bold.otf",
       weight: "700",
       style: "normal",
     },
@@ -39,10 +43,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${myFont.className} h-full antialiased`}>
+    <html
+      lang="en"
+      className={`${myFont.className} ${inter.className} h-full antialiased`}
+    >
       <body className="min-h-full flex flex-col">
-        <Navbar />
+        <div className="flex justify-center">
+          <Navbar />
+        </div>
         {children}
+        <Footer />
       </body>
     </html>
   );

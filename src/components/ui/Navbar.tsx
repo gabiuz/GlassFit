@@ -3,7 +3,7 @@ import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import * as motion from "motion/react-client";
-import Button from "../shared/Button";
+import Button from "@/components/shared/Button";
 
 const navLinks = [
   "Home",

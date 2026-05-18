@@ -39,7 +39,7 @@ const howItWorksSteps = [
   },
 ];
 
-export default function HowItWorksSection() {
+export function HowItWorksSection() {
   return (
     <section className="relative bg-white px-27.5 py-25">
       <div className="mx-auto flex w-full max-w-360 flex-col items-center gap-28">

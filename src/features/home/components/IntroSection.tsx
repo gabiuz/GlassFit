@@ -1,7 +1,7 @@
 "use client";
-import Button from "../shared/Button";
+import Button from "@/components/shared/Button";
 
-export default function IntroSection() {
+export function IntroSection() {
   return (
     <section className="relative z-40 bg-white py-25 px-27.5">
       <div className="flex flex-col justify-center items-center gap-13">

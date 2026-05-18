@@ -1,5 +1,5 @@
 import Image from "next/image";
-import Button from "../shared/Button";
+import Button from "@/components/shared/Button";
 
 const navbarIcons = [
   {
@@ -19,7 +19,7 @@ const navbarIcons = [
   },
 ];
 
-export default function HeroSection() {
+export function HeroSection() {
   return (
     <section className="relative z-0 bg-white-20">
       <div className="bg-grad-dark py-2.5 font-normal text-white">

@@ -1,7 +1,7 @@
 import Image from "next/image";
-import Button from "../shared/Button";
+import Button from "@/components/shared/Button";
 
-export default function CreateMyPreview() {
+export function CreateMyPreview() {
   return (
     <section className="px-27.5 py-25">
       <div className="relative overflow-hidden rounded-[25px] bg-green px-69.25 py-25">
