@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 type SliderProps = React.ComponentProps<typeof SliderPrimitive.Root> & {
   onThumbPointerEnter?: (index: number) => void;
   onThumbPointerLeave?: (index: number) => void;
-  renderThumbContent?: (index: number) => React.ReactNode;
+  renderThumbContent?: (index: number, isDragging: boolean) => React.ReactNode;
 };
 
 function Slider({
@@ -32,6 +32,16 @@ function Slider({
     [value, defaultValue, min, max],
   );
 
+  const [isDragging, setIsDragging] = React.useState(false);
+  const [focusedIndex, setFocusedIndex] = React.useState<number | null>(null);
+
+  React.useEffect(() => {
+    if (!isDragging) return;
+    const handlePointerUp = () => setIsDragging(false);
+    window.addEventListener("pointerup", handlePointerUp);
+    return () => window.removeEventListener("pointerup", handlePointerUp);
+  }, [isDragging]);
+
   return (
     <SliderPrimitive.Root
       data-slot="slider"
@@ -43,6 +53,10 @@ function Slider({
         "relative flex w-full touch-none items-center select-none data-disabled:opacity-50 data-vertical:h-full data-vertical:min-h-40 data-vertical:w-auto data-vertical:flex-col",
         className,
       )}
+      onPointerDown={(e) => {
+        setIsDragging(true);
+        props.onPointerDown?.(e);
+      }}
       {...props}
     >
       <SliderPrimitive.Track
@@ -61,8 +75,10 @@ function Slider({
           className="group relative block size-6 shrink-0 rounded-full bg-green shadow-[0_2px_6px_rgba(7,182,211,0.35)] transition-[color,box-shadow] select-none after:absolute after:inset-1.5 after:rounded-full after:bg-white hover:ring-4 hover:ring-[rgba(7,182,211,0.25)] focus-visible:ring-4 focus-visible:ring-[rgba(7,182,211,0.35)] focus-visible:outline-hidden active:ring-4 disabled:pointer-events-none disabled:opacity-50"
           onPointerEnter={() => onThumbPointerEnter?.(index)}
           onPointerLeave={() => onThumbPointerLeave?.(index)}
+          onFocus={() => setFocusedIndex(index)}
+          onBlur={() => setFocusedIndex(null)}
         >
-          {renderThumbContent?.(index)}
+          {renderThumbContent?.(index, isDragging && focusedIndex === index)}
         </SliderPrimitive.Thumb>
       ))}
     </SliderPrimitive.Root>

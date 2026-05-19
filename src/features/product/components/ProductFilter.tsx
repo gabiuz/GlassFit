@@ -18,9 +18,11 @@ const MAX_PRICE = 50000;
 function ThumbTooltip({
   formattedValue,
   value,
+  isDragging,
 }: {
   formattedValue: string;
   value: number;
+  isDragging?: boolean;
 }) {
   const x = useMotionValue(value);
 
@@ -35,7 +37,7 @@ function ThumbTooltip({
   });
 
   return (
-    <div className="pointer-events-none absolute -top-18 left-1/2 -translate-x-1/2 translate-y-3 scale-50 opacity-0 origin-bottom transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] group-hover:translate-y-0 group-hover:scale-100 group-hover:opacity-100 group-active:translate-y-0 group-active:scale-100 group-active:opacity-100 group-focus:translate-y-0 group-focus:scale-100 group-focus:opacity-100">
+    <div className={`pointer-events-none absolute -top-18 left-1/2 -translate-x-1/2 translate-y-3 scale-50 opacity-0 origin-bottom transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] group-hover:translate-y-0 group-hover:scale-100 group-hover:opacity-100 group-active:translate-y-0 group-active:scale-100 group-active:opacity-100 ${isDragging ? "translate-y-0 scale-100 opacity-100" : ""}`}>
       <motion.div
         style={{ rotate: sway, transformOrigin: "bottom center" }}
         className="flex flex-col items-center"
@@ -145,10 +147,11 @@ export function ProductFilter() {
             max={MAX_PRICE}
             step={500}
             onValueChange={handleRangeChange}
-            renderThumbContent={(index) => (
+            renderThumbContent={(index, isDragging) => (
               <ThumbTooltip
                 formattedValue={formatShortPrice(range[index])}
                 value={range[index]}
+                isDragging={isDragging}
               />
             )}
             className="cursor-pointer"
