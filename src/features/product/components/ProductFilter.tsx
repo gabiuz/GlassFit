@@ -2,12 +2,52 @@
 import * as React from "react";
 import Image from "next/image";
 import { useState } from "react";
-import { motion } from "motion/react";
+import {
+  motion,
+  useMotionValue,
+  useSpring,
+  useTransform,
+  useVelocity,
+} from "motion/react";
 
 import { Slider } from "@/components/ui/slider";
 
 const MIN_PRICE = 0;
 const MAX_PRICE = 50000;
+
+function ThumbTooltip({
+  formattedValue,
+  value,
+}: {
+  formattedValue: string;
+  value: number;
+}) {
+  const x = useMotionValue(value);
+
+  React.useEffect(() => {
+    x.set(value);
+  }, [value, x]);
+
+  const velocity = useVelocity(x);
+  const smoothVelocity = useSpring(velocity, { damping: 50, stiffness: 400 });
+  const sway = useTransform(smoothVelocity, [-50000, 0, 50000], [30, 0, -30], {
+    clamp: true,
+  });
+
+  return (
+    <div className="pointer-events-none absolute -top-18 left-1/2 -translate-x-1/2 translate-y-3 scale-50 opacity-0 origin-bottom transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] group-hover:translate-y-0 group-hover:scale-100 group-hover:opacity-100">
+      <motion.div
+        style={{ rotate: sway, transformOrigin: "bottom center" }}
+        className="flex flex-col items-center"
+      >
+        <div className="bg-green shadow-lg text-white text-base leading-[1.4] px-5 py-2.5 rounded-[32px]">
+          {formattedValue}
+        </div>
+        <div className="h-1.5 w-3 bg-green [clip-path:polygon(50%_100%,0_0,100%_0)]" />
+      </motion.div>
+    </div>
+  );
+}
 
 export function ProductFilter() {
   const [range, setRange] = React.useState<[number, number]>([
@@ -98,14 +138,10 @@ export function ProductFilter() {
             step={500}
             onValueChange={handleRangeChange}
             renderThumbContent={(index) => (
-              <div className="pointer-events-none absolute -top-18 left-1/2 -translate-x-1/2 translate-y-3 scale-50 opacity-0 origin-bottom transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] group-hover:translate-y-0 group-hover:scale-100 group-hover:opacity-100">
-                <div className="flex flex-col items-center">
-                  <div className="bg-green shadow-lg text-white text-base leading-[1.4] px-5 py-2.5 rounded-[32px]">
-                    {formatShortPrice(range[index])}
-                  </div>
-                  <div className="h-1.5 w-3 bg-green [clip-path:polygon(50%_100%,0_0,100%_0)]" />
-                </div>
-              </div>
+              <ThumbTooltip
+                formattedValue={formatShortPrice(range[index])}
+                value={range[index]}
+              />
             )}
             className="cursor-pointer"
           />
