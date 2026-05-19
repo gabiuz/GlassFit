@@ -2,6 +2,7 @@
 import * as React from "react";
 import Image from "next/image";
 import { useState } from "react";
+import { motion } from "motion/react";
 
 import { Slider } from "@/components/ui/slider";
 
@@ -23,8 +24,25 @@ export function ProductFilter() {
     { label: "Exterior Installation", icon: "/exterior.svg" },
   ];
 
-  const [checkedDoors, setCheckedDoors] = useState<string[]>([]);
+  const [anodized, setAnodizedFinish] = useState<string[]>([]);
+  const anodizedFinish = [
+    {
+      label: "Natural/Silver",
+      icon: "/aluminum_finish_icons/natural_silver.svg",
+    },
+    {
+      label: "Analok (Champagne/Gold)",
+      icon: "/aluminum_finish_icons/analok.svg",
+    },
+    {
+      label: "Bronze/Brown",
+      icon: "/aluminum_finish_icons/bronze_brown.svg",
+    },
+    { label: "Matte Gray", icon: "/aluminum_finish_icons/matte_gray.svg" },
+    { label: "Black", icon: "/aluminum_finish_icons/black.svg" },
+  ];
 
+  const [checkedDoors, setCheckedDoors] = useState<string[]>([]);
   const doorStyles = [
     { label: "All" },
     { label: "French Doors" },
@@ -34,6 +52,9 @@ export function ProductFilter() {
     { label: "Bi-Fold Doors" },
     { label: "Pocket Doors" },
   ];
+
+  const [materialFinish, setMaterialFinish] = useState<string[]>([]);
+  const materials = [{ label: "Aluminum" }, { label: "Glass" }];
 
   const handleRangeChange = (next: number[]) => {
     if (next.length !== 2) return;
@@ -76,18 +97,16 @@ export function ProductFilter() {
             max={MAX_PRICE}
             step={500}
             onValueChange={handleRangeChange}
-            renderThumbContent={(index) =>
-              index === 1 ? (
-                <div className="pointer-events-none absolute -top-18 left-1/2 -translate-x-1/2 opacity-0 transition-opacity group-hover:opacity-100">
-                  <div className="flex flex-col items-center">
-                    <div className="bg-green text-white text-base leading-[1.4] px-5 py-2.5 rounded-[32px]">
-                      {formatShortPrice(range[1])}
-                    </div>
-                    <div className="h-1.5 w-3 bg-green [clip-path:polygon(50%_100%,0_0,100%_0)]" />
+            renderThumbContent={(index) => (
+              <div className="pointer-events-none absolute -top-18 left-1/2 -translate-x-1/2 translate-y-3 scale-50 opacity-0 origin-bottom transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] group-hover:translate-y-0 group-hover:scale-100 group-hover:opacity-100">
+                <div className="flex flex-col items-center">
+                  <div className="bg-green shadow-lg text-white text-base leading-[1.4] px-5 py-2.5 rounded-[32px]">
+                    {formatShortPrice(range[index])}
                   </div>
+                  <div className="h-1.5 w-3 bg-green [clip-path:polygon(50%_100%,0_0,100%_0)]" />
                 </div>
-              ) : null
-            }
+              </div>
+            )}
             className="cursor-pointer"
           />
           <div className="mt-7 flex items-center justify-between">
@@ -253,6 +272,159 @@ export function ProductFilter() {
                   </div>
                   <span className="text-[16px] leading-[1.4] tracking-[-0.304px] text-black">
                     {door.label}
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+      <div>
+        <h2 className="text-xl text-black font-medium leading-7">
+          Design & Customization Options
+        </h2>
+      </div>
+      <div>
+        <div className="flex items-center gap-3 rounded-[20px] px-3.75 py-2.5">
+          <Image
+            src="/paint_brush.svg"
+            alt="material finish icon"
+            width={25}
+            height={25}
+          />
+          <h3 className="text-[16px] leading-[1.4] tracking-[-0.304px] text-black">
+            Material Finish
+          </h3>
+        </div>
+        <div className="flex w-full flex-col items-start pl-12.5">
+          <p className="text-[12px] leading-[1.4] tracking-[-0.228px] text-[#c3c3c3]">
+            Select one or both
+          </p>
+          <div className="mt-3 flex flex-col gap-3">
+            {materials.map((material) => {
+              const isChecked = materialFinish.includes(material.label);
+
+              const handleMaterialChange = (
+                e: React.ChangeEvent<HTMLInputElement>,
+              ) => {
+                if (e.target.checked) {
+                  setMaterialFinish((prev) => [...prev, material.label]);
+                } else {
+                  setMaterialFinish((prev) =>
+                    prev.filter((m) => m !== material.label),
+                  );
+                }
+              };
+
+              return (
+                <label
+                  key={material.label}
+                  className="flex cursor-pointer items-center gap-3"
+                >
+                  <div className="relative flex items-center justify-center">
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={handleMaterialChange}
+                      className="peer sr-only"
+                    />
+                    <div className="flex size-3 items-center justify-center rounded-xs bg-[#c3c3c3] peer-checked:bg-black">
+                      {isChecked && (
+                        <svg
+                          className="size-2 text-white"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                          strokeWidth={4}
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M5 13l4 4L19 7"
+                          />
+                        </svg>
+                      )}
+                    </div>
+                  </div>
+                  <span className="text-[16px] leading-[1.4] tracking-[-0.304px] text-black">
+                    {material.label}
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+      <div>
+        <div className="flex items-center gap-3 rounded-[20px] px-3.75 py-2.5">
+          <Image
+            src="/paint_roller.svg"
+            alt="material finish icon"
+            width={25}
+            height={25}
+          />
+          <h3 className="text-[16px] leading-[1.4] tracking-[-0.304px] text-black">
+            Aluminum Finish
+          </h3>
+        </div>
+        <div className="flex w-full flex-col items-start pl-12.5">
+          <p className="text-[12px] leading-[1.4] tracking-[-0.228px] text-[#c3c3c3]">
+            Anodized Finish
+          </p>
+          <div className="mt-3 flex flex-col gap-3">
+            {anodizedFinish.map((item) => {
+              const isChecked = anodized.includes(item.label);
+
+              const handleAnodizedChange = (
+                e: React.ChangeEvent<HTMLInputElement>,
+              ) => {
+                if (e.target.checked) {
+                  setAnodizedFinish((prev) => [...prev, item.label]);
+                } else {
+                  setAnodizedFinish((prev) =>
+                    prev.filter((m) => m !== item.label),
+                  );
+                }
+              };
+
+              return (
+                <label
+                  key={item.label}
+                  className="flex cursor-pointer items-center gap-3"
+                >
+                  <div className="relative flex items-center justify-center">
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={handleAnodizedChange}
+                      className="peer sr-only"
+                    />
+                    <div className="flex size-3 items-center justify-center rounded-xs bg-[#c3c3c3] peer-checked:bg-black">
+                      {isChecked && (
+                        <svg
+                          className="size-2 text-white"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                          strokeWidth={4}
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M5 13l4 4L19 7"
+                          />
+                        </svg>
+                      )}
+                    </div>
+                  </div>
+                  <Image
+                    src={item.icon}
+                    alt={item.label}
+                    width={25}
+                    height={25}
+                  />
+                  <span className="text-[16px] leading-[1.4] tracking-[-0.304px] text-black">
+                    {item.label}
                   </span>
                 </label>
               );
