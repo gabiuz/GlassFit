@@ -35,7 +35,7 @@ function ThumbTooltip({
   });
 
   return (
-    <div className="pointer-events-none absolute -top-18 left-1/2 -translate-x-1/2 translate-y-3 scale-50 opacity-0 origin-bottom transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] group-hover:translate-y-0 group-hover:scale-100 group-hover:opacity-100">
+    <div className="pointer-events-none absolute -top-18 left-1/2 -translate-x-1/2 translate-y-3 scale-50 opacity-0 origin-bottom transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] group-hover:translate-y-0 group-hover:scale-100 group-hover:opacity-100 group-active:translate-y-0 group-active:scale-100 group-active:opacity-100 group-focus:translate-y-0 group-focus:scale-100 group-focus:opacity-100">
       <motion.div
         style={{ rotate: sway, transformOrigin: "bottom center" }}
         className="flex flex-col items-center"
@@ -80,6 +80,14 @@ export function ProductFilter() {
     },
     { label: "Matte Gray", icon: "/aluminum_finish_icons/matte_gray.svg" },
     { label: "Black", icon: "/aluminum_finish_icons/black.svg" },
+  ];
+
+  const [powderCoated, setPowderCoatedFinish] = useState<string[]>([]);
+  const powderCoatedFinish = [
+    { label: "White", icon: "/powder_coated_icons/white.svg" },
+    { label: "Brown", icon: "/powder_coated_icons/brown.svg" },
+    { label: "Black", icon: "/powder_coated_icons/black.svg" },
+    { label: "Matte Black", icon: "/powder_coated_icons/matte_black.svg" },
   ];
 
   const [checkedDoors, setCheckedDoors] = useState<string[]>([]);
@@ -433,6 +441,70 @@ export function ProductFilter() {
                       type="checkbox"
                       checked={isChecked}
                       onChange={handleAnodizedChange}
+                      className="peer sr-only"
+                    />
+                    <div className="flex size-3 items-center justify-center rounded-xs bg-[#c3c3c3] peer-checked:bg-black">
+                      {isChecked && (
+                        <svg
+                          className="size-2 text-white"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                          strokeWidth={4}
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M5 13l4 4L19 7"
+                          />
+                        </svg>
+                      )}
+                    </div>
+                  </div>
+                  <Image
+                    src={item.icon}
+                    alt={item.label}
+                    width={25}
+                    height={25}
+                  />
+                  <span className="text-[16px] leading-[1.4] tracking-[-0.304px] text-black">
+                    {item.label}
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        </div>
+        <div className="mt-5 flex w-full flex-col items-start pl-12.5">
+          <p className="text-[12px] leading-[1.4] tracking-[-0.228px] text-[#c3c3c3]">
+            Powder-Coated Finish
+          </p>
+          <div className="mt-3 flex flex-col gap-3">
+            {powderCoatedFinish.map((item) => {
+              const isChecked = powderCoated.includes(item.label);
+
+              const handlePowderCoatedChange = (
+                e: React.ChangeEvent<HTMLInputElement>,
+              ) => {
+                if (e.target.checked) {
+                  setPowderCoatedFinish((prev) => [...prev, item.label]);
+                } else {
+                  setPowderCoatedFinish((prev) =>
+                    prev.filter((m) => m !== item.label),
+                  );
+                }
+              };
+
+              return (
+                <label
+                  key={item.label}
+                  className="flex cursor-pointer items-center gap-3"
+                >
+                  <div className="relative flex items-center justify-center">
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={handlePowderCoatedChange}
                       className="peer sr-only"
                     />
                     <div className="flex size-3 items-center justify-center rounded-xs bg-[#c3c3c3] peer-checked:bg-black">
