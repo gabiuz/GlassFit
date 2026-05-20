@@ -37,7 +37,9 @@ function ThumbTooltip({
   });
 
   return (
-    <div className={`pointer-events-none absolute -top-18 left-1/2 -translate-x-1/2 translate-y-3 scale-50 opacity-0 origin-bottom transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] group-hover:translate-y-0 group-hover:scale-100 group-hover:opacity-100 group-active:translate-y-0 group-active:scale-100 group-active:opacity-100 ${isDragging ? "translate-y-0 scale-100 opacity-100" : ""}`}>
+    <div
+      className={`pointer-events-none absolute -top-18 left-1/2 -translate-x-1/2 translate-y-3 scale-50 opacity-0 origin-bottom transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] group-hover:translate-y-0 group-hover:scale-100 group-hover:opacity-100 group-active:translate-y-0 group-active:scale-100 group-active:opacity-100 ${isDragging ? "translate-y-0 scale-100 opacity-100" : ""}`}
+    >
       <motion.div
         style={{ rotate: sway, transformOrigin: "bottom center" }}
         className="flex flex-col items-center"
@@ -92,6 +94,13 @@ export function ProductFilter() {
     { label: "Matte Black", icon: "/powder_coated_icons/matte_black.svg" },
   ];
 
+  const [glass, setGlassFinish] = useState<string[]>([]);
+  const glassFinish = [
+    { label: "Clear", icon: "/glass_finish_icons/clear.svg" },
+    { label: "Bronze", icon: "/glass_finish_icons/bronze.svg" },
+    { label: "Smoke", icon: "/glass_finish_icons/smoke.svg" },
+  ];
+
   const [checkedDoors, setCheckedDoors] = useState<string[]>([]);
   const doorStyles = [
     { label: "All" },
@@ -105,6 +114,29 @@ export function ProductFilter() {
 
   const [materialFinish, setMaterialFinish] = useState<string[]>([]);
   const materials = [{ label: "Aluminum" }, { label: "Glass" }];
+
+  const [aluminumProfile, setAluminumProfile] = useState<string[]>([]);
+  const aluminumProfiles = [
+    { label: "High - End" },
+    { label: "Low - End" },
+    { label: "Tubular" },
+    { label: "Deluxe" },
+  ];
+
+  const [glassProfile, setGlassProfile] = useState<string[]>([]);
+  const glassProfiles = [
+    { label: "Tempered Glass" },
+    { label: "Ordinary Glass" },
+    { label: "Reflective Glass" },
+  ];
+
+  const [glassThickness, setGlassThickness] = useState<string[]>([]);
+  const thickness = [
+    { label: "3 mm" },
+    { label: "6 mm" },
+    { label: "10 mm" },
+    { label: "12 mm" },
+  ];
 
   const handleRangeChange = (next: number[]) => {
     if (next.length !== 2) return;
@@ -250,7 +282,7 @@ export function ProductFilter() {
           <p className="text-[12px] leading-[1.4] tracking-[-0.228px] text-[#c3c3c3]">
             Select all that apply
           </p>
-          <div className="mt-3 flex flex-col gap-3">
+          <div className="flex flex-col">
             {doorStyles.map((door) => {
               const isChecked = checkedDoors.includes(door.label);
 
@@ -290,7 +322,7 @@ export function ProductFilter() {
               return (
                 <label
                   key={door.label}
-                  className="flex cursor-pointer items-center gap-3"
+                  className="flex cursor-pointer items-center gap-3 px-3.75 py-2.5"
                 >
                   <div className="relative flex items-center justify-center">
                     <input
@@ -347,7 +379,7 @@ export function ProductFilter() {
           <p className="text-[12px] leading-[1.4] tracking-[-0.228px] text-[#c3c3c3]">
             Select one or both
           </p>
-          <div className="mt-3 flex flex-col gap-3">
+          <div className="flex flex-col">
             {materials.map((material) => {
               const isChecked = materialFinish.includes(material.label);
 
@@ -366,7 +398,7 @@ export function ProductFilter() {
               return (
                 <label
                   key={material.label}
-                  className="flex cursor-pointer items-center gap-3"
+                  className="flex cursor-pointer items-center gap-3 px-3.75 py-2.5"
                 >
                   <div className="relative flex items-center justify-center">
                     <input
@@ -402,23 +434,25 @@ export function ProductFilter() {
           </div>
         </div>
       </div>
-      <div>
-        <div className="flex items-center gap-3 rounded-[20px] px-3.75 py-2.5">
-          <Image
-            src="/paint_roller.svg"
-            alt="material finish icon"
-            width={25}
-            height={25}
-          />
-          <h3 className="text-[16px] leading-[1.4] tracking-[-0.304px] text-black">
-            Aluminum Finish
-          </h3>
-        </div>
+      {materialFinish.includes("Aluminum") && (
+        <>
+          <div>
+            <div className="flex items-center gap-3 rounded-[20px] px-3.75 py-2.5">
+              <Image
+                src="/paint_roller.svg"
+                alt="material finish icon"
+                width={25}
+                height={25}
+              />
+              <h3 className="text-[16px] leading-[1.4] tracking-[-0.304px] text-black">
+                Aluminum Finish
+              </h3>
+            </div>
         <div className="flex w-full flex-col items-start pl-12.5">
           <p className="text-[12px] leading-[1.4] tracking-[-0.228px] text-[#c3c3c3]">
             Anodized Finish
           </p>
-          <div className="mt-3 flex flex-col gap-3">
+          <div className="flex flex-col">
             {anodizedFinish.map((item) => {
               const isChecked = anodized.includes(item.label);
 
@@ -437,7 +471,7 @@ export function ProductFilter() {
               return (
                 <label
                   key={item.label}
-                  className="flex cursor-pointer items-center gap-3"
+                  className="flex cursor-pointer items-center gap-3 px-3.75 py-2.5"
                 >
                   <div className="relative flex items-center justify-center">
                     <input
@@ -478,11 +512,11 @@ export function ProductFilter() {
             })}
           </div>
         </div>
-        <div className="mt-5 flex w-full flex-col items-start pl-12.5">
+        <div className=" flex w-full flex-col items-start pl-12.5">
           <p className="text-[12px] leading-[1.4] tracking-[-0.228px] text-[#c3c3c3]">
             Powder-Coated Finish
           </p>
-          <div className="mt-3 flex flex-col gap-3">
+          <div className=" flex flex-col">
             {powderCoatedFinish.map((item) => {
               const isChecked = powderCoated.includes(item.label);
 
@@ -501,7 +535,7 @@ export function ProductFilter() {
               return (
                 <label
                   key={item.label}
-                  className="flex cursor-pointer items-center gap-3"
+                  className="flex cursor-pointer items-center gap-3 px-3.75 py-2.5"
                 >
                   <div className="relative flex items-center justify-center">
                     <input
@@ -543,6 +577,206 @@ export function ProductFilter() {
           </div>
         </div>
       </div>
+      <div className="flex w-full flex-col gap-0.75 items-start pl-12.5">
+        <p className="text-[12px] leading-[1.4] tracking-[-0.228px] text-[#c3c3c3]">
+          Profile
+        </p>
+        <div className="flex flex-col gap-1.25 w-full">
+          {[aluminumProfiles.slice(0, 2), aluminumProfiles.slice(2)].map(
+            (row, rowIndex) => (
+              <div key={rowIndex} className="flex gap-1.25">
+                {row.map((p) => {
+                  const isSelected = aluminumProfile.includes(p.label);
+
+                  const handleToggle = () => {
+                    if (isSelected) {
+                      setAluminumProfile((prev) =>
+                        prev.filter((item) => item !== p.label),
+                      );
+                    } else {
+                      setAluminumProfile((prev) => [...prev, p.label]);
+                    }
+                  };
+
+                  return (
+                    <button
+                      key={p.label}
+                      type="button"
+                      onClick={handleToggle}
+                      className={`px-2.5 py-1.25 rounded-[20px] border transition-colors duration-200 cursor-pointer text-xs font-normal leading-4 whitespace-nowrap ${
+                        isSelected
+                          ? "border-green bg-green text-white"
+                          : "border-[#C3C3C3] text-gray-900 bg-transparent hover:border-green hover:bg-green hover:text-white"
+                      }`}
+                    >
+                      {p.label}
+                    </button>
+                  );
+                })}
+              </div>
+            ),
+          )}
+        </div>
+      </div>
+        </>
+      )}
+      {materialFinish.includes("Glass") && (
+        <>
+          <div>
+            <div className="flex items-center gap-3 rounded-[20px] px-3.75 py-2.5">
+              <Image
+                src="/paint_brush.svg"
+                alt="glass finish icon"
+                width={25}
+                height={25}
+              />
+          <h3 className="text-[16px] leading-[1.4] tracking-[-0.304px] text-black">
+            Glass Finish
+          </h3>
+        </div>
+        <div className="flex w-full flex-col items-start pl-12.5">
+          <p className="text-[12px] leading-[1.4] tracking-[-0.228px] text-[#c3c3c3]">
+            Tint
+          </p>
+          <div className="flex flex-col">
+            {glassFinish.map((item) => {
+              const isChecked = glass.includes(item.label);
+
+              const handleGlassChange = (
+                e: React.ChangeEvent<HTMLInputElement>,
+              ) => {
+                if (e.target.checked) {
+                  setGlassFinish((prev) => [...prev, item.label]);
+                } else {
+                  setGlassFinish((prev) =>
+                    prev.filter((m) => m !== item.label),
+                  );
+                }
+              };
+
+              return (
+                <label
+                  key={item.label}
+                  className="flex cursor-pointer items-center gap-3 px-3.75 py-2.5"
+                >
+                  <div className="relative flex items-center justify-center">
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={handleGlassChange}
+                      className="peer sr-only"
+                    />
+                    <div className="flex size-3 items-center justify-center rounded-xs bg-[#c3c3c3] peer-checked:bg-black">
+                      {isChecked && (
+                        <svg
+                          className="size-2 text-white"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                          strokeWidth={4}
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M5 13l4 4L19 7"
+                          />
+                        </svg>
+                      )}
+                    </div>
+                  </div>
+                  <Image
+                    src={item.icon}
+                    alt={item.label}
+                    width={25}
+                    height={25}
+                  />
+                  <span className="text-[16px] leading-[1.4] tracking-[-0.304px] text-black">
+                    {item.label}
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+      <div className="flex w-full flex-col gap-0.75 items-start pl-12.5">
+        <p className="text-[12px] leading-[1.4] tracking-[-0.228px] text-[#c3c3c3]">
+          Profile
+        </p>
+        <div className="flex flex-col gap-1.25 w-full">
+          {[glassProfiles.slice(0, 2), glassProfiles.slice(2)].map(
+            (row, rowIndex) => (
+              <div key={rowIndex} className="flex gap-1.25">
+                {row.map((p) => {
+                  const isSelected = glassProfile.includes(p.label);
+
+                  const handleToggle = () => {
+                    if (isSelected) {
+                      setGlassProfile((prev) =>
+                        prev.filter((item) => item !== p.label),
+                      );
+                    } else {
+                      setGlassProfile((prev) => [...prev, p.label]);
+                    }
+                  };
+
+                  return (
+                    <button
+                      key={p.label}
+                      type="button"
+                      onClick={handleToggle}
+                      className={`px-2.5 py-1.25 rounded-[20px] border transition-colors duration-200 cursor-pointer text-xs font-normal leading-4 whitespace-nowrap ${
+                        isSelected
+                          ? "border-green bg-green text-white"
+                          : "border-[#C3C3C3] text-gray-900 bg-transparent hover:border-green hover:bg-green hover:text-white"
+                      }`}
+                    >
+                      {p.label}
+                    </button>
+                  );
+                })}
+              </div>
+            ),
+          )}
+        </div>
+      </div>
+      <div className="flex w-full flex-col gap-0.75 items-start pl-12.5">
+        <p className="text-[12px] leading-[1.4] tracking-[-0.228px] text-[#c3c3c3]">
+          Glass Thickness
+        </p>
+        <div className="flex gap-1.25 w-full flex-wrap">
+          {thickness.map((p) => {
+            const isSelected = glassThickness.includes(p.label);
+
+            const handleToggle = () => {
+              if (isSelected) {
+                setGlassThickness((prev) =>
+                  prev.filter((item) => item !== p.label),
+                );
+              } else {
+                setGlassThickness((prev) => [...prev, p.label]);
+              }
+            };
+
+            return (
+              <button
+                key={p.label}
+                type="button"
+                onClick={handleToggle}
+                className={`px-2.5 py-1.25 rounded-[20px] border transition-colors duration-200 cursor-pointer text-xs font-normal leading-4 whitespace-nowrap ${
+                  isSelected
+                    ? "border-green bg-green text-white"
+                    : "border-[#C3C3C3] text-gray-900 bg-transparent hover:border-green hover:bg-green hover:text-white"
+                }`}
+              >
+                {p.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+        </>
+      )}
     </div>
   );
 }
