@@ -19,7 +19,7 @@ const navbarIcons = [
   },
 ];
 
-export default function HeroSection() {
+export function HeroSection() {
   return (
     <section className="relative z-0 bg-white-20">
       <div className="bg-grad-dark py-2.5 font-normal text-white">
@@ -52,7 +52,7 @@ export default function HeroSection() {
           <div className="absolute inset-0 bg-white/70"></div>
         </div>
         <div className="relative z-10">
-          <div className="pl-27 pt-57 flex justify-center items-center ">
+          <div className="flex min-h-115 items-center justify-center">
             <h1 className="text-8xl text-black font-medium text-center uppercase leading-[115.20px]">
               <span className="bg-grad-light bg-clip-text text-transparent">
                 Product
