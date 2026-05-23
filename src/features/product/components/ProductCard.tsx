@@ -17,8 +17,8 @@ export function ProductCard() {
       </div>
       <div className="flex flex-col p-5 gap-7.5">
         <div className="flex flex-col gap-2.5 justify-start items-start">
-          <h1 className="uppercase text-black  text-xl font-normal leading-7">
-            Product Title
+          <h1 className=" text-black  text-xl font-normal leading-7">
+            Aluminum Sliding Window
           </h1>
           <div className="flex gap-1.25">
             {tags.map((tag) => {
@@ -27,7 +27,7 @@ export function ProductCard() {
                   key={tag}
                   className="px-2.5 py-1.25 rounded-[20px] border border-[#C3C3C3]"
                 >
-                  <span className="text-black">{tag}</span>
+                  <span className="text-black text-xs">{tag}</span>
                 </div>
               );
             })}
@@ -51,7 +51,12 @@ export function ProductCard() {
               rightIcon={null}
               variant="greenBtnWhiteText"
               value="View Product"
-              className="whitespace-nowrap rounded-[10px]! text-sm! px-3.75! py-1.25!"
+              className="whitespace-nowrap text-sm! "
+              style={{
+                gap: "10px",
+                borderRadius: "10px",
+                padding: "5px 15px",
+              }}
             ></Button>
             <Button
               leftIcon={null}
@@ -65,7 +70,12 @@ export function ProductCard() {
               }
               variant="blackBtnWhiteText"
               value="Visualize"
-              className="whitespace-nowrap rounded-[10px]! text-sm! px-3.75! py-1.25!"
+              className="whitespace-nowrap text-sm! "
+              style={{
+                gap: "10px",
+                borderRadius: "10px",
+                padding: "5px 15px",
+              }}
             ></Button>
           </div>
         </div>
