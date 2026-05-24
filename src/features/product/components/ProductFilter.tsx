@@ -448,176 +448,176 @@ export function ProductFilter() {
                 Aluminum Finish
               </h3>
             </div>
-        <div className="flex w-full flex-col items-start pl-12.5">
-          <p className="text-[12px] leading-[1.4] tracking-[-0.228px] text-[#c3c3c3]">
-            Anodized Finish
-          </p>
-          <div className="flex flex-col">
-            {anodizedFinish.map((item) => {
-              const isChecked = anodized.includes(item.label);
+            <div className="flex w-full flex-col items-start pl-12.5">
+              <p className="text-[12px] leading-[1.4] tracking-[-0.228px] text-[#c3c3c3]">
+                Anodized Finish
+              </p>
+              <div className="flex flex-col">
+                {anodizedFinish.map((item) => {
+                  const isChecked = anodized.includes(item.label);
 
-              const handleAnodizedChange = (
-                e: React.ChangeEvent<HTMLInputElement>,
-              ) => {
-                if (e.target.checked) {
-                  setAnodizedFinish((prev) => [...prev, item.label]);
-                } else {
-                  setAnodizedFinish((prev) =>
-                    prev.filter((m) => m !== item.label),
-                  );
-                }
-              };
-
-              return (
-                <label
-                  key={item.label}
-                  className="flex cursor-pointer items-center gap-3 px-3.75 py-2.5"
-                >
-                  <div className="relative flex items-center justify-center">
-                    <input
-                      type="checkbox"
-                      checked={isChecked}
-                      onChange={handleAnodizedChange}
-                      className="peer sr-only"
-                    />
-                    <div className="flex size-3 items-center justify-center rounded-xs bg-[#c3c3c3] peer-checked:bg-black">
-                      {isChecked && (
-                        <svg
-                          className="size-2 text-white"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
-                          strokeWidth={4}
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            d="M5 13l4 4L19 7"
-                          />
-                        </svg>
-                      )}
-                    </div>
-                  </div>
-                  <Image
-                    src={item.icon}
-                    alt={item.label}
-                    width={25}
-                    height={25}
-                  />
-                  <span className="text-[16px] leading-[1.4] tracking-[-0.304px] text-black">
-                    {item.label}
-                  </span>
-                </label>
-              );
-            })}
-          </div>
-        </div>
-        <div className=" flex w-full flex-col items-start pl-12.5">
-          <p className="text-[12px] leading-[1.4] tracking-[-0.228px] text-[#c3c3c3]">
-            Powder-Coated Finish
-          </p>
-          <div className=" flex flex-col">
-            {powderCoatedFinish.map((item) => {
-              const isChecked = powderCoated.includes(item.label);
-
-              const handlePowderCoatedChange = (
-                e: React.ChangeEvent<HTMLInputElement>,
-              ) => {
-                if (e.target.checked) {
-                  setPowderCoatedFinish((prev) => [...prev, item.label]);
-                } else {
-                  setPowderCoatedFinish((prev) =>
-                    prev.filter((m) => m !== item.label),
-                  );
-                }
-              };
-
-              return (
-                <label
-                  key={item.label}
-                  className="flex cursor-pointer items-center gap-3 px-3.75 py-2.5"
-                >
-                  <div className="relative flex items-center justify-center">
-                    <input
-                      type="checkbox"
-                      checked={isChecked}
-                      onChange={handlePowderCoatedChange}
-                      className="peer sr-only"
-                    />
-                    <div className="flex size-3 items-center justify-center rounded-xs bg-[#c3c3c3] peer-checked:bg-black">
-                      {isChecked && (
-                        <svg
-                          className="size-2 text-white"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
-                          strokeWidth={4}
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            d="M5 13l4 4L19 7"
-                          />
-                        </svg>
-                      )}
-                    </div>
-                  </div>
-                  <Image
-                    src={item.icon}
-                    alt={item.label}
-                    width={25}
-                    height={25}
-                  />
-                  <span className="text-[16px] leading-[1.4] tracking-[-0.304px] text-black">
-                    {item.label}
-                  </span>
-                </label>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-      <div className="flex w-full flex-col gap-0.75 items-start pl-12.5">
-        <p className="text-[12px] leading-[1.4] tracking-[-0.228px] text-[#c3c3c3]">
-          Profile
-        </p>
-        <div className="flex flex-col gap-1.25 w-full">
-          {[aluminumProfiles.slice(0, 2), aluminumProfiles.slice(2)].map(
-            (row, rowIndex) => (
-              <div key={rowIndex} className="flex gap-1.25">
-                {row.map((p) => {
-                  const isSelected = aluminumProfile.includes(p.label);
-
-                  const handleToggle = () => {
-                    if (isSelected) {
-                      setAluminumProfile((prev) =>
-                        prev.filter((item) => item !== p.label),
-                      );
+                  const handleAnodizedChange = (
+                    e: React.ChangeEvent<HTMLInputElement>,
+                  ) => {
+                    if (e.target.checked) {
+                      setAnodizedFinish((prev) => [...prev, item.label]);
                     } else {
-                      setAluminumProfile((prev) => [...prev, p.label]);
+                      setAnodizedFinish((prev) =>
+                        prev.filter((m) => m !== item.label),
+                      );
                     }
                   };
 
                   return (
-                    <button
-                      key={p.label}
-                      type="button"
-                      onClick={handleToggle}
-                      className={`px-2.5 py-1.25 rounded-[20px] border transition-colors duration-200 cursor-pointer text-xs font-normal leading-4 whitespace-nowrap ${
-                        isSelected
-                          ? "border-green bg-green text-white"
-                          : "border-[#C3C3C3] text-gray-900 bg-transparent hover:border-green hover:bg-green hover:text-white"
-                      }`}
+                    <label
+                      key={item.label}
+                      className="flex cursor-pointer items-center gap-3 px-3.75 py-2.5"
                     >
-                      {p.label}
-                    </button>
+                      <div className="relative flex items-center justify-center">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={handleAnodizedChange}
+                          className="peer sr-only"
+                        />
+                        <div className="flex size-3 items-center justify-center rounded-xs bg-[#c3c3c3] peer-checked:bg-black">
+                          {isChecked && (
+                            <svg
+                              className="size-2 text-white"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                              stroke="currentColor"
+                              strokeWidth={4}
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                d="M5 13l4 4L19 7"
+                              />
+                            </svg>
+                          )}
+                        </div>
+                      </div>
+                      <Image
+                        src={item.icon}
+                        alt={item.label}
+                        width={25}
+                        height={25}
+                      />
+                      <span className="text-[16px] leading-[1.4] tracking-[-0.304px] text-black">
+                        {item.label}
+                      </span>
+                    </label>
                   );
                 })}
               </div>
-            ),
-          )}
-        </div>
-      </div>
+            </div>
+            <div className=" flex w-full flex-col items-start pl-12.5">
+              <p className="text-[12px] leading-[1.4] tracking-[-0.228px] text-[#c3c3c3]">
+                Powder-Coated Finish
+              </p>
+              <div className=" flex flex-col">
+                {powderCoatedFinish.map((item) => {
+                  const isChecked = powderCoated.includes(item.label);
+
+                  const handlePowderCoatedChange = (
+                    e: React.ChangeEvent<HTMLInputElement>,
+                  ) => {
+                    if (e.target.checked) {
+                      setPowderCoatedFinish((prev) => [...prev, item.label]);
+                    } else {
+                      setPowderCoatedFinish((prev) =>
+                        prev.filter((m) => m !== item.label),
+                      );
+                    }
+                  };
+
+                  return (
+                    <label
+                      key={item.label}
+                      className="flex cursor-pointer items-center gap-3 px-3.75 py-2.5"
+                    >
+                      <div className="relative flex items-center justify-center">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={handlePowderCoatedChange}
+                          className="peer sr-only"
+                        />
+                        <div className="flex size-3 items-center justify-center rounded-xs bg-[#c3c3c3] peer-checked:bg-black">
+                          {isChecked && (
+                            <svg
+                              className="size-2 text-white"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                              stroke="currentColor"
+                              strokeWidth={4}
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                d="M5 13l4 4L19 7"
+                              />
+                            </svg>
+                          )}
+                        </div>
+                      </div>
+                      <Image
+                        src={item.icon}
+                        alt={item.label}
+                        width={25}
+                        height={25}
+                      />
+                      <span className="text-[16px] leading-[1.4] tracking-[-0.304px] text-black">
+                        {item.label}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+          <div className="flex w-full flex-col gap-0.75 items-start pl-12.5">
+            <p className="text-[12px] leading-[1.4] tracking-[-0.228px] text-[#c3c3c3]">
+              Profile
+            </p>
+            <div className="flex flex-col gap-1.25 w-full">
+              {[aluminumProfiles.slice(0, 2), aluminumProfiles.slice(2)].map(
+                (row, rowIndex) => (
+                  <div key={rowIndex} className="flex gap-1.25">
+                    {row.map((p) => {
+                      const isSelected = aluminumProfile.includes(p.label);
+
+                      const handleToggle = () => {
+                        if (isSelected) {
+                          setAluminumProfile((prev) =>
+                            prev.filter((item) => item !== p.label),
+                          );
+                        } else {
+                          setAluminumProfile((prev) => [...prev, p.label]);
+                        }
+                      };
+
+                      return (
+                        <button
+                          key={p.label}
+                          type="button"
+                          onClick={handleToggle}
+                          className={`px-2.5 py-1.25 rounded-[20px] border transition-colors duration-200 cursor-pointer text-xs font-normal leading-4 whitespace-nowrap ${
+                            isSelected
+                              ? "border-green bg-green text-white"
+                              : "border-[#C3C3C3] text-gray-900 bg-transparent hover:border-green hover:bg-green hover:text-white"
+                          }`}
+                        >
+                          {p.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ),
+              )}
+            </div>
+          </div>
         </>
       )}
       {materialFinish.includes("Glass") && (
@@ -630,151 +630,151 @@ export function ProductFilter() {
                 width={25}
                 height={25}
               />
-          <h3 className="text-[16px] leading-[1.4] tracking-[-0.304px] text-black">
-            Glass Finish
-          </h3>
-        </div>
-        <div className="flex w-full flex-col items-start pl-12.5">
-          <p className="text-[12px] leading-[1.4] tracking-[-0.228px] text-[#c3c3c3]">
-            Tint
-          </p>
-          <div className="flex flex-col">
-            {glassFinish.map((item) => {
-              const isChecked = glass.includes(item.label);
+              <h3 className="text-[16px] leading-[1.4] tracking-[-0.304px] text-black">
+                Glass Finish
+              </h3>
+            </div>
+            <div className="flex w-full flex-col items-start pl-12.5">
+              <p className="text-[12px] leading-[1.4] tracking-[-0.228px] text-[#c3c3c3]">
+                Tint
+              </p>
+              <div className="flex flex-col">
+                {glassFinish.map((item) => {
+                  const isChecked = glass.includes(item.label);
 
-              const handleGlassChange = (
-                e: React.ChangeEvent<HTMLInputElement>,
-              ) => {
-                if (e.target.checked) {
-                  setGlassFinish((prev) => [...prev, item.label]);
-                } else {
-                  setGlassFinish((prev) =>
-                    prev.filter((m) => m !== item.label),
-                  );
-                }
-              };
-
-              return (
-                <label
-                  key={item.label}
-                  className="flex cursor-pointer items-center gap-3 px-3.75 py-2.5"
-                >
-                  <div className="relative flex items-center justify-center">
-                    <input
-                      type="checkbox"
-                      checked={isChecked}
-                      onChange={handleGlassChange}
-                      className="peer sr-only"
-                    />
-                    <div className="flex size-3 items-center justify-center rounded-xs bg-[#c3c3c3] peer-checked:bg-black">
-                      {isChecked && (
-                        <svg
-                          className="size-2 text-white"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
-                          strokeWidth={4}
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            d="M5 13l4 4L19 7"
-                          />
-                        </svg>
-                      )}
-                    </div>
-                  </div>
-                  <Image
-                    src={item.icon}
-                    alt={item.label}
-                    width={25}
-                    height={25}
-                  />
-                  <span className="text-[16px] leading-[1.4] tracking-[-0.304px] text-black">
-                    {item.label}
-                  </span>
-                </label>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-      <div className="flex w-full flex-col gap-0.75 items-start pl-12.5">
-        <p className="text-[12px] leading-[1.4] tracking-[-0.228px] text-[#c3c3c3]">
-          Profile
-        </p>
-        <div className="flex flex-col gap-1.25 w-full">
-          {[glassProfiles.slice(0, 2), glassProfiles.slice(2)].map(
-            (row, rowIndex) => (
-              <div key={rowIndex} className="flex gap-1.25">
-                {row.map((p) => {
-                  const isSelected = glassProfile.includes(p.label);
-
-                  const handleToggle = () => {
-                    if (isSelected) {
-                      setGlassProfile((prev) =>
-                        prev.filter((item) => item !== p.label),
-                      );
+                  const handleGlassChange = (
+                    e: React.ChangeEvent<HTMLInputElement>,
+                  ) => {
+                    if (e.target.checked) {
+                      setGlassFinish((prev) => [...prev, item.label]);
                     } else {
-                      setGlassProfile((prev) => [...prev, p.label]);
+                      setGlassFinish((prev) =>
+                        prev.filter((m) => m !== item.label),
+                      );
                     }
                   };
 
                   return (
-                    <button
-                      key={p.label}
-                      type="button"
-                      onClick={handleToggle}
-                      className={`px-2.5 py-1.25 rounded-[20px] border transition-colors duration-200 cursor-pointer text-xs font-normal leading-4 whitespace-nowrap ${
-                        isSelected
-                          ? "border-green bg-green text-white"
-                          : "border-[#C3C3C3] text-gray-900 bg-transparent hover:border-green hover:bg-green hover:text-white"
-                      }`}
+                    <label
+                      key={item.label}
+                      className="flex cursor-pointer items-center gap-3 px-3.75 py-2.5"
                     >
-                      {p.label}
-                    </button>
+                      <div className="relative flex items-center justify-center">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={handleGlassChange}
+                          className="peer sr-only"
+                        />
+                        <div className="flex size-3 items-center justify-center rounded-xs bg-[#c3c3c3] peer-checked:bg-black">
+                          {isChecked && (
+                            <svg
+                              className="size-2 text-white"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                              stroke="currentColor"
+                              strokeWidth={4}
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                d="M5 13l4 4L19 7"
+                              />
+                            </svg>
+                          )}
+                        </div>
+                      </div>
+                      <Image
+                        src={item.icon}
+                        alt={item.label}
+                        width={25}
+                        height={25}
+                      />
+                      <span className="text-[16px] leading-[1.4] tracking-[-0.304px] text-black">
+                        {item.label}
+                      </span>
+                    </label>
                   );
                 })}
               </div>
-            ),
-          )}
-        </div>
-      </div>
-      <div className="flex w-full flex-col gap-0.75 items-start pl-12.5">
-        <p className="text-[12px] leading-[1.4] tracking-[-0.228px] text-[#c3c3c3]">
-          Glass Thickness
-        </p>
-        <div className="flex gap-1.25 w-full flex-wrap">
-          {thickness.map((p) => {
-            const isSelected = glassThickness.includes(p.label);
+            </div>
+          </div>
+          <div className="flex w-full flex-col gap-0.75 items-start pl-12.5">
+            <p className="text-[12px] leading-[1.4] tracking-[-0.228px] text-[#c3c3c3]">
+              Profile
+            </p>
+            <div className="flex flex-col gap-1.25 w-full">
+              {[glassProfiles.slice(0, 2), glassProfiles.slice(2)].map(
+                (row, rowIndex) => (
+                  <div key={rowIndex} className="flex gap-1.25">
+                    {row.map((p) => {
+                      const isSelected = glassProfile.includes(p.label);
 
-            const handleToggle = () => {
-              if (isSelected) {
-                setGlassThickness((prev) =>
-                  prev.filter((item) => item !== p.label),
+                      const handleToggle = () => {
+                        if (isSelected) {
+                          setGlassProfile((prev) =>
+                            prev.filter((item) => item !== p.label),
+                          );
+                        } else {
+                          setGlassProfile((prev) => [...prev, p.label]);
+                        }
+                      };
+
+                      return (
+                        <button
+                          key={p.label}
+                          type="button"
+                          onClick={handleToggle}
+                          className={`px-2.5 py-1.25 rounded-[20px] border transition-colors duration-200 cursor-pointer text-xs font-normal leading-4 whitespace-nowrap ${
+                            isSelected
+                              ? "border-green bg-green text-white"
+                              : "border-[#C3C3C3] text-gray-900 bg-transparent hover:border-green hover:bg-green hover:text-white"
+                          }`}
+                        >
+                          {p.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ),
+              )}
+            </div>
+          </div>
+          <div className="flex w-full flex-col gap-0.75 items-start pl-12.5">
+            <p className="text-[12px] leading-[1.4] tracking-[-0.228px] text-[#c3c3c3]">
+              Glass Thickness
+            </p>
+            <div className="flex gap-1.25 w-full flex-wrap">
+              {thickness.map((p) => {
+                const isSelected = glassThickness.includes(p.label);
+
+                const handleToggle = () => {
+                  if (isSelected) {
+                    setGlassThickness((prev) =>
+                      prev.filter((item) => item !== p.label),
+                    );
+                  } else {
+                    setGlassThickness((prev) => [...prev, p.label]);
+                  }
+                };
+
+                return (
+                  <button
+                    key={p.label}
+                    type="button"
+                    onClick={handleToggle}
+                    className={`px-2.5 py-1.25 rounded-[20px] border transition-colors duration-200 cursor-pointer text-xs font-normal leading-4 whitespace-nowrap ${
+                      isSelected
+                        ? "border-green bg-green text-white"
+                        : "border-[#C3C3C3] text-gray-900 bg-transparent hover:border-green hover:bg-green hover:text-white"
+                    }`}
+                  >
+                    {p.label}
+                  </button>
                 );
-              } else {
-                setGlassThickness((prev) => [...prev, p.label]);
-              }
-            };
-
-            return (
-              <button
-                key={p.label}
-                type="button"
-                onClick={handleToggle}
-                className={`px-2.5 py-1.25 rounded-[20px] border transition-colors duration-200 cursor-pointer text-xs font-normal leading-4 whitespace-nowrap ${
-                  isSelected
-                    ? "border-green bg-green text-white"
-                    : "border-[#C3C3C3] text-gray-900 bg-transparent hover:border-green hover:bg-green hover:text-white"
-                }`}
-              >
-                {p.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
+              })}
+            </div>
+          </div>
         </>
       )}
     </div>
