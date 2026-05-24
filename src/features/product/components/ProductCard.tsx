@@ -41,8 +41,13 @@ export function ProductCard() {
         </div>
         <div className="flex flex-col gap-2.5 justify-start items-start">
           <div>
+            <span className="font-normal leading-4 text-xs text-[#c3c3c3]">
+              Starts at
+            </span>
+          </div>
+          <div>
             <span className="text-green text-xl font-medium leading-7 ">
-              P 00,000
+              ₱ 00,000
             </span>
           </div>
           <div className="flex gap-2.5">
