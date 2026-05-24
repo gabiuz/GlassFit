@@ -85,21 +85,6 @@ export default function Footer({ className = "" }: FooterProps) {
             </ul>
           </div>
           <div>
-            <ul className="flex flex-col gap-3.5 text-[#3a3a3a] text-lg font-normal leading-7">
-              <li>
-                <h3 className="text-lg font-semibold bg-grad-light bg-clip-text text-transparent">
-                  Company
-                </h3>
-              </li>
-              <li>About</li>
-              <li>Product Catalog</li>
-              <li>Visualization Workspace</li>
-              <li>Visualization Workspace</li>
-              <li>Visualization Workspace</li>
-              <li>Visualization Workspace</li>
-            </ul>
-          </div>
-          <div>
             <h3 className="text-lg font-semibold bg-grad-light bg-clip-text text-transparent">
               View Map
             </h3>
