@@ -42,10 +42,10 @@ const glassOptions = [
 export function ProductDetails() {
   const [selectedFinish, setSelectedFinish] = useState("analok");
   const [selectedGlass, setSelectedGlass] = useState("Tempered Glass");
-  const [width, setWidth] = useState(140);
-  const [height, setHeight] = useState(120);
-  const [thickness, setThickness] = useState(3);
-  const [quantity, setQuantity] = useState(1);
+  const [width, setWidth] = useState(0);
+  const [height, setHeight] = useState(0);
+  const [thickness, setThickness] = useState(0);
+  const [quantity, setQuantity] = useState(0);
 
   return (
     <div className="w-full flex flex-col gap-8 px-21.5 pt-13.75 pb-33">
@@ -172,6 +172,7 @@ export function ProductDetails() {
                       type="number"
                       size={1}
                       value={width}
+                      onFocus={(e) => e.target.select()}
                       onChange={(e) => setWidth(Math.max(0, Number(e.target.value)))}
                       className="w-full bg-white border border-[#c3c3c3] rounded-[10px] px-2.5 py-1.5 text-center text-base font-normal text-black outline-none shadow-sm focus:border-black transition-colors"
                     />
@@ -185,6 +186,7 @@ export function ProductDetails() {
                       type="number"
                       size={1}
                       value={height}
+                      onFocus={(e) => e.target.select()}
                       onChange={(e) => setHeight(Math.max(0, Number(e.target.value)))}
                       className="w-full bg-white border border-[#c3c3c3] rounded-[10px] px-2.5 py-1.5 text-center text-base font-normal text-black outline-none shadow-sm focus:border-black transition-colors"
                     />
@@ -198,6 +200,7 @@ export function ProductDetails() {
                       type="number"
                       size={1}
                       value={thickness}
+                      onFocus={(e) => e.target.select()}
                       onChange={(e) => setThickness(Math.max(0, Number(e.target.value)))}
                       className="w-full bg-white border border-[#c3c3c3] rounded-[10px] px-2.5 py-1.5 text-center text-base font-normal text-black outline-none shadow-sm focus:border-black transition-colors"
                     />
@@ -224,6 +227,7 @@ export function ProductDetails() {
                       type="number"
                       size={1}
                       value={quantity}
+                      onFocus={(e) => e.target.select()}
                       onChange={(e) => setQuantity(Math.max(1, Number(e.target.value)))}
                       className="bg-transparent text-center text-base font-normal text-black outline-none"
                     />
