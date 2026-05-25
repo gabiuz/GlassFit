@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { ChevronRight, Plus, Minus } from "lucide-react";
 import Button from "@/components/shared/Button";
 
@@ -246,20 +247,22 @@ export function ProductDetails() {
 
           {/* Action button */}
           <div className="w-full">
-            <Button
-              variant="blackBtnWhiteText"
-              value="Visualize on my own Space"
-              leftIcon={null}
-              rightIcon={
-                <Image
-                  src="/right_arrow.svg"
-                  alt="right arrow"
-                  width={25}
-                  height={25}
-                />
-              }
-              className="w-full text-center flex justify-center py-4 rounded-[25px] font-medium cursor-default"
-            />
+            <Link href="/comparison" className="block w-full">
+              <Button
+                variant="blackBtnWhiteText"
+                value="Visualize on my own Space"
+                leftIcon={null}
+                rightIcon={
+                  <Image
+                    src="/right_arrow.svg"
+                    alt="right arrow"
+                    width={25}
+                    height={25}
+                  />
+                }
+                className="w-full text-center flex justify-center py-4 rounded-[25px] font-medium cursor-pointer"
+              />
+            </Link>
           </div>
         </div>
       </div>

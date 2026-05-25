@@ -1,4 +1,4 @@
-import { BackgroundNavbar } from "@/features/product-details";
+import { BackgroundNavbar } from "@/components/shared/BackgroundNavbar";
 import { ProductDetails } from "@/features/product-details";
 
 export default function ProductDetailsPage() {
