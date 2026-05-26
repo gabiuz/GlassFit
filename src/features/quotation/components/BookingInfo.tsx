@@ -58,7 +58,7 @@ export function BookingInfo() {
             <div
               className="flex flex-col items-start relative shrink-0 w-full"
             >
-              <p className="text-black text-sm leading-5 font-medium">
+              <p className="text-black text-sm leading-5 font-normal">
                 Transportation all into glass fabricator
               </p>
             </div>
