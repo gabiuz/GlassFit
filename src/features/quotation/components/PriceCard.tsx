@@ -95,8 +95,7 @@ export function PriceCard({
             </div>
           </div>
         </div>
-
-        {/* Right Side: Unit Price & Toggle Arrow */}
+        {/* unit price and toggle arrow */}
         <div className="flex gap-7.5 items-center justify-between md:justify-end shrink-0 self-stretch md:self-center">
           <div className="flex flex-col gap-1 items-start md:items-end">
             <span className="text-black text-base font-normal tracking-[-0.304px] leading-[1.4]">
@@ -120,8 +119,6 @@ export function PriceCard({
           </button>
         </div>
       </div>
-
-      {/* Grouping Details and Subtotal inside a gap-free container to prevent parent flex-gap jumping during exit unmounting */}
       <div className="w-full flex flex-col">
         <AnimatePresence initial={false}>
           {isExpanded && (
@@ -140,43 +137,25 @@ export function PriceCard({
                   </h4>
                 </div>
 
-                <div className="grid grid-cols-2 lg:grid-cols-3 gap-x-12 gap-y-4 text-sm tracking-[-0.266px] leading-[1.4] w-full text-left">
-                  <div className="flex flex-col md:flex-row justify-between md:items-center gap-1 border-b border-neutral-100 pb-2">
-                    <span className="text-[#c3c3c3]">Product Category</span>
-                    <span className="text-black font-medium">{details.category}</span>
-                  </div>
-                  <div className="flex flex-col md:flex-row justify-between md:items-center gap-1 border-b border-neutral-100 pb-2">
-                    <span className="text-[#c3c3c3]">Product Variant</span>
-                    <span className="text-black font-medium">{details.variant}</span>
-                  </div>
-                  <div className="flex flex-col md:flex-row justify-between md:items-center gap-1 border-b border-neutral-100 pb-2">
-                    <span className="text-[#c3c3c3]">Material</span>
-                    <span className="text-black font-medium">{details.material}</span>
-                  </div>
-                  <div className="flex flex-col md:flex-row justify-between md:items-center gap-1 border-b border-neutral-100 pb-2">
-                    <span className="text-[#c3c3c3]">Aluminum Finish</span>
-                    <span className="text-black font-medium">{details.aluminumFinish}</span>
-                  </div>
-                  <div className="flex flex-col md:flex-row justify-between md:items-center gap-1 border-b border-neutral-100 pb-2">
-                    <span className="text-[#c3c3c3]">Glass Finish</span>
-                    <span className="text-black font-medium">{details.glassFinish}</span>
-                  </div>
-                  <div className="flex flex-col md:flex-row justify-between md:items-center gap-1 border-b border-neutral-100 pb-2">
-                    <span className="text-[#c3c3c3]">Glass Type</span>
-                    <span className="text-black font-medium">{details.glassType}</span>
-                  </div>
-                  <div className="flex flex-col md:flex-row justify-between md:items-center gap-1 border-b border-neutral-100 pb-2">
-                    <span className="text-[#c3c3c3]">Glass Thickness</span>
-                    <span className="text-black font-medium">{details.thickness}</span>
-                  </div>
-                  <div className="flex flex-col md:flex-row justify-between md:items-center gap-1 border-b border-neutral-100 pb-2">
-                    <span className="text-[#c3c3c3]">Profile Grade</span>
-                    <span className="text-black font-medium">{details.profileGrade}</span>
-                  </div>
-                  <div className="flex flex-col md:flex-row justify-between md:items-center gap-1 border-b border-neutral-100 pb-2">
-                    <span className="text-[#c3c3c3]">Dimension</span>
-                    <span className="text-black font-medium">{details.dimension}</span>
-                  </div>
+                <div className="grid grid-cols-2 md:grid-cols-[repeat(6,fit-content(100%))] gap-x-16.75 gap-y-2.5 text-sm w-full text-left">
+                  <span className="text-[#c3c3c3] text-sm font-normal">Product Category</span>
+                  <span className="text-black text-sm font-normal">{details.category}</span>
+                  <span className="text-[#c3c3c3] text-sm font-normal">Product Variant</span>
+                  <span className="text-black text-sm font-normal">{details.variant}</span>
+                  <span className="text-[#c3c3c3] text-sm font-normal">Material</span>
+                  <span className="text-black text-sm font-normal">{details.material}</span>
+                  <span className="text-[#c3c3c3] text-sm font-normal">Aluminum Finish</span>
+                  <span className="text-black text-sm font-normal">{details.aluminumFinish}</span>
+                  <span className="text-[#c3c3c3] text-sm font-normal">Glass Finish</span>
+                  <span className="text-black text-sm font-normal">{details.glassFinish}</span>
+                  <span className="text-[#c3c3c3] text-sm font-normal">Glass Type</span>
+                  <span className="text-black text-sm font-normal">{details.glassType}</span>
+                  <span className="text-[#c3c3c3] text-sm font-normal">Glass Thickness</span>
+                  <span className="text-black text-sm font-normal">{details.thickness}</span>
+                  <span className="text-[#c3c3c3] text-sm font-normal">Profile Grade</span>
+                  <span className="text-black text-sm font-normal">{details.profileGrade}</span>
+                  <span className="text-[#c3c3c3] text-sm font-normal">Dimension</span>
+                  <span className="text-black text-sm font-normal">{details.dimension}</span>
                 </div>
               </div>
             </motion.div>
