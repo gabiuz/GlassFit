@@ -2,8 +2,7 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import { Inter } from "next/font/google";
 import "./globals.css";
-import Navbar from "@/components/ui/Navbar";
-import Footer from "@/components/ui/Footer";
+import LayoutWrapper from "@/components/shared/LayoutWrapper";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -48,11 +47,7 @@ export default function RootLayout({
       className={`${myFont.className} ${inter.className} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <div className="flex justify-center">
-          <Navbar />
-        </div>
-        {children}
-        <Footer />
+        <LayoutWrapper>{children}</LayoutWrapper>
       </body>
     </html>
   );
