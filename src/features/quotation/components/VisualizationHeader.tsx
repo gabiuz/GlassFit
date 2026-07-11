@@ -27,7 +27,7 @@ export function VisualizationHeader({
             key={tag}
             className="bg-[#c3c3c3] border border-[#c3c3c3] border-solid flex items-center justify-center px-2.5 py-1.25 rounded-[20px]"
           >
-            <span className="text-white text-base font-normal tracking-[-0.304px] leading-[1.4] whitespace-nowrap">
+            <span className="text-white text-base font-normal leading-6 whitespace-nowrap">
               {tag}
             </span>
           </div>

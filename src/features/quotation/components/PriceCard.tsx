@@ -56,14 +56,18 @@ export function PriceCard({
     style: "currency",
     currency: "PHP",
     maximumFractionDigits: 0,
-  }).format(unitPrice).replace("PHP", "Php");
+  })
+    .format(unitPrice)
+    .replace("PHP", "Php");
 
   const subtotal = unitPrice * qty;
   const formattedSubtotal = new Intl.NumberFormat("en-PH", {
     style: "currency",
     currency: "PHP",
     maximumFractionDigits: 0,
-  }).format(subtotal).replace("PHP", "Php");
+  })
+    .format(subtotal)
+    .replace("PHP", "Php");
 
   return (
     <div className="bg-white drop-shadow-[0px_0px_2.5px_rgba(0,0,0,0.25)] flex flex-col gap-5 items-end justify-end px-6 md:px-12 py-7.5 relative rounded-[20px] w-full">
@@ -138,24 +142,60 @@ export function PriceCard({
                 </div>
 
                 <div className="grid grid-cols-2 md:grid-cols-[repeat(6,fit-content(100%))] gap-x-16.75 gap-y-2.5 text-sm w-full text-left">
-                  <span className="text-[#c3c3c3] text-sm font-normal">Product Category</span>
-                  <span className="text-black text-sm font-normal">{details.category}</span>
-                  <span className="text-[#c3c3c3] text-sm font-normal">Product Variant</span>
-                  <span className="text-black text-sm font-normal">{details.variant}</span>
-                  <span className="text-[#c3c3c3] text-sm font-normal">Material</span>
-                  <span className="text-black text-sm font-normal">{details.material}</span>
-                  <span className="text-[#c3c3c3] text-sm font-normal">Aluminum Finish</span>
-                  <span className="text-black text-sm font-normal">{details.aluminumFinish}</span>
-                  <span className="text-[#c3c3c3] text-sm font-normal">Glass Finish</span>
-                  <span className="text-black text-sm font-normal">{details.glassFinish}</span>
-                  <span className="text-[#c3c3c3] text-sm font-normal">Glass Type</span>
-                  <span className="text-black text-sm font-normal">{details.glassType}</span>
-                  <span className="text-[#c3c3c3] text-sm font-normal">Glass Thickness</span>
-                  <span className="text-black text-sm font-normal">{details.thickness}</span>
-                  <span className="text-[#c3c3c3] text-sm font-normal">Profile Grade</span>
-                  <span className="text-black text-sm font-normal">{details.profileGrade}</span>
-                  <span className="text-[#c3c3c3] text-sm font-normal">Dimension</span>
-                  <span className="text-black text-sm font-normal">{details.dimension}</span>
+                  <span className="text-[#c3c3c3] text-sm font-normal">
+                    Product Category
+                  </span>
+                  <span className="text-black text-sm font-normal">
+                    {details.category}
+                  </span>
+                  <span className="text-[#c3c3c3] text-sm font-normal">
+                    Product Variant
+                  </span>
+                  <span className="text-black text-sm font-normal">
+                    {details.variant}
+                  </span>
+                  <span className="text-[#c3c3c3] text-sm font-normal">
+                    Material
+                  </span>
+                  <span className="text-black text-sm font-normal">
+                    {details.material}
+                  </span>
+                  <span className="text-[#c3c3c3] text-sm font-normal">
+                    Aluminum Finish
+                  </span>
+                  <span className="text-black text-sm font-normal">
+                    {details.aluminumFinish}
+                  </span>
+                  <span className="text-[#c3c3c3] text-sm font-normal">
+                    Glass Finish
+                  </span>
+                  <span className="text-black text-sm font-normal">
+                    {details.glassFinish}
+                  </span>
+                  <span className="text-[#c3c3c3] text-sm font-normal">
+                    Glass Type
+                  </span>
+                  <span className="text-black text-sm font-normal">
+                    {details.glassType}
+                  </span>
+                  <span className="text-[#c3c3c3] text-sm font-normal">
+                    Glass Thickness
+                  </span>
+                  <span className="text-black text-sm font-normal">
+                    {details.thickness}
+                  </span>
+                  <span className="text-[#c3c3c3] text-sm font-normal">
+                    Profile Grade
+                  </span>
+                  <span className="text-black text-sm font-normal">
+                    {details.profileGrade}
+                  </span>
+                  <span className="text-[#c3c3c3] text-sm font-normal">
+                    Dimension
+                  </span>
+                  <span className="text-black text-sm font-normal">
+                    {details.dimension}
+                  </span>
                 </div>
               </div>
             </motion.div>

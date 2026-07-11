@@ -12,7 +12,9 @@ import { BookingInfo } from "./BookingInfo";
 export function Quotation() {
   const handleSendBooking = () => {
     console.log("Send Booking clicked. Initiating authentication flow...");
-    alert("Redirecting to login / registration to finalize your booking request...");
+    alert(
+      "Redirecting to login / registration to finalize your booking request...",
+    );
   };
 
   return (
@@ -38,7 +40,9 @@ export function Quotation() {
           <Button
             variant="blackBtnWhiteText"
             value="Edit Placement"
-            leftIcon={<ChevronLeft className="w-5 h-5 text-white stroke-[2.5px]" />}
+            leftIcon={
+              <ChevronLeft className="w-5 h-5 text-white stroke-[2.5px]" />
+            }
             rightIcon={null}
             className="w-full sm:w-auto font-medium py-3.5 px-6 rounded-[25px] flex items-center justify-center hover:opacity-90 transition-opacity"
           />
@@ -47,7 +51,9 @@ export function Quotation() {
           variant="lightGradWhiteText"
           value="Send Booking"
           leftIcon={null}
-          rightIcon={<ChevronRight className="w-5 h-5 text-white stroke-[2.5px]" />}
+          rightIcon={
+            <ChevronRight className="w-5 h-5 text-white stroke-[2.5px]" />
+          }
           className="w-full sm:w-auto font-medium py-3.5 px-6 rounded-[25px] flex items-center justify-center hover:opacity-95 transition-opacity bg-grad-light"
           onClick={handleSendBooking}
         />
