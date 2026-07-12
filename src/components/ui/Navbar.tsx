@@ -80,27 +80,31 @@ export default function Navbar({ className = "" }: classnamePropse) {
         })}
       </div>
       <div className="flex items-center gap-6.25">
-        <Button
-          value="Log In"
-          leftIcon={null}
-          rightIcon={null}
-          variant="blackBtnWhiteText"
-          className="px-5! py-2.5! rounded-[10px]!"
-        ></Button>
-        <Button
-          value="Sign In"
-          leftIcon={
-            <Image
-              src="/navbar_icons/user.svg"
-              alt="user icon"
-              width={27}
-              height={27}
-            ></Image>
-          }
-          rightIcon={null}
-          variant="greenBtnWhiteText"
-          className="px-5! py-2.5! rounded-[10px]!"
-        ></Button>
+        <Link href="/login">
+          <Button
+            value="Log In"
+            leftIcon={null}
+            rightIcon={null}
+            variant="blackBtnWhiteText"
+            className="px-5! py-2.5! rounded-[10px]!"
+          ></Button>
+        </Link>
+        <Link href="/register">
+          <Button
+            value="Sign In"
+            leftIcon={
+              <Image
+                src="/navbar_icons/user.svg"
+                alt="user icon"
+                width={27}
+                height={27}
+              ></Image>
+            }
+            rightIcon={null}
+            variant="greenBtnWhiteText"
+            className="px-5! py-2.5! rounded-[10px]!"
+          ></Button>
+        </Link>
       </div>
     </nav>
   );

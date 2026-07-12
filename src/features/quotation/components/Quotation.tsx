@@ -2,6 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import Button from "@/components/shared/Button";
 import { VisualizationHeader } from "./VisualizationHeader";
@@ -10,11 +11,11 @@ import { ProductSummary } from "./ProductSummary";
 import { BookingInfo } from "./BookingInfo";
 
 export function Quotation() {
+  const router = useRouter();
+
   const handleSendBooking = () => {
     console.log("Send Booking clicked. Initiating authentication flow...");
-    alert(
-      "Redirecting to login / registration to finalize your booking request...",
-    );
+    router.push("/login");
   };
 
   return (
