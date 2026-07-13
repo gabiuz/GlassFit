@@ -7,7 +7,6 @@ import Button from "@/components/shared/Button";
 
 const navLinks = [
   "Home",
-  "About",
   "Product Catalog",
   "Visualization Workspace",
 ];

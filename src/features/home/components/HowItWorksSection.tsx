@@ -66,10 +66,10 @@ export function HowItWorksSection() {
               priority
             />
           </div>
-          <div className="flex w-full min-w-0 flex-1 flex-col gap-7.5 lg:max-w-180.5">
+          <div className="flex w-full min-w-0 flex-1 flex-col gap-5 sm:gap-6 lg:gap-7.5 lg:max-w-180.5">
             {howItWorksSteps.map((step) => (
-              <div key={step.title} className="flex items-start sm:items-center gap-4 sm:gap-7.5">
-                <div className="relative h-12 w-12 sm:h-16.5 sm:w-16.5 shrink-0">
+              <div key={step.title} className="flex items-start sm:items-center gap-3 sm:gap-5 lg:gap-7.5">
+                <div className="relative h-9 w-9 sm:h-12 sm:w-12 lg:h-16.5 lg:w-16.5 shrink-0">
                   <Image
                     src={step.icon}
                     alt=""
@@ -78,11 +78,11 @@ export function HowItWorksSection() {
                     className="object-contain"
                   />
                 </div>
-                <div className="flex flex-col gap-1.5">
-                  <h3 className="text-xl sm:text-2xl lg:text-3xl font-medium leading-normal lg:leading-10  text-black">
+                <div className="flex flex-col gap-0.5 sm:gap-1 lg:gap-1.5">
+                  <h3 className="text-base sm:text-lg md:text-xl lg:text-3xl font-medium leading-tight lg:leading-10 text-black">
                     {step.title}
                   </h3>
-                  <p className="text-sm sm:text-base lg:text-xl font-normal leading-relaxed lg:leading-7  text-[#262323]">
+                  <p className="text-xs sm:text-sm md:text-base lg:text-xl font-normal leading-relaxed lg:leading-7 text-[#262323]">
                     {step.description}
                   </p>
                 </div>
