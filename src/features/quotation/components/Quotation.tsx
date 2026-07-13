@@ -21,10 +21,10 @@ export function Quotation() {
   return (
     <div className="w-full max-w-331 mx-auto px-6 py-12 md:py-16 flex flex-col gap-10 items-stretch">
       <div className="flex flex-col gap-5 items-center justify-center text-center select-none mb-2">
-        <h1 className="text-black text-4xl md:text-5xl font-medium  leading-[57.60px]">
+        <h1 className="text-black text-3xl md:text-5xl font-medium leading-tight md:leading-[57.60px]">
           Estimate Quotation
         </h1>
-        <p className="text-black text-xl md:text-[28px] font-normal tracking-[-0.532px] leading-[1.4] max-w-3xl">
+        <p className="text-black text-lg md:text-[28px] font-normal tracking-[-0.532px] leading-[1.4] max-w-3xl">
           See how your selected product may look in your space.
         </p>
       </div>

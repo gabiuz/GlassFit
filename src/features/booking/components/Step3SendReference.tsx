@@ -43,20 +43,20 @@ Combined estimate Php 50,000. Can we schedule a site visit? Thank you! - Juan`;
         <p className="font-normal text-[#c3c3c3] text-[20px] tracking-[-0.38px] leading-[1.4] uppercase">
           STEP 3 OF 4
         </p>
-        <h2 className="font-medium text-[#0f1422] text-[48px] tracking-[-0.912px] leading-[1.2]">
+        <h2 className="font-medium text-[#0f1422] text-3xl sm:text-4xl lg:text-[48px] tracking-[-0.912px] leading-[1.2]">
           Send Your Reference
         </h2>
-        <p className="font-normal text-[#0f1422] text-[24px] tracking-[-0.456px] leading-[1.2]">
+        <p className="font-normal text-[#0f1422] text-lg sm:text-xl lg:text-[24px] tracking-[-0.456px] leading-[1.2]">
           Continue the conversation through Messenger or Viber.
         </p>
       </div>
 
       {/* Main card box */}
-      <div className="bg-[#f5f5f5] flex flex-col gap-[37px] p-8 md:p-[50px] relative rounded-[20px] w-full">
+      <div className="bg-[#f5f5f5] flex flex-col gap-[37px] p-6 md:p-[50px] relative rounded-[20px] w-full">
         {/* Pre-Filled Message Card */}
-        <div className="bg-white w-full p-8 rounded-[20px] shadow-sm flex flex-col gap-5">
+        <div className="bg-white w-full p-6 md:p-8 rounded-[20px] shadow-sm flex flex-col gap-5">
           <div className="flex justify-between items-center select-none">
-            <h3 className="font-medium text-[#07b6d3] text-[20px] tracking-[-0.38px]">
+            <h3 className="font-medium text-[#07b6d3] text-lg sm:text-[20px] tracking-[-0.38px]">
               Pre-Filled Message · Edit Before Sending
             </h3>
             <button
@@ -83,18 +83,18 @@ Combined estimate Php 50,000. Can we schedule a site visit? Thank you! - Juan`;
         </div>
 
         {/* Sharing Options Card */}
-        <div className="bg-white w-full px-[50px] py-[30px] rounded-[20px] shadow-sm flex flex-col gap-[30px] select-none">
-          <h3 className="font-medium text-[#0f1422] text-[24px] tracking-[-0.456px] leading-[1.2]">
+        <div className="bg-white w-full px-6 py-[30px] md:px-[50px] rounded-[20px] shadow-sm flex flex-col gap-[30px] select-none">
+          <h3 className="font-medium text-[#0f1422] text-lg sm:text-[24px] tracking-[-0.456px] leading-[1.2]">
             Sharing Option
           </h3>
           <div className="flex flex-col lg:flex-row gap-[37px] w-full">
             {/* Messenger button */}
             <div
               onClick={() => handleShare("Messenger")}
-              className="bg-[#f5f5f5] border border-[#f5f5f5] rounded-[20px] px-[30px] py-[20px] flex items-center justify-between gap-[30px] cursor-pointer hover:bg-neutral-100 transition-all flex-1 w-full"
+              className="bg-[#f5f5f5] border border-[#f5f5f5] rounded-[20px] px-4 py-4 md:px-[30px] md:py-[20px] flex items-center justify-between gap-4 md:gap-[30px] cursor-pointer hover:bg-neutral-100 transition-all flex-1 w-full"
             >
-              <div className="flex items-center gap-[30px]">
-                <div className="relative w-[100px] h-[100px] shrink-0">
+              <div className="flex items-center gap-4 md:gap-[30px]">
+                <div className="relative w-16 h-16 md:w-[100px] md:h-[100px] shrink-0">
                   <Image
                     src="/send-booking/messenger.svg"
                     alt="Messenger Logo"
@@ -103,10 +103,10 @@ Combined estimate Php 50,000. Can we schedule a site visit? Thank you! - Juan`;
                   />
                 </div>
                 <div className="flex flex-col gap-2.5 items-start text-left">
-                  <p className="font-medium text-[24px] tracking-[-0.456px] leading-[1.4] text-[#0f1422]">
+                  <p className="font-medium text-lg sm:text-[24px] tracking-[-0.456px] leading-[1.4] text-[#0f1422]">
                     Send via Messenger
                   </p>
-                  <p className="font-normal text-[16px] tracking-[-0.304px] leading-[1.4] text-[#c3c3c3]">
+                  <p className="font-normal text-sm sm:text-[16px] tracking-[-0.304px] leading-[1.4] text-[#c3c3c3]">
                     Opens in external browser
                   </p>
                 </div>
@@ -117,10 +117,10 @@ Combined estimate Php 50,000. Can we schedule a site visit? Thank you! - Juan`;
             {/* Viber button */}
             <div
               onClick={() => handleShare("Viber")}
-              className="bg-[#f5f5f5] border border-[#f5f5f5] rounded-[20px] px-[30px] py-[20px] flex items-center justify-between gap-[30px] cursor-pointer hover:bg-neutral-100 transition-all flex-1 w-full"
+              className="bg-[#f5f5f5] border border-[#f5f5f5] rounded-[20px] px-4 py-4 md:px-[30px] md:py-[20px] flex items-center justify-between gap-4 md:gap-[30px] cursor-pointer hover:bg-neutral-100 transition-all flex-1 w-full"
             >
-              <div className="flex items-center gap-[30px]">
-                <div className="relative w-[100px] h-[100px] shrink-0">
+              <div className="flex items-center gap-4 md:gap-[30px]">
+                <div className="relative w-16 h-16 md:w-[100px] md:h-[100px] shrink-0">
                   <Image
                     src="/send-booking/viber.svg"
                     alt="Viber Logo"
@@ -129,10 +129,10 @@ Combined estimate Php 50,000. Can we schedule a site visit? Thank you! - Juan`;
                   />
                 </div>
                 <div className="flex flex-col gap-2.5 items-start text-left">
-                  <p className="font-medium text-[24px] tracking-[-0.456px] leading-[1.4] text-[#0f1422]">
+                  <p className="font-medium text-lg sm:text-[24px] tracking-[-0.456px] leading-[1.4] text-[#0f1422]">
                     Send via Viber
                   </p>
-                  <p className="font-normal text-[16px] tracking-[-0.304px] leading-[1.4] text-[#c3c3c3]">
+                  <p className="font-normal text-sm sm:text-[16px] tracking-[-0.304px] leading-[1.4] text-[#c3c3c3]">
                     Opens in external browser
                   </p>
                 </div>

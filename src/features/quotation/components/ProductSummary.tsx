@@ -89,7 +89,7 @@ export function ProductSummary() {
         <span className="text-xl font-medium leading-7">
           Estimated Total
         </span>
-        <span className="text-4xl md:text-5xl font-medium leading-[57.60px]">
+        <span className="text-3xl md:text-5xl font-medium leading-tight md:leading-[57.60px]">
           {formattedTotal}
         </span>
       </div>

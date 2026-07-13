@@ -21,7 +21,7 @@ const navbarIcons = [
 export function BackgroundNavbar() {
   return (
     <section className="relative z-0 bg-white-20">
-      <div className="bg-grad-dark py-2.5 font-normal text-white">
+      <div className="hidden sm:block bg-grad-dark py-2.5 font-normal text-white">
         <div className="flex flex-wrap justify-center items-center gap-6.25">
           {navbarIcons.map((icon) => (
             <div key={icon.key} className="flex items-center gap-2">

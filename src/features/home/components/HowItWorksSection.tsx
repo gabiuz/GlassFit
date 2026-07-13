@@ -41,13 +41,13 @@ const howItWorksSteps = [
 
 export function HowItWorksSection() {
   return (
-    <section className="relative bg-white px-27.5 py-25">
-      <div className="mx-auto flex w-full max-w-360 flex-col items-center gap-28">
+    <section className="relative bg-white px-4 py-12 lg:px-27.5 lg:py-25">
+      <div className="mx-auto flex w-full max-w-360 flex-col items-center gap-12 lg:gap-28">
         <div className="flex flex-col items-center gap-5 text-center">
-          <h2 className="bg-grad-light bg-clip-text text-5xl font-medium leading-[57.60px] text-transparent">
+          <h2 className="bg-grad-light bg-clip-text text-3xl sm:text-4xl lg:text-5xl font-medium leading-tight lg:leading-[57.60px] text-transparent">
             How GlassFit Works
           </h2>
-          <p className="w-270.75 text-xl font-normal leading-7  text-black">
+          <p className="w-full max-w-4xl text-lg lg:text-xl font-normal leading-7  text-black">
             GlassFit makes it easier to plan glass and aluminum projects by
             turning a simple space photo into a useful design reference.
             Customers can explore products, create a visual preview, review an
@@ -55,8 +55,8 @@ export function HowItWorksSection() {
             consultation.
           </p>
         </div>
-        <div className="flex items-center gap-30">
-          <div className="relative h-216.5 w-120.5 shrink-0 overflow-hidden">
+        <div className="flex w-full flex-col items-center gap-12 lg:flex-row lg:gap-12 xl:gap-20 2xl:gap-30">
+          <div className="relative hidden h-216.5 w-[36%] max-w-120.5 overflow-hidden lg:block">
             <Image
               src="/images/glass_door_2.png"
               alt="Glass door preview"
@@ -66,23 +66,23 @@ export function HowItWorksSection() {
               priority
             />
           </div>
-          <div className="flex w-180.5 flex-col gap-7.5">
+          <div className="flex w-full min-w-0 flex-1 flex-col gap-7.5 lg:max-w-180.5">
             {howItWorksSteps.map((step) => (
-              <div key={step.title} className="flex items-center gap-7.5">
-                <div className="relative h-16.5 w-16.5 shrink-0">
+              <div key={step.title} className="flex items-start sm:items-center gap-4 sm:gap-7.5">
+                <div className="relative h-12 w-12 sm:h-16.5 sm:w-16.5 shrink-0">
                   <Image
                     src={step.icon}
                     alt=""
-                    width={66}
-                    height={66}
+                    fill
                     aria-hidden="true"
+                    className="object-contain"
                   />
                 </div>
                 <div className="flex flex-col gap-1.5">
-                  <h3 className="text-3xl font-medium leading-10  text-black">
+                  <h3 className="text-xl sm:text-2xl lg:text-3xl font-medium leading-normal lg:leading-10  text-black">
                     {step.title}
                   </h3>
-                  <p className="text-xl font-normal leading-7  text-[#262323]">
+                  <p className="text-sm sm:text-base lg:text-xl font-normal leading-relaxed lg:leading-7  text-[#262323]">
                     {step.description}
                   </p>
                 </div>

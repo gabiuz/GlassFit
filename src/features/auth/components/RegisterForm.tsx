@@ -5,7 +5,6 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff } from "lucide-react";
-import Button from "@/components/shared/Button";
 import {
   validateEmail,
   checkPasswordRequirements,

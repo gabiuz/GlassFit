@@ -1,5 +1,4 @@
 import Image from "next/image";
-import Button from "@/components/shared/Button";
 
 const navbarIcons = [
   {
@@ -22,7 +21,7 @@ const navbarIcons = [
 export function HeroSection() {
   return (
     <section className="relative z-0 bg-white-20">
-      <div className="bg-grad-dark py-2.5 font-normal text-white">
+      <div className="hidden lg:block bg-grad-dark py-2.5 font-normal text-white">
         <div className="flex flex-wrap justify-center items-center gap-6.25">
           {navbarIcons.map((icon) => (
             <div key={icon.key} className="flex items-center gap-2">
@@ -38,7 +37,7 @@ export function HeroSection() {
           ))}
         </div>
       </div>
-      <div className="relative min-h-115">
+      <div className="relative min-h-60 md:min-h-115">
         <div className="absolute inset-0 overflow-hidden">
           <video
             className="absolute inset-0 h-full w-full object-cover"
@@ -52,8 +51,8 @@ export function HeroSection() {
           <div className="absolute inset-0 bg-white/70"></div>
         </div>
         <div className="relative z-10">
-          <div className="flex min-h-115 items-center justify-center">
-            <h1 className="text-8xl text-black font-medium text-center uppercase leading-[115.20px]">
+          <div className="flex min-h-60 md:min-h-115 items-center justify-center">
+            <h1 className="text-4xl sm:text-6xl lg:text-8xl text-black font-medium text-center uppercase leading-tight lg:leading-[115.20px]">
               <span className="bg-grad-light bg-clip-text text-transparent">
                 Product
               </span>

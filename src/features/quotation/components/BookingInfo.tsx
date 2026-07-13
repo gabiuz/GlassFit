@@ -6,12 +6,12 @@ export function BookingInfo() {
   return (
     <div className="bg-[#f5f5f5] flex flex-col gap-9.75 items-start p-6 md:p-12.5 relative rounded-[20px] w-full select-none">
       <div>
-        <h2 className="text-black text-[32px] font-medium tracking-[-0.608px] leading-[1.2] whitespace-nowrap">
+        <h2 className="text-black text-2xl md:text-[32px] font-medium tracking-[-0.608px] leading-[1.2] lg:whitespace-nowrap">
           Good to know before booking
         </h2>
       </div>
       {/* info card */}
-      <div className="bg-white drop-shadow-[0px_0px_2.5px_rgba(0,0,0,0.25)] flex flex-col lg:flex-row gap-42 items-start px-6 md:px-12.5 py-7.5 relative rounded-[20px] w-full">
+      <div className="bg-white drop-shadow-[0px_0px_2.5px_rgba(0,0,0,0.25)] flex flex-col lg:flex-row gap-8 lg:gap-42 items-start px-6 md:px-12.5 py-7.5 relative rounded-[20px] w-full">
         <div className="flex flex-col gap-2.5 items-start relative shrink-0 w-full lg:w-auto">
           <div className="flex flex-col gap-2.5 items-start relative shrink-0 w-full">
             <div className="flex items-center justify-start py-2.5 relative shrink-0">

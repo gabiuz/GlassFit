@@ -2,7 +2,6 @@
 
 import React, { useState } from "react";
 import Image from "next/image";
-import { Copy } from "lucide-react";
 
 interface Step2GenerateLinkProps {
   isLinkGenerated: boolean;
@@ -30,19 +29,19 @@ export function Step2GenerateLink({
         <p className="font-normal text-[#c3c3c3] text-[20px] tracking-[-0.38px] leading-[1.4] uppercase">
           STEP 2 OF 4
         </p>
-        <h2 className="font-medium text-[#0f1422] text-[48px] tracking-[-0.912px] leading-[1.2]">
+        <h2 className="font-medium text-[#0f1422] text-3xl sm:text-4xl lg:text-[48px] tracking-[-0.912px] leading-[1.2]">
           Generate Your Reference Link
         </h2>
-        <p className="font-normal text-[#0f1422] text-[24px] tracking-[-0.456px] leading-[1.2]">
+        <p className="font-normal text-[#0f1422] text-lg sm:text-xl lg:text-[24px] tracking-[-0.456px] leading-[1.2]">
           Create a secure, shareable link for your saved GlassFit reference.
         </p>
       </div>
 
       {/* Main card box */}
-      <div className="bg-[#f5f5f5] flex flex-col gap-[37px] p-8 md:p-[50px] relative rounded-[20px] w-full">
+      <div className="bg-[#f5f5f5] flex flex-col gap-[37px] p-6 md:p-[50px] relative rounded-[20px] w-full">
         {/* Reference Summary Card */}
-        <div className="bg-white w-full p-8 rounded-[20px] shadow-sm select-none">
-          <h3 className="font-medium text-[#07b6d3] text-[24px] tracking-[-0.456px] leading-[1.2] mb-6">
+        <div className="bg-white w-full p-6 md:p-8 rounded-[20px] shadow-sm select-none">
+          <h3 className="font-medium text-[#07b6d3] text-lg sm:text-[24px] tracking-[-0.456px] leading-[1.2] mb-6">
             Reference Summary
           </h3>
           <div className="grid grid-cols-[auto_1fr] md:grid-cols-[auto_auto_auto_auto_auto_auto] gap-x-4 md:gap-x-[67px] gap-y-2.5 md:gap-y-[10px] text-sm font-normal items-baseline">

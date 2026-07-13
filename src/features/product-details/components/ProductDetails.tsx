@@ -49,15 +49,15 @@ export function ProductDetails() {
   const [quantity, setQuantity] = useState(0);
 
   return (
-    <div className="w-full flex flex-col gap-8 px-21.5 pt-13.75 pb-33">
+    <div className="w-full flex flex-col gap-8 px-6 pt-8 pb-16 lg:px-21.5 lg:pt-13.75 lg:pb-33">
       <Breadcrumb productName="Aluminum Sliding Door" />
 
       <div className="w-full flex flex-col lg:flex-row gap-9 items-stretch lg:items-start">
-        <div className="bg-[#d9d9d9] w-full lg:w-164.5 h-226.75 shrink-0 relative" />
+        <div className="bg-[#d9d9d9] w-full lg:w-164.5 h-64 sm:h-96 lg:h-226.75 shrink-0 relative" />
         <div className="flex-1 flex flex-col gap-8 w-full">
           <div className="flex flex-col gap-5 w-full">
             <div className="flex flex-col gap-5 items-start">
-              <h1 className="font-medium leading-[57.60px] text-5xl text-black">
+              <h1 className="font-medium leading-tight lg:leading-[57.60px] text-3xl sm:text-4xl lg:text-5xl text-black">
                 French Glass Door
               </h1>
               <div className="flex flex-wrap gap-1.25">
@@ -68,7 +68,7 @@ export function ProductDetails() {
                   Double Swing Door
                 </span>
               </div>
-              <p className="text-xl text-black leading-7 font-normal">
+              <p className="text-lg lg:text-xl text-black leading-7 font-normal">
                 An elegant double-door glass installation designed to create a bright and open transition between indoor and outdoor spaces.
               </p>
             </div>
@@ -163,7 +163,7 @@ export function ProductDetails() {
                 <p className="font-medium text-black text-base leading-6">
                   Dimension
                 </p>
-                <div className="flex w-full gap-8">
+                <div className="flex flex-wrap w-full gap-4 sm:gap-8">
                   {/* Width */}
                   <div className="w-fit flex flex-col gap-2.5">
                     <label className="w-full text-[#c3c3c3] text-base font-normal leading-6">

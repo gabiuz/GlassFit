@@ -72,8 +72,8 @@ export function PriceCard({
   return (
     <div className="bg-white drop-shadow-[0px_0px_2.5px_rgba(0,0,0,0.25)] flex flex-col gap-5 items-end justify-end px-6 md:px-12 py-7.5 relative rounded-[20px] w-full">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 w-full">
-        <div className="flex flex-1 gap-5 items-center min-w-0">
-          <div className="relative shrink-0 w-33.5 h-22 rounded-[10px] overflow-hidden border border-neutral-100 bg-neutral-50 shadow-sm">
+        <div className="flex flex-1 flex-col sm:flex-row gap-4 sm:gap-5 items-start sm:items-center min-w-0 w-full">
+          <div className="relative shrink-0 w-full sm:w-33.5 h-44 sm:h-22 rounded-[10px] overflow-hidden border border-neutral-100 bg-neutral-50 shadow-sm">
             <Image
               alt={productName}
               className="object-cover size-full"

@@ -72,10 +72,10 @@ export function UploadImage() {
         <div className="w-full max-w-367 mx-auto px-6 flex flex-col gap-12 items-center">
             {/* Header */}
             <div className="flex flex-col gap-5 items-center justify-center text-center">
-                <h1 className="text-5xl font-medium tracking-tight text-black leading-tight">
+                <h1 className="text-3xl sm:text-4xl lg:text-5xl font-medium tracking-tight text-black leading-tight">
                     Upload Your <span className="text-green">Space Image</span>
                 </h1>
-                <p className="text-[24px] md:text-[28px] font-normal text-black/90 tracking-tight leading-normal">
+                <p className="text-lg sm:text-[24px] md:text-[28px] font-normal text-black/90 tracking-tight leading-normal">
                     Use your actual space to create a more helpful visual preview.
                 </p>
             </div>
@@ -87,11 +87,11 @@ export function UploadImage() {
                 onDrop={handleDrop}
                 onClick={handleBrowseClick}
                 className={[
-                    "self-stretch py-24 rounded-[20px] shadow-[0px_0px_5px_0px_rgba(0,0,0,0.50)] border-[5px] border-dashed inline-flex flex-col justify-center items-center gap-7 cursor-pointer transition-colors duration-200",
+                    "self-stretch py-12 md:py-24 rounded-[20px] shadow-[0px_0px_5px_0px_rgba(0,0,0,0.50)] border-[5px] border-dashed inline-flex flex-col justify-center items-center gap-7 cursor-pointer transition-colors duration-200",
                     isDragging
                         ? "bg-cyan-50 border-cyan-400"
                         : "bg-neutral-100/30 border-cyan-500",
-                    previewUrl ? "px-12" : "px-96",
+                    previewUrl ? "px-6 md:px-12" : "px-6 md:px-48 lg:px-96",
                 ].join(" ")}
             >
                 {previewUrl ? (

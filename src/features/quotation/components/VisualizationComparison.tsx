@@ -68,7 +68,7 @@ export function VisualizationComparison() {
   return (
     <div className="w-full flex flex-col gap-9 select-none">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 w-full">
-        <div className="relative flex flex-col h-144.75 w-full rounded-[20px] overflow-hidden shadow-[0px_0px_5px_0px_rgba(0,0,0,0.15)] bg-neutral-100">
+        <div className="relative flex flex-col h-64 sm:h-96 lg:h-144.75 w-full rounded-[20px] overflow-hidden shadow-[0px_0px_5px_0px_rgba(0,0,0,0.15)] bg-neutral-100">
           <Image
             alt="Before - Original Photo"
             className="object-cover rounded-[20px]"
@@ -83,7 +83,7 @@ export function VisualizationComparison() {
             </span>
           </div>
         </div>
-        <div className="relative flex flex-col h-144.75 w-full rounded-[20px] overflow-hidden shadow-[0px_0px_5px_0px_rgba(0,0,0,0.15)] bg-neutral-100">
+        <div className="relative flex flex-col h-64 sm:h-96 lg:h-144.75 w-full rounded-[20px] overflow-hidden shadow-[0px_0px_5px_0px_rgba(0,0,0,0.15)] bg-neutral-100">
           <Image
             alt="After - Final Output"
             className={`object-cover rounded-[20px] transition-opacity duration-500 ${isAnyVariantActive ? "opacity-100" : "opacity-0"

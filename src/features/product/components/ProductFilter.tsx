@@ -167,7 +167,7 @@ export function ProductFilter() {
   };
 
   return (
-    <div className="w-102 flex flex-col p-7.5 justify-start gap-5 shadow-[2px_4px_11.699999809265137px_0px_rgba(0,0,0,0.10)] rounded-[20px]">
+    <div className="w-full lg:w-102 flex flex-col p-7.5 justify-start gap-5 shadow-[2px_4px_11.699999809265137px_0px_rgba(0,0,0,0.10)] rounded-[20px]">
       <div className="flex flex-col gap-19.75">
         <h2 className="text-xl text-black font-medium leading-7">
           Price Range
@@ -236,7 +236,7 @@ export function ProductFilter() {
             Products Category
           </h3>
         </div>
-        <div className="flex w-full flex-col items-start pl-12.5">
+        <div className="flex w-full flex-col items-start pl-6 lg:pl-12.5">
           <p className="text-[12px] leading-[1.4] tracking-[-0.228px] text-[#c3c3c3]">
             Select one
           </p>
@@ -278,7 +278,7 @@ export function ProductFilter() {
             Door Style
           </h3>
         </div>
-        <div className="flex w-full flex-col items-start pl-12.5">
+        <div className="flex w-full flex-col items-start pl-6 lg:pl-12.5">
           <p className="text-[12px] leading-[1.4] tracking-[-0.228px] text-[#c3c3c3]">
             Select all that apply
           </p>
@@ -375,7 +375,7 @@ export function ProductFilter() {
             Material Finish
           </h3>
         </div>
-        <div className="flex w-full flex-col items-start pl-12.5">
+        <div className="flex w-full flex-col items-start pl-6 lg:pl-12.5">
           <p className="text-[12px] leading-[1.4] tracking-[-0.228px] text-[#c3c3c3]">
             Select one or both
           </p>
@@ -448,7 +448,7 @@ export function ProductFilter() {
                 Aluminum Finish
               </h3>
             </div>
-            <div className="flex w-full flex-col items-start pl-12.5">
+            <div className="flex w-full flex-col items-start pl-6 lg:pl-12.5">
               <p className="text-[12px] leading-[1.4] tracking-[-0.228px] text-[#c3c3c3]">
                 Anodized Finish
               </p>
@@ -512,7 +512,7 @@ export function ProductFilter() {
                 })}
               </div>
             </div>
-            <div className=" flex w-full flex-col items-start pl-12.5">
+            <div className=" flex w-full flex-col items-start pl-6 lg:pl-12.5">
               <p className="text-[12px] leading-[1.4] tracking-[-0.228px] text-[#c3c3c3]">
                 Powder-Coated Finish
               </p>
@@ -577,7 +577,7 @@ export function ProductFilter() {
               </div>
             </div>
           </div>
-          <div className="flex w-full flex-col gap-0.75 items-start pl-12.5">
+          <div className="flex w-full flex-col gap-0.75 items-start pl-6 lg:pl-12.5">
             <p className="text-[12px] leading-[1.4] tracking-[-0.228px] text-[#c3c3c3]">
               Profile
             </p>
@@ -634,7 +634,7 @@ export function ProductFilter() {
                 Glass Finish
               </h3>
             </div>
-            <div className="flex w-full flex-col items-start pl-12.5">
+            <div className="flex w-full flex-col items-start pl-6 lg:pl-12.5">
               <p className="text-[12px] leading-[1.4] tracking-[-0.228px] text-[#c3c3c3]">
                 Tint
               </p>
@@ -699,7 +699,7 @@ export function ProductFilter() {
               </div>
             </div>
           </div>
-          <div className="flex w-full flex-col gap-0.75 items-start pl-12.5">
+          <div className="flex w-full flex-col gap-0.75 items-start pl-6 lg:pl-12.5">
             <p className="text-[12px] leading-[1.4] tracking-[-0.228px] text-[#c3c3c3]">
               Profile
             </p>
@@ -740,7 +740,7 @@ export function ProductFilter() {
               )}
             </div>
           </div>
-          <div className="flex w-full flex-col gap-0.75 items-start pl-12.5">
+          <div className="flex w-full flex-col gap-0.75 items-start pl-6 lg:pl-12.5">
             <p className="text-[12px] leading-[1.4] tracking-[-0.228px] text-[#c3c3c3]">
               Glass Thickness
             </p>

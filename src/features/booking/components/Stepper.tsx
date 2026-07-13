@@ -20,7 +20,6 @@ export function Stepper({ currentStep }: StepperProps) {
       {steps.map((step, index) => {
         const isCompleted = currentStep > step.stepNo;
         const isActive = currentStep === step.stepNo;
-        const isPending = currentStep < step.stepNo;
 
         let badgeBg = "bg-[#c3c3c3]";
         let textColor = "text-[#c3c3c3]";

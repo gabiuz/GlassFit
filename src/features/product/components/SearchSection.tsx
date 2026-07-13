@@ -3,7 +3,7 @@ import Image from "next/image";
 
 export function SearchSection() {
   return (
-    <div className=" flex flex-col lg:flex-row lg:justify-between lg:items-center gap-72">
+    <div className=" flex flex-col lg:flex-row lg:justify-between lg:items-center gap-6 lg:gap-72">
       <div className="max-w-105">
         <h2 className="text-black text-3xl font-medium leading-10 font-heading tracking-tight">
           Browse Glass and Aluminum Products

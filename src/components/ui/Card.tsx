@@ -21,7 +21,7 @@ export default function Card({
       className={`relative flex w-96 overflow-hidden px-7 pt-10 pb-36 flex-col gap-4 rounded-[25px_25px_0_0] bg-black text-white shadow-[0_10px_30px_rgba(4,94,109,0.12)] ${className}`}
     >
       <div
-        className={`absolute inset-0 bg-grad-light transition-opacity duration-500 ease-out ${
+        className={`absolute inset-0 bg-grad-light ${
           showActiveState ? "opacity-100" : "opacity-0"
         }`}
       />
@@ -37,10 +37,10 @@ export default function Card({
       </div>
       {description ? (
         <p
-          className={`relative z-10 overflow-hidden text-base leading-7 text-white/70 transition-[max-height,opacity,transform] duration-500 ease-out ${
+          className={`relative z-10 overflow-hidden text-base leading-7 text-white/70 ${
             showDescription
-              ? "max-h-40 translate-y-0 opacity-100"
-              : "max-h-0 -translate-y-2 opacity-0"
+              ? "max-h-40 opacity-100"
+              : "max-h-0 opacity-0"
           }`}
         >
           {description}

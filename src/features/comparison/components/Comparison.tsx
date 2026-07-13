@@ -96,11 +96,11 @@ function ComparisonPanelCard({
   return (
     <div
       onClick={!isDisabled ? onClick : undefined}
-      className={`flex flex-col gap-2.25 items-center relative w-44 select-none ${isDisabled ? "cursor-not-allowed" : "cursor-pointer group"
+      className={`flex flex-col gap-2.25 items-center relative w-full max-w-[176px] select-none ${isDisabled ? "cursor-not-allowed" : "cursor-pointer group"
         }`}
     >
       <div
-        className={`relative rounded-[20px] overflow-hidden shrink-0 w-37.5 h-37.5 transition-all duration-300 ${isSelected
+        className={`relative rounded-[20px] overflow-hidden shrink-0 w-24 h-24 sm:w-37.5 sm:h-37.5 transition-all duration-300 ${isSelected
           ? "border-[5px] border-[#129044] shadow-lg scale-105"
           : "border border-neutral-200/60 shadow-sm hover:scale-[1.02] hover:shadow-md"
           }`}
@@ -226,10 +226,10 @@ export function Comparison() {
     <div className="w-full max-w-325 mx-auto px-6 py-12 md:py-16 flex flex-col gap-12 items-center">
       {/* Header Title Section */}
       <div className="flex flex-col gap-5 items-center justify-center text-center">
-        <h1 className="text-5xl font-medium tracking-tight text-black leading-tight">
+        <h1 className="text-3xl sm:text-4xl lg:text-5xl font-medium tracking-tight text-black leading-tight">
           Your <span className="text-green">Visual</span> Preview
         </h1>
-        <p className="text-[24px] md:text-[28px] font-normal text-black/90 tracking-tight leading-normal">
+        <p className="text-lg sm:text-[24px] md:text-[28px] font-normal text-black/90 tracking-tight leading-normal">
           See how your selected product may look in your space.
         </p>
       </div>
@@ -272,12 +272,12 @@ export function Comparison() {
       </div>
 
       {/* Main Compare Views Area */}
-      <div className="w-full flex items-center justify-center min-h-144.75">
+      <div className="w-full flex items-center justify-center min-h-64 sm:min-h-96 lg:min-h-144.75">
         {isSideBySide ? (
           /* Side-by-Side View Mode */
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 w-full">
             {/* Left Card */}
-            <div className="relative flex flex-col h-144.75 w-full rounded-[20px] overflow-hidden shadow-md border border-neutral-200/40 p-6">
+            <div className="relative flex flex-col h-64 sm:h-96 lg:h-144.75 w-full rounded-[20px] overflow-hidden shadow-md border border-neutral-200/40 p-6">
               {isBeforeAfter ? (
                 /* Before: Empty Room */
                 <>
@@ -302,7 +302,7 @@ export function Comparison() {
             </div>
 
             {/* Right Card */}
-            <div className="relative flex flex-col h-144.75 w-full rounded-[20px] overflow-hidden shadow-md border border-neutral-200/40 p-6">
+            <div className="relative flex flex-col h-64 sm:h-96 lg:h-144.75 w-full rounded-[20px] overflow-hidden shadow-md border border-neutral-200/40 p-6">
               {isBeforeAfter ? (
                 /* After: Cabinet Installed */
                 <>
@@ -330,7 +330,7 @@ export function Comparison() {
           /* Premium Interactive Draggable Image Slider Mode */
           <div
             ref={containerRef}
-            className="relative w-full h-144.75 max-w-225 rounded-[20px] overflow-hidden select-none cursor-ew-resize shadow-lg border border-neutral-200/50"
+            className="relative w-full h-64 sm:h-96 lg:h-144.75 max-w-225 rounded-[20px] overflow-hidden select-none cursor-ew-resize shadow-lg border border-neutral-200/50"
           >
             {/* Underlay / Bottom state (Visible on the right side of the slider) */}
             <div className="absolute inset-0 w-full h-full">
@@ -386,7 +386,7 @@ export function Comparison() {
             <p className="font-medium text-black text-2xl tracking-[-0.456px] leading-[1.2]">
               Panel A - Left
             </p>
-            <div className="flex gap-4 items-center justify-between w-full">
+            <div className="flex flex-wrap sm:flex-nowrap gap-4 items-center justify-center sm:justify-between w-full">
               <ComparisonPanelCard
                 title="Variant A - Title"
                 label="Variant A - Label"
@@ -433,7 +433,7 @@ export function Comparison() {
             <p className="font-medium text-black text-2xl tracking-[-0.456px] leading-[1.2]">
               Panel B - Right
             </p>
-            <div className="flex gap-4 items-center justify-between w-full">
+            <div className="flex flex-wrap sm:flex-nowrap gap-4 items-center justify-center sm:justify-between w-full">
               <ComparisonPanelCard
                 title="Variant A - Title"
                 label="Variant A - Label"
@@ -460,14 +460,14 @@ export function Comparison() {
         </div>
       )}
       {/* Bottom Footer Actions Box */}
-      <div className="bg-[#f5f5f5] w-full flex items-center justify-between p-5 rounded-[20px] shadow-sm select-none">
-        <Link href="/product-details">
+      <div className="bg-[#f5f5f5] w-full flex flex-col sm:flex-row items-center justify-between gap-4 p-5 rounded-[20px] shadow-sm select-none">
+        <Link href="/product-details" className="w-full sm:w-auto">
           <Button
             variant="blackBtnWhiteText"
             value="Edit Placement"
             leftIcon={<ChevronLeft className="w-5 h-5 shrink-0 text-white" />}
             rightIcon={null}
-            className="font-medium cursor-pointer py-3.5 rounded-[25px] flex items-center hover:opacity-90"
+            className="w-full sm:w-auto font-medium justify-center cursor-pointer py-3.5 rounded-[25px] flex items-center hover:opacity-90"
           />
         </Link>
 
@@ -476,7 +476,7 @@ export function Comparison() {
           value="Proceed to Estimate Price"
           leftIcon={null}
           rightIcon={<ChevronRight className="w-5 h-5 shrink-0 text-white" />}
-          className="font-medium cursor-pointer py-3.5 rounded-[25px] flex items-center hover:opacity-95"
+          className="w-full sm:w-auto font-medium justify-center cursor-pointer py-3.5 rounded-[25px] flex items-center hover:opacity-95"
           onClick={() => alert("Proceeding to Estimate Price...")}
         />
       </div>

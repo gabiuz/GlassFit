@@ -1,7 +1,12 @@
 "use client";
-import { useEffect, useState } from "react";
-import { motion } from "motion/react";
+import { useEffect, useRef, useState } from "react";
 import Card from "@/components/ui/Card";
+
+const SIDE_CARD_WIDTH = 384;
+const ACTIVE_CARD_WIDTH = 478;
+const CARD_HEIGHT = 400;
+const TRACK_HORIZONTAL_PADDING = 48;
+const DEFAULT_CARDS_WIDTH = SIDE_CARD_WIDTH * 2 + ACTIVE_CARD_WIDTH;
 
 const detailCards = [
   {
@@ -54,128 +59,66 @@ const detailCards = [
   },
 ];
 
-const CARD_WIDTH_REM = 24;
-const ACTIVE_CARD_WIDTH_REM = 29.875;
-const VISIBLE_CARD_COUNT = 3;
-const CAROUSEL_TRANSITION = {
-  duration: 0.5,
-  ease: [0.22, 1, 0.36, 1],
-} as const;
-const AUTO_ADVANCE_INTERVAL_MS = 3000;
-
 function wrapIndex(index: number, total: number) {
   return ((index % total) + total) % total;
 }
 
-function getActiveSlot(totalCards: number) {
-  return Math.floor((totalCards - 1) / 2);
-}
-
-function getShortestDistance(
-  currentIndex: number,
-  nextIndex: number,
-  total: number,
-) {
-  const forwardDistance = wrapIndex(nextIndex - currentIndex, total);
-  const backwardDistance = forwardDistance - total;
-
-  return Math.abs(forwardDistance) <= Math.abs(backwardDistance)
-    ? forwardDistance
-    : backwardDistance;
-}
-
-function getLoopedCards<T>(cards: T[], activeIndex: number) {
-  const totalCards = cards.length;
-  const activeSlot = getActiveSlot(totalCards);
-
-  return Array.from({ length: totalCards }, (_, slot) => {
-    const cardIndex = wrapIndex(activeIndex - activeSlot + slot, totalCards);
-
-    return {
-      card: cards[cardIndex],
-      cardIndex,
-    };
-  });
-}
-
 export function DetailSection() {
-  const [carouselState, setCarouselState] = useState({
-    activeIndex: 0,
-    displayIndex: 0,
-    isSliding: false,
-    slideOffsetRem: 0,
-  });
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [isPaused, setIsPaused] = useState(false);
+  const [cardScale, setCardScale] = useState(1);
+  const carouselRef = useRef<HTMLDivElement>(null);
   const totalCards = detailCards.length;
-  const activeSlot = getActiveSlot(totalCards);
-  const carouselViewportWidthRem =
-    (VISIBLE_CARD_COUNT - 1) * CARD_WIDTH_REM + ACTIVE_CARD_WIDTH_REM;
-  const viewportCenterOffsetRem = carouselViewportWidthRem / 2;
-  const activeCardCenterOffsetRem =
-    activeSlot * CARD_WIDTH_REM + ACTIVE_CARD_WIDTH_REM / 2;
-  const carouselCards = getLoopedCards(detailCards, carouselState.displayIndex);
-  const activeFeatureIndex = carouselState.activeIndex;
-
-  const handlePaginationClick = (nextIndex: number) => {
-    setCarouselState((currentState) => {
-      if (nextIndex === currentState.activeIndex) {
-        return currentState;
-      }
-
-      const distance = getShortestDistance(
-        currentState.activeIndex,
-        nextIndex,
-        totalCards,
-      );
-
-      return {
-        activeIndex: wrapIndex(nextIndex, totalCards),
-        displayIndex: currentState.activeIndex,
-        isSliding: true,
-        slideOffsetRem: -distance * CARD_WIDTH_REM,
-      };
-    });
-  };
-
-  const handleSlideComplete = () => {
-    setCarouselState((currentState) => {
-      if (!currentState.isSliding) {
-        return currentState;
-      }
-
-      return {
-        ...currentState,
-        displayIndex: currentState.activeIndex,
-        isSliding: false,
-        slideOffsetRem: 0,
-      };
-    });
-  };
 
   useEffect(() => {
-    const intervalId = setInterval(() => {
-      setCarouselState((currentState) => {
-        if (currentState.isSliding) {
-          return currentState;
-        }
+    const carousel = carouselRef.current;
 
-        const nextIndex = wrapIndex(currentState.activeIndex + 1, totalCards);
+    if (!carousel) return;
 
-        return {
-          activeIndex: nextIndex,
-          displayIndex: currentState.activeIndex,
-          isSliding: true,
-          slideOffsetRem: -CARD_WIDTH_REM,
-        };
-      });
-    }, AUTO_ADVANCE_INTERVAL_MS);
+    const updateCardScale = () => {
+      const availableCardsWidth = Math.max(
+        carousel.clientWidth - TRACK_HORIZONTAL_PADDING,
+        0,
+      );
 
-    return () => clearInterval(intervalId);
-  }, [totalCards]);
+      setCardScale(Math.min(1, availableCardsWidth / DEFAULT_CARDS_WIDTH));
+    };
+
+    updateCardScale();
+
+    const resizeObserver = new ResizeObserver(updateCardScale);
+    resizeObserver.observe(carousel);
+
+    return () => resizeObserver.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (isPaused) return;
+
+    const interval = setInterval(() => {
+      setActiveIndex((prev) => wrapIndex(prev + 1, totalCards));
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [activeIndex, isPaused, totalCards]);
+
+  const leftIndex = wrapIndex(activeIndex - 1, totalCards);
+  const rightIndex = wrapIndex(activeIndex + 1, totalCards);
+
+  const displayedCards = [
+    { card: detailCards[leftIndex], cardIndex: leftIndex, isActive: false },
+    { card: detailCards[activeIndex], cardIndex: activeIndex, isActive: true },
+    { card: detailCards[rightIndex], cardIndex: rightIndex, isActive: false },
+  ];
+
+  const handlePaginationClick = (nextIndex: number) => {
+    setActiveIndex(nextIndex);
+  };
 
   return (
-    <section className="relative flex flex-col gap-17.5 bg-white py-24 px-28">
-      <div className="w-fit mx-auto flex justify-between items-center gap-12.5">
-        <h2 className=" whitespace-nowrap text-5xl font-medium capitalize leading-[57.60px] text-start">
+    <section className="relative flex flex-col gap-17.5 bg-white py-12 px-6 lg:py-24 lg:px-28">
+      <div className="w-full mx-auto text-center flex flex-col lg:flex-row justify-between items-center gap-6 lg:gap-12.5">
+        <h2 className="text-3xl text-center sm:text-4xl lg:text-5xl font-medium capitalize leading-tight lg:leading-[57.60px] lg:text-start">
           <span className="bg-grad-light bg-clip-text text-transparent">
             Plan Your Glass and Aluminum
             <br />
@@ -184,68 +127,68 @@ export function DetailSection() {
             Project with Confidence
           </span>
         </h2>
-        <p className="w-140.5 text-black text-xl font-normal leading-7">
+        <p className="w-full lg:w-140.5 text-center lg:text-start text-black text-lg lg:text-xl font-normal leading-7">
           GlassFit combines product browsing, image-based visualization,
           customization, and estimated pricing to help customers prepare better
           before talking to the business.
         </p>
       </div>
       <div
-        className="overflow-x-hidden overflow-y-visible mx-auto"
-        style={{
-          width: `${carouselViewportWidthRem}rem`,
-          maxWidth: "100%",
-        }}
+        className="hidden lg:block w-full mx-auto"
+        onMouseEnter={() => setIsPaused(true)}
+        onMouseLeave={() => setIsPaused(false)}
       >
-        <motion.div
-          className="flex items-end"
-          animate={{
-            x: `calc(${viewportCenterOffsetRem}rem - ${
-              activeCardCenterOffsetRem
-            }rem + ${carouselState.slideOffsetRem}rem)`,
-          }}
-          transition={
-            carouselState.isSliding ? CAROUSEL_TRANSITION : { duration: 0 }
-          }
-          onAnimationComplete={handleSlideComplete}
-          style={{
-            transformOrigin: "bottom center",
-          }}
+        {/* Cards Container */}
+        <div
+          ref={carouselRef}
+          className="mx-auto max-w-full overflow-visible py-4"
         >
-          {carouselCards.map(({ card, cardIndex }) => {
-            const isActive = cardIndex === carouselState.activeIndex;
+          <div className="flex items-end justify-center px-6">
+            {displayedCards.map(({ card, cardIndex, isActive }) => {
+              const cardWidth = isActive
+                ? ACTIVE_CARD_WIDTH
+                : SIDE_CARD_WIDTH;
 
-            return (
-              <div
-                key={card.number}
-                className="flex items-end shrink-0 origin-bottom h-100"
-              >
-                <Card
-                  number={card.number}
-                  title={card.title}
-                  description={card.description}
-                  isActive={isActive}
-                  className={`transition-[width] duration-500 ease-out ${
-                    isActive ? "w-[29.875rem]" : ""
-                  }`}
-                />
-              </div>
-            );
-          })}
-        </motion.div>
+              return (
+                <div
+                  key={card.number}
+                  onClick={() => setActiveIndex(cardIndex)}
+                  className="flex shrink-0 cursor-pointer items-end origin-bottom"
+                  style={{
+                    width: cardWidth * cardScale,
+                    height: CARD_HEIGHT * cardScale,
+                  }}
+                >
+                  <div
+                    className="origin-bottom-left"
+                    style={{ transform: `scale(${cardScale})` }}
+                  >
+                    <Card
+                      number={card.number}
+                      title={card.title}
+                      description={card.description}
+                      isActive={isActive}
+                      className={isActive ? "w-[29.875rem]" : "w-96"}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </div>
-      <div className="flex items-center justify-center gap-6">
+
+      <div className="hidden lg:flex items-center justify-center gap-6">
         <div className="flex items-center gap-3">
           {detailCards.map((card, index) => {
-            const isActive = index === activeFeatureIndex;
+            const isActive = index === activeIndex;
             return (
               <button
                 type="button"
                 key={card.number}
                 onClick={() => handlePaginationClick(index)}
-                className={`h-2.5 w-2.5 cursor-pointer rounded-full ${
-                  isActive ? "bg-green" : "bg-black/30"
-                }`}
+                className={`h-2.5 w-2.5 cursor-pointer rounded-full ${isActive ? "bg-green" : "bg-black/30"
+                  }`}
               />
             );
           })}
