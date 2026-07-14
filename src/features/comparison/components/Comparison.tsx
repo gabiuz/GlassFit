@@ -23,7 +23,7 @@ function ToggleSwitch({ value, onChange, textLeft, textRight }: ToggleSwitchProp
       <button
         type="button"
         onClick={() => onChange("left")}
-        className={`px-4 py-1.5 flex items-center justify-center cursor-pointer text-xl leading-7 rounded-l-[10px] ${isLeft
+        className={`px-3 py-1.5 sm:px-4 flex items-center justify-center cursor-pointer text-base sm:text-xl leading-7 rounded-l-[10px] whitespace-nowrap ${isLeft
           ? "bg-green border border-green text-white font-medium"
           : "bg-white border border-[#c3c3c3] text-black font-normal hover:bg-neutral-50"
           }`}
@@ -33,7 +33,7 @@ function ToggleSwitch({ value, onChange, textLeft, textRight }: ToggleSwitchProp
       <button
         type="button"
         onClick={() => onChange("right")}
-        className={`px-4 py-1.5 flex items-center justify-center cursor-pointer text-xl leading-7 rounded-r-[10px] -ml-px ${!isLeft
+        className={`px-3 py-1.5 sm:px-4 flex items-center justify-center cursor-pointer text-base sm:text-xl leading-7 rounded-r-[10px] -ml-px whitespace-nowrap ${!isLeft
           ? "bg-green border border-green text-white font-medium"
           : "bg-white border border-[#c3c3c3] text-black font-normal hover:bg-neutral-50"
           }`}
@@ -235,10 +235,10 @@ export function Comparison() {
       </div>
 
       {/* Control Panel Section */}
-      <div className="w-full flex flex-col md:flex-row gap-6 md:gap-0 justify-between items-center">
-        <div className="flex flex-col md:flex-row gap-8 md:gap-25.75 items-center">
+      <div className="w-full flex flex-col xl:flex-row gap-6 xl:gap-0 justify-between items-center">
+        <div className="flex flex-col md:flex-row gap-8 md:gap-12 xl:gap-25.75 items-center">
           {/* View As Toggle */}
-          <div className="flex flex-col gap-2.5 items-start w-full md:w-auto">
+          <div className="flex flex-col gap-2.5 items-center xl:items-start w-full xl:w-auto">
             <span className="text-[#c3c3c3] text-[16px] tracking-[-0.304px] leading-[1.4] font-normal">
               View as:
             </span>
@@ -251,7 +251,7 @@ export function Comparison() {
           </div>
 
           {/* Compare Mode Toggle */}
-          <div className="flex flex-col gap-2.5 items-start w-full md:w-auto">
+          <div className="flex flex-col gap-2.5 items-center xl:items-start w-full xl:w-auto">
             <span className="text-[#c3c3c3] text-[16px] tracking-[-0.304px] leading-[1.4] font-normal">
               Compare mode:
             </span>
@@ -264,8 +264,8 @@ export function Comparison() {
           </div>
         </div>
 
-        <div className="bg-[#c3c3c3] border border-[#c3c3c3] border-solid flex items-center justify-center px-5 py-2.5 rounded-[20px] self-end md:self-center">
-          <p className="text-base text-white tracking-wide font-medium">
+        <div className="bg-[#c3c3c3] border border-[#c3c3c3] border-solid flex items-center justify-center px-5 py-2.5 rounded-[20px] self-center xl:self-auto">
+          <p className="text-base text-white tracking-wide font-medium whitespace-nowrap">
             Comparing: {isBeforeAfter ? "Raw and Final Out" : `${getVariantLabel(leftVariant)} and ${getVariantLabel(rightVariant)}`}
           </p>
         </div>
