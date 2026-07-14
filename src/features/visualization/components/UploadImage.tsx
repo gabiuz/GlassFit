@@ -69,7 +69,7 @@ export function UploadImage() {
     };
 
     return (
-        <div className="w-full max-w-367 mx-auto px-6 flex flex-col gap-12 items-center">
+        <div className="w-full max-w-367 mx-auto px-4 sm:px-6 flex flex-col gap-12 items-center">
             {/* Header */}
             <div className="flex flex-col gap-5 items-center justify-center text-center">
                 <h1 className="text-3xl sm:text-4xl lg:text-5xl font-medium tracking-tight text-black leading-tight">
@@ -87,11 +87,10 @@ export function UploadImage() {
                 onDrop={handleDrop}
                 onClick={handleBrowseClick}
                 className={[
-                    "self-stretch py-12 md:py-24 rounded-[20px] shadow-[0px_0px_5px_0px_rgba(0,0,0,0.50)] border-[5px] border-dashed inline-flex flex-col justify-center items-center gap-7 cursor-pointer transition-colors duration-200",
+                    "self-stretch py-12 md:py-24 rounded-[20px] shadow-[0px_0px_5px_0px_rgba(0,0,0,0.50)] border-[5px] border-dashed inline-flex flex-col justify-center items-center gap-4 sm:gap-6 md:gap-7 cursor-pointer transition-colors duration-200",
                     isDragging
                         ? "bg-cyan-50 border-cyan-400"
                         : "bg-neutral-100/30 border-cyan-500",
-                    previewUrl ? "px-6 md:px-12" : "px-6 md:px-48 lg:px-96",
                 ].join(" ")}
             >
                 {previewUrl ? (
@@ -114,14 +113,14 @@ export function UploadImage() {
                     </div>
                 ) : (
                     <>
-                        <div className="size-30 relative pointer-events-none">
+                        <div className="size-20 md:size-30 relative pointer-events-none">
                             <Image src="/upload.svg" alt="" width={400} height={400} />
                         </div>
                         <div className="flex flex-col gap-2 items-center justify-center text-center pointer-events-none">
-                            <h2 className="text-3xl font-medium tracking-tight text-black leading-tight">
+                            <h2 className="text-xl sm:text-2xl md:text-3xl font-medium tracking-tight text-black leading-tight">
                                 {isDragging ? "Drop it here!" : "Drag your photo here"}
                             </h2>
-                            <p className="text-xl font-normal text-black/90 tracking-tight leading-normal">
+                            <p className="text-base sm:text-lg md:text-xl font-normal text-black/90 tracking-tight leading-normal">
                                 or click to browse your files
                             </p>
                         </div>
@@ -131,7 +130,7 @@ export function UploadImage() {
                         >
                             <p className="text-white text-xl font-thin leading-7">Browse Files</p>
                         </button>
-                        <p className="text-xl text-stone-300 font-normal tracking-tight leading-normal pointer-events-none">
+                        <p className="text-xs sm:text-sm md:text-xl text-stone-300 font-normal tracking-tight leading-normal pointer-events-none max-w-[280px] sm:max-w-md md:max-w-none text-center">
                             Accepted file types: JPG, PNG, and HEIC — up to 20 MB.
                         </p>
                     </>
