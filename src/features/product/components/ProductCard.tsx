@@ -1,26 +1,43 @@
 "use client";
 import Button from "@/components/shared/Button";
 import Image from "next/image";
+import { Product } from "../data/products";
 
-const tags = ["Aluminum", "Frosted"];
+const defaultTags = ["Aluminum", "Frosted"];
 
-export function ProductCard() {
+interface ProductCardProps {
+  product?: Product;
+}
+
+export function ProductCard({ product }: ProductCardProps) {
+  // Use mock product details if provided, fallback to original hardcoded values
+  const name = product ? product.name : "Aluminum Sliding Window";
+  const tags = product ? product.tags : defaultTags;
+  const description = product
+    ? product.description
+    : "A customizable aluminum-framed window suitable for residential and commercial spaces.";
+  const price = product
+    ? `₱ ${product.price.toLocaleString()}`
+    : "₱ 00,000";
+  const imageSrc = product ? product.image : "/product_card_placeholder.png";
+
   return (
-    <div className="max-w-68.25 rounded-[10px] bg-white/50 shadow-[0px_0px_5px_0px_rgba(0,0,0,0.25)]">
+    <div className="max-w-68.25 rounded-[10px] bg-white/50 shadow-[0px_0px_5px_0px_rgba(0,0,0,0.25)] w-full flex flex-col justify-between overflow-hidden">
       <div>
         <Image
-          src="/product_card_placeholder.png"
-          alt="product card placeholder"
+          src={imageSrc}
+          alt={name}
           width={273}
           height={224}
-        ></Image>
+          className="w-full h-[224px] object-cover"
+        />
       </div>
-      <div className="flex flex-col p-5 gap-7.5">
+      <div className="flex flex-col p-5 gap-7.5 flex-1 justify-between">
         <div className="flex flex-col gap-2.5 justify-start items-start">
-          <h1 className=" text-black  text-xl font-normal leading-7">
-            Aluminum Sliding Window
+          <h1 className="text-black text-xl font-normal leading-7 min-h-14">
+            {name}
           </h1>
-          <div className="flex gap-1.25">
+          <div className="flex flex-wrap gap-1.25">
             {tags.map((tag) => {
               return (
                 <div
@@ -34,12 +51,11 @@ export function ProductCard() {
           </div>
           <div className="w-fit">
             <p className="text-black text-sm font-normal leading-5">
-              A customizable aluminum-framed window suitable for residential and
-              commercial spaces.
+              {description}
             </p>
           </div>
         </div>
-        <div className="flex flex-col gap-2.5 justify-start items-start">
+        <div className="flex flex-col gap-2.5 justify-start items-start mt-4 w-full">
           <div>
             <span className="font-normal leading-4 text-xs text-[#c3c3c3]">
               Starts at
@@ -47,10 +63,10 @@ export function ProductCard() {
           </div>
           <div>
             <span className="text-green text-xl font-medium leading-7 ">
-              ₱ 00,000
+              {price}
             </span>
           </div>
-          <div className="flex gap-2.5">
+          <div className="flex flex-wrap gap-2 w-full">
             <Button
               leftIcon={null}
               rightIcon={null}
@@ -58,11 +74,14 @@ export function ProductCard() {
               value="View Product"
               className="whitespace-nowrap text-sm! "
               style={{
-                gap: "10px",
+                gap: "8px",
                 borderRadius: "10px",
-                padding: "5px 15px",
+                padding: "5px 10px",
+                flex: "1 1 105px",
+                width: "auto",
+                justifyContent: "center",
               }}
-            ></Button>
+            />
             <Button
               leftIcon={null}
               rightIcon={
@@ -71,17 +90,20 @@ export function ProductCard() {
                   width={10}
                   height={7.5}
                   alt="right arrow"
-                ></Image>
+                />
               }
               variant="blackBtnWhiteText"
               value="Visualize"
               className="whitespace-nowrap text-sm! "
               style={{
-                gap: "10px",
+                gap: "8px",
                 borderRadius: "10px",
-                padding: "5px 15px",
+                padding: "5px 10px",
+                flex: "1 1 105px",
+                width: "auto",
+                justifyContent: "center",
               }}
-            ></Button>
+            />
           </div>
         </div>
       </div>

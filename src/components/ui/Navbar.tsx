@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import * as motion from "motion/react-client";
@@ -18,10 +18,26 @@ type classnamePropse = {
 export default function Navbar({ className = "" }: classnamePropse) {
   const [hoveredLabel, setHoveredLabel] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState(false);
+  const [isScrolled, setIsScrolled] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      if (window.scrollY > 10) {
+        setIsScrolled(true);
+      } else {
+        setIsScrolled(false);
+      }
+    };
+    window.addEventListener("scroll", handleScroll);
+    handleScroll();
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
 
   return (
     <nav
-      className={`z-100 w-full lg:w-11/12 fixed top-0 lg:top-21.5 left-0 right-0 mx-auto bg-white/75 border-b lg:border border-green rounded-none lg:rounded-[30px] px-4 py-3 lg:px-6 xl:px-12 2xl:px-18.75 lg:py-5 flex justify-between items-center gap-2 lg:gap-4 xl:gap-6 shadow-[-5px_4px_30px_0px_rgba(4,94,109,0.30)] ${className}`}
+      className={`z-100 w-full lg:w-11/12 fixed left-0 right-0 mx-auto bg-white/75 border-b lg:border border-green rounded-none lg:rounded-[30px] px-4 py-3 lg:px-6 xl:px-12 2xl:px-18.75 lg:py-5 flex justify-between items-center gap-2 lg:gap-4 xl:gap-6 shadow-[-5px_4px_30px_0px_rgba(4,94,109,0.30)] transition-all duration-300 ${
+        isScrolled ? "top-0 lg:top-2 shadow-md bg-white/90" : "top-0 lg:top-21.5"
+      } ${className}`}
     >
       <div className="navbar-logo shrink-0">
         <button className="navbar-icon" aria-label="Menu">
