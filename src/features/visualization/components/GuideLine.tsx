@@ -84,7 +84,7 @@ export function GuideLine() {
     };
 
     return (
-        <div className="w-full flex flex-col gap-6 pl-35">
+        <div className="w-full flex flex-col gap-6 px-6 md:px-12 lg:pl-35 lg:pr-0">
             {/* Section heading */}
             <h2 className="text-3xl font-medium text-black">Photo Guideline</h2>
 

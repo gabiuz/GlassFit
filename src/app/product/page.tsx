@@ -4,7 +4,7 @@ export default function ProductPage() {
   return (
     <main className="flex flex-col">
       <HeroSection />
-      <div className="flex flex-col gap-14 px-24.25 py-17.75">
+      <div className="flex flex-col gap-6 xl:gap-14 px-6 py-8 md:px-12 lg:px-24.25 lg:py-17.75">
         <SearchSection />
         <ProductSection />
       </div>

@@ -10,7 +10,6 @@ import { Step2GenerateLink } from "./Step2GenerateLink";
 import { Step3SendReference } from "./Step3SendReference";
 import { Step4Success } from "./Step4Success";
 import { Step4ConfirmSent } from "./Step4ConfirmSent";
-import Button from "@/components/shared/Button";
 
 export function BookingFlow() {
   const router = useRouter();
@@ -100,11 +99,11 @@ export function BookingFlow() {
 
       {/* Conditionally Render Bottom Step Navigation Bar (Steps 1, 2, 3) */}
       {step < 4 && (
-        <div className="bg-[#f5f5f5] w-full flex items-center justify-between gap-4 p-5 rounded-[20px] shadow-sm select-none mt-4 transition-all duration-300">
+        <div className="bg-[#f5f5f5] w-full flex flex-col sm:flex-row items-center justify-between gap-4 p-5 rounded-[20px] shadow-sm select-none mt-4 transition-all duration-300">
           {/* Back / Back to Estimate Button */}
           <button
             onClick={handlePrev}
-            className="bg-[#0f1422] hover:bg-black transition-colors text-white font-normal text-[20px] tracking-[-0.38px] leading-[1.4] px-5 py-3.5 rounded-[25px] flex items-center gap-3.5 cursor-pointer shadow-sm"
+            className="w-full sm:w-auto bg-[#0f1422] hover:bg-black transition-colors text-white font-normal text-base sm:text-[20px] tracking-[-0.38px] leading-[1.4] px-5 py-3.5 rounded-[25px] flex items-center justify-center gap-3.5 cursor-pointer shadow-sm"
           >
             <ChevronLeft className="w-5 h-5 text-white stroke-[2.5px]" />
             <span>{step === 1 ? "Back to Estimate" : "Back"}</span>
@@ -115,7 +114,7 @@ export function BookingFlow() {
             <button
               onClick={handleNext}
               disabled={step === 2 && !isLinkGenerated}
-              className={`font-normal text-[20px] tracking-[-0.38px] leading-[1.4] px-5 py-3.5 rounded-[25px] flex items-center gap-3.5 transition-all shadow-sm ${
+              className={`w-full sm:w-auto font-normal text-base sm:text-[20px] tracking-[-0.38px] leading-[1.4] px-5 py-3.5 rounded-[25px] flex items-center justify-center gap-3.5 transition-all shadow-sm ${
                 step === 2 && !isLinkGenerated
                   ? "bg-[#c3c3c3] text-white opacity-70 pointer-events-none"
                   : "bg-grad-light text-white cursor-pointer hover:opacity-95 active:translate-y-px"
