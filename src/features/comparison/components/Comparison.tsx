@@ -460,14 +460,20 @@ export function Comparison() {
         </div>
       )}
       {/* Bottom Footer Actions Box */}
-      <div className="bg-[#f5f5f5] w-full flex flex-col sm:flex-row items-center justify-between gap-4 p-5 rounded-[20px] shadow-sm select-none">
+      <div className="bg-[#f5f5f5] w-full flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 p-5 rounded-[20px] shadow-sm select-none">
         <Link href="/product-details" className="w-full sm:w-auto">
           <Button
             variant="blackBtnWhiteText"
             value="Edit Placement"
             leftIcon={<ChevronLeft className="w-5 h-5 shrink-0 text-white" />}
             rightIcon={null}
-            className="w-full sm:w-auto font-medium justify-center cursor-pointer py-3.5 rounded-[25px] flex items-center hover:opacity-90"
+            className="w-full sm:w-auto font-medium justify-center cursor-pointer py-3.5 rounded-[25px] flex items-center hover:opacity-90 [--btn-width:100%] sm:[--btn-width:fit-content] [--btn-padding:12px_16px] sm:[--btn-padding:15px_20px] [--btn-font-size:16px] sm:[--btn-font-size:20px] [--btn-gap:10px] sm:[--btn-gap:15px] whitespace-nowrap"
+            style={{
+              width: "var(--btn-width, fit-content)",
+              padding: "var(--btn-padding, 15px 20px)",
+              fontSize: "var(--btn-font-size, 20px)",
+              gap: "var(--btn-gap, 15px)",
+            }}
           />
         </Link>
 
@@ -476,7 +482,13 @@ export function Comparison() {
           value="Proceed to Estimate Price"
           leftIcon={null}
           rightIcon={<ChevronRight className="w-5 h-5 shrink-0 text-white" />}
-          className="w-full sm:w-auto font-medium justify-center cursor-pointer py-3.5 rounded-[25px] flex items-center hover:opacity-95"
+          className="w-full sm:w-auto font-medium justify-center cursor-pointer py-3.5 rounded-[25px] flex items-center hover:opacity-95 [--btn-width:100%] sm:[--btn-width:fit-content] [--btn-padding:12px_16px] sm:[--btn-padding:15px_20px] [--btn-font-size:16px] sm:[--btn-font-size:20px] [--btn-gap:10px] sm:[--btn-gap:15px] whitespace-nowrap"
+          style={{
+            width: "var(--btn-width, fit-content)",
+            padding: "var(--btn-padding, 15px 20px)",
+            fontSize: "var(--btn-font-size, 20px)",
+            gap: "var(--btn-gap, 15px)",
+          }}
           onClick={() => alert("Proceeding to Estimate Price...")}
         />
       </div>
