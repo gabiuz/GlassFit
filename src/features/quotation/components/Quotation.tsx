@@ -36,7 +36,7 @@ export function Quotation() {
       <VisualizationComparison />
       <ProductSummary />
       <BookingInfo />
-      <div className="bg-[#f5f5f5] w-full flex flex-col sm:flex-row items-center justify-between gap-4 p-5 rounded-[20px] shadow-sm select-none mt-2">
+      <div className="bg-[#f5f5f5] w-full flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 p-5 rounded-[20px] shadow-sm select-none mt-2">
         <Link href="/product-details" className="w-full sm:w-auto">
           <Button
             variant="blackBtnWhiteText"
@@ -45,7 +45,13 @@ export function Quotation() {
               <ChevronLeft className="w-5 h-5 text-white stroke-[2.5px]" />
             }
             rightIcon={null}
-            className="w-full sm:w-auto font-medium py-3.5 px-6 rounded-[25px] flex items-center justify-center hover:opacity-90 transition-opacity"
+            className="w-full sm:w-auto font-medium py-3.5 px-6 rounded-[25px] flex items-center justify-center hover:opacity-90 transition-opacity [--btn-width:100%] sm:[--btn-width:fit-content] [--btn-padding:12px_16px] sm:[--btn-padding:15px_20px] [--btn-font-size:16px] sm:[--btn-font-size:20px] [--btn-gap:10px] sm:[--btn-gap:15px] whitespace-nowrap"
+            style={{
+              width: "var(--btn-width, fit-content)",
+              padding: "var(--btn-padding, 15px 20px)",
+              fontSize: "var(--btn-font-size, 20px)",
+              gap: "var(--btn-gap, 15px)",
+            }}
           />
         </Link>
         <Button
@@ -55,7 +61,13 @@ export function Quotation() {
           rightIcon={
             <ChevronRight className="w-5 h-5 text-white stroke-[2.5px]" />
           }
-          className="w-full sm:w-auto font-medium py-3.5 px-6 rounded-[25px] flex items-center justify-center hover:opacity-95 transition-opacity bg-grad-light"
+          className="w-full sm:w-auto font-medium py-3.5 px-6 rounded-[25px] flex items-center justify-center hover:opacity-95 transition-opacity bg-grad-light [--btn-width:100%] sm:[--btn-width:fit-content] [--btn-padding:12px_16px] sm:[--btn-padding:15px_20px] [--btn-font-size:16px] sm:[--btn-font-size:20px] [--btn-gap:10px] sm:[--btn-gap:15px] whitespace-nowrap"
+          style={{
+            width: "var(--btn-width, fit-content)",
+            padding: "var(--btn-padding, 15px 20px)",
+            fontSize: "var(--btn-font-size, 20px)",
+            gap: "var(--btn-gap, 15px)",
+          }}
           onClick={handleSendBooking}
         />
       </div>
