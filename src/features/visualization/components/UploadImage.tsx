@@ -15,7 +15,11 @@ function validateFile(file: File): string | null {
     return null;
 }
 
-export function UploadImage() {
+interface UploadImageProps {
+    onImageUploaded?: (imageUrl: string) => void;
+}
+
+export function UploadImage({ onImageUploaded }: UploadImageProps = {}) {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [isDragging, setIsDragging] = useState(false);
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -34,7 +38,10 @@ export function UploadImage() {
         setFileName(file.name);
         const url = URL.createObjectURL(file);
         setPreviewUrl(url);
-    }, []);
+        if (onImageUploaded) {
+            onImageUploaded(url);
+        }
+    }, [onImageUploaded]);
 
     const handleBrowseClick = () => fileInputRef.current?.click();
 
@@ -104,12 +111,22 @@ export function UploadImage() {
                             />
                         </div>
                         <p className="text-base text-gray-600 truncate max-w-xs">{fileName}</p>
-                        <button
-                            onClick={(e) => { e.stopPropagation(); handleRemove(); }}
-                            className="px-5 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-3xl text-lg font-thin transition-colors duration-200"
-                        >
-                            Remove Image
-                        </button>
+                        <div className="flex flex-wrap items-center gap-4">
+                            <button
+                                onClick={(e) => { e.stopPropagation(); handleRemove(); }}
+                                className="px-5 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-3xl text-lg font-normal transition-colors duration-200 cursor-pointer"
+                            >
+                                Remove Image
+                            </button>
+                            {onImageUploaded && (
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); onImageUploaded(previewUrl); }}
+                                    className="px-6 py-2.5 bg-green hover:bg-[#06a3bd] text-white rounded-3xl text-lg font-medium transition-colors duration-200 cursor-pointer shadow-md"
+                                >
+                                    Proceed to Workspace →
+                                </button>
+                            )}
+                        </div>
                     </div>
                 ) : (
                     <>
@@ -150,8 +167,8 @@ export function UploadImage() {
             )}
 
             <p className="text-xl text-black font-normal tracking-tight leading-normal">
-                Upload a clear photo of the area where the glass or aluminum product may be installed. <br>
-                </br> GlassFit will use this image as the background for your product overlay and visual output.
+                Upload a clear photo of the area where the glass or aluminum product may be installed. <br />
+                GlassFit will use this image as the background for your product overlay and visual output.
             </p>
 
         </div>
