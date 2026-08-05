@@ -1,4 +1,5 @@
 import Image from "next/image";
+import Link from "next/link";
 import Button from "@/components/shared/Button";
 
 function CardDoors() {
@@ -226,12 +227,14 @@ export function ExploreSection() {
           </div>
         </div>
 
-        <Button
-          variant="whiteOutline"
-          value="Explore Product Catalog"
-          leftIcon={null}
-          rightIcon={<Image src="/cart.svg" width={25} height={25} alt="" />}
-        />
+        <Link href="/product">
+          <Button
+            variant="whiteOutline"
+            value="Explore Product Catalog"
+            leftIcon={null}
+            rightIcon={<Image src="/cart.svg" width={25} height={25} alt="" />}
+          />
+        </Link>
       </div>
     </section>
   );

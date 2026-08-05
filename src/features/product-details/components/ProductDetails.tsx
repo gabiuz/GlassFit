@@ -13,9 +13,9 @@ type BreadcrumbProps = {
 function Breadcrumb({ productName = "Product Name" }: BreadcrumbProps) {
   return (
     <nav className="flex items-center gap-2 text-base tracking-[-0.304px]" aria-label="Breadcrumb">
-      <span className="text-[#c3c3c3] hover:text-black transition-colors cursor-pointer text-base font-normal leading-6">Home</span>
+      <Link href="/" className="text-[#c3c3c3] hover:text-black transition-colors cursor-pointer text-base font-normal leading-6">Home</Link>
       <ChevronRight className="w-4 h-4 text-[#c3c3c3] shrink-0" />
-      <span className="text-[#c3c3c3] hover:text-black transition-colors cursor-pointer text-base font-normal leading-6">Catalog</span>
+      <Link href="/product" className="text-[#c3c3c3] hover:text-black transition-colors cursor-pointer text-base font-normal leading-6">Catalog</Link>
       <ChevronRight className="w-4 h-4 text-[#c3c3c3] shrink-0" />
       <span className="text-green font-normal select-none text-base leading-6">{productName}</span>
     </nav>
@@ -247,7 +247,7 @@ export function ProductDetails() {
 
           {/* Action button */}
           <div className="w-full">
-            <Link href="/comparison" className="block w-full">
+            <Link href="/visualization" className="block w-full">
               <Button
                 variant="blackBtnWhiteText"
                 value="Visualize on my own Space"

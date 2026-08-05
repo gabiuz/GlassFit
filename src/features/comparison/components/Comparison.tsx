@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight, Check } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
@@ -142,6 +143,7 @@ function ComparisonPanelCard({
 }
 
 export function Comparison() {
+  const router = useRouter();
   const [viewAs, setViewAs] = useState<"left" | "right">("left"); // left = Side-by-Side, right = Slider
   const [compareMode, setCompareMode] = useState<"left" | "right">("left"); // left = Before and After, right = Product Variant
 
@@ -461,7 +463,7 @@ export function Comparison() {
       )}
       {/* Bottom Footer Actions Box */}
       <div className="bg-[#f5f5f5] w-full flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 p-5 rounded-[20px] shadow-sm select-none">
-        <Link href="/product-details" className="w-full sm:w-auto">
+        <Link href="/visualization" className="w-full sm:w-auto">
           <Button
             variant="blackBtnWhiteText"
             value="Edit Placement"
@@ -489,7 +491,7 @@ export function Comparison() {
             fontSize: "var(--btn-font-size, 20px)",
             gap: "var(--btn-gap, 15px)",
           }}
-          onClick={() => alert("Proceeding to Estimate Price...")}
+          onClick={() => router.push("/quotation")}
         />
       </div>
     </div>

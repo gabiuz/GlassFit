@@ -37,7 +37,7 @@ export function Quotation() {
       <ProductSummary />
       <BookingInfo />
       <div className="bg-[#f5f5f5] w-full flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 p-5 rounded-[20px] shadow-sm select-none mt-2">
-        <Link href="/product-details" className="w-full sm:w-auto">
+        <Link href="/comparison" className="w-full sm:w-auto">
           <Button
             variant="blackBtnWhiteText"
             value="Edit Placement"

@@ -1,4 +1,5 @@
 import Image from "next/image";
+import Link from "next/link";
 import Button from "@/components/shared/Button";
 
 const navbarIcons = [
@@ -85,27 +86,31 @@ export function HeroSection() {
                 </p>
               </div>
               <div className="flex flex-col sm:flex-row gap-3.75">
-                <Button
-                  variant="lightGradWhiteText"
-                  value="Start Visualizing"
-                  leftIcon={null}
-                  rightIcon={
-                    <Image
-                      src="/right_arrow.svg"
-                      width={25}
-                      height={25}
-                      alt=""
-                    ></Image>
-                  }
-                  className="w-full sm:w-auto justify-center"
-                ></Button>
-                <Button
-                  variant="blackBtnWhiteText"
-                  value="View Sample Review"
-                  leftIcon={null}
-                  rightIcon={null}
-                  className="w-full sm:w-auto justify-center"
-                ></Button>
+                <Link href="/visualization" className="w-full sm:w-auto">
+                  <Button
+                    variant="lightGradWhiteText"
+                    value="Start Visualizing"
+                    leftIcon={null}
+                    rightIcon={
+                      <Image
+                        src="/right_arrow.svg"
+                        width={25}
+                        height={25}
+                        alt=""
+                      ></Image>
+                    }
+                    className="w-full sm:w-auto justify-center"
+                  ></Button>
+                </Link>
+                <Link href="/product" className="w-full sm:w-auto">
+                  <Button
+                    variant="blackBtnWhiteText"
+                    value="View Product Catalog"
+                    leftIcon={null}
+                    rightIcon={null}
+                    className="w-full sm:w-auto justify-center"
+                  ></Button>
+                </Link>
               </div>
             </div>
           </div>
