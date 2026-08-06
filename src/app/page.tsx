@@ -1,6 +1,5 @@
 import {
   HeroSection,
-  IntroSection,
   DetailSection,
   ExploreSection,
   HowItWorksSection,
