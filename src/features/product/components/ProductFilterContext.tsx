@@ -1,10 +1,12 @@
 "use client";
 
 import React, { createContext, useContext, useState, useMemo, useEffect } from "react";
-import { mockProducts, Product } from "../data/products";
+import type { CatalogProduct } from "@/lib/products/types";
+
+export { type CatalogProduct };
 
 export const MIN_PRICE = 0;
-export const MAX_PRICE = 50000;
+export const MAX_PRICE = 100000;
 
 export interface FilterState {
   range: [number, number];
@@ -21,7 +23,7 @@ export interface FilterState {
 
 const initialFilterState: FilterState = {
   range: [MIN_PRICE, MAX_PRICE],
-  selectedCategory: "Doors",
+  selectedCategory: "All",
   anodized: [],
   powderCoated: [],
   glass: [],
@@ -44,8 +46,9 @@ interface ProductFilterContextProps {
   resetDraftFilters: () => void;
   removeChipFilter: (type: string, value?: string) => void;
   activeFiltersCount: number;
-  filteredProducts: Product[];
-  draftFilteredProducts: Product[];
+  filteredProducts: CatalogProduct[];
+  draftFilteredProducts: CatalogProduct[];
+  allProducts: CatalogProduct[];
 }
 
 const ProductFilterContext = createContext<ProductFilterContextProps | undefined>(undefined);
@@ -58,75 +61,44 @@ export function useProductFilter() {
   return context;
 }
 
-function filterProductList(products: Product[], state: FilterState): Product[] {
+/**
+ * Maps the database product_type to the display category label used in the filter UI.
+ * These labels must match the categoryOptions defined in ProductFilter.tsx.
+ */
+function productTypeToCategory(type: CatalogProduct["type"]): string {
+  switch (type) {
+    case "Window":
+      return "Windows";
+    case "Door":
+      return "Doors";
+    case "Cabinet":
+      return "Cabinets";
+    case "Partition":
+      return "Partition";
+    case "Enclosure":
+      return "Shower Enclosure";
+    case "Railing":
+      return "Railing";
+    default:
+      return "Other";
+  }
+}
+
+function filterProductList(products: CatalogProduct[], state: FilterState): CatalogProduct[] {
   return products.filter((product) => {
     // 1. Price Range
-    if (product.price < state.range[0] || product.price > state.range[1]) {
-      return false;
+    if (product.basePrice > 0) {
+      if (product.basePrice < state.range[0] || product.basePrice > state.range[1]) {
+        return false;
+      }
     }
+    // Products with basePrice = 0 pass the price filter regardless (price not yet set)
 
     // 2. Category
-    if (product.category !== state.selectedCategory) {
-      return false;
-    }
-
-    // 3. Door Style (only filters if doors category and filters exist)
-    if (state.selectedCategory === "Doors" && state.checkedDoors.length > 0 && !state.checkedDoors.includes("All")) {
-      if (!product.doorStyle || !state.checkedDoors.includes(product.doorStyle)) {
+    if (state.selectedCategory !== "All") {
+      const category = productTypeToCategory(product.type);
+      if (category !== state.selectedCategory) {
         return false;
-      }
-    }
-
-    // 4. Material Finish
-    if (state.materialFinish.length > 0) {
-      const hasMatchingMaterial = product.materials.some((m) => state.materialFinish.includes(m));
-      if (!hasMatchingMaterial) {
-        return false;
-      }
-    }
-
-    // 5. Aluminum Finish (Anodized & Powder Coated) - apply only if Aluminum is active
-    if (state.materialFinish.includes("Aluminum")) {
-      const hasAnodizedFilters = state.anodized.length > 0;
-      const hasPowderFilters = state.powderCoated.length > 0;
-
-      if (hasAnodizedFilters || hasPowderFilters) {
-        const matchesAnodized = hasAnodizedFilters && product.aluminumFinish && state.anodized.includes(product.aluminumFinish);
-        const matchesPowder = hasPowderFilters && product.powderCoatedFinish && state.powderCoated.includes(product.powderCoatedFinish);
-        
-        if (!matchesAnodized && !matchesPowder) {
-          return false;
-        }
-      }
-
-      // Profile (Aluminum)
-      if (state.aluminumProfile.length > 0) {
-        if (!product.aluminumProfile || !state.aluminumProfile.includes(product.aluminumProfile)) {
-          return false;
-        }
-      }
-    }
-
-    // 6. Glass Finish - apply only if Glass is active
-    if (state.materialFinish.includes("Glass")) {
-      if (state.glass.length > 0) {
-        if (!product.glassFinish || !state.glass.includes(product.glassFinish)) {
-          return false;
-        }
-      }
-
-      // Profile (Glass)
-      if (state.glassProfile.length > 0) {
-        if (!product.glassProfile || !state.glassProfile.includes(product.glassProfile)) {
-          return false;
-        }
-      }
-
-      // Glass Thickness
-      if (state.glassThickness.length > 0) {
-        if (!product.thickness || !state.glassThickness.includes(product.thickness)) {
-          return false;
-        }
       }
     }
 
@@ -139,14 +111,11 @@ function calculateActiveFilters(state: FilterState): number {
   if (state.range[0] !== MIN_PRICE || state.range[1] !== MAX_PRICE) {
     count++;
   }
-  // Category defaults to "Doors". If changed, it's counted as a custom filter context.
-  if (state.selectedCategory !== "Doors") {
+  if (state.selectedCategory !== "All") {
     count++;
   }
-  // Count checked doors (excluding "All")
   const specificDoors = state.checkedDoors.filter((d) => d !== "All");
   count += specificDoors.length;
-
   count += state.materialFinish.length;
   count += state.anodized.length;
   count += state.powderCoated.length;
@@ -154,11 +123,16 @@ function calculateActiveFilters(state: FilterState): number {
   count += state.aluminumProfile.length;
   count += state.glassProfile.length;
   count += state.glassThickness.length;
-
   return count;
 }
 
-export function ProductFilterProvider({ children }: { children: React.ReactNode }) {
+interface ProductFilterProviderProps {
+  children: React.ReactNode;
+  /** Active products loaded from Supabase, passed in from the server component. */
+  initialProducts: CatalogProduct[];
+}
+
+export function ProductFilterProvider({ children, initialProducts }: ProductFilterProviderProps) {
   const [filters, setFilters] = useState<FilterState>(initialFilterState);
   const [draftFilters, setDraftFilters] = useState<FilterState>(initialFilterState);
   const [isMobileSheetOpen, setIsMobileSheetOpen] = useState(false);
@@ -205,7 +179,7 @@ export function ProductFilterProvider({ children }: { children: React.ReactNode 
           next.range = [MIN_PRICE, MAX_PRICE];
           break;
         case "category":
-          next.selectedCategory = "Doors";
+          next.selectedCategory = "All";
           break;
         case "checkedDoors":
           if (value) {
@@ -217,7 +191,6 @@ export function ProductFilterProvider({ children }: { children: React.ReactNode 
         case "materialFinish":
           if (value) {
             next.materialFinish = prev.materialFinish.filter((m) => m !== value);
-            // Auto clean up dependent selections
             if (value === "Aluminum") {
               next.anodized = [];
               next.powderCoated = [];
@@ -239,46 +212,22 @@ export function ProductFilterProvider({ children }: { children: React.ReactNode 
           }
           break;
         case "anodized":
-          if (value) {
-            next.anodized = prev.anodized.filter((v) => v !== value);
-          } else {
-            next.anodized = [];
-          }
+          next.anodized = value ? prev.anodized.filter((v) => v !== value) : [];
           break;
         case "powderCoated":
-          if (value) {
-            next.powderCoated = prev.powderCoated.filter((v) => v !== value);
-          } else {
-            next.powderCoated = [];
-          }
+          next.powderCoated = value ? prev.powderCoated.filter((v) => v !== value) : [];
           break;
         case "glass":
-          if (value) {
-            next.glass = prev.glass.filter((v) => v !== value);
-          } else {
-            next.glass = [];
-          }
+          next.glass = value ? prev.glass.filter((v) => v !== value) : [];
           break;
         case "aluminumProfile":
-          if (value) {
-            next.aluminumProfile = prev.aluminumProfile.filter((v) => v !== value);
-          } else {
-            next.aluminumProfile = [];
-          }
+          next.aluminumProfile = value ? prev.aluminumProfile.filter((v) => v !== value) : [];
           break;
         case "glassProfile":
-          if (value) {
-            next.glassProfile = prev.glassProfile.filter((v) => v !== value);
-          } else {
-            next.glassProfile = [];
-          }
+          next.glassProfile = value ? prev.glassProfile.filter((v) => v !== value) : [];
           break;
         case "glassThickness":
-          if (value) {
-            next.glassThickness = prev.glassThickness.filter((v) => v !== value);
-          } else {
-            next.glassThickness = [];
-          }
+          next.glassThickness = value ? prev.glassThickness.filter((v) => v !== value) : [];
           break;
       }
       return next;
@@ -286,8 +235,14 @@ export function ProductFilterProvider({ children }: { children: React.ReactNode 
   };
 
   const activeFiltersCount = useMemo(() => calculateActiveFilters(filters), [filters]);
-  const filteredProducts = useMemo(() => filterProductList(mockProducts, filters), [filters]);
-  const draftFilteredProducts = useMemo(() => filterProductList(mockProducts, draftFilters), [draftFilters]);
+  const filteredProducts = useMemo(
+    () => filterProductList(initialProducts, filters),
+    [initialProducts, filters]
+  );
+  const draftFilteredProducts = useMemo(
+    () => filterProductList(initialProducts, draftFilters),
+    [initialProducts, draftFilters]
+  );
 
   return (
     <ProductFilterContext.Provider
@@ -305,6 +260,7 @@ export function ProductFilterProvider({ children }: { children: React.ReactNode 
         activeFiltersCount,
         filteredProducts,
         draftFilteredProducts,
+        allProducts: initialProducts,
       }}
     >
       {children}

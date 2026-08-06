@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+
+generated/masks/*
+generated/uploads/*
+
+!generated/masks/.gitkeep
+!generated/uploads/.gitkeep

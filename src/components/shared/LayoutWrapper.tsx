@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 import Navbar from "@/components/ui/Navbar";
 import Footer from "@/components/ui/Footer";
+import { AuthProvider } from "@/features/auth";
 
 export default function LayoutWrapper({
   children,
@@ -18,16 +19,16 @@ export default function LayoutWrapper({
     pathname === "/create-account";
 
   if (isAuthPage) {
-    return <>{children}</>;
+    return <AuthProvider>{children}</AuthProvider>;
   }
 
   return (
-    <>
+    <AuthProvider>
       <div className="flex justify-center">
         <Navbar />
       </div>
       {children}
       <Footer />
-    </>
+    </AuthProvider>
   );
 }

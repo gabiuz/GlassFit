@@ -11,6 +11,7 @@ import {
   validatePhoneNumber,
   formatPhoneNumber,
 } from "../utils/auth-utils";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 export function RegisterForm() {
   const router = useRouter();
@@ -30,6 +31,7 @@ export function RegisterForm() {
   const [phoneError, setPhoneError] = useState("");
   const [generalError, setGeneralError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isGoogleSubmitting, setIsGoogleSubmitting] = useState(false);
 
   const passwordReqs = checkPasswordRequirements(password);
   const isPasswordValid = passwordReqs.minLength && passwordReqs.hasNumber && passwordReqs.hasLetter;
@@ -48,37 +50,67 @@ export function RegisterForm() {
     if (phoneError) setPhoneError("");
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+
     setFirstNameError("");
     setLastNameError("");
     setEmailError("");
     setPhoneError("");
     setGeneralError("");
 
+    const normalizedFirstName = firstName.trim();
+    const normalizedLastName = lastName.trim();
+    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedPhone = phone.replace(/\D/g, "");
+
     let hasErrors = false;
 
-    if (firstName.trim() === "") {
+    if (!normalizedFirstName) {
       setFirstNameError("First name is required.");
       hasErrors = true;
+    } else if (normalizedFirstName.length < 2) {
+      setFirstNameError("First name must contain at least 2 characters.");
+      hasErrors = true;
+    } else if (!/^[\p{L} .'-]+$/u.test(normalizedFirstName)) {
+      setFirstNameError("First name contains invalid characters.");
+      hasErrors = true;
     }
 
-    if (lastName.trim() === "") {
+    if (!normalizedLastName) {
       setLastNameError("Last name is required.");
       hasErrors = true;
-    }
-
-    if (!validateEmail(email)) {
-      setEmailError("Please enter a valid email address.");
+    } else if (normalizedLastName.length < 2) {
+      setLastNameError("Last name must contain at least 2 characters.");
+      hasErrors = true;
+    } else if (!/^[\p{L} .'-]+$/u.test(normalizedLastName)) {
+      setLastNameError("Last name contains invalid characters.");
       hasErrors = true;
     }
 
-    if (!validatePhoneNumber(phone)) {
-      setPhoneError("Phone number must be 10 digits starting with 9 (e.g. 917 123 4567).");
+    if (!normalizedEmail) {
+      setEmailError("Email address is required.");
+      hasErrors = true;
+    } else if (!validateEmail(normalizedEmail)) {
+      setEmailError("Enter a valid email address.");
       hasErrors = true;
     }
 
-    if (!isPasswordValid) {
+    if (!normalizedPhone) {
+      setPhoneError("Contact number is required.");
+      hasErrors = true;
+    } else if (!validatePhoneNumber(normalizedPhone)) {
+      setPhoneError(
+        "Enter a valid Philippine mobile number beginning with 9."
+      );
+      hasErrors = true;
+    }
+
+    if (!password) {
+      setGeneralError("Password is required.");
+      hasErrors = true;
+    } else if (!isPasswordValid) {
       setGeneralError("Password does not meet all requirements.");
       hasErrors = true;
     }
@@ -87,12 +119,143 @@ export function RegisterForm() {
 
     setIsSubmitting(true);
 
-    // Simulate API registration request
-    setTimeout(() => {
+    try {
+      const supabase = createSupabaseBrowserClient();
+
+      const { data, error } = await supabase.auth.signUp({
+        email: normalizedEmail,
+        password,
+        options: {
+          // ?next=/ tells /auth/confirm where to redirect after email verification
+          emailRedirectTo: `${window.location.origin}/auth/confirm?next=/`,
+          data: {
+            first_name: normalizedFirstName,
+            last_name: normalizedLastName,
+            full_name: `${normalizedFirstName} ${normalizedLastName}`,
+            phone: `+63${normalizedPhone}`,
+          },
+        },
+      });
+
+      if (error) {
+        const message = error.message.toLowerCase();
+
+        if (
+          message.includes("already registered") ||
+          message.includes("already exists")
+        ) {
+          setEmailError("An account with this email already exists.");
+        } else if (message.includes("invalid email")) {
+          setEmailError("Enter a valid email address.");
+        } else if (
+          message.includes("password") &&
+          (message.includes("weak") || message.includes("least"))
+        ) {
+          setGeneralError(
+            "The password is too weak. Use a stronger password."
+          );
+        } else if (
+          message.includes("rate limit") ||
+          message.includes("too many requests")
+        ) {
+          setGeneralError(
+            "Too many registration attempts. Please wait and try again."
+          );
+        } else if (message.includes("signup is disabled")) {
+          setGeneralError(
+            "Account registration is temporarily unavailable."
+          );
+        } else {
+          setGeneralError(
+            "We could not create your account. Please try again."
+          );
+        }
+
+        return;
+      }
+
+      if (!data.user) {
+        setGeneralError(
+          "Your account could not be created. Please try again."
+        );
+        return;
+      }
+
+      // If email confirmation is required (no immediate session), send to login
+      // with a "check your inbox" message embedded in the URL.
+      if (!data.session) {
+        router.push(
+          `/login?registered=1&email=${encodeURIComponent(normalizedEmail)}`
+        );
+        return;
+      }
+
+      // Auto-confirmed (e.g. email confirmation disabled in Supabase settings)
+      router.push("/");
+      router.refresh();
+    } catch (error) {
+      console.error("Registration failed:", error);
+
+      setGeneralError(
+        navigator.onLine
+          ? "Something went wrong while creating your account."
+          : "You appear to be offline. Check your internet connection."
+      );
+    } finally {
       setIsSubmitting(false);
-      alert("Successfully created account!");
-      router.push("/login");
-    }, 1500);
+    }
+  };
+
+  const handleGoogleSignUp = async () => {
+    setGeneralError("");
+    setIsGoogleSubmitting(true);
+
+    try {
+      const supabase = createSupabaseBrowserClient();
+
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: `${window.location.origin}/auth/confirm?next=/&type=oauth`,
+        },
+      });
+
+      if (error) {
+        const message = error.message.toLowerCase();
+
+        if (
+          message.includes("provider") &&
+          message.includes("not enabled")
+        ) {
+          setGeneralError(
+            "Google account registration is not available right now."
+          );
+        } else if (
+          message.includes("rate limit") ||
+          message.includes("too many requests")
+        ) {
+          setGeneralError(
+            "Too many attempts. Please wait before trying again."
+          );
+        } else {
+          setGeneralError(
+            "We could not continue with Google. Please try again."
+          );
+        }
+
+        setIsGoogleSubmitting(false);
+      }
+    } catch (error) {
+      console.error("Google registration failed:", error);
+
+      setGeneralError(
+        navigator.onLine
+          ? "Something went wrong while connecting to Google."
+          : "You appear to be offline. Check your internet connection."
+      );
+
+      setIsGoogleSubmitting(false);
+    }
   };
 
   return (
@@ -113,7 +276,7 @@ export function RegisterForm() {
 
       {/* Register Glassmorphism Card */}
       <div className="relative z-10 w-full max-w-[777px] mx-4 bg-white/95 backdrop-blur-md border border-[#c3c3c3] rounded-[20px] px-8 sm:px-[72px] py-12 flex flex-col gap-6 items-center justify-center shadow-[0px_4px_30px_0px_rgba(4,94,109,0.25)] select-none">
-        
+
         {/* Logo */}
         <div className="relative h-[99px] w-[232px] flex items-center justify-center mb-1">
           <Image
@@ -160,9 +323,15 @@ export function RegisterForm() {
                 placeholder="Juan"
                 className="w-full bg-white border border-[#c3c3c3] rounded-lg px-4 py-3 text-sm font-normal text-black outline-none placeholder:text-[#c3c3c3] focus:border-green focus:ring-1 focus:ring-green transition-all"
                 required
+                autoComplete="given-name"
+                maxLength={60}
+                aria-invalid={Boolean(firstNameError)}
+                aria-describedby={firstNameError ? "first-name-error" : undefined}
               />
               {firstNameError && (
-                <span className="text-destructive text-xs mt-1">{firstNameError}</span>
+                <span id="first-name-error" className="text-destructive text-xs mt-1">
+                  {firstNameError}
+                </span>
               )}
             </div>
 
@@ -181,9 +350,15 @@ export function RegisterForm() {
                 placeholder="Dela Cruz"
                 className="w-full bg-white border border-[#c3c3c3] rounded-lg px-4 py-3 text-sm font-normal text-black outline-none placeholder:text-[#c3c3c3] focus:border-green focus:ring-1 focus:ring-green transition-all"
                 required
+                autoComplete="family-name"
+                maxLength={60}
+                aria-invalid={Boolean(lastNameError)}
+                aria-describedby={lastNameError ? "last-name-error" : undefined}
               />
               {lastNameError && (
-                <span className="text-destructive text-xs mt-1">{lastNameError}</span>
+                <span id="last-name-error" className="text-destructive text-xs mt-1">
+                  {lastNameError}
+                </span>
               )}
             </div>
           </div>
@@ -200,12 +375,28 @@ export function RegisterForm() {
                 setEmail(e.target.value);
                 if (emailError) setEmailError("");
               }}
+              onBlur={() => {
+                const normalizedEmail = email.trim().toLowerCase();
+                setEmail(normalizedEmail);
+
+                if (normalizedEmail && !validateEmail(normalizedEmail)) {
+                  setEmailError("Enter a valid email address.");
+                }
+              }}
               placeholder="you@example.com"
+              autoComplete="email"
+              inputMode="email"
+              maxLength={254}
+              spellCheck={false}
+              aria-invalid={Boolean(emailError)}
+              aria-describedby={emailError ? "email-error" : undefined}
               className="w-full bg-white border border-[#c3c3c3] rounded-lg px-4 py-3 text-sm font-normal text-black outline-none placeholder:text-[#c3c3c3] focus:border-green focus:ring-1 focus:ring-green transition-all"
               required
             />
             {emailError && (
-              <span className="text-destructive text-xs mt-1">{emailError}</span>
+              <span id="email-error" className="text-destructive text-xs mt-1">
+                {emailError}
+              </span>
             )}
           </div>
 
@@ -232,6 +423,11 @@ export function RegisterForm() {
                 value={phone}
                 onChange={handlePhoneChange}
                 placeholder="9XX XXX XXXX"
+                autoComplete="tel-national"
+                inputMode="numeric"
+                maxLength={12}
+                aria-invalid={Boolean(phoneError)}
+                aria-describedby={phoneError ? "phone-error" : undefined}
                 className="flex-1 bg-transparent px-4 py-3 text-sm font-normal text-black outline-none placeholder:text-[#c3c3c3]"
                 required
               />
@@ -254,6 +450,11 @@ export function RegisterForm() {
                 placeholder="Create strong password"
                 className="w-full bg-white border border-[#c3c3c3] rounded-lg pl-4 pr-12 py-3 text-sm font-normal text-black outline-none placeholder:text-[#c3c3c3] focus:border-green focus:ring-1 focus:ring-green transition-all"
                 required
+                autoComplete="new-password"
+                minLength={8}
+                maxLength={72}
+                aria-invalid={password !== "" && !isPasswordValid}
+                aria-describedby="password-requirements"
               />
               <button
                 type="button"
@@ -270,38 +471,35 @@ export function RegisterForm() {
             </div>
 
             {/* Password Validation Requirements */}
-            <div className="mt-2 text-xs tracking-[-0.228px]">
+            <div id="password-requirements" className="mt-2 text-xs tracking-[-0.228px]">
               <ul className="list-disc flex flex-col gap-1">
                 <li
-                  className={`ms-[18px] transition-colors duration-200 ${
-                    password === ""
-                      ? "text-[#c3c3c3]"
-                      : passwordReqs.minLength
+                  className={`ms-[18px] transition-colors duration-200 ${password === ""
+                    ? "text-[#c3c3c3]"
+                    : passwordReqs.minLength
                       ? "text-green font-medium"
                       : "text-destructive"
-                  }`}
+                    }`}
                 >
                   At least 8 characters
                 </li>
                 <li
-                  className={`ms-[18px] transition-colors duration-200 ${
-                    password === ""
-                      ? "text-[#c3c3c3]"
-                      : passwordReqs.hasNumber
+                  className={`ms-[18px] transition-colors duration-200 ${password === ""
+                    ? "text-[#c3c3c3]"
+                    : passwordReqs.hasNumber
                       ? "text-green font-medium"
                       : "text-destructive"
-                  }`}
+                    }`}
                 >
                   Include 1 number
                 </li>
                 <li
-                  className={`ms-[18px] transition-colors duration-200 ${
-                    password === ""
-                      ? "text-[#c3c3c3]"
-                      : passwordReqs.hasLetter
+                  className={`ms-[18px] transition-colors duration-200 ${password === ""
+                    ? "text-[#c3c3c3]"
+                    : passwordReqs.hasLetter
                       ? "text-green font-medium"
                       : "text-destructive"
-                  }`}
+                    }`}
                 >
                   Include 1 letter
                 </li>
@@ -321,16 +519,25 @@ export function RegisterForm() {
           {/* Google Sign In Button */}
           <button
             type="button"
-            className="border border-[#c3c3c3] bg-white hover:bg-neutral-50 active:bg-neutral-100 transition-colors w-full flex items-center justify-center gap-4 py-2.5 px-5 rounded-[10px] cursor-pointer"
-            onClick={() => alert("Google authentication is not configured yet.")}
+            onClick={handleGoogleSignUp}
+            disabled={isSubmitting || isGoogleSubmitting}
+            aria-busy={isGoogleSubmitting}
+            className={`border border-[#c3c3c3] bg-white transition-colors w-full flex items-center justify-center gap-4 py-2.5 px-5 rounded-[10px] ${isSubmitting || isGoogleSubmitting
+              ? "cursor-not-allowed opacity-60"
+              : "cursor-pointer hover:bg-neutral-50 active:bg-neutral-100"
+              }`}
           >
             <span className="font-normal text-[14px] text-[#19181f] tracking-[-0.266px] leading-[1.4]">
-              Create account with Google
+              {isGoogleSubmitting
+                ? "Connecting to Google..."
+                : "Create account with Google"}
             </span>
+
             <div className="relative w-[23px] h-[23px]">
               <Image
                 src="/google_icon.svg"
-                alt="Google Logo"
+                alt=""
+                aria-hidden="true"
                 fill
                 className="object-contain"
               />
@@ -342,11 +549,10 @@ export function RegisterForm() {
             <button
               type="submit"
               disabled={!isFormValid || isSubmitting}
-              className={`w-full flex items-center justify-center px-[16px] py-[10px] rounded-[20px] text-sm text-white tracking-[-0.266px] font-normal leading-[1.4] transition-all ${
-                isFormValid && !isSubmitting
-                  ? "bg-[#07b6d3] cursor-pointer hover:bg-[#06a4be] active:translate-y-px"
-                  : "bg-[#c3c3c3] pointer-events-none"
-              }`}
+              className={`w-full flex items-center justify-center px-[16px] py-[10px] rounded-[20px] text-sm text-white tracking-[-0.266px] font-normal leading-[1.4] transition-all ${isFormValid && !isSubmitting
+                ? "bg-[#07b6d3] cursor-pointer hover:bg-[#06a4be] active:translate-y-px"
+                : "bg-[#c3c3c3] pointer-events-none"
+                }`}
             >
               {isSubmitting ? "Signing Up..." : "Sign Up"}
             </button>

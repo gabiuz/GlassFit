@@ -6,9 +6,35 @@ import { ProductCard } from "./ProductCard";
 import { MobileFilterBar } from "./MobileFilterBar";
 import { MobileBottomSheet } from "./MobileBottomSheet";
 import { FilterChips } from "./FilterChips";
+import type { CatalogProduct } from "@/lib/products/types";
 
-function ProductSectionContent() {
-  const { filteredProducts, resetFilters } = useProductFilter();
+interface ProductSectionProps {
+  initialProducts: CatalogProduct[];
+  fetchError: string | null;
+}
+
+function ProductSectionContent({ fetchError }: { fetchError: string | null }) {
+  const { filteredProducts, resetFilters, allProducts } = useProductFilter();
+
+  // Error state
+  if (fetchError) {
+    return (
+      <section className="p-4 md:p-6 lg:p-10 flex flex-col items-center justify-center py-24">
+        <p className="text-lg text-red-400 font-medium text-center">{fetchError}</p>
+      </section>
+    );
+  }
+
+  // Empty state — all products returned from DB, no active records
+  if (allProducts.length === 0) {
+    return (
+      <section className="p-4 md:p-6 lg:p-10 flex flex-col items-center justify-center py-24">
+        <p className="text-lg text-neutral-400 font-normal text-center">
+          No products are currently available.
+        </p>
+      </section>
+    );
+  }
 
   return (
     <section className="p-4 md:p-6 lg:p-10 flex flex-col xl:flex-row gap-8 items-start w-full">
@@ -52,10 +78,10 @@ function ProductSectionContent() {
   );
 }
 
-export function ProductSection() {
+export function ProductSection({ initialProducts, fetchError }: ProductSectionProps) {
   return (
-    <ProductFilterProvider>
-      <ProductSectionContent />
+    <ProductFilterProvider initialProducts={initialProducts}>
+      <ProductSectionContent fetchError={fetchError} />
     </ProductFilterProvider>
   );
 }
