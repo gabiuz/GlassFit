@@ -6,9 +6,9 @@ import * as motion from "motion/react-client";
 import Button from "@/components/shared/Button";
 
 const navLinks = [
-  "Home",
-  "Product Catalog",
-  "Visualization Workspace",
+  { label: "Home", href: "/" },
+  { label: "Product Catalog", href: "/product" },
+  { label: "Visualization Workspace", href: "/visualization" },
 ];
 
 type classnamePropse = {
@@ -40,41 +40,41 @@ export default function Navbar({ className = "" }: classnamePropse) {
       } ${className}`}
     >
       <div className="navbar-logo shrink-0">
-        <button className="navbar-icon" aria-label="Menu">
+        <Link href="/" aria-label="Go to home">
           <Image
             src="/Logo.svg"
             alt=""
             width={120}
-            height={51}
+            height={120}
             aria-hidden="true"
             className="w-[120px] h-auto lg:w-[140px] xl:w-[160px] 2xl:w-[181px]"
           />
-        </button>
+        </Link>
       </div>
 
       {/* Desktop Links */}
       <div className="navbar-links hidden lg:flex min-w-0 gap-4 xl:gap-8 2xl:gap-15">
-        {navLinks.map((label) => {
+        {navLinks.map((link) => {
           const isActive =
-            label === "Home" &&
+            link.label === "Home" &&
             (hoveredLabel === null || hoveredLabel === "Home");
 
           return (
             <motion.span
-              key={label}
+              key={link.label}
               initial="rest"
               animate={isActive ? "active" : "rest"}
               whileHover="hover"
               className="relative inline-flex items-center shrink-0"
-              onMouseEnter={() => setHoveredLabel(label)}
+              onMouseEnter={() => setHoveredLabel(link.label)}
               onMouseLeave={() => setHoveredLabel(null)}
             >
               <Link
-                href="#"
+                href={link.href}
                 className={`text-base xl:text-lg leading-4 whitespace-nowrap navbar-link flex hover:text-green ${isActive ? "text-green font-bold" : ""}`}
                 aria-current={isActive ? "page" : undefined}
               >
-                {label}
+                {link.label}
               </Link>
               <motion.span
                 className="pointer-events-none absolute left-1/2 -bottom-1 h-0.5 -translate-x-1/2 rounded-full"
@@ -149,14 +149,14 @@ export default function Navbar({ className = "" }: classnamePropse) {
       {isOpen && (
         <div className="absolute top-full left-0 right-0 mt-2 bg-white/95 backdrop-blur-md border border-green rounded-[20px] p-6 flex flex-col gap-6 shadow-lg lg:hidden">
           <div className="flex flex-col gap-4">
-            {navLinks.map((label) => (
+            {navLinks.map((link) => (
               <Link
-                key={label}
-                href="#"
+                key={link.label}
+                href={link.href}
                 onClick={() => setIsOpen(false)}
                 className="text-lg text-black hover:text-green py-1"
               >
-                {label}
+                {link.label}
               </Link>
             ))}
           </div>

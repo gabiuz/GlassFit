@@ -7,4 +7,3 @@ export { DetailSection } from "./components/DetailSection";
 export { ExploreSection } from "./components/ExploreSection";
 export { HeroSection } from "./components/HeroSection";
 export { HowItWorksSection } from "./components/HowItWorksSection";
-export { IntroSection } from "./components/IntroSection";
