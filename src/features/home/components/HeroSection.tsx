@@ -39,7 +39,7 @@ export function HeroSection() {
           ))}
         </div>
       </div>
-      <div className="relative min-h-screen lg:min-h-[120vh] min-[2400px]:min-h-[110vh]!">
+      <div className="relative min-h-252.5 lg:min-h-screen xl:min-h-[120vh] min-[2400px]:min-h-[110vh]!">
         <div className="absolute inset-0 overflow-hidden">
           <video
             className="absolute inset-0 h-full w-full object-cover"
@@ -109,7 +109,7 @@ export function HeroSection() {
                     value="View Product Catalog"
                     leftIcon={null}
                     rightIcon={null}
-                    className="w-full sm:w-auto justify-center min-[1920px]:px-7 min-[1920px]:py-4 min-[1920px]:text-xl min-[2400px]:px-9! min-[2400px]:py-5! min-[2400px]:text-2xl!"
+                    className="w-full sm:w-auto justify-center min-[1920px]:px-7 min-[1920px]:py-4 min-[1920px]:text-xl min-[2400px]:px-9! min-[2400px]:py-5! min-[2400px]:text-2xl"
                   ></Button>
                 </Link>
               </div>
