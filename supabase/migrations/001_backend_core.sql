@@ -10,6 +10,7 @@
 -- 2. Temporary customer uploads, masks, occlusion data, overlay transforms,
 --    and realism settings are intentionally not persisted.
 -- 3. This migration assumes Supabase Auth already provides auth.users.
+-- 4. profiles stores first_name and last_name separately; full_name is generated automatically.
 -- ============================================================================
 
 begin;
@@ -63,7 +64,12 @@ create table public.admin_roles (
 create table public.profiles (
   profile_id uuid primary key,
   admin_role_id uuid,
-  full_name varchar(100) not null,
+  first_name varchar(50) not null,
+  last_name varchar(50) not null,
+  full_name varchar(101)
+    generated always as (
+      trim(first_name || ' ' || last_name)
+    ) stored,
   email varchar(254) not null,
   contact_number varchar(20),
   auth_provider varchar(30) not null,
@@ -77,6 +83,10 @@ create table public.profiles (
   constraint profiles_admin_role_fk
     foreign key (admin_role_id) references public.admin_roles(role_id) on delete set null,
   constraint profiles_email_unique unique (email),
+  constraint profiles_first_name_not_blank
+    check (length(trim(first_name)) > 0),
+  constraint profiles_last_name_not_blank
+    check (length(trim(last_name)) > 0),
   constraint profiles_auth_provider_check
     check (auth_provider in ('Email', 'Google', 'Other')),
   constraint profiles_account_type_check
@@ -112,6 +122,89 @@ $$;
 
 revoke all on function public.is_admin(uuid) from public;
 grant execute on function public.is_admin(uuid) to authenticated;
+
+-- --------------------------------------------------------------------------
+-- Auto-create profile on new auth.users row
+-- Fires for both email/password sign-ups and OAuth (Google) sign-ins.
+-- Uses SECURITY DEFINER so it can bypass RLS when writing the first row.
+-- --------------------------------------------------------------------------
+
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_first_name  varchar(50);
+  v_last_name   varchar(50);
+  v_phone       varchar(20);
+  v_provider    varchar(30);
+  v_full_name   text;
+  v_name_parts  text[];
+begin
+  -- Determine auth provider
+  -- new.raw_app_meta_data->>'provider' contains 'email' or 'google' etc.
+  v_provider := coalesce(new.raw_app_meta_data->>'provider', 'email');
+
+  if v_provider = 'google' then
+    -- Google OAuth: names come from raw_user_meta_data
+    v_full_name  := coalesce(
+      new.raw_user_meta_data->>'full_name',
+      new.raw_user_meta_data->>'name',
+      ''
+    );
+    v_name_parts := string_to_array(trim(v_full_name), ' ');
+
+    -- First name = first token; last name = everything else (or repeat first if only one token)
+    v_first_name := coalesce(nullif(trim(v_name_parts[1]), ''), 'User');
+    v_last_name  := coalesce(
+      nullif(trim(array_to_string(v_name_parts[2:array_length(v_name_parts,1)], ' ')), ''),
+      v_first_name
+    );
+    v_phone      := null;
+    v_provider   := 'Google';
+  else
+    -- Email/password: names come from options.data passed in signUp()
+    v_first_name := coalesce(nullif(trim(new.raw_user_meta_data->>'first_name'), ''), 'User');
+    v_last_name  := coalesce(nullif(trim(new.raw_user_meta_data->>'last_name'), ''), v_first_name);
+    v_phone      := nullif(trim(coalesce(new.raw_user_meta_data->>'phone', '')), '');
+    v_provider   := 'Email';
+  end if;
+
+  -- Enforce varchar(50) limits
+  v_first_name := left(v_first_name, 50);
+  v_last_name  := left(v_last_name, 50);
+
+  insert into public.profiles (
+    profile_id,
+    first_name,
+    last_name,
+    email,
+    contact_number,
+    auth_provider,
+    account_type,
+    status
+  ) values (
+    new.id,
+    v_first_name,
+    v_last_name,
+    coalesce(new.email, new.raw_user_meta_data->>'email', ''),
+    v_phone,
+    v_provider,
+    'Customer',
+    'Active'
+  )
+  on conflict (profile_id) do nothing;
+
+  return new;
+end;
+$$;
+
+-- Trigger fires after a new row is committed to auth.users
+create or replace trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function public.handle_new_user();
 
 -- --------------------------------------------------------------------------
 -- 3. products
@@ -942,6 +1035,8 @@ for each row execute function public.set_updated_at();
 create index profiles_admin_role_idx on public.profiles(admin_role_id);
 create index profiles_account_type_status_idx on public.profiles(account_type, status);
 create index profiles_email_lower_idx on public.profiles(lower(email));
+create index profiles_last_name_lower_idx on public.profiles(lower(last_name));
+create index profiles_full_name_lower_idx on public.profiles(lower(full_name));
 
 create index products_created_by_idx on public.products(created_by);
 create index products_updated_by_idx on public.products(updated_by);
