@@ -44,7 +44,6 @@ export default function Navbar({ className = "" }: ClassNameProps) {
     setIsSigningOut(false);
   };
 
-  // Derive a display name from the user's metadata
   const displayName = user
     ? (user.user_metadata?.first_name as string | undefined) ??
       user.email?.split("@")[0] ??
@@ -52,13 +51,11 @@ export default function Navbar({ className = "" }: ClassNameProps) {
     : null;
 
   const authSection = isLoading ? (
-    // Skeleton placeholder to prevent layout shift
     <div className="hidden lg:flex items-center gap-3 shrink-0">
       <div className="h-9 w-20 rounded-[10px] bg-[#c3c3c3]/30 animate-pulse" />
       <div className="h-9 w-28 rounded-[10px] bg-[#c3c3c3]/30 animate-pulse" />
     </div>
   ) : user ? (
-    // ── Logged-in state ──
     <div className="hidden lg:flex items-center gap-3 xl:gap-4 shrink-0">
       <div className="flex items-center gap-2 px-3 py-2 rounded-[10px] bg-green/10 border border-green/30">
         <div className="w-7 h-7 rounded-full bg-green flex items-center justify-center shrink-0">
@@ -79,7 +76,6 @@ export default function Navbar({ className = "" }: ClassNameProps) {
       </button>
     </div>
   ) : (
-    // ── Logged-out state ──
     <div className="hidden lg:flex items-center gap-3 xl:gap-5 2xl:gap-6.25 shrink-0">
       <Link href="/login">
         <Button
@@ -122,7 +118,7 @@ export default function Navbar({ className = "" }: ClassNameProps) {
             src="/Logo.svg"
             alt="GlassFit"
             width={120}
-            height={51}
+            height={120}
             aria-hidden="true"
             className="w-[120px] h-auto lg:w-[140px] xl:w-[160px] 2xl:w-[181px]"
           />

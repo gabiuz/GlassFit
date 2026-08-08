@@ -1,4 +1,5 @@
 import Image from "next/image";
+import Link from "next/link";
 import Button from "@/components/shared/Button";
 
 export function CreateMyPreview() {
@@ -22,12 +23,14 @@ export function CreateMyPreview() {
             Start with a product, upload your space image, and create a visual
             reference for your glass and aluminum project.
           </p>
-          <Button
-            variant="blackBtnWhiteText"
-            value="Create My Preview"
-            leftIcon={null}
-            rightIcon={null}
-          />
+          <Link href="/visualization">
+            <Button
+              variant="blackBtnWhiteText"
+              value="Create My Preview"
+              leftIcon={null}
+              rightIcon={null}
+            />
+          </Link>
         </div>
       </div>
     </section>

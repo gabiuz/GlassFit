@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import Image from "next/image";
 
 type FooterProps = {
@@ -12,6 +13,7 @@ const socialMediaIcons = [
     width: 14.62,
     height: 25,
     alt: "Facebook",
+    href: "#",
   },
   {
     key: "twitter",
@@ -19,6 +21,7 @@ const socialMediaIcons = [
     width: 24.35,
     height: 25,
     alt: "Twitter",
+    href: "#",
   },
   {
     key: "linkedin",
@@ -26,6 +29,7 @@ const socialMediaIcons = [
     width: 25,
     height: 20.87,
     alt: "LinkedIn",
+    href: "#",
   },
   {
     key: "youtube",
@@ -33,6 +37,7 @@ const socialMediaIcons = [
     width: 25,
     height: 18.06,
     alt: "YouTube",
+    href: "#",
   },
 ];
 
@@ -44,13 +49,15 @@ export default function Footer({ className = "" }: FooterProps) {
       <div className="mx-auto px-6 py-10 md:px-10 md:py-12 lg:px-30 lg:py-15">
         <div className="flex flex-col items-center gap-10 md:flex-row md:flex-wrap md:items-start md:justify-between lg:flex-nowrap lg:justify-between text-center md:text-left">
           <div className="flex flex-col items-center md:items-start gap-7.75">
-            <Image
-              src="/glassfit_logo_large.svg"
-              alt=""
-              width={1454}
-              height={618}
-              className="w-48 h-20 md:w-66.75 md:h-28"
-            ></Image>
+            <Link href="/">
+              <Image
+                src="/glassfit_logo_large.svg"
+                alt=""
+                width={1454}
+                height={618}
+                className="w-48 h-20 md:w-66.75 md:h-28"
+              />
+            </Link>
             <div className="text-[#3a3a3a] text-lg font-normal leading-7">
               <p className="hidden md:block">Bicutan, Paranaque</p>
               <br className="hidden md:block" />
@@ -61,14 +68,21 @@ export default function Footer({ className = "" }: FooterProps) {
             </div>
             <div className="flex items-end gap-6 md:gap-10.5 justify-center md:justify-start">
               {socialMediaIcons.map((icon) => (
-                <Image
+                <a
                   key={icon.key}
-                  src={icon.src}
-                  alt={icon.alt}
-                  width={icon.width}
-                  height={icon.height}
+                  href={icon.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={icon.alt}
                   className="inline-block mr-0 md:mr-4"
-                />
+                >
+                  <Image
+                    src={icon.src}
+                    alt={icon.alt}
+                    width={icon.width}
+                    height={icon.height}
+                  />
+                </a>
               ))}
             </div>
           </div>
@@ -79,9 +93,9 @@ export default function Footer({ className = "" }: FooterProps) {
                   Company
                 </h3>
               </li>
-              <li>About</li>
-              <li>Product Catalog</li>
-              <li>Visualization Workspace</li>
+              <li><Link href="/#about" className="hover:text-green transition-colors">About</Link></li>
+              <li><Link href="/product" className="hover:text-green transition-colors">Product Catalog</Link></li>
+              <li><Link href="/visualization" className="hover:text-green transition-colors">Visualization Workspace</Link></li>
             </ul>
           </div>
           <div className="flex flex-col items-center md:hidden lg:items-start lg:block w-full md:w-auto">
@@ -103,8 +117,8 @@ export default function Footer({ className = "" }: FooterProps) {
       <div className="bg-grad-dark text-white flex flex-col md:flex-row gap-4 justify-between items-center px-6 md:px-10 lg:px-27.5 py-4 md:py-2.5 text-center text-sm lg:text-base">
         <p>© 2026 R.R.D Glass and Aluminum. All rights reserved.</p>
         <div className="flex gap-6 md:gap-8 lg:gap-14">
-          <p>Privacy Policy</p>
-          <p>Terms & Conditions</p>
+          <Link href="/privacy" className="hover:underline cursor-pointer">Privacy Policy</Link>
+          <Link href="/terms" className="hover:underline cursor-pointer">Terms &amp; Conditions</Link>
         </div>
       </div>
     </footer>

@@ -1,10 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { ChevronRight, Plus, Minus } from "lucide-react";
 import Button from "@/components/shared/Button";
+import type { ProductDetail } from "@/lib/products/getProductById";
+import dynamic from "next/dynamic";
+
+// Lazy-load the heavy Three.js canvas so it doesn't bloat the initial bundle and avoid SSR issues
+const ProductModel3D = dynamic(
+  () => import("./ProductModel3D").then((m) => m.ProductModel3D),
+  { ssr: false }
+);
 
 type BreadcrumbProps = {
   productName?: string;
@@ -13,9 +21,9 @@ type BreadcrumbProps = {
 function Breadcrumb({ productName = "Product Name" }: BreadcrumbProps) {
   return (
     <nav className="flex items-center gap-2 text-base tracking-[-0.304px]" aria-label="Breadcrumb">
-      <span className="text-[#c3c3c3] hover:text-black transition-colors cursor-pointer text-base font-normal leading-6">Home</span>
+      <Link href="/" className="text-[#c3c3c3] hover:text-black transition-colors cursor-pointer text-base font-normal leading-6">Home</Link>
       <ChevronRight className="w-4 h-4 text-[#c3c3c3] shrink-0" />
-      <span className="text-[#c3c3c3] hover:text-black transition-colors cursor-pointer text-base font-normal leading-6">Catalog</span>
+      <Link href="/product" className="text-[#c3c3c3] hover:text-black transition-colors cursor-pointer text-base font-normal leading-6">Catalog</Link>
       <ChevronRight className="w-4 h-4 text-[#c3c3c3] shrink-0" />
       <span className="text-green font-normal select-none text-base leading-6">{productName}</span>
     </nav>
@@ -40,36 +48,100 @@ const glassOptions = [
   { name: "Clear Glass" },
 ];
 
-export function ProductDetails() {
+export function ProductDetails({ product }: { product: ProductDetail }) {
   const [selectedFinish, setSelectedFinish] = useState("analok");
   const [selectedGlass, setSelectedGlass] = useState("Tempered Glass");
   const [width, setWidth] = useState(0);
   const [height, setHeight] = useState(0);
   const [thickness, setThickness] = useState(0);
-  const [quantity, setQuantity] = useState(0);
+  const [quantity, setQuantity] = useState(1);
+  const [view3d, setView3d] = useState(false);
+
+  const priceLabel = product.base_price > 0
+    ? `Starting at ₱${product.base_price.toLocaleString("en-PH")}`
+    : null;
+
+  const has3d = Boolean(product.preview_glb_url);
 
   return (
     <div className="w-full flex flex-col gap-8 px-6 pt-8 pb-16 lg:px-21.5 lg:pt-13.75 lg:pb-33">
-      <Breadcrumb productName="Aluminum Sliding Door" />
+      <Breadcrumb productName={product.product_name} />
 
       <div className="w-full flex flex-col lg:flex-row gap-9 items-stretch lg:items-start">
-        <div className="bg-[#d9d9d9] w-full lg:w-164.5 h-64 sm:h-96 lg:h-226.75 shrink-0 relative" />
+        {/* Product Image / 3D Viewer */}
+        <div className="relative w-full lg:w-164.5 h-64 sm:h-96 lg:h-226.75 shrink-0 overflow-hidden rounded-sm bg-[#d9d9d9]">
+
+          {/* ── 2D view ── */}
+          {(!view3d || !has3d) && (
+            product.catalog_image_url ? (
+              <Image
+                src={product.catalog_image_url}
+                alt={product.product_name}
+                fill
+                className="object-cover"
+                unoptimized
+              />
+            ) : (
+              <div className="w-full h-full bg-[#d9d9d9]" />
+            )
+          )}
+
+          {/* ── 3D view ── */}
+          {view3d && has3d && (
+            <Suspense
+              fallback={
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="w-8 h-8 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                </div>
+              }
+            >
+              <ProductModel3D glbUrl={product.preview_glb_url!} />
+            </Suspense>
+          )}
+
+          {/* ── Glassmorphism 2D | 3D toggle ── */}
+          {has3d && (
+            <div className="absolute bottom-4 right-4 z-10">
+              <div className="flex items-center gap-0.5 rounded-full px-1.5 py-1.5 backdrop-blur-md bg-white/20 border border-white/30 shadow-[0_4px_24px_rgba(0,0,0,0.18)] select-none">
+                <button
+                  type="button"
+                  onClick={() => setView3d(false)}
+                  className={`px-3.5 py-1.5 rounded-full text-sm font-medium transition-all duration-200 cursor-pointer ${
+                    !view3d
+                      ? "bg-white text-black shadow-sm"
+                      : "text-white/80 hover:text-white"
+                  }`}
+                >
+                  2D
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setView3d(true)}
+                  className={`px-3.5 py-1.5 rounded-full text-sm font-medium transition-all duration-200 cursor-pointer ${
+                    view3d
+                      ? "bg-white text-black shadow-sm"
+                      : "text-white/80 hover:text-white"
+                  }`}
+                >
+                  3D
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
         <div className="flex-1 flex flex-col gap-8 w-full">
           <div className="flex flex-col gap-5 w-full">
             <div className="flex flex-col gap-5 items-start">
               <h1 className="font-medium leading-tight lg:leading-[57.60px] text-3xl sm:text-4xl lg:text-5xl text-black">
-                French Glass Door
+                {product.product_name}
               </h1>
               <div className="flex flex-wrap gap-1.25">
                 <span className="bg-[#c3c3c3] text-white text-base px-2.5 py-1.25 rounded-[20px] select-none font-normal">
-                  Door
-                </span>
-                <span className="bg-[#c3c3c3] text-white text-base px-2.5 py-1.25 rounded-[20px] select-none font-normal">
-                  Double Swing Door
+                  {product.product_type}
                 </span>
               </div>
               <p className="text-lg lg:text-xl text-black leading-7 font-normal">
-                An elegant double-door glass installation designed to create a bright and open transition between indoor and outdoor spaces.
+                {product.description ?? ""}
               </p>
             </div>
             {/* Estimated Price Box */}
@@ -77,11 +149,17 @@ export function ProductDetails() {
               <p className="text-2xl text-white font-normal leading-8">
                 Estimated Price
               </p>
-              <div className="flex items-center">
-                <p className="font-medium text-5xl leading-[57.60px]">
-                  ₱18,000 - ₱50,000
+              {priceLabel ? (
+                <div className="flex items-center">
+                  <p className="font-medium text-5xl leading-[57.60px]">
+                    {priceLabel}
+                  </p>
+                </div>
+              ) : (
+                <p className="text-white/80 text-lg font-normal">
+                  Price available after configuration
                 </p>
-              </div>
+              )}
               <p className="text-xs text-white font-normal leading-4">
                 excl. install, final after consultation, etc
               </p>
@@ -247,7 +325,7 @@ export function ProductDetails() {
 
           {/* Action button */}
           <div className="w-full">
-            <Link href="/comparison" className="block w-full">
+            <Link href="/visualization" className="block w-full">
               <Button
                 variant="blackBtnWhiteText"
                 value="Visualize on my own Space"

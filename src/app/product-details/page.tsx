@@ -1,11 +1,7 @@
-import { BackgroundNavbar } from "@/components/shared/BackgroundNavbar";
-import { ProductDetails } from "@/features/product-details";
+import { redirect } from "next/navigation";
 
-export default function ProductDetailsPage() {
-  return (
-    <div>
-      <BackgroundNavbar />
-      <ProductDetails />
-    </div>
-  );
+// Static /product-details route — redirect to catalog.
+// Real product detail pages live at /product-details/[id]
+export default function ProductDetailsIndexPage() {
+  redirect("/product");
 }

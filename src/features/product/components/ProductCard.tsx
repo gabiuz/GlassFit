@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import Button from "@/components/shared/Button";
 import Image from "next/image";
 import type { CatalogProduct } from "@/lib/products/types";
@@ -88,51 +89,46 @@ export function ProductCard({ product }: ProductCardProps) {
             </>
           )}
           <div className="flex flex-wrap gap-2 w-full">
-            <Button
-              leftIcon={null}
-              rightIcon={null}
-              variant="greenBtnWhiteText"
-              value="View Product"
-              className="whitespace-nowrap text-sm!"
-              style={{
-                gap: "8px",
-                borderRadius: "10px",
-                padding: "5px 10px",
-                flex: "1 1 105px",
-                width: "auto",
-                justifyContent: "center",
-              }}
-            />
-            <Button
-              leftIcon={null}
-              rightIcon={
-                <Image
-                  src="/right_arrow.svg"
-                  width={10}
-                  height={7.5}
-                  alt="right arrow"
-                />
-              }
-              variant="blackBtnWhiteText"
-              value="Visualize"
-              className="whitespace-nowrap text-sm!"
-              title={
-                canVisualize
-                  ? undefined
-                  : "This product is available in the catalog, but its visualization model is not available yet."
-              }
-              disabled={!canVisualize}
-              style={{
-                gap: "8px",
-                borderRadius: "10px",
-                padding: "5px 10px",
-                flex: "1 1 105px",
-                width: "auto",
-                justifyContent: "center",
-                opacity: canVisualize ? 1 : 0.5,
-                cursor: canVisualize ? "pointer" : "not-allowed",
-              }}
-            />
+            {/* feat/sql: routed buttons */}
+            <Link href={`/product-details/${product.id}`} style={{ flex: "1 1 105px" }}>
+              <Button
+                leftIcon={null}
+                rightIcon={null}
+                variant="greenBtnWhiteText"
+                value="View Product"
+                className="whitespace-nowrap text-sm! "
+                style={{
+                  gap: "8px",
+                  borderRadius: "10px",
+                  padding: "5px 10px",
+                  width: "100%",
+                  justifyContent: "center",
+                }}
+              />
+            </Link>
+            <Link href="/visualization" style={{ flex: "1 1 105px" }}>
+              <Button
+                leftIcon={null}
+                rightIcon={
+                  <Image
+                    src="/right_arrow.svg"
+                    width={10}
+                    height={7.5}
+                    alt="right arrow"
+                  />
+                }
+                variant="blackBtnWhiteText"
+                value="Visualize"
+                className="whitespace-nowrap text-sm! "
+                style={{
+                  gap: "8px",
+                  borderRadius: "10px",
+                  padding: "5px 10px",
+                  width: "100%",
+                  justifyContent: "center",
+                }}
+              />
+            </Link>
           </div>
         </div>
       </div>
