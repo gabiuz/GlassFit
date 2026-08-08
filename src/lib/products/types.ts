@@ -6,18 +6,20 @@ export type DatabaseProduct = {
   product_id: string;
   product_name: string;
   product_type:
-    | "Window"
-    | "Door"
-    | "Partition"
-    | "Cabinet"
-    | "Enclosure"
-    | "Railing"
-    | "Other";
+  | "Window"
+  | "Door"
+  | "Partition"
+  | "Cabinet"
+  | "Enclosure"
+  | "Railing"
+  | "Other";
   description: string | null;
   base_price: number;
   status: "Active" | "Inactive";
   created_at: string;
   updated_at: string;
+
+  catalog_image_r2_key: string | null;
 };
 
 /**
@@ -42,4 +44,6 @@ export type CatalogProduct = {
    * null means the product has no supported visualization yet.
    */
   rendererKey: SupportedRendererKey | null;
+  /** R2 public URL for the catalog image, or null if no image is uploaded yet. */
+  imageUrl: string | null;
 };

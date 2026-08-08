@@ -23,7 +23,7 @@ function formatPrice(basePrice: number): { label: string; value: string } | { me
 }
 
 export function ProductCard({ product }: ProductCardProps) {
-  const { name, description, basePrice, rendererKey } = product;
+  const { name, description, basePrice, rendererKey, imageUrl } = product;
 
   const priceDisplay = formatPrice(basePrice);
   const canVisualize = rendererKey !== null;
@@ -31,15 +31,19 @@ export function ProductCard({ product }: ProductCardProps) {
   // Generate tag-like chips from product type for display
   const typeTags = [product.type];
 
+  const imageSrc = imageUrl ?? "/product_card_placeholder.png";
+  const isExternalImage = imageSrc.startsWith("http");
+
   return (
     <div className="max-w-68.25 rounded-[10px] bg-white/50 shadow-[0px_0px_5px_0px_rgba(0,0,0,0.25)] w-full flex flex-col justify-between overflow-hidden">
       <div>
         <Image
-          src="/product_card_placeholder.png"
+          src={imageSrc}
           alt={name}
           width={273}
           height={224}
           className="w-full h-[224px] object-cover"
+          unoptimized={isExternalImage}
         />
       </div>
       <div className="flex flex-col p-5 gap-7.5 flex-1 justify-between">

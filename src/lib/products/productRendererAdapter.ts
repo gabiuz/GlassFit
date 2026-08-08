@@ -1,3 +1,4 @@
+import { getR2AssetUrl } from "@/lib/r2";
 import type { DatabaseProduct, SupportedRendererKey, CatalogProduct } from "./types";
 
 /**
@@ -34,5 +35,6 @@ export function mapDatabaseProductToCatalog(
     description: dbProduct.description,
     basePrice: dbProduct.base_price,
     rendererKey: resolveRendererKey(dbProduct.product_type),
+    imageUrl: getR2AssetUrl(dbProduct.catalog_image_r2_key),
   };
 }
