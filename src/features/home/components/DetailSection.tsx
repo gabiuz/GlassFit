@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import Card from "@/components/ui/Card";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
 const SIDE_CARD_WIDTH = 384;
 const ACTIVE_CARD_WIDTH = 478;
@@ -133,6 +134,76 @@ export function DetailSection() {
           before talking to the business.
         </p>
       </div>
+      {/* Mobile: single active card + swipe navigation */}
+      <div
+        className="lg:hidden flex flex-col gap-6"
+        onTouchStart={(e) => {
+          const touch = e.touches[0];
+          (e.currentTarget as HTMLDivElement).dataset.touchStartX = String(touch.clientX);
+        }}
+        onTouchEnd={(e) => {
+          const startX = Number((e.currentTarget as HTMLDivElement).dataset.touchStartX ?? 0);
+          const endX = e.changedTouches[0].clientX;
+          const diff = startX - endX;
+          if (Math.abs(diff) > 40) {
+            if (diff > 0) {
+              setActiveIndex((prev) => wrapIndex(prev + 1, totalCards));
+            } else {
+              setActiveIndex((prev) => wrapIndex(prev - 1, totalCards));
+            }
+          }
+        }}
+      >
+        {/* Active card */}
+        <div className="w-full h-[420px] overflow-hidden">
+          <Card
+            number={detailCards[activeIndex].number}
+            title={detailCards[activeIndex].title}
+            description={detailCards[activeIndex].description}
+            isActive={true}
+            className="w-full rounded-[25px] h-full"
+          />
+        </div>
+
+        {/* Mobile navigation row: prev arrow + dots + next arrow */}
+        <div className="flex items-center justify-center gap-4">
+          <button
+            type="button"
+            aria-label="Previous card"
+            onClick={() => setActiveIndex((prev) => wrapIndex(prev - 1, totalCards))}
+            className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full bg-black/10 transition-colors hover:bg-black/20"
+          >
+            <ChevronLeft className="h-4 w-4 text-black" />
+          </button>
+
+          <div className="flex items-center gap-3">
+            {detailCards.map((card, index) => {
+              const isActiveDot = index === activeIndex;
+              return (
+                <button
+                  type="button"
+                  key={card.number}
+                  onClick={() => handlePaginationClick(index)}
+                  className={`h-2.5 cursor-pointer rounded-full transition-all duration-300 ${
+                    isActiveDot ? "w-5 bg-green" : "w-2.5 bg-black/30"
+                  }`}
+                />
+              );
+            })}
+          </div>
+
+          <button
+            type="button"
+            aria-label="Next card"
+            onClick={() => setActiveIndex((prev) => wrapIndex(prev + 1, totalCards))}
+            className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full bg-black/10 transition-colors hover:bg-black/20"
+          >
+            <ChevronRight className="h-4 w-4 text-black" />
+          </button>
+        </div>
+      </div>
+
+      {/* Desktop: 3-card carousel */}
       <div
         className="hidden lg:block w-full mx-auto"
         onMouseEnter={() => setIsPaused(true)}

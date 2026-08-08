@@ -4,7 +4,7 @@ import Button from "@/components/shared/Button";
 
 export function CreateMyPreview() {
   return (
-    <section className="px-4 py-12 lg:px-27.5 lg:py-25">
+    <section className="px-4 py-12 lg:px-27.5 lg:pb-25 lg:pt-12.5">
       <div className="relative overflow-hidden rounded-[25px] bg-green px-6 py-12 md:px-16 lg:px-69.25 lg:py-25">
         <div className="pointer-events-none absolute inset-0">
           <Image

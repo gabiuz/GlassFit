@@ -18,7 +18,7 @@ export default function Card({
 
   return (
     <div
-      className={`relative flex w-96 overflow-hidden px-7 pt-10 pb-36 flex-col gap-4 rounded-[25px_25px_0_0] bg-black text-white shadow-[0_10px_30px_rgba(4,94,109,0.12)] ${className}`}
+      className={`relative flex w-96 overflow-hidden px-7 pt-10 pb-36 flex-col gap-4 rounded-[25px_25px_0_0] bg-black text-white ${className}`}
     >
       <div
         className={`absolute inset-0 bg-grad-light ${

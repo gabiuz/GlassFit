@@ -68,7 +68,10 @@ export function HowItWorksSection() {
           </div>
           <div className="flex w-full min-w-0 flex-1 flex-col gap-5 sm:gap-6 lg:gap-7.5 lg:max-w-180.5">
             {howItWorksSteps.map((step) => (
-              <div key={step.title} className="flex items-start sm:items-center gap-3 sm:gap-5 lg:gap-7.5">
+              <div
+                key={step.title}
+                className="flex flex-col items-start sm:items-start gap-3 sm:gap-5 lg:gap-7.5 lg:flex-row"
+              >
                 <div className="relative h-9 w-9 sm:h-12 sm:w-12 lg:h-16.5 lg:w-16.5 shrink-0">
                   <Image
                     src={step.icon}
