@@ -325,7 +325,7 @@ export function ProductDetails({ product }: { product: ProductDetail }) {
 
           {/* Action button */}
           <div className="w-full">
-            <Link href="/visualization" className="block w-full">
+            <Link href={`/visualize/${product.product_id}/upload`} className="block w-full">
               <Button
                 variant="blackBtnWhiteText"
                 value="Visualize on my own Space"

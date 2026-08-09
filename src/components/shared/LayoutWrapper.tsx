@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import Navbar from "@/components/ui/Navbar";
 import Footer from "@/components/ui/Footer";
 import { AuthProvider } from "@/features/auth";
+import { VisualizationSessionProvider } from "@/lib/visualization/visualizationSession";
 
 export default function LayoutWrapper({
   children,
@@ -19,16 +20,24 @@ export default function LayoutWrapper({
     pathname === "/create-account";
 
   if (isAuthPage) {
-    return <AuthProvider>{children}</AuthProvider>;
+    return (
+      <AuthProvider>
+        <VisualizationSessionProvider>{children}</VisualizationSessionProvider>
+      </AuthProvider>
+    );
   }
 
   return (
     <AuthProvider>
-      <div className="flex justify-center">
-        <Navbar />
+      <div>
+        <VisualizationSessionProvider>
+          <div className="flex justify-center">
+            <Navbar />
+          </div>
+          {children}
+          <Footer />
+        </VisualizationSessionProvider>
       </div>
-      {children}
-      <Footer />
     </AuthProvider>
   );
 }

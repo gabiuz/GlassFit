@@ -24,10 +24,9 @@ function formatPrice(basePrice: number): { label: string; value: string } | { me
 }
 
 export function ProductCard({ product }: ProductCardProps) {
-  const { name, description, basePrice, rendererKey, imageUrl } = product;
+  const { name, description, basePrice, imageUrl } = product;
 
   const priceDisplay = formatPrice(basePrice);
-  const canVisualize = rendererKey !== null;
 
   // Generate tag-like chips from product type for display
   const typeTags = [product.type];
@@ -59,11 +58,6 @@ export function ProductCard({ product }: ProductCardProps) {
                 <span className="text-black text-xs">{tag}</span>
               </div>
             ))}
-            {!canVisualize && (
-              <div className="px-2.5 py-1.25 rounded-[20px] border border-amber-400/60 bg-amber-50">
-                <span className="text-amber-700 text-xs">Preview coming soon</span>
-              </div>
-            )}
           </div>
           <div className="w-fit">
             <p className="text-black text-sm font-normal leading-5">
@@ -106,7 +100,7 @@ export function ProductCard({ product }: ProductCardProps) {
                 }}
               />
             </Link>
-            <Link href="/visualization" style={{ flex: "1 1 105px" }}>
+            <Link href={`/visualize/${product.id}/upload`} style={{ flex: "1 1 105px" }}>
               <Button
                 leftIcon={null}
                 rightIcon={

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useRef, useState } from "react";
 import {
   HeroSection,
   UploadImage,
@@ -10,106 +10,117 @@ import {
   ImageErrorModal,
   ImageSuccessModal,
 } from "@/features/visualization";
+import { analyzeImage, type SpaceImageSession } from "@/lib/imageApi";
+
+type UploadStatus = "idle" | "analyzing" | "ready" | "error";
 
 export default function VisualizationPage() {
-  const [uploadedImage, setUploadedImage] = useState<string | null>(null);
-  const [pendingImage, setPendingImage] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isSuccess, setIsSuccess] = useState(false);
-  const [hasError, setHasError] = useState(false);
+  const requestIdRef = useRef(0);
+  const [activeSession, setActiveSession] = useState<SpaceImageSession | null>(null);
+  const [pendingSession, setPendingSession] = useState<SpaceImageSession | null>(null);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [status, setStatus] = useState<UploadStatus>("idle");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const handleImageUploaded = (imageUrl: string) => {
-    setPendingImage(imageUrl);
-    setIsLoading(true);
-    setIsSuccess(false);
-    setHasError(false);
+  const runAnalysis = async (file: File) => {
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
+
+    setPendingFile(file);
+    setPendingSession(null);
+    setStatus("analyzing");
+    setErrorMessage(null);
+
+    try {
+      const session = await analyzeImage(file);
+      if (requestIdRef.current !== requestId) return;
+
+      setPendingSession(session);
+      setStatus("ready");
+    } catch (error) {
+      if (requestIdRef.current !== requestId) return;
+
+      setPendingSession(null);
+      setStatus("error");
+      setErrorMessage(error instanceof Error ? error.message : "Unable to analyze the image.");
+    }
   };
 
-  useEffect(() => {
-    let timer: NodeJS.Timeout;
-    if (isLoading && pendingImage && !isSuccess && !hasError) {
-      // Simulate image analysis phase -> transition to Success modal state
-      timer = setTimeout(() => {
-        setIsLoading(false);
-        setIsSuccess(true);
-      }, 1600);
-    }
-    return () => clearTimeout(timer);
-  }, [isLoading, pendingImage, isSuccess, hasError]);
+  const handleImageSelected = (file: File) => {
+    void runAnalysis(file);
+  };
 
   const handlePlaceProduct = () => {
-    if (pendingImage) {
-      setUploadedImage(pendingImage);
-    } else {
-      setUploadedImage("/images/windows.png");
-    }
-    setIsSuccess(false);
-    setIsLoading(false);
-    setPendingImage(null);
+    if (!pendingSession) return;
+
+    setActiveSession(pendingSession);
+    setPendingSession(null);
+    setPendingFile(null);
+    setStatus("idle");
   };
 
   const handleCancelModal = () => {
-    setIsLoading(false);
-    setIsSuccess(false);
-    setHasError(false);
-    setPendingImage(null);
+    requestIdRef.current += 1;
+    setPendingSession(null);
+    setStatus("idle");
+    setErrorMessage(null);
   };
 
   const handleTryAgain = () => {
-    setHasError(false);
-    setIsLoading(true);
+    if (pendingFile) {
+      void runAnalysis(pendingFile);
+      return;
+    }
+
+    setStatus("idle");
+    setErrorMessage(null);
   };
 
   const handleResetImage = () => {
-    setUploadedImage(null);
-    setPendingImage(null);
-    setIsLoading(false);
-    setIsSuccess(false);
-    setHasError(false);
+    requestIdRef.current += 1;
+    setActiveSession(null);
+    setPendingSession(null);
+    setPendingFile(null);
+    setStatus("idle");
+    setErrorMessage(null);
   };
 
   return (
     <main className="flex flex-col min-h-screen">
       <HeroSection />
       <div className="flex flex-col gap-14 px-6 py-8 md:px-12 md:py-12 lg:px-24.25 lg:py-17.75">
-        {uploadedImage ? (
+        {activeSession ? (
           <ProductModelWorkspace
-            uploadedImage={uploadedImage}
+            uploadedImage={activeSession.workspaceImage.url}
+            spaceImageSession={activeSession}
             onBack={handleResetImage}
           />
         ) : (
           <>
-            <UploadImage onImageUploaded={handleImageUploaded} />
+            <UploadImage onImageSelected={handleImageSelected} />
             <GuideLine />
           </>
         )}
       </div>
 
-      {/* 1. Loading Modal */}
       <ImageLoadingModal
-        isOpen={isLoading}
+        isOpen={status === "analyzing"}
         onCancel={handleCancelModal}
-        isLoading={isLoading}
+        isLoading
       />
 
-      {/* 2. Success Modal */}
       <ImageSuccessModal
-        isOpen={isSuccess}
+        isOpen={status === "ready"}
         onCancel={handleCancelModal}
         onPlaceProduct={handlePlaceProduct}
       />
 
-      {/* 3. Error Modal */}
       <ImageErrorModal
-        isOpen={hasError}
+        isOpen={status === "error"}
         onCancel={handleCancelModal}
         onTryAgain={handleTryAgain}
+        errorMessage={errorMessage ?? undefined}
       />
     </main>
   );
 }
-
-
-
-
-

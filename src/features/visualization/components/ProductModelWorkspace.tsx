@@ -1,23 +1,76 @@
 "use client";
 
-import React, { useState, useRef } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { motion, AnimatePresence } from "motion/react";
 import { RotateCw, FlipHorizontal, RotateCcw, Trash2 } from "lucide-react";
 import Button from "@/components/shared/Button";
 import { AddProductModal, type Product } from "./AddProductModal";
+import type { SpaceImageSession } from "@/lib/imageApi";
+import { GeneratedProductCanvas } from "@/lib/visualization/GeneratedProductCanvas";
+import type {
+  GlassAppearanceMode,
+  ProductStructuralDefinition,
+} from "@/lib/visualization/types";
 
 interface ProductModelWorkspaceProps {
   uploadedImage: string | null;
+  spaceImageSession?: SpaceImageSession | null;
+  structuralDefinition?: ProductStructuralDefinition | null;
+  selectedProductName?: string;
   onBack: () => void;
 }
 
+interface OcclusionItem {
+  id: string;
+  label: string;
+  confidence: string;
+  active: boolean;
+}
+
+type ResizeMode = "scale" | "width" | "height";
+
+type ResizeSession = {
+  mode: ResizeMode;
+  startX: number;
+  startY: number;
+  startWidth: number;
+  startHeight: number;
+  startWidthCm: number;
+  startHeightCm: number;
+  startZoomLevel: number;
+  signX: number;
+  signY: number;
+  aspectRatio: number;
+};
+
+type RotationSession = {
+  centerX: number;
+  centerY: number;
+  startPointerAngle: number;
+  startRotation: number;
+};
+
+const MIN_OVERLAY_WIDTH = 120;
+const MIN_OVERLAY_HEIGHT = 90;
+const MAX_OVERLAY_WIDTH = 760;
+const MAX_OVERLAY_HEIGHT = 620;
+const MIN_SCENE_ZOOM = -55;
+const MAX_SCENE_ZOOM = 150;
+
 export function ProductModelWorkspace({
   uploadedImage,
+  spaceImageSession,
+  structuralDefinition,
+  selectedProductName,
   onBack,
 }: ProductModelWorkspaceProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
+  const overlayBoxRef = useRef<HTMLDivElement>(null);
+  const outlineControlsRef = useRef<HTMLDivElement>(null);
+  const resizeSessionRef = useRef<ResizeSession | null>(null);
+  const rotationSessionRef = useRef<RotationSession | null>(null);
   const [zoomLevel, setZoomLevel] = useState(10);
   const [openAccordions, setOpenAccordions] = useState<string[]>([]);
 
@@ -28,16 +81,13 @@ export function ProductModelWorkspace({
   const [yaw, setYaw] = useState(0);
   const [pitch, setPitch] = useState(0);
   const [alumFinish, setAlumFinish] = useState("analok");
-  const [glassType, setGlassType] = useState("tempered");
+  const [glassAppearance, setGlassAppearance] = useState<GlassAppearanceMode>("frosted");
+  const [includeSill, setIncludeSill] = useState(true);
   const [widthCm, setWidthCm] = useState("140");
   const [heightCm, setHeightCm] = useState("120");
   const [thicknessMm, setThicknessMm] = useState("3");
   const [quantity, setQuantity] = useState(1);
-  const [occlusions, setOcclusions] = useState([
-    { id: 1, label: "Product Label", confidence: "0%", active: false },
-    { id: 2, label: "Product Label", confidence: "0%", active: false },
-    { id: 3, label: "Product Label", confidence: "0%", active: false },
-  ]);
+  const [activeOcclusionIds, setActiveOcclusionIds] = useState<string[]>([]);
 
   const [selectedProduct, setSelectedProduct] = useState(true);
   const [rotateAngle, setRotateAngle] = useState(0);
@@ -46,11 +96,50 @@ export function ProductModelWorkspace({
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [modalTitle, setModalTitle] = useState("Add Product");
   const [activeProduct, setActiveProduct] = useState<Product | null>(null);
+  const [productBuildError, setProductBuildError] = useState<string | null>(null);
+  const initialOverlaySize = getOverlaySizeFromDimensions(widthCm, heightCm);
+  const [overlaySize, setOverlaySize] = useState(initialOverlaySize);
+  const [isUsingTransformHandle, setIsUsingTransformHandle] = useState(false);
 
-  // Background image source: room background canvas
-  const bgImage = "/comparison_assets/room_without_furniture.png";
-  // Overlay image inside the click-to-select box: uploaded image or selected product model
-  const productOverlayImage = uploadedImage || activeProduct?.image || "/images/modular_cabinets.png";
+  const bgImage = uploadedImage || "/comparison_assets/room_without_furniture.png";
+  const productOverlayImage = activeProduct?.image || "/images/modular_cabinets.png";
+  const overlayName = selectedProductName ?? activeProduct?.name ?? "Selected Product";
+  const workspaceAspectRatio = spaceImageSession?.workspaceImage
+    ? `${spaceImageSession.workspaceImage.width} / ${spaceImageSession.workspaceImage.height}`
+    : "636 / 579";
+  const effectiveLighting = ambientLight ? spaceImageSession?.lighting : null;
+  const isWindowProduct =
+    structuralDefinition?.product.productType === "Window" ||
+    Boolean(
+      structuralDefinition?.components.some(
+        (component) => component.componentKey.replace(/_/g, "-") === "window-sill",
+      ),
+    );
+  const modelEffectStyle = useMemo(
+    () => getModelEffectStyle({
+      autoRealism,
+      autoShadow,
+      lighting: spaceImageSession?.lighting,
+    }),
+    [autoRealism, autoShadow, spaceImageSession?.lighting],
+  );
+  const occlusions = useMemo<OcclusionItem[]>(
+    () =>
+      (spaceImageSession?.objects || []).map((object) => ({
+        id: object.id,
+        label: object.label,
+        confidence: `${Math.round(object.confidence * 100)}%`,
+        active: activeOcclusionIds.includes(object.id),
+      })),
+    [activeOcclusionIds, spaceImageSession],
+  );
+  const activeOcclusionObjects = useMemo(
+    () =>
+      (spaceImageSession?.objects || []).filter((object) =>
+        activeOcclusionIds.includes(object.id),
+      ),
+    [activeOcclusionIds, spaceImageSession?.objects],
+  );
 
   const handleRotate = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -67,6 +156,7 @@ export function ProductModelWorkspace({
     setRotateAngle(0);
     setIsFlipped(false);
     setZoomLevel(10);
+    setOverlaySize(getOverlaySizeFromDimensions(widthCm, heightCm));
   };
 
   const handleRemove = (e: React.MouseEvent) => {
@@ -85,12 +175,30 @@ export function ProductModelWorkspace({
   };
 
   const handleZoomIn = () => {
-    setZoomLevel((prev) => Math.min(prev + 5, 50));
+    setZoomLevel((prev) => Math.min(prev + 5, MAX_SCENE_ZOOM));
   };
 
   const handleZoomOut = () => {
-    setZoomLevel((prev) => Math.max(prev - 5, 5));
+    setZoomLevel((prev) => Math.max(prev - 5, MIN_SCENE_ZOOM));
   };
+
+  const handleWidthCmChange = (value: string) => {
+    setWidthCm(value);
+    setOverlaySize(getOverlaySizeFromDimensions(value, heightCm));
+  };
+
+  const handleHeightCmChange = (value: string) => {
+    setHeightCm(value);
+    setOverlaySize(getOverlaySizeFromDimensions(widthCm, value));
+  };
+
+  const handleProductCanvasReady = useCallback(() => {
+    setProductBuildError(null);
+  }, []);
+
+  const handleIncludeSillToggle = useCallback(() => {
+    setIncludeSill((current) => !current);
+  }, []);
 
   const toggleAccordion = (title: string) => {
     setOpenAccordions((prev) =>
@@ -100,13 +208,158 @@ export function ProductModelWorkspace({
     );
   };
 
-  const toggleOcclusion = (id: number) => {
-    setOcclusions((prev) =>
-      prev.map((item) =>
-        item.id === id ? { ...item, active: !item.active } : item
-      )
+  const toggleOcclusion = (id: string) => {
+    setActiveOcclusionIds((prev) =>
+      prev.includes(id)
+        ? prev.filter((activeId) => activeId !== id)
+        : [...prev, id]
     );
   };
+
+  const applyOverlaySize = useCallback(
+    (width: number, height: number, session: ResizeSession) => {
+      const nextWidth = clampNumber(width, MIN_OVERLAY_WIDTH, MAX_OVERLAY_WIDTH);
+      const nextHeight = clampNumber(height, MIN_OVERLAY_HEIGHT, MAX_OVERLAY_HEIGHT);
+
+      setOverlaySize({ width: nextWidth, height: nextHeight });
+
+      if (session.mode === "scale" || session.mode === "width") {
+        const widthRatio = nextWidth / Math.max(session.startWidth, 1);
+        setWidthCm(String(Math.max(1, Math.round(session.startWidthCm * widthRatio))));
+      }
+
+      if (session.mode === "scale" || session.mode === "height") {
+        const heightRatio = nextHeight / Math.max(session.startHeight, 1);
+        setHeightCm(String(Math.max(1, Math.round(session.startHeightCm * heightRatio))));
+      }
+    },
+    [],
+  );
+
+  const startResize = useCallback(
+    (
+      event: React.PointerEvent,
+      mode: ResizeMode,
+      signX: number,
+      signY: number,
+    ) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      const resizeSession: ResizeSession = {
+        mode,
+        startX: event.clientX,
+        startY: event.clientY,
+        startWidth: overlaySize.width,
+        startHeight: overlaySize.height,
+        startWidthCm: Number(widthCm) || 1,
+        startHeightCm: Number(heightCm) || 1,
+        startZoomLevel: zoomLevel,
+        signX,
+        signY,
+        aspectRatio: overlaySize.width / Math.max(overlaySize.height, 1),
+      };
+      resizeSessionRef.current = resizeSession;
+      setIsUsingTransformHandle(true);
+
+      const handleMove = (moveEvent: PointerEvent) => {
+        const dx = (moveEvent.clientX - resizeSession.startX) * resizeSession.signX;
+        const dy = (moveEvent.clientY - resizeSession.startY) * resizeSession.signY;
+
+        if (resizeSession.mode === "scale") {
+          const dominantDelta = Math.abs(dx) > Math.abs(dy) ? dx : dy;
+          const startScale = 1 + resizeSession.startZoomLevel / 100;
+          const nextScale = clampNumber(
+            startScale * (1 + dominantDelta / Math.max(resizeSession.startWidth, 1)),
+            1 + MIN_SCENE_ZOOM / 100,
+            1 + MAX_SCENE_ZOOM / 100,
+          );
+          setZoomLevel(Math.round((nextScale - 1) * 100));
+          return;
+        }
+
+        if (resizeSession.mode === "width") {
+          applyOverlaySize(
+            resizeSession.startWidth + dx,
+            resizeSession.startHeight,
+            resizeSession,
+          );
+          return;
+        }
+
+        applyOverlaySize(
+          resizeSession.startWidth,
+          resizeSession.startHeight + dy,
+          resizeSession,
+        );
+      };
+
+      const handleEnd = () => {
+        resizeSessionRef.current = null;
+        setIsUsingTransformHandle(false);
+        window.removeEventListener("pointermove", handleMove);
+        window.removeEventListener("pointerup", handleEnd);
+        window.removeEventListener("pointercancel", handleEnd);
+      };
+
+      window.addEventListener("pointermove", handleMove);
+      window.addEventListener("pointerup", handleEnd);
+      window.addEventListener("pointercancel", handleEnd);
+    },
+    [applyOverlaySize, heightCm, overlaySize, widthCm, zoomLevel],
+  );
+
+  const startRotation = useCallback(
+    (event: React.PointerEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      const bounds =
+        outlineControlsRef.current?.getBoundingClientRect() ??
+        overlayBoxRef.current?.getBoundingClientRect();
+      if (!bounds) {
+        return;
+      }
+
+      const centerX = bounds.left + bounds.width / 2;
+      const centerY = bounds.top + bounds.height / 2;
+      const rotationSession: RotationSession = {
+        centerX,
+        centerY,
+        startPointerAngle: getPointerAngle(event.clientX, event.clientY, centerX, centerY),
+        startRotation: rotateAngle,
+      };
+      rotationSessionRef.current = rotationSession;
+      setIsUsingTransformHandle(true);
+
+      const handleMove = (moveEvent: PointerEvent) => {
+        const pointerAngle = getPointerAngle(
+          moveEvent.clientX,
+          moveEvent.clientY,
+          rotationSession.centerX,
+          rotationSession.centerY,
+        );
+        setRotateAngle(
+          rotationSession.startRotation +
+            pointerAngle -
+            rotationSession.startPointerAngle,
+        );
+      };
+
+      const handleEnd = () => {
+        rotationSessionRef.current = null;
+        setIsUsingTransformHandle(false);
+        window.removeEventListener("pointermove", handleMove);
+        window.removeEventListener("pointerup", handleEnd);
+        window.removeEventListener("pointercancel", handleEnd);
+      };
+
+      window.addEventListener("pointermove", handleMove);
+      window.addEventListener("pointerup", handleEnd);
+      window.addEventListener("pointercancel", handleEnd);
+    },
+    [rotateAngle],
+  );
 
   return (
     <div className="w-full max-w-367 mx-auto px-4 sm:px-6 flex flex-col gap-10 items-center">
@@ -116,7 +369,7 @@ export function ProductModelWorkspace({
           View <span className="text-green">Product Model</span>
         </h1>
         <p className="text-lg sm:text-2xl lg:text-[28px] font-normal text-black/90 tracking-tight leading-normal">
-          Inspect the product before adding it to your space.
+          Place {overlayName} over your prepared space image.
         </p>
       </div>
 
@@ -156,7 +409,7 @@ export function ProductModelWorkspace({
               />
             </button>
             <span className="text-[#0f1422] text-base font-medium min-w-10 text-center">
-              {zoomLevel}%
+              {Math.round((1 + zoomLevel / 100) * 100)}%
             </span>
             <button
               type="button"
@@ -212,23 +465,32 @@ export function ProductModelWorkspace({
         <div className="flex-1 flex flex-col gap-6 w-full min-w-0">
           {/* Main Space Canvas Card */}
           <div className="bg-white/10 border border-[#f5f5f5] p-3 sm:p-5 rounded-[20px] shadow-[0px_0px_5px_0px_rgba(0,0,0,0.25)] relative w-full overflow-hidden">
-            <div ref={canvasRef} className="relative w-full h-[400px] sm:h-[550px] lg:h-[680px] xl:h-[760px] rounded-[15px] overflow-hidden bg-neutral-100">
+            <div
+              ref={canvasRef}
+              className="relative w-full rounded-[15px] overflow-hidden bg-neutral-100"
+              style={{ aspectRatio: workspaceAspectRatio }}
+            >
               {/* Background Space Image */}
               <img
                 src={bgImage}
                 alt="Space image background"
-                className="w-full h-full object-cover select-none"
+                className="w-full h-full object-contain select-none"
               />
 
               {/* Product Overlay Element on Canvas with Adjustment Tool (Figma 605:4867) */}
               {selectedProduct && (
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
                   <motion.div
-                    drag
+                    drag={!isUsingTransformHandle}
                     dragConstraints={canvasRef}
                     dragElastic={0.05}
                     dragMomentum={false}
-                    className="pointer-events-auto flex flex-col items-center justify-center gap-6 cursor-grab active:cursor-grabbing"
+                    className={[
+                      "pointer-events-auto flex flex-col items-center justify-center gap-6",
+                      isUsingTransformHandle
+                        ? "cursor-default"
+                        : "cursor-grab active:cursor-grabbing",
+                    ].join(" ")}
                     style={{
                       scale: 1 + zoomLevel / 100,
                     }}
@@ -276,39 +538,140 @@ export function ProductModelWorkspace({
                     </button>
                   </div>
 
-                  {/* Product Bounding Box Container with Corner & Edge Handles */}
-                  <div className="relative w-56 sm:w-72 md:w-80 h-36 sm:h-48 md:h-56 border border-[#07b6d3] shadow-xl group cursor-grab active:cursor-grabbing select-none">
+                  {/* Invisible interaction frame; visible controls sit on the model outline. */}
+                  <div
+                    ref={overlayBoxRef}
+                    className="relative group cursor-grab active:cursor-grabbing select-none"
+                    style={{
+                      width: overlaySize.width,
+                      height: overlaySize.height,
+                      maxWidth: "82vw",
+                      maxHeight: "62vh",
+                      transform: `rotate(${rotateAngle}deg)`,
+                      transformOrigin: "center center",
+                    }}
+                  >
                     {/* Inner Product Image */}
-                    <div className="w-full h-full overflow-hidden select-none pointer-events-none">
-                      <img
-                        src={productOverlayImage}
-                        alt="Selected Product Overlay"
-                        draggable={false}
-                        className="w-full h-full object-cover transition-transform duration-300 select-none pointer-events-none"
-                        style={{
-                          transform: `rotate(${rotateAngle}deg) ${isFlipped ? "scaleX(-1)" : ""}`,
-                        }}
-                      />
+                    <div className="w-full h-full overflow-visible select-none pointer-events-none">
+                      {structuralDefinition ? (
+                        <div
+                          className="h-full w-full transition-transform duration-300"
+                          style={{
+                            transform: isFlipped ? "scaleX(-1)" : undefined,
+                            ...modelEffectStyle,
+                          }}
+                        >
+                          <GeneratedProductCanvas
+                            definition={structuralDefinition}
+                            values={{
+                              width: Number(widthCm) * 10,
+                              height: Number(heightCm) * 10,
+                              includeSill,
+                              include_sill: includeSill,
+                            }}
+                            yaw={yaw}
+                            pitch={pitch}
+                            lighting={effectiveLighting}
+                            glassAppearance={glassAppearance}
+                            includeSill={includeSill}
+                            onError={setProductBuildError}
+                            onReady={handleProductCanvasReady}
+                          />
+                        </div>
+                      ) : (
+                        <img
+                          src={productOverlayImage}
+                          alt="Selected Product Overlay"
+                          draggable={false}
+                          className="w-full h-full object-cover transition-transform duration-300 select-none pointer-events-none"
+                          style={{
+                            transform: isFlipped ? "scaleX(-1)" : undefined,
+                            ...modelEffectStyle,
+                          }}
+                        />
+                      )}
                     </div>
 
-                    {/* 4 Corner Resize Handles (Square white box with cyan #06e5ff border) */}
-                    <div className="absolute -top-1 -left-1 size-2 bg-white border border-[#06e5ff] z-20 cursor-nwse-resize" />
-                    <div className="absolute -top-1 -right-1 size-2 bg-white border border-[#06e5ff] z-20 cursor-nesw-resize" />
-                    <div className="absolute -bottom-1 -left-1 size-2 bg-white border border-[#06e5ff] z-20 cursor-nesw-resize" />
-                    <div className="absolute -bottom-1 -right-1 size-2 bg-white border border-[#06e5ff] z-20 cursor-nwse-resize" />
+                    <div
+                      ref={outlineControlsRef}
+                      className="absolute inset-0 border border-[#07b6d3] shadow-[0_0_0_1px_rgba(7,182,211,0.18)] pointer-events-none"
+                    >
+                      {/* Rotation handles attached to the outlined model layer. */}
+                      <button
+                        type="button"
+                        aria-label="Rotate from top left"
+                        onPointerDown={startRotation}
+                        className="absolute -top-10 -left-10 z-30 flex size-7 items-center justify-center rounded-full border border-[#07b6d3] bg-white text-[#0f1422] shadow-md hover:bg-[#e9f9fb] cursor-grab active:cursor-grabbing pointer-events-auto"
+                      >
+                        <RotateCw className="size-4" />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="Rotate from top right"
+                        onPointerDown={startRotation}
+                        className="absolute -top-10 -right-10 z-30 flex size-7 items-center justify-center rounded-full border border-[#07b6d3] bg-white text-[#0f1422] shadow-md hover:bg-[#e9f9fb] cursor-grab active:cursor-grabbing pointer-events-auto"
+                      >
+                        <RotateCw className="size-4" />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="Rotate from bottom left"
+                        onPointerDown={startRotation}
+                        className="absolute -bottom-10 -left-10 z-30 flex size-7 items-center justify-center rounded-full border border-[#07b6d3] bg-white text-[#0f1422] shadow-md hover:bg-[#e9f9fb] cursor-grab active:cursor-grabbing pointer-events-auto"
+                      >
+                        <RotateCw className="size-4" />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="Rotate from bottom right"
+                        onPointerDown={startRotation}
+                        className="absolute -bottom-10 -right-10 z-30 flex size-7 items-center justify-center rounded-full border border-[#07b6d3] bg-white text-[#0f1422] shadow-md hover:bg-[#e9f9fb] cursor-grab active:cursor-grabbing pointer-events-auto"
+                      >
+                        <RotateCw className="size-4" />
+                      </button>
 
-                    {/* 4 Edge Midpoint Handles (Cyan #07b6d3 circle) */}
-                    <div className="absolute -top-1 left-1/2 -translate-x-1/2 size-2 bg-[#07b6d3] rounded-full z-20 cursor-ns-resize" />
-                    <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 size-2 bg-[#07b6d3] rounded-full z-20 cursor-ns-resize" />
-                    <div className="absolute -left-1 top-1/2 -translate-y-1/2 size-2 bg-[#07b6d3] rounded-full z-20 cursor-ew-resize" />
-                    <div className="absolute -right-1 top-1/2 -translate-y-1/2 size-2 bg-[#07b6d3] rounded-full z-20 cursor-ew-resize" />
+                      {/* Corner handles scale the scene, matching the MVP scene-size control. */}
+                      <button type="button" aria-label="Scale scene from top left" onPointerDown={(event) => startResize(event, "scale", -1, -1)} className="absolute top-0 left-0 -translate-x-1/2 -translate-y-1/2 size-4 rounded-[2px] bg-white border border-[#06e5ff] shadow-md z-40 cursor-nwse-resize pointer-events-auto" />
+                      <button type="button" aria-label="Scale scene from top right" onPointerDown={(event) => startResize(event, "scale", 1, -1)} className="absolute top-0 right-0 translate-x-1/2 -translate-y-1/2 size-4 rounded-[2px] bg-white border border-[#06e5ff] shadow-md z-40 cursor-nesw-resize pointer-events-auto" />
+                      <button type="button" aria-label="Scale scene from bottom left" onPointerDown={(event) => startResize(event, "scale", -1, 1)} className="absolute bottom-0 left-0 -translate-x-1/2 translate-y-1/2 size-4 rounded-[2px] bg-white border border-[#06e5ff] shadow-md z-40 cursor-nesw-resize pointer-events-auto" />
+                      <button type="button" aria-label="Scale scene from bottom right" onPointerDown={(event) => startResize(event, "scale", 1, 1)} className="absolute bottom-0 right-0 translate-x-1/2 translate-y-1/2 size-4 rounded-[2px] bg-white border border-[#06e5ff] shadow-md z-40 cursor-nwse-resize pointer-events-auto" />
 
-                    {/* Center Movement Handle Badge */}
-                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 size-6 rounded-full bg-[#07b6d3] flex items-center justify-center shadow-md cursor-grab active:cursor-grabbing z-20">
-                      <div className="size-2 bg-white rounded-full" />
+                      {/* Edge handles adjust structural width/height. */}
+                      <div onPointerDown={(event) => startResize(event, "height", 0, -1)} className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 size-3 bg-[#07b6d3] rounded-full shadow-md z-20 cursor-ns-resize pointer-events-auto" />
+                      <div onPointerDown={(event) => startResize(event, "height", 0, 1)} className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 size-3 bg-[#07b6d3] rounded-full shadow-md z-20 cursor-ns-resize pointer-events-auto" />
+                      <div onPointerDown={(event) => startResize(event, "width", -1, 0)} className="absolute left-0 top-1/2 -translate-x-1/2 -translate-y-1/2 size-3 bg-[#07b6d3] rounded-full shadow-md z-20 cursor-ew-resize pointer-events-auto" />
+                      <div onPointerDown={(event) => startResize(event, "width", 1, 0)} className="absolute right-0 top-1/2 translate-x-1/2 -translate-y-1/2 size-3 bg-[#07b6d3] rounded-full shadow-md z-20 cursor-ew-resize pointer-events-auto" />
+
+                      {/* Center Movement Handle Badge */}
+                      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 size-6 rounded-full bg-[#07b6d3] flex items-center justify-center shadow-md cursor-grab active:cursor-grabbing z-20 pointer-events-auto">
+                        <div className="size-2 bg-white rounded-full" />
+                      </div>
                     </div>
                   </div>
                 </motion.div>
+              </div>
+            )}
+            {selectedProduct && activeOcclusionObjects.length > 0 && (
+              <div className="absolute inset-0 pointer-events-none z-30">
+                {activeOcclusionObjects.map((object) => (
+                  <img
+                    key={object.id}
+                    src={bgImage}
+                    alt=""
+                    aria-hidden="true"
+                    className="absolute inset-0 h-full w-full object-contain select-none"
+                    style={{
+                      WebkitMaskImage: `url(${object.mask_url})`,
+                      maskImage: `url(${object.mask_url})`,
+                      WebkitMaskPosition: "center",
+                      maskPosition: "center",
+                      WebkitMaskRepeat: "no-repeat",
+                      maskRepeat: "no-repeat",
+                      WebkitMaskSize: "100% 100%",
+                      maskSize: "100% 100%",
+                    }}
+                  />
+                ))}
               </div>
             )}
             </div>
@@ -335,8 +698,13 @@ export function ProductModelWorkspace({
         <div className="w-full lg:w-[422px] shrink-0 flex flex-col gap-6 items-end">
           {/* Status Badge */}
           <div className="bg-white rounded-[20px] px-4 py-2 text-black text-sm font-normal tracking-[-0.266px] shadow-xs border border-neutral-100">
-            1 product on Canvas
+            {structuralDefinition ? structuralDefinition.product.productName : "1 product on Canvas"}
           </div>
+          {productBuildError && (
+            <p className="w-full rounded-[10px] border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+              {productBuildError}
+            </p>
+          )}
 
           {/* Price Card */}
           <div className="bg-grad-light rounded-[20px] p-6 sm:p-7 flex flex-col gap-2.5 w-full text-white shadow-md">
@@ -471,7 +839,6 @@ export function ProductModelWorkspace({
                     className="overflow-hidden"
                   >
                     <div className="px-6 pb-6 flex flex-col gap-5">
-                      {/* 3D Yaw */}
                       <div className="flex flex-col gap-2">
                         <span className="text-[#c3c3c3] text-base font-normal">3d Yaw</span>
                         <div className="flex items-center gap-3">
@@ -489,7 +856,6 @@ export function ProductModelWorkspace({
                         </div>
                       </div>
 
-                      {/* 3D Pitch */}
                       <div className="flex flex-col gap-2">
                         <span className="text-[#c3c3c3] text-base font-normal">3d Pitch</span>
                         <div className="flex items-center gap-3">
@@ -586,32 +952,41 @@ export function ProductModelWorkspace({
                         </div>
                       </div>
 
-                      {/* Glass Type */}
+                      {/* Glass Appearance */}
                       <div className="flex flex-col gap-2">
-                        <span className="text-[#c3c3c3] text-base font-normal">Glass Type</span>
-                        <div className="flex items-center gap-2.5">
-                          <button
-                            type="button"
-                            onClick={() => setGlassType("tempered")}
-                            className={`px-3 py-1.5 rounded-[20px] border border-[#c3c3c3] text-base font-normal transition-colors cursor-pointer ${glassType === "tempered"
-                                ? "bg-[#0f1422] text-white"
-                                : "bg-transparent text-[#0f1422]"
-                              }`}
-                          >
-                            Tempered Glass
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setGlassType("clear")}
-                            className={`px-3 py-1.5 rounded-[20px] border border-[#c3c3c3] text-base font-normal transition-colors cursor-pointer ${glassType === "clear"
-                                ? "bg-[#0f1422] text-white"
-                                : "bg-transparent text-[#0f1422]"
-                              }`}
-                          >
-                            Clear Glass
-                          </button>
+                        <span className="text-[#c3c3c3] text-base font-normal">Glass Appearance</span>
+                        <div className="grid grid-cols-2 gap-2.5">
+                          {(["clear", "frosted", "opaque", "reflective"] as GlassAppearanceMode[]).map((mode) => (
+                            <button
+                              key={mode}
+                              type="button"
+                              onClick={() => setGlassAppearance(mode)}
+                              className={`px-3 py-1.5 rounded-[20px] border border-[#c3c3c3] text-base font-normal capitalize transition-colors cursor-pointer ${glassAppearance === mode
+                                  ? "bg-[#0f1422] text-white"
+                                  : "bg-transparent text-[#0f1422]"
+                                }`}
+                            >
+                              {mode}
+                            </button>
+                          ))}
                         </div>
                       </div>
+
+                      {isWindowProduct && (
+                        <label className="flex items-center justify-between gap-4 rounded-[10px] bg-white px-3 py-2.5 border border-[#c3c3c3]">
+                          <span className="text-[#0f1422] text-base font-normal">Include Window Sill</span>
+                          <button
+                            type="button"
+                            onClick={handleIncludeSillToggle}
+                            className={`w-[44px] h-[24px] rounded-full p-0.5 transition-colors cursor-pointer relative ${includeSill ? "bg-[#07b6d3]" : "bg-[#c3c3c3]"}`}
+                            aria-pressed={includeSill}
+                          >
+                            <span
+                              className={`block size-[20px] bg-white rounded-full shadow-xs transform transition-transform ${includeSill ? "translate-x-[20px]" : "translate-x-0"}`}
+                            />
+                          </button>
+                        </label>
+                      )}
 
                       {/* Dimension */}
                       <div className="flex flex-col gap-2">
@@ -622,7 +997,7 @@ export function ProductModelWorkspace({
                             <input
                               type="text"
                               value={widthCm}
-                              onChange={(e) => setWidthCm(e.target.value)}
+                              onChange={(e) => handleWidthCmChange(e.target.value)}
                               className="w-full bg-white border border-[#c3c3c3] rounded-[10px] px-3 py-1.5 text-center text-[#0f1422] text-base shadow-[0px_0px_7px_rgba(0,0,0,0.1)] focus:outline-none"
                             />
                           </div>
@@ -631,7 +1006,7 @@ export function ProductModelWorkspace({
                             <input
                               type="text"
                               value={heightCm}
-                              onChange={(e) => setHeightCm(e.target.value)}
+                              onChange={(e) => handleHeightCmChange(e.target.value)}
                               className="w-full bg-white border border-[#c3c3c3] rounded-[10px] px-3 py-1.5 text-center text-[#0f1422] text-base shadow-[0px_0px_7px_rgba(0,0,0,0.1)] focus:outline-none"
                             />
                           </div>
@@ -802,6 +1177,77 @@ export function ProductModelWorkspace({
       </div>
     </div>
   );
+}
+
+function getPointerAngle(
+  pointerX: number,
+  pointerY: number,
+  centerX: number,
+  centerY: number,
+) {
+  return (Math.atan2(pointerY - centerY, pointerX - centerX) * 180) / Math.PI;
+}
+
+function clampNumber(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function getOverlaySizeFromDimensions(widthCmValue: string, heightCmValue: string) {
+  const width = Number(widthCmValue) || 140;
+  const height = Number(heightCmValue) || 120;
+  const aspectRatio = clampNumber(width / Math.max(height, 1), 0.35, 3.2);
+  const baseArea = 320 * 224;
+  const nextWidth = Math.sqrt(baseArea * aspectRatio);
+  const nextHeight = nextWidth / aspectRatio;
+
+  return {
+    width: Math.round(clampNumber(nextWidth, MIN_OVERLAY_WIDTH, MAX_OVERLAY_WIDTH)),
+    height: Math.round(clampNumber(nextHeight, MIN_OVERLAY_HEIGHT, MAX_OVERLAY_HEIGHT)),
+  };
+}
+
+function getModelEffectStyle({
+  autoRealism,
+  autoShadow,
+  lighting,
+}: {
+  autoRealism: boolean;
+  autoShadow: boolean;
+  lighting: SpaceImageSession["lighting"] | undefined;
+}): React.CSSProperties {
+  const filters: string[] = [];
+
+  filters.push(
+    "drop-shadow(1px 0 0 rgba(7, 182, 211, 0.9))",
+    "drop-shadow(-1px 0 0 rgba(7, 182, 211, 0.9))",
+    "drop-shadow(0 1px 0 rgba(7, 182, 211, 0.9))",
+    "drop-shadow(0 -1px 0 rgba(7, 182, 211, 0.9))",
+  );
+
+  if (autoRealism && lighting) {
+    filters.push(
+      `brightness(${clampNumber(lighting.suggested.brightness, 0.82, 1.22)})`,
+      `contrast(${clampNumber(lighting.suggested.contrast, 0.9, 1.22)})`,
+      `saturate(${clampNumber(lighting.suggested.saturation, 0.82, 1.18)})`,
+    );
+
+    if (lighting.suggested.blur_px > 0) {
+      filters.push(`blur(${clampNumber(lighting.suggested.blur_px, 0, 0.45)}px)`);
+    }
+  }
+
+  if (autoShadow) {
+    const opacity = clampNumber(lighting?.suggested.shadow_opacity ?? 0.28, 0.12, 0.42);
+    const directionX = lighting?.light_direction.x ?? 0.35;
+    const directionY = lighting?.light_direction.y ?? 0.45;
+    filters.push(
+      `drop-shadow(${Math.round(directionX * 12)}px ${Math.round(10 + directionY * 10)}px 14px rgba(15, 20, 34, ${opacity}))`,
+    );
+  }
+
+  return {
+    filter: filters.length ? filters.join(" ") : undefined,
+  };
 }
 
 

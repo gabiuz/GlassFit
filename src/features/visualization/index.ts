@@ -6,6 +6,8 @@ export { ImageLoadingModal } from "./components/ImageLoadingModal";
 export { ImageErrorModal } from "./components/ImageErrorModal";
 export { ImageSuccessModal } from "./components/ImageSuccessModal";
 export { AddProductModal } from "./components/AddProductModal";
+export { ProductAwareUploadPage } from "./components/ProductAwareUploadPage";
+export { ProductAwareWorkspacePage } from "./components/ProductAwareWorkspacePage";
 
 
 

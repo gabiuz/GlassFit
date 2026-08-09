@@ -1,6 +1,7 @@
 # fastapi-service/scene_detection.py
 
 import os
+from pathlib import Path
 import cv2
 import numpy as np
 
@@ -42,17 +43,23 @@ def get_scene_model():
     return _scene_processor, _scene_model
 
 
-def _save_mask(mask_uint8: np.ndarray, upload_id: str, suffix: str) -> str:
+def _save_mask(
+    mask_uint8: np.ndarray,
+    upload_id: str,
+    suffix: str,
+    output_dir: Path | str | None = None,
+    url_prefix: str = "/masks",
+) -> str:
     """
     Saves a binary mask PNG to the generated/masks directory.
     Returns the relative URL path for the frontend to fetch.
     """
-    masks_dir = os.path.join("generated", "masks")
-    os.makedirs(masks_dir, exist_ok=True)
+    masks_dir = Path(output_dir) if output_dir is not None else Path("generated") / "masks"
+    masks_dir.mkdir(parents=True, exist_ok=True)
     filename = f"{upload_id}_{suffix}.png"
-    path = os.path.join(masks_dir, filename)
-    cv2.imwrite(path, mask_uint8)
-    return f"/masks/{filename}"
+    path = masks_dir / filename
+    cv2.imwrite(str(path), mask_uint8)
+    return f"{url_prefix.rstrip('/')}/{filename}"
 
 
 def _floor_boundary_from_mask(floor_mask: np.ndarray) -> float | None:
@@ -92,7 +99,12 @@ def _wall_bounds_from_mask(wall_mask: np.ndarray) -> dict:
 
 # ─── Option 2: SegFormer semantic segmentation ────────────────────────────────
 
-def detect_scene_segformer(image_bgr: np.ndarray, upload_id: str) -> dict:
+def detect_scene_segformer(
+    image_bgr: np.ndarray,
+    upload_id: str,
+    output_dir: Path | str | None = None,
+    url_prefix: str = "/masks",
+) -> dict:
     """
     Runs SegFormer on the uploaded image to produce pixel-level floor and wall
     masks. Returns structured scene region data including normalized boundary
@@ -148,9 +160,9 @@ def detect_scene_segformer(image_bgr: np.ndarray, upload_id: str) -> dict:
 
         # Save masks only when meaningful coverage is detected
         if floor_coverage > 0.02:
-            result["floor_mask_url"] = _save_mask(floor_mask, upload_id, "floor")
+            result["floor_mask_url"] = _save_mask(floor_mask, upload_id, "floor", output_dir, url_prefix)
         if wall_coverage > 0.02:
-            result["wall_mask_url"]  = _save_mask(wall_mask,  upload_id, "wall")
+            result["wall_mask_url"]  = _save_mask(wall_mask, upload_id, "wall", output_dir, url_prefix)
 
         return result
 
@@ -229,6 +241,8 @@ def detect_scene_regions(
     image_bgr:               np.ndarray,
     upload_id:               str,
     depth_array_normalized:  "np.ndarray | None" = None,
+    output_dir:              Path | str | None = None,
+    url_prefix:              str = "/masks",
 ) -> dict:
     """
     Primary entry point called from main.py.
@@ -237,7 +251,7 @@ def detect_scene_regions(
     depth-plane fitting when a depth map is provided. If both fail, returns an
     unavailable result.
     """
-    result = detect_scene_segformer(image_bgr, upload_id)
+    result = detect_scene_segformer(image_bgr, upload_id, output_dir, url_prefix)
 
     if not result["available"] and depth_array_normalized is not None:
         h, w = image_bgr.shape[:2]

@@ -1,6 +1,7 @@
 # fastapi-service/depth.py
 
 import os
+from pathlib import Path
 import cv2
 import numpy as np
 
@@ -34,7 +35,12 @@ def get_depth_pipeline():
     return _depth_pipe
 
 
-def estimate_depth(image_bgr: np.ndarray, upload_id: str) -> dict:
+def estimate_depth(
+    image_bgr: np.ndarray,
+    upload_id: str,
+    output_dir: Path | str | None = None,
+    url_prefix: str = "/masks",
+) -> dict:
     """
     Runs Depth Anything V2 on the uploaded image.
 
@@ -86,15 +92,16 @@ def estimate_depth(image_bgr: np.ndarray, upload_id: str) -> dict:
             normalized, (w, h), interpolation=cv2.INTER_LINEAR
         )
 
-        # Save to the same generated/masks/ directory used by YOLO masks.
+        # Save to the same generated/masks/ directory used by YOLO masks unless
+        # the caller provides a per-session temporary artifact directory.
         depth_filename = f"{upload_id}_depth.png"
-        masks_dir = os.path.join("generated", "masks")
-        os.makedirs(masks_dir, exist_ok=True)
-        depth_path = os.path.join(masks_dir, depth_filename)
-        cv2.imwrite(depth_path, depth_resized)
+        masks_dir = Path(output_dir) if output_dir is not None else Path("generated") / "masks"
+        masks_dir.mkdir(parents=True, exist_ok=True)
+        depth_path = masks_dir / depth_filename
+        cv2.imwrite(str(depth_path), depth_resized)
 
         return {
-            "depth_map_url": f"/masks/{depth_filename}",
+            "depth_map_url": f"{url_prefix.rstrip('/')}/{depth_filename}",
             "available": True,
             "mode": "depth_anything_v2",
             "error": None,
