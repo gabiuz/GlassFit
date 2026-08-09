@@ -15,8 +15,10 @@ export function resolveProductStructure({
   const resolvedValues: Record<string, unknown> = {
     ...definition.template.baseConfiguration,
   };
+  const parameterKeys = new Set<string>();
 
   for (const parameter of definition.parameters) {
+    parameterKeys.add(parameter.parameterKey);
     resolvedValues[parameter.parameterKey] = normalizeParameterValue(
       values[parameter.parameterKey] ?? resolvedValues[parameter.parameterKey] ?? parameter.defaultValue,
       parameter.parameterType,
@@ -26,7 +28,11 @@ export function resolveProductStructure({
     );
   }
 
-  Object.assign(resolvedValues, values);
+  for (const [key, value] of Object.entries(values)) {
+    if (!parameterKeys.has(key)) {
+      resolvedValues[key] = value;
+    }
+  }
 
   const componentQuantities: Record<string, number> = {};
   for (const component of definition.components) {

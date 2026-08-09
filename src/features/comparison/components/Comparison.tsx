@@ -6,6 +6,7 @@ import { ChevronLeft, ChevronRight, Check } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 import Button from "@/components/shared/Button";
+import { useVisualizationSession } from "@/lib/visualization/visualizationSession";
 
 const BEFORE_IMAGE = "/comparison_assets/room_without_furniture.png";
 const AFTER_IMAGE = "/comparison_assets/room_with_furniture.png";
@@ -45,31 +46,44 @@ function ToggleSwitch({ value, onChange, textLeft, textRight }: ToggleSwitchProp
   );
 }
 
-function BeforeState() {
+function ComparisonImage({
+  alt,
+  className,
+  src,
+}: {
+  alt: string;
+  className: string;
+  src: string;
+}) {
   return (
-    <div className="absolute inset-0 w-full h-full pointer-events-none rounded-[20px]">
-      <Image
-        alt="Original empty room"
-        src={BEFORE_IMAGE}
-        fill
-        className="object-cover rounded-[20px]"
-        sizes="(max-w-xl) 100vw, 50vw"
-        priority
+    <img
+      alt={alt}
+      className={className}
+      draggable={false}
+      src={src}
+    />
+  );
+}
+
+function BeforeState({ src }: { src: string }) {
+  return (
+    <div className="absolute inset-0 w-full h-full pointer-events-none rounded-[20px] bg-neutral-100">
+      <ComparisonImage
+        alt="Original uploaded photo"
+        className="h-full w-full rounded-[20px] object-contain"
+        src={src}
       />
     </div>
   );
 }
 
-function AfterState() {
+function AfterState({ src }: { src: string }) {
   return (
-    <div className="absolute inset-0 w-full h-full pointer-events-none rounded-[15px]">
-      <Image
-        alt="Room with product"
-        src={AFTER_IMAGE}
-        fill
-        className="object-cover rounded-[15px] transition-all duration-300"
-        sizes="(max-w-xl) 100vw, 50vw"
-        priority
+    <div className="absolute inset-0 w-full h-full pointer-events-none rounded-[15px] bg-neutral-100">
+      <ComparisonImage
+        alt="Final visualization output"
+        className="h-full w-full rounded-[15px] object-contain transition-all duration-300"
+        src={src}
       />
     </div>
   );
@@ -82,6 +96,7 @@ const getVariantLabel = (variant: "A" | "B" | "C") => {
 type ComparisonPanelCardProps = {
   title: string;
   label: string;
+  imageSrc: string;
   isSelected: boolean;
   isDisabled: boolean;
   onClick: () => void;
@@ -90,6 +105,7 @@ type ComparisonPanelCardProps = {
 function ComparisonPanelCard({
   title,
   label,
+  imageSrc,
   isSelected,
   isDisabled,
   onClick,
@@ -106,7 +122,7 @@ function ComparisonPanelCard({
           : "border border-neutral-200/60 shadow-sm hover:scale-[1.02] hover:shadow-md"
           }`}
       >
-        <AfterState />
+        <AfterState src={imageSrc} />
 
         {isSelected && (
           <div className="absolute top-2.75 right-2.75 w-7.5 h-7.5 bg-[#129044]/30 border-[2.5px] border-[#129044] rounded-[50%] flex items-center justify-center z-20 animate-in zoom-in duration-200">
@@ -144,6 +160,8 @@ function ComparisonPanelCard({
 
 export function Comparison() {
   const router = useRouter();
+  const { finalSnapshotDataUrl, placedOverlays, spaceImageSession } =
+    useVisualizationSession();
   const [viewAs, setViewAs] = useState<"left" | "right">("left"); // left = Side-by-Side, right = Slider
   const [compareMode, setCompareMode] = useState<"left" | "right">("left"); // left = Before and After, right = Product Variant
 
@@ -158,6 +176,12 @@ export function Comparison() {
 
   const isSideBySide = viewAs === "left";
   const isBeforeAfter = compareMode === "left";
+  const latestPlacedOverlay = placedOverlays[placedOverlays.length - 1];
+  const beforeImage = spaceImageSession?.workspaceImage.url ?? BEFORE_IMAGE;
+  const afterImage =
+    finalSnapshotDataUrl ??
+    latestPlacedOverlay?.flattenedImageDataUrl ??
+    AFTER_IMAGE;
 
   // Slider State & Logic
   const [sliderPosition, setSliderPosition] = useState(50);
@@ -283,7 +307,7 @@ export function Comparison() {
               {isBeforeAfter ? (
                 /* Before: Empty Room */
                 <>
-                  <BeforeState />
+                  <BeforeState src={beforeImage} />
                   <div className="absolute top-6 left-6 bg-black border border-[#c3c3c3] px-3.5 py-1.5 rounded-[20px] z-10 shadow-md">
                     <p className="text-base text-white font-normal tracking-wide">
                       Before - Original Photo
@@ -293,7 +317,7 @@ export function Comparison() {
               ) : (
                 /* Variant: Selected Left Finish */
                 <>
-                  <AfterState />
+                  <AfterState src={afterImage} />
                   <div className="absolute top-6 left-6 bg-black border border-[#c3c3c3] px-3.5 py-1.5 rounded-[20px] z-10 shadow-md">
                     <p className="text-base text-white font-normal tracking-wide">
                       {getVariantLabel(leftVariant)}
@@ -308,7 +332,7 @@ export function Comparison() {
               {isBeforeAfter ? (
                 /* After: Cabinet Installed */
                 <>
-                  <AfterState />
+                  <AfterState src={afterImage} />
                   <div className="absolute top-6 left-6 bg-black border border-[#c3c3c3] px-3.5 py-1.5 rounded-[20px] z-10 shadow-md">
                     <p className="text-base text-white font-normal tracking-wide">
                       After - Final Output
@@ -318,7 +342,7 @@ export function Comparison() {
               ) : (
                 /* Variant: Selected Right Finish */
                 <>
-                  <AfterState />
+                  <AfterState src={afterImage} />
                   <div className="absolute top-6 left-6 bg-black border border-[#c3c3c3] px-3.5 py-1.5 rounded-[20px] z-10 shadow-md">
                     <p className="text-base text-white font-normal tracking-wide">
                       {getVariantLabel(rightVariant)}
@@ -336,7 +360,7 @@ export function Comparison() {
           >
             {/* Underlay / Bottom state (Visible on the right side of the slider) */}
             <div className="absolute inset-0 w-full h-full">
-              <AfterState />
+              <AfterState src={afterImage} />
             </div>
 
             {/* Overlay / Top state (Clipped, visible on the left side of the slider) */}
@@ -345,9 +369,9 @@ export function Comparison() {
               style={{ clipPath: `inset(0 ${100 - sliderPosition}% 0 0)` }}
             >
               {isBeforeAfter ? (
-                <BeforeState />
+                <BeforeState src={beforeImage} />
               ) : (
-                <AfterState />
+                <AfterState src={afterImage} />
               )}
             </div>
 
@@ -392,6 +416,7 @@ export function Comparison() {
               <ComparisonPanelCard
                 title="Variant A - Title"
                 label="Variant A - Label"
+                imageSrc={afterImage}
                 isSelected={leftVariant === "A"}
                 isDisabled={rightVariant === "A"}
                 onClick={() => setLeftVariant("A")}
@@ -399,6 +424,7 @@ export function Comparison() {
               <ComparisonPanelCard
                 title="Variant B - Title"
                 label="Variant B - Label"
+                imageSrc={afterImage}
                 isSelected={leftVariant === "B"}
                 isDisabled={rightVariant === "B"}
                 onClick={() => setLeftVariant("B")}
@@ -406,6 +432,7 @@ export function Comparison() {
               <ComparisonPanelCard
                 title="Variant C - Title"
                 label="Variant C - Label"
+                imageSrc={afterImage}
                 isSelected={leftVariant === "C"}
                 isDisabled={rightVariant === "C"}
                 onClick={() => setLeftVariant("C")}
@@ -439,6 +466,7 @@ export function Comparison() {
               <ComparisonPanelCard
                 title="Variant A - Title"
                 label="Variant A - Label"
+                imageSrc={afterImage}
                 isSelected={rightVariant === "A"}
                 isDisabled={leftVariant === "A"}
                 onClick={() => setRightVariant("A")}
@@ -446,6 +474,7 @@ export function Comparison() {
               <ComparisonPanelCard
                 title="Variant B - Title"
                 label="Variant B - Label"
+                imageSrc={afterImage}
                 isSelected={rightVariant === "B"}
                 isDisabled={leftVariant === "B"}
                 onClick={() => setRightVariant("B")}
@@ -453,6 +482,7 @@ export function Comparison() {
               <ComparisonPanelCard
                 title="Variant C - Title"
                 label="Variant C - Label"
+                imageSrc={afterImage}
                 isSelected={rightVariant === "C"}
                 isDisabled={leftVariant === "C"}
                 onClick={() => setRightVariant("C")}
