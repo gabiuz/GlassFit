@@ -17,7 +17,9 @@ export function ProductAwareWorkspacePage({
   const {
     selectedProductId,
     spaceImageSession,
+    finalSnapshotDataUrl,
     setStructuralDefinition,
+    setFinalSnapshotDataUrl,
     resetVisualizationSession,
   } = useVisualizationSession();
 
@@ -57,6 +59,8 @@ export function ProductAwareWorkspacePage({
           spaceImageSession={spaceImageSession}
           structuralDefinition={structuralDefinition}
           selectedProductName={structuralDefinition.product.productName}
+          initialSnapshotDataUrl={finalSnapshotDataUrl}
+          onSnapshotChange={setFinalSnapshotDataUrl}
           onBack={() => {
             resetVisualizationSession();
             router.push(`/visualize/${productId}/upload`);

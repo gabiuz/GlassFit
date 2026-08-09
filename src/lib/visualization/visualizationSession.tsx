@@ -21,6 +21,7 @@ type VisualizationSessionContextValue = VisualizationSessionState & {
   setStructuralDefinition: (definition: ProductStructuralDefinition | null) => void;
   setActiveOverlay: (overlay: ActiveOverlay | null) => void;
   setPlacedOverlays: (overlays: PlacedOverlay[]) => void;
+  setFinalSnapshotDataUrl: (dataUrl: string | null) => void;
   resetVisualizationSession: () => void;
 };
 
@@ -33,24 +34,33 @@ const initialState: VisualizationSessionState = {
   structuralDefinition: null,
   activeOverlay: null,
   placedOverlays: [],
+  finalSnapshotDataUrl: null,
 };
+
+const SESSION_STORAGE_KEY = "glassfit.visualization.session";
 
 export function VisualizationSessionProvider({
   children,
 }: {
   children: ReactNode;
 }) {
-  const [state, setState] = useState<VisualizationSessionState>(initialState);
+  const [state, setState] = useState<VisualizationSessionState>(() =>
+    readStoredVisualizationSession(),
+  );
 
   const setPreparedSpaceImage = useCallback(
     (productId: string, session: SpaceImageSession) => {
-      setState({
+      const nextState: VisualizationSessionState = {
         selectedProductId: productId,
         spaceImageSession: session,
         structuralDefinition: null,
         activeOverlay: null,
         placedOverlays: [],
-      });
+        finalSnapshotDataUrl: null,
+      };
+
+      writeStoredVisualizationSession(nextState);
+      setState(nextState);
     },
     [],
   );
@@ -79,7 +89,19 @@ export function VisualizationSessionProvider({
     }));
   }, []);
 
+  const setFinalSnapshotDataUrl = useCallback((dataUrl: string | null) => {
+    setState((current) => {
+      const nextState = {
+        ...current,
+        finalSnapshotDataUrl: dataUrl,
+      };
+      writeStoredVisualizationSession(nextState);
+      return nextState;
+    });
+  }, []);
+
   const resetVisualizationSession = useCallback(() => {
+    clearStoredVisualizationSession();
     setState(initialState);
   }, []);
 
@@ -90,6 +112,7 @@ export function VisualizationSessionProvider({
       setStructuralDefinition,
       setActiveOverlay,
       setPlacedOverlays,
+      setFinalSnapshotDataUrl,
       resetVisualizationSession,
     }),
     [
@@ -98,6 +121,7 @@ export function VisualizationSessionProvider({
       setStructuralDefinition,
       setActiveOverlay,
       setPlacedOverlays,
+      setFinalSnapshotDataUrl,
       resetVisualizationSession,
     ],
   );
@@ -107,6 +131,69 @@ export function VisualizationSessionProvider({
       {children}
     </VisualizationSessionContext.Provider>
   );
+}
+
+function readStoredVisualizationSession(): VisualizationSessionState {
+  if (typeof window === "undefined") {
+    return initialState;
+  }
+
+  try {
+    const stored = window.sessionStorage.getItem(SESSION_STORAGE_KEY);
+    if (!stored) {
+      return initialState;
+    }
+
+    const parsed = JSON.parse(stored) as Partial<VisualizationSessionState>;
+    if (!parsed.selectedProductId || !parsed.spaceImageSession) {
+      return initialState;
+    }
+
+    return {
+      selectedProductId: parsed.selectedProductId,
+      spaceImageSession: parsed.spaceImageSession,
+      structuralDefinition: null,
+      activeOverlay: null,
+      placedOverlays: [],
+      finalSnapshotDataUrl:
+        typeof parsed.finalSnapshotDataUrl === "string"
+          ? parsed.finalSnapshotDataUrl
+          : null,
+    };
+  } catch {
+    return initialState;
+  }
+}
+
+function writeStoredVisualizationSession(state: VisualizationSessionState) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.sessionStorage.setItem(
+      SESSION_STORAGE_KEY,
+      JSON.stringify({
+        selectedProductId: state.selectedProductId,
+        spaceImageSession: state.spaceImageSession,
+        finalSnapshotDataUrl: state.finalSnapshotDataUrl,
+      }),
+    );
+  } catch {
+    // Session persistence is a convenience; visualization still works in memory.
+  }
+}
+
+function clearStoredVisualizationSession() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
+  } catch {
+    // Ignore storage failures.
+  }
 }
 
 export function useVisualizationSession() {

@@ -17,10 +17,11 @@ export type BuiltParametricProduct = {
   resolved: ResolvedStructure;
 };
 
-export type ParametricProductBuilderOptions = {
+export interface ParametricProductBuilderOptions {
   glassAppearance?: GlassAppearanceMode;
   includeSill?: boolean;
-};
+  alumFinish?: string;
+}
 
 export function buildParametricProduct(
   definition: ProductStructuralDefinition,
@@ -51,7 +52,7 @@ export function buildParametricProduct(
   }
 
   return {
-    group: buildStackedProduct(definition, resolved, cache),
+    group: buildStackedProduct(definition, resolved, cache, options),
     resolved,
   };
 }
@@ -206,7 +207,7 @@ function buildWindowLikeProduct(
     );
   }
 
-  applyGeneratedMaterials(group, options.glassAppearance ?? "frosted");
+  applyGeneratedMaterials(group, options.glassAppearance ?? "frosted", options.alumFinish);
   group.userData.productId = definition.product.productId;
   group.userData.templateId = definition.template.templateId;
   group.userData.resolvedStructure = resolved;
@@ -218,6 +219,7 @@ function buildStackedProduct(
   definition: ProductStructuralDefinition,
   resolved: ResolvedStructure,
   cache: ComponentModelCache,
+  options: ParametricProductBuilderOptions,
 ) {
   const group = new THREE.Group();
   group.name = "GeneratedProduct";
@@ -240,7 +242,7 @@ function buildStackedProduct(
   }
 
   recenterChildAtOrigin(group);
-  applyGeneratedMaterials(group, "frosted");
+  applyGeneratedMaterials(group, options.glassAppearance ?? "frosted", options.alumFinish);
   return group;
 }
 
@@ -325,11 +327,22 @@ function resolveWindowProfile(
   }
 }
 
-function applyGeneratedMaterials(group: THREE.Group, glassAppearance: GlassAppearanceMode) {
+function applyGeneratedMaterials(
+  group: THREE.Group, 
+  glassAppearance: GlassAppearanceMode,
+  alumFinish?: string
+) {
+  const isBlack = alumFinish === "black";
+  const isWhite = alumFinish === "white";
+  
+  const frameColor = isBlack ? 0x151719 : isWhite ? 0xf4f1ea : 0x9aa3a5;
+  const frameMetalness = isWhite ? 0.22 : 0.7;
+  const frameRoughness = isBlack ? 0.34 : 0.28;
+
   const frameMaterial = new THREE.MeshStandardMaterial({
-    color: 0x9aa3a5,
-    metalness: 0.7,
-    roughness: 0.28,
+    color: frameColor,
+    metalness: frameMetalness,
+    roughness: frameRoughness,
   });
   const glassMaterial = createWindowGlassMaterial(glassAppearance);
 
@@ -348,6 +361,23 @@ function applyGeneratedMaterials(group: THREE.Group, glassAppearance: GlassAppea
   glassMaterial.dispose();
 }
 
+let cachedOutdoorTexture: THREE.Texture | null = null;
+function getOutdoorTexture(): THREE.Texture {
+  if (cachedOutdoorTexture) {
+    return cachedOutdoorTexture;
+  }
+  
+  const loader = new THREE.TextureLoader();
+  const texture = loader.load("/textures/outdoor-view.jpg", (loadedTexture) => {
+    loadedTexture.colorSpace = THREE.SRGBColorSpace;
+    loadedTexture.wrapS = THREE.ClampToEdgeWrapping;
+    loadedTexture.wrapT = THREE.ClampToEdgeWrapping;
+  });
+  
+  cachedOutdoorTexture = texture;
+  return texture;
+}
+
 function createWindowGlassMaterial(mode: GlassAppearanceMode) {
   switch (mode) {
     case "clear":
@@ -363,6 +393,16 @@ function createWindowGlassMaterial(mode: GlassAppearanceMode) {
         clearcoatRoughness: 0.08,
         side: THREE.DoubleSide,
         depthWrite: false,
+      });
+    case "outdoor":
+      return new THREE.MeshStandardMaterial({
+        map: getOutdoorTexture(),
+        transparent: false,
+        opacity: 1,
+        roughness: 0.45,
+        metalness: 0,
+        side: THREE.DoubleSide,
+        depthWrite: true,
       });
     case "opaque":
       return new THREE.MeshStandardMaterial({

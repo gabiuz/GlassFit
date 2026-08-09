@@ -3,7 +3,7 @@ import type { SpaceImageSession } from "@/lib/imageApi";
 export type JsonObject = Record<string, unknown>;
 
 export type ModelStrategy = "Fixed" | "Parametric";
-export type GlassAppearanceMode = "clear" | "frosted" | "opaque" | "reflective";
+export type GlassAppearanceMode = "clear" | "frosted" | "opaque" | "reflective" | "outdoor";
 
 export type SelectedVisualizationProduct = {
   productId: string;
@@ -113,4 +113,5 @@ export type VisualizationSessionState = {
   structuralDefinition: ProductStructuralDefinition | null;
   activeOverlay: ActiveOverlay | null;
   placedOverlays: PlacedOverlay[];
+  finalSnapshotDataUrl: string | null;
 };
