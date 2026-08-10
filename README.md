@@ -63,7 +63,7 @@ cd fastapi-service
 
 # Create and activate a virtual environment
 python -m venv .venv
-source .venv/bin/activate        # macOS / Linux
+source venv/bin/activate        # macOS / Linux
 # .venv\Scripts\activate          # Windows
 
 # Install dependencies
