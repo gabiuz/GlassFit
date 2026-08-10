@@ -219,7 +219,7 @@ export function ProductModelWorkspace({
 
   useEffect(() => {
     if (!mvpRendererRef.current || !mvpCanvasRef.current || !structuralDefinition) return;
-    
+
     const sourceCanvas = mvpRendererRef.current.render(yaw, pitch);
     if (!sourceCanvas) return;
 
@@ -228,7 +228,7 @@ export function ProductModelWorkspace({
 
     ctx.clearRect(0, 0, mvpCanvasRef.current.width, mvpCanvasRef.current.height);
     const sourceBounds = getOriginPreservingSourceBounds(sourceCanvas);
-    
+
     ctx.drawImage(
       sourceCanvas,
       sourceBounds.x,
@@ -633,8 +633,8 @@ export function ProductModelWorkspace({
         );
         setRotateAngle(
           rotationSession.startRotation +
-            pointerAngle -
-            rotationSession.startPointerAngle,
+          pointerAngle -
+          rotationSession.startPointerAngle,
         );
       };
 
@@ -673,13 +673,13 @@ export function ProductModelWorkspace({
           <div className="flex items-center gap-3">
             <button
               type="button"
-              className="bg-[#0f1422] hover:bg-black text-white px-4 py-2 rounded-[10px] text-sm font-normal transition-colors cursor-pointer"
+              className="bg-black hover:bg-black text-white px-4 py-2 rounded-[10px] text-sm font-normal transition-colors cursor-pointer"
             >
               Undo
             </button>
             <button
               type="button"
-              className="bg-white border border-[#c3c3c3] hover:bg-neutral-50 text-[#0f1422] px-4 py-2 rounded-[10px] text-sm font-normal transition-colors cursor-pointer"
+              className="bg-white border border-[#c3c3c3] hover:bg-neutral-50 text-black px-4 py-2 rounded-[10px] text-sm font-normal transition-colors cursor-pointer"
             >
               Redo
             </button>
@@ -754,7 +754,7 @@ export function ProductModelWorkspace({
       {/* ── Main Interactive Layout (Canvas + Sidebar) ── */}
       <div className="w-full flex flex-col lg:flex-row gap-8 lg:gap-10 items-start">
         {/* Left Side: Space Canvas + Instructions */}
-        <div className="flex-1 flex flex-col gap-6 w-full min-w-0">
+        <div className="flex-1 flex flex-col gap-6 w-full min-w-0 lg:sticky lg:top-35 lg:self-start">
           {/* Main Space Canvas Card */}
           <div className="bg-white/10 border border-[#f5f5f5] p-3 sm:p-5 rounded-[20px] shadow-[0px_0px_5px_0px_rgba(0,0,0,0.25)] relative w-full overflow-hidden">
             <div
@@ -786,187 +786,187 @@ export function ProductModelWorkspace({
                         : "cursor-grab active:cursor-grabbing",
                     ].join(" ")}
                   >
-                  {/* Adjustment Tool Floating Action Toolbar (Figma 605:4867) */}
-                  <div
-                    className={[
-                      "flex items-center gap-2.5 z-30 select-none animate-in fade-in slide-in-from-bottom-2 duration-200",
-                      isEditingProduct ? "" : "invisible pointer-events-none",
-                    ].join(" ")}
-                  >
-                    {/* Rotate Button */}
-                    <button
-                      type="button"
-                      onClick={handleRotate}
-                      className="bg-[#0f1422] hover:bg-black text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
+                    {/* Adjustment Tool Floating Action Toolbar (Figma 605:4867) */}
+                    <div
+                      className={[
+                        "flex items-center gap-2.5 z-30 select-none animate-in fade-in slide-in-from-bottom-2 duration-200",
+                        isEditingProduct ? "" : "invisible pointer-events-none",
+                      ].join(" ")}
                     >
-                      <RotateCw className="w-4 h-4 text-white" />
-                      <span className="text-[13px] font-normal tracking-[-0.266px]">Rotate</span>
-                    </button>
+                      {/* Rotate Button */}
+                      <button
+                        type="button"
+                        onClick={handleRotate}
+                        className="bg-[#0f1422] hover:bg-black text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
+                      >
+                        <RotateCw className="w-4 h-4 text-white" />
+                        <span className="text-[13px] font-normal tracking-[-0.266px]">Rotate</span>
+                      </button>
 
-                    {/* Flip Button */}
-                    <button
-                      type="button"
-                      onClick={handleFlip}
-                      className="bg-[#0f1422] hover:bg-black text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
-                    >
-                      <FlipHorizontal className="w-4 h-4 text-white" />
-                      <span className="text-[13px] font-normal tracking-[-0.266px]">Flip</span>
-                    </button>
+                      {/* Flip Button */}
+                      <button
+                        type="button"
+                        onClick={handleFlip}
+                        className="bg-[#0f1422] hover:bg-black text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
+                      >
+                        <FlipHorizontal className="w-4 h-4 text-white" />
+                        <span className="text-[13px] font-normal tracking-[-0.266px]">Flip</span>
+                      </button>
 
-                    {/* Reset Button */}
-                    <button
-                      type="button"
-                      onClick={handleReset}
-                      className="bg-[#0f1422] hover:bg-black text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
-                    >
-                      <RotateCcw className="w-4 h-4 text-white" />
-                      <span className="text-[13px] font-normal tracking-[-0.266px]">Reset</span>
-                    </button>
+                      {/* Reset Button */}
+                      <button
+                        type="button"
+                        onClick={handleReset}
+                        className="bg-[#0f1422] hover:bg-black text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
+                      >
+                        <RotateCcw className="w-4 h-4 text-white" />
+                        <span className="text-[13px] font-normal tracking-[-0.266px]">Reset</span>
+                      </button>
 
-                    {/* Remove Button */}
-                    <button
-                      type="button"
-                      onClick={handleRemove}
-                      className="bg-[#c50000] hover:bg-[#a30000] text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
-                    >
-                      <Trash2 className="w-4 h-4 text-white" />
-                      <span className="text-[13px] font-normal tracking-[-0.266px]">Remove</span>
-                    </button>
-                  </div>
-
-                  {/* Model render frame; controls sit on the measured model outline. */}
-                  <div
-                    ref={overlayBoxRef}
-                    onPointerDown={isEditingProduct ? startOverlayDrag : undefined}
-                    className={[
-                      "relative group select-none",
-                      isEditingProduct
-                        ? "cursor-grab active:cursor-grabbing"
-                        : "cursor-default",
-                    ].join(" ")}
-                    style={{
-                      width: overlaySize.width,
-                      height: overlaySize.height,
-                      transform: `rotate(${rotateAngle}deg)`,
-                      transformOrigin: "center center",
-                    }}
-                  >
-                    {/* Inner Product Image */}
-                    <div className="w-full h-full overflow-visible select-none pointer-events-none">
-                      {structuralDefinition ? (
-                        <div
-                          className="h-full w-full transition-transform duration-300"
-                          style={{
-                            transform: isFlipped ? "scaleX(-1)" : undefined,
-                            ...modelEffectStyle,
-                          }}
-                        >
-                          <canvas 
-                            ref={mvpCanvasRef} 
-                            className="w-full h-full object-fill" 
-                            width={2048} // Fixed high resolution to prevent flickering on resize
-                            height={2048} 
-                          />
-                        </div>
-                      ) : (
-                        <img
-                          src={productOverlayImage}
-                          alt="Selected Product Overlay"
-                          draggable={false}
-                          className="w-full h-full object-cover transition-transform duration-300 select-none pointer-events-none"
-                          style={{
-                            transform: isFlipped ? "scaleX(-1)" : undefined,
-                            ...modelEffectStyle,
-                          }}
-                        />
-                      )}
+                      {/* Remove Button */}
+                      <button
+                        type="button"
+                        onClick={handleRemove}
+                        className="bg-[#c50000] hover:bg-[#a30000] text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
+                      >
+                        <Trash2 className="w-4 h-4 text-white" />
+                        <span className="text-[13px] font-normal tracking-[-0.266px]">Remove</span>
+                      </button>
                     </div>
 
-                    {isEditingProduct && (
-                      <div
-                        ref={outlineControlsRef}
-                        className="absolute pointer-events-none"
-                        style={outlineControlsStyle}
-                      >
-                      {/* Rotation handles attached to the outlined model layer. */}
-                      <button
-                        type="button"
-                        aria-label="Rotate from top left"
-                        onPointerDown={startRotation}
-                        className="absolute -top-10 -left-10 z-30 flex size-7 items-center justify-center rounded-full border border-[#07b6d3] bg-white text-[#0f1422] shadow-md hover:bg-[#e9f9fb] cursor-grab active:cursor-grabbing pointer-events-auto"
-                      >
-                        <RotateCw className="size-4" />
-                      </button>
-                      <button
-                        type="button"
-                        aria-label="Rotate from top right"
-                        onPointerDown={startRotation}
-                        className="absolute -top-10 -right-10 z-30 flex size-7 items-center justify-center rounded-full border border-[#07b6d3] bg-white text-[#0f1422] shadow-md hover:bg-[#e9f9fb] cursor-grab active:cursor-grabbing pointer-events-auto"
-                      >
-                        <RotateCw className="size-4" />
-                      </button>
-                      <button
-                        type="button"
-                        aria-label="Rotate from bottom left"
-                        onPointerDown={startRotation}
-                        className="absolute -bottom-10 -left-10 z-30 flex size-7 items-center justify-center rounded-full border border-[#07b6d3] bg-white text-[#0f1422] shadow-md hover:bg-[#e9f9fb] cursor-grab active:cursor-grabbing pointer-events-auto"
-                      >
-                        <RotateCw className="size-4" />
-                      </button>
-                      <button
-                        type="button"
-                        aria-label="Rotate from bottom right"
-                        onPointerDown={startRotation}
-                        className="absolute -bottom-10 -right-10 z-30 flex size-7 items-center justify-center rounded-full border border-[#07b6d3] bg-white text-[#0f1422] shadow-md hover:bg-[#e9f9fb] cursor-grab active:cursor-grabbing pointer-events-auto"
-                      >
-                        <RotateCw className="size-4" />
-                      </button>
-
-                      {/* Corner handles scale the scene, matching the MVP scene-size control. */}
-                      <div onPointerDown={(event) => startResize(event, "scale", -1, -1)} className="absolute top-0 left-0 -translate-x-1/2 -translate-y-1/2 size-4 rounded-[2px] bg-white border border-[#06e5ff] shadow-md z-40 cursor-nwse-resize pointer-events-auto" />
-                      <div onPointerDown={(event) => startResize(event, "scale", 1, -1)} className="absolute top-0 right-0 translate-x-1/2 -translate-y-1/2 size-4 rounded-[2px] bg-white border border-[#06e5ff] shadow-md z-40 cursor-nesw-resize pointer-events-auto" />
-                      <div onPointerDown={(event) => startResize(event, "scale", -1, 1)} className="absolute bottom-0 left-0 -translate-x-1/2 translate-y-1/2 size-4 rounded-[2px] bg-white border border-[#06e5ff] shadow-md z-40 cursor-nesw-resize pointer-events-auto" />
-                      <div onPointerDown={(event) => startResize(event, "scale", 1, 1)} className="absolute bottom-0 right-0 translate-x-1/2 translate-y-1/2 size-4 rounded-[2px] bg-white border border-[#06e5ff] shadow-md z-40 cursor-nwse-resize pointer-events-auto" />
-
-                      {/* Edge handles adjust structural width/height. */}
-                      <div onPointerDown={(event) => startResize(event, "height", 0, -1)} className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 size-3 bg-[#07b6d3] rounded-full shadow-md z-20 cursor-ns-resize pointer-events-auto" />
-                      <div onPointerDown={(event) => startResize(event, "height", 0, 1)} className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 size-3 bg-[#07b6d3] rounded-full shadow-md z-20 cursor-ns-resize pointer-events-auto" />
-                      <div onPointerDown={(event) => startResize(event, "width", -1, 0)} className="absolute left-0 top-1/2 -translate-x-1/2 -translate-y-1/2 size-3 bg-[#07b6d3] rounded-full shadow-md z-20 cursor-ew-resize pointer-events-auto" />
-                      <div onPointerDown={(event) => startResize(event, "width", 1, 0)} className="absolute right-0 top-1/2 translate-x-1/2 -translate-y-1/2 size-3 bg-[#07b6d3] rounded-full shadow-md z-20 cursor-ew-resize pointer-events-auto" />
-
-                      {/* Center Movement Handle Badge */}
-                      <div onPointerDown={startOverlayDrag} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 size-6 rounded-full bg-[#07b6d3] flex items-center justify-center shadow-md cursor-grab active:cursor-grabbing z-20 pointer-events-auto">
-                        <div className="size-2 bg-white rounded-full" />
+                    {/* Model render frame; controls sit on the measured model outline. */}
+                    <div
+                      ref={overlayBoxRef}
+                      onPointerDown={isEditingProduct ? startOverlayDrag : undefined}
+                      className={[
+                        "relative group select-none",
+                        isEditingProduct
+                          ? "cursor-grab active:cursor-grabbing"
+                          : "cursor-default",
+                      ].join(" ")}
+                      style={{
+                        width: overlaySize.width,
+                        height: overlaySize.height,
+                        transform: `rotate(${rotateAngle}deg)`,
+                        transformOrigin: "center center",
+                      }}
+                    >
+                      {/* Inner Product Image */}
+                      <div className="w-full h-full overflow-visible select-none pointer-events-none">
+                        {structuralDefinition ? (
+                          <div
+                            className="h-full w-full transition-transform duration-300"
+                            style={{
+                              transform: isFlipped ? "scaleX(-1)" : undefined,
+                              ...modelEffectStyle,
+                            }}
+                          >
+                            <canvas
+                              ref={mvpCanvasRef}
+                              className="w-full h-full object-fill"
+                              width={2048} // Fixed high resolution to prevent flickering on resize
+                              height={2048}
+                            />
+                          </div>
+                        ) : (
+                          <img
+                            src={productOverlayImage}
+                            alt="Selected Product Overlay"
+                            draggable={false}
+                            className="w-full h-full object-cover transition-transform duration-300 select-none pointer-events-none"
+                            style={{
+                              transform: isFlipped ? "scaleX(-1)" : undefined,
+                              ...modelEffectStyle,
+                            }}
+                          />
+                        )}
                       </div>
-                      </div>
-                    )}
-                  </div>
-                </motion.div>
-              </div>
-            )}
-            {selectedProduct && activeOcclusionObjects.length > 0 && (
-              <div className="absolute inset-0 pointer-events-none z-30">
-                {activeOcclusionObjects.map((object) => (
-                  <img
-                    key={object.id}
-                    src={bgImage}
-                    alt=""
-                    aria-hidden="true"
-                    className="absolute inset-0 h-full w-full object-contain select-none"
-                    style={{
-                      WebkitMaskImage: `url(${object.mask_url})`,
-                      maskImage: `url(${object.mask_url})`,
-                      WebkitMaskPosition: "center",
-                      maskPosition: "center",
-                      WebkitMaskRepeat: "no-repeat",
-                      maskRepeat: "no-repeat",
-                      WebkitMaskSize: "100% 100%",
-                      maskSize: "100% 100%",
-                    }}
-                  />
-                ))}
-              </div>
-            )}
+
+                      {isEditingProduct && (
+                        <div
+                          ref={outlineControlsRef}
+                          className="absolute pointer-events-none"
+                          style={outlineControlsStyle}
+                        >
+                          {/* Rotation handles attached to the outlined model layer. */}
+                          <button
+                            type="button"
+                            aria-label="Rotate from top left"
+                            onPointerDown={startRotation}
+                            className="absolute -top-10 -left-10 z-30 flex size-7 items-center justify-center rounded-full border border-[#07b6d3] bg-white text-[#0f1422] shadow-md hover:bg-[#e9f9fb] cursor-grab active:cursor-grabbing pointer-events-auto"
+                          >
+                            <RotateCw className="size-4" />
+                          </button>
+                          <button
+                            type="button"
+                            aria-label="Rotate from top right"
+                            onPointerDown={startRotation}
+                            className="absolute -top-10 -right-10 z-30 flex size-7 items-center justify-center rounded-full border border-[#07b6d3] bg-white text-[#0f1422] shadow-md hover:bg-[#e9f9fb] cursor-grab active:cursor-grabbing pointer-events-auto"
+                          >
+                            <RotateCw className="size-4" />
+                          </button>
+                          <button
+                            type="button"
+                            aria-label="Rotate from bottom left"
+                            onPointerDown={startRotation}
+                            className="absolute -bottom-10 -left-10 z-30 flex size-7 items-center justify-center rounded-full border border-[#07b6d3] bg-white text-[#0f1422] shadow-md hover:bg-[#e9f9fb] cursor-grab active:cursor-grabbing pointer-events-auto"
+                          >
+                            <RotateCw className="size-4" />
+                          </button>
+                          <button
+                            type="button"
+                            aria-label="Rotate from bottom right"
+                            onPointerDown={startRotation}
+                            className="absolute -bottom-10 -right-10 z-30 flex size-7 items-center justify-center rounded-full border border-[#07b6d3] bg-white text-[#0f1422] shadow-md hover:bg-[#e9f9fb] cursor-grab active:cursor-grabbing pointer-events-auto"
+                          >
+                            <RotateCw className="size-4" />
+                          </button>
+
+                          {/* Corner handles scale the scene, matching the MVP scene-size control. */}
+                          <div onPointerDown={(event) => startResize(event, "scale", -1, -1)} className="absolute top-0 left-0 -translate-x-1/2 -translate-y-1/2 size-4 rounded-[2px] bg-white border border-[#06e5ff] shadow-md z-40 cursor-nwse-resize pointer-events-auto" />
+                          <div onPointerDown={(event) => startResize(event, "scale", 1, -1)} className="absolute top-0 right-0 translate-x-1/2 -translate-y-1/2 size-4 rounded-[2px] bg-white border border-[#06e5ff] shadow-md z-40 cursor-nesw-resize pointer-events-auto" />
+                          <div onPointerDown={(event) => startResize(event, "scale", -1, 1)} className="absolute bottom-0 left-0 -translate-x-1/2 translate-y-1/2 size-4 rounded-[2px] bg-white border border-[#06e5ff] shadow-md z-40 cursor-nesw-resize pointer-events-auto" />
+                          <div onPointerDown={(event) => startResize(event, "scale", 1, 1)} className="absolute bottom-0 right-0 translate-x-1/2 translate-y-1/2 size-4 rounded-[2px] bg-white border border-[#06e5ff] shadow-md z-40 cursor-nwse-resize pointer-events-auto" />
+
+                          {/* Edge handles adjust structural width/height. */}
+                          <div onPointerDown={(event) => startResize(event, "height", 0, -1)} className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 size-3 bg-[#07b6d3] rounded-full shadow-md z-20 cursor-ns-resize pointer-events-auto" />
+                          <div onPointerDown={(event) => startResize(event, "height", 0, 1)} className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 size-3 bg-[#07b6d3] rounded-full shadow-md z-20 cursor-ns-resize pointer-events-auto" />
+                          <div onPointerDown={(event) => startResize(event, "width", -1, 0)} className="absolute left-0 top-1/2 -translate-x-1/2 -translate-y-1/2 size-3 bg-[#07b6d3] rounded-full shadow-md z-20 cursor-ew-resize pointer-events-auto" />
+                          <div onPointerDown={(event) => startResize(event, "width", 1, 0)} className="absolute right-0 top-1/2 translate-x-1/2 -translate-y-1/2 size-3 bg-[#07b6d3] rounded-full shadow-md z-20 cursor-ew-resize pointer-events-auto" />
+
+                          {/* Center Movement Handle Badge */}
+                          <div onPointerDown={startOverlayDrag} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 size-6 rounded-full bg-[#07b6d3] flex items-center justify-center shadow-md cursor-grab active:cursor-grabbing z-20 pointer-events-auto">
+                            <div className="size-2 bg-white rounded-full" />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </motion.div>
+                </div>
+              )}
+              {selectedProduct && activeOcclusionObjects.length > 0 && (
+                <div className="absolute inset-0 pointer-events-none z-30">
+                  {activeOcclusionObjects.map((object) => (
+                    <img
+                      key={object.id}
+                      src={bgImage}
+                      alt=""
+                      aria-hidden="true"
+                      className="absolute inset-0 h-full w-full object-contain select-none"
+                      style={{
+                        WebkitMaskImage: `url(${object.mask_url})`,
+                        maskImage: `url(${object.mask_url})`,
+                        WebkitMaskPosition: "center",
+                        maskPosition: "center",
+                        WebkitMaskRepeat: "no-repeat",
+                        maskRepeat: "no-repeat",
+                        WebkitMaskSize: "100% 100%",
+                        maskSize: "100% 100%",
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
@@ -1272,8 +1272,8 @@ export function ProductModelWorkspace({
                               type="button"
                               onClick={() => setGlassAppearance(mode)}
                               className={`px-3 py-1.5 rounded-[20px] border border-[#c3c3c3] text-base font-normal capitalize transition-colors cursor-pointer ${glassAppearance === mode
-                                  ? "bg-[#0f1422] text-white"
-                                  : "bg-transparent text-[#0f1422]"
+                                ? "bg-[#0f1422] text-white"
+                                : "bg-transparent text-[#0f1422]"
                                 }`}
                             >
                               {mode}
@@ -1425,8 +1425,8 @@ export function ProductModelWorkspace({
                           </div>
                           <div
                             className={`size-3.5 rounded-[2px] border transition-colors ${item.active
-                                ? "bg-[#0f1422] border-[#0f1422]"
-                                : "bg-[#c3c3c3] border-transparent"
+                              ? "bg-[#0f1422] border-[#0f1422]"
+                              : "bg-[#c3c3c3] border-transparent"
                               }`}
                           />
                         </div>
