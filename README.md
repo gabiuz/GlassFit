@@ -1,36 +1,98 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# GlassFit
 
-## Getting Started
+A glass and window product visualization platform. Upload a photo of your space, overlay realistic 3D glass product models onto it, and generate a price quotation and booking request — all in the browser.
 
-First, run the development server:
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | Next.js 16, React 19, TypeScript |
+| Styling | Tailwind CSS v4, shadcn/ui |
+| 3D Rendering | React Three Fiber, Three.js |
+| Animation | Motion (Framer Motion) |
+| Backend CV | FastAPI (Python), YOLOv8, Depth Anything V2, SegFormer |
+| Database / Auth | Supabase (Postgres + Auth) |
+| Object Storage | Cloudflare R2 |
+
+---
+
+## Prerequisites
+
+- **Node.js** v20+ and **npm**
+- **Python** 3.10+
+- A **Supabase** project (for database and auth)
+- A **Cloudflare R2** bucket (for image storage)
+
+---
+
+## Environment Variables
+
+Create a `.env.local` file in the project root with the following keys:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
+NEXT_PUBLIC_R2_ASSET_BASE_URL=
+NEXT_PUBLIC_IMAGE_API_URL=
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+---
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Running the Frontend
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+# Install dependencies
+npm install
 
-## Learn More
+# Start the development server
+npm run dev
+```
 
-To learn more about Next.js, take a look at the following resources:
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+---
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Running the Backend (FastAPI Image Service)
 
-## Deploy on Vercel
+The FastAPI service handles AI-powered image analysis (object segmentation, depth estimation, scene detection, and lighting analysis).
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+cd fastapi-service
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+# Create and activate a virtual environment
+python -m venv .venv
+source .venv/bin/activate        # macOS / Linux
+# .venv\Scripts\activate          # Windows
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Start the server
+uvicorn main:app --reload --port 8000
+```
+
+The service will be available at [http://localhost:8000](http://localhost:8000).  
+Health check: [http://localhost:8000/health](http://localhost:8000/health).
+
+> **Note:** On first startup, the service downloads and caches YOLOv8, Depth Anything V2, and SegFormer model weights. This may take a few minutes depending on your connection.
+
+---
+
+## Project Structure
+
+```
+glassfit/
+├── src/
+│   ├── app/              # Next.js App Router pages & routes
+│   ├── features/         # Feature-sliced modules (home, product, visualization, booking, etc.)
+│   ├── components/       # Shared UI components & shadcn/ui primitives
+│   └── lib/              # Supabase clients, image API client, 3D engine utilities
+├── fastapi-service/      # Python CV backend (segmentation, depth, scene detection)
+├── supabase/
+│   └── migrations/       # SQL database migrations
+└── public/               # Static assets and fonts
+```
+
+---
