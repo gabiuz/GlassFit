@@ -17,7 +17,8 @@ export default function LayoutWrapper({
   const isAuthPage =
     pathname === "/login" ||
     pathname === "/register" ||
-    pathname === "/create-account";
+    pathname === "/create-account" ||
+    pathname === "/dashboard";
 
   if (isAuthPage) {
     return (
