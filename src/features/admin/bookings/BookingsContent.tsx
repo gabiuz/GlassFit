@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { SearchBar } from "@/components/shared/SearchBar";
 import {
@@ -134,7 +135,7 @@ export function BookingsContent() {
                 <span className="text-base font-normal leading-[1.4] tracking-[-0.304px]">
                   {tab.label}
                 </span>
-                <span className="bg-white rounded-[10px] px-[5px] py-[2px] text-xs text-[#0f1422] font-normal leading-[1.4] tracking-[-0.228px] text-center min-w-[17px]">
+                <span className="bg-white rounded-[10px] px-3 py-[2px] text-xs text-[#0f1422] font-normal leading-[1.4] tracking-[-0.228px] text-center min-w-[17px]">
                   {count}
                 </span>
               </button>
@@ -202,7 +203,7 @@ export function BookingsContent() {
             <div className="flex flex-col gap-[20px] items-start w-full">
               {/* Header: Reference ID & Timestamp */}
               <div className="flex items-center justify-between gap-2.5 w-full">
-                <p className="text-[#0f1422] text-2xl font-medium leading-[1.2] tracking-[-0.456px]">
+                <p className="text-[#0f1422] text-2xl font-medium leading-[1.2] tracking-[-0.456px] whitespace-nowrap">
                   {selectedBooking.referenceNo}
                 </p>
                 <p className="text-[#c3c3c3] text-xs font-normal leading-[1.4] tracking-[-0.228px] text-right">
@@ -297,7 +298,12 @@ export function BookingsContent() {
                 <div className="flex gap-5 items-start w-full">
                   {/* PDF Icon Card */}
                   <div className="bg-white p-5 rounded-[20px] size-[103px] flex items-center justify-center shrink-0">
-                    <PdfIcon />
+                    <Image
+                      src="/admin/pdf-file.svg"
+                      alt="PDF file"
+                      width={63}
+                      height={63}
+                    />
                   </div>
 
                   {/* PDF Details & Action Buttons */}
@@ -354,35 +360,5 @@ export function BookingsContent() {
         )}
       </div>
     </div>
-  );
-}
-
-function PdfIcon() {
-  return (
-    <svg
-      width="63"
-      height="63"
-      viewBox="0 0 64 64"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-    >
-      <rect x="8" y="4" width="48" height="56" rx="8" fill="#FEE2E2" />
-      <path
-        d="M38 4L56 22H42C39.7909 22 38 20.2091 38 18V4Z"
-        fill="#F87171"
-      />
-      <rect x="16" y="32" width="32" height="18" rx="4" fill="#EF4444" />
-      <text
-        x="32"
-        y="45"
-        fill="white"
-        fontSize="12"
-        fontWeight="bold"
-        textAnchor="middle"
-        fontFamily="sans-serif"
-      >
-        PDF
-      </text>
-    </svg>
   );
 }

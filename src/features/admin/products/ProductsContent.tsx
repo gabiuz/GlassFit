@@ -128,7 +128,6 @@ export function ProductsContent() {
 
       <div className="w-full h-[72px] flex items-center justify-between gap-[67px]">
 
-        {/* Title + subtitle */}
         <div className="flex flex-col gap-1.5 items-start shrink-0 whitespace-nowrap">
           <h1 className="text-black text-[32px] font-medium leading-[1.2] tracking-[-0.608px]">
             Product
@@ -138,7 +137,6 @@ export function ProductsContent() {
           </p>
         </div>
 
-        {/* Search bar */}
         <SearchBar
           value={searchQuery}
           onChange={setSearchQuery}
@@ -146,7 +144,6 @@ export function ProductsContent() {
           inputClassName="w-[340px]"
         />
 
-        {/* Add Product button */}
         <button
           type="button"
           className="bg-[#0f1422] rounded-[25px] px-5 py-[15px] flex items-start gap-[15px] cursor-pointer hover:bg-black transition-colors shrink-0"
@@ -157,7 +154,7 @@ export function ProductsContent() {
         </button>
       </div>
 
-      {/* ── Filter row + product count ───────────────────────────────────────── */}
+      {/* Filter row + product count */}
       <div className="w-full flex flex-col gap-[22px] items-start">
         <div className="w-full flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -181,7 +178,7 @@ export function ProductsContent() {
           </p>
         </div>
 
-        {/* ── Products table ─────────────────────────────────────────────────── */}
+        {/* Products table */}
         <div className="bg-white rounded-[20px] p-[30px] flex flex-col items-start w-full">
           <div className="flex flex-col gap-2.5 items-start w-full">
 
