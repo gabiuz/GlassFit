@@ -1,10 +1,14 @@
+"use client";
+
 import { cn } from "@/lib/utils";
 import Image from "next/image";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 type AdminNavItem = {
     label: string;
     icon: string;
-    isSelected?: boolean;
+    href: string;
 };
 
 type AdminNavGroup = {
@@ -16,31 +20,50 @@ const adminNavGroups: AdminNavGroup[] = [
     {
         label: "GENERAL",
         items: [
-            { label: "Dashboard", icon: "/admin/dashboard-icon.svg", isSelected: true },
-            { label: "Product", icon: "/admin/product-icon.svg" },
-            { label: "Booking", icon: "/admin/booking-icon.svg" },
+            { label: "Dashboard", icon: "/admin/dashboard-icon.svg", href: "/admin" },
+            { label: "Product", icon: "/admin/product-icon.svg", href: "/admin/products" },
+            { label: "Booking", icon: "/admin/booking-icon.svg", href: "/admin/bookings" },
         ],
     },
     {
         label: "SUPPORT",
-        items: [{ label: "Settings", icon: "/admin/settings-icon.svg" }],
+        items: [{ label: "Settings", icon: "/admin/settings-icon.svg", href: "/admin/settings" }],
     },
 ];
 
 export default function AdminSidePanel() {
+    const pathname = usePathname();
+
+    const isItemActive = (href: string) => {
+        if (href === "/admin") {
+            return pathname === "/admin";
+        }
+        return pathname.startsWith(href);
+    };
+
     return (
         <aside
             data-variant="Dashboard"
             className="w-[268px] shrink-0 min-h-[calc(100vh-106px)] pl-[90px] pr-[30px] pt-5 pb-[100px] bg-white border-r border-white drop-shadow-[0px_0px_2.5px_rgba(0,0,0,0.25)] flex flex-col gap-8 items-start select-none"
         >
             {adminNavGroups.map((group) => (
-                <AdminNavigationGroup key={group.label} group={group} />
+                <AdminNavigationGroup
+                    key={group.label}
+                    group={group}
+                    isItemActive={isItemActive}
+                />
             ))}
         </aside>
     );
 }
 
-function AdminNavigationGroup({ group }: { group: AdminNavGroup }) {
+function AdminNavigationGroup({
+    group,
+    isItemActive,
+}: {
+    group: AdminNavGroup;
+    isItemActive: (href: string) => boolean;
+}) {
     return (
         <div className="flex flex-col gap-2.5 items-start w-full">
             <div className="py-2 flex items-center">
@@ -50,19 +73,27 @@ function AdminNavigationGroup({ group }: { group: AdminNavGroup }) {
             </div>
             <div className="flex flex-col gap-4 items-start w-full">
                 {group.items.map((item) => (
-                    <AdminNavigationItem key={item.label} item={item} />
+                    <AdminNavigationItem
+                        key={item.label}
+                        item={item}
+                        isSelected={isItemActive(item.href)}
+                    />
                 ))}
             </div>
         </div>
     );
 }
 
-function AdminNavigationItem({ item }: { item: AdminNavItem }) {
-    const isSelected = item.isSelected === true;
-
+function AdminNavigationItem({
+    item,
+    isSelected,
+}: {
+    item: AdminNavItem;
+    isSelected: boolean;
+}) {
     return (
-        <button
-            type="button"
+        <Link
+            href={item.href}
             data-state={isSelected ? "Selected" : "Default"}
             className={cn(
                 "w-[148px] px-4 py-2 flex items-center gap-2 cursor-pointer transition-all",
@@ -89,6 +120,6 @@ function AdminNavigationItem({ item }: { item: AdminNavItem }) {
             >
                 {item.label}
             </span>
-        </button>
+        </Link>
     );
 }

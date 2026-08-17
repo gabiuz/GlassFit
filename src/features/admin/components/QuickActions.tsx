@@ -1,6 +1,9 @@
+"use client";
+
 import type { CSSProperties } from "react";
 import Button from "@/components/shared/Button";
 import { cn } from "@/lib/utils";
+import { useRouter } from "next/navigation";
 import type { QuickAction } from "../data";
 
 type QuickActionsProps = {
@@ -32,7 +35,16 @@ export function QuickActions({ actions }: QuickActionsProps) {
 }
 
 function QuickActionCard({ action }: { action: QuickAction }) {
+  const router = useRouter();
   const isFeatured = action.isFeatured === true;
+
+  const handleClick = () => {
+    if (action.buttonLabel.toLowerCase().includes("product")) {
+      router.push("/admin/products");
+    } else if (action.buttonLabel.toLowerCase().includes("booking")) {
+      router.push("/admin/bookings");
+    }
+  };
 
   return (
     <div
@@ -56,9 +68,11 @@ function QuickActionCard({ action }: { action: QuickAction }) {
         type="button"
         variant={isFeatured ? "whiteBtnBlackText" : "greenBtnWhiteText"}
         value={action.buttonLabel}
+        onClick={handleClick}
         leftIcon={null}
         rightIcon={null}
         className={cn(
+          "cursor-pointer hover:opacity-90 transition-opacity",
           isFeatured ? "outline outline-1 outline-offset-[-1px] outline-[#c3c3c3]" : ""
         )}
         style={quickActionButtonStyle}
