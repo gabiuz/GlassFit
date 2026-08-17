@@ -2,7 +2,7 @@ export type DashboardMetric = {
   label: string;
   value: string;
   iconSrc: string;
-  widthClass: string;
+  widthClass?: string;
   isFeatured?: boolean;
 };
 
@@ -45,26 +45,22 @@ export const dashboardMetrics: DashboardMetric[] = [
     label: "All Products",
     value: "167",
     iconSrc: "/admin/all-product.svg",
-    widthClass: "w-59",
     isFeatured: true,
   },
   {
     label: "New Booking",
     value: "6",
     iconSrc: "/admin/new-booking.svg",
-    widthClass: "w-64",
   },
   {
     label: "Pending booking",
     value: "7",
     iconSrc: "/admin/pending-booking.svg",
-    widthClass: "w-73",
   },
   {
     label: "Approved Booking",
     value: "18",
     iconSrc: "/admin/approved-booking.svg",
-    widthClass: "w-76",
   },
 ];
 

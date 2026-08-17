@@ -13,22 +13,22 @@ import { WelcomeBanner } from "./WelcomeBanner";
 
 export function DashboardContent() {
   return (
-    <div className="w-full inline-flex flex-col justify-start items-start gap-7 bg-[#F6F6F6] mt-4">
-      <div className="self-stretch flex flex-col justify-start items-start gap-1.5">
-        <div className="self-stretch justify-start text-black text-3xl font-medium leading-10">
+    <div className="flex flex-col justify-start items-start gap-[30px] w-full max-w-[1136px] pt-4 pb-12">
+      <div className="w-full flex flex-col justify-start items-start">
+        <h1 className="text-black text-[32px] font-medium leading-[1.2] tracking-[-0.608px]">
           {dashboardSummary.title}
-        </div>
+        </h1>
       </div>
 
       <WelcomeBanner summary={dashboardSummary} />
 
-      <div className="self-stretch inline-flex justify-start items-center gap-5">
+      <div className="w-full flex justify-start items-center gap-5">
         {dashboardMetrics.map((metric) => (
           <DashboardMetricCard key={metric.label} metric={metric} />
         ))}
       </div>
 
-      <div className="size- inline-flex justify-start items-start gap-6">
+      <div className="w-full flex justify-start items-start gap-[23px]">
         <QuickActions actions={quickActions} />
         <RecentBookingsTable bookings={recentBookingRequests} />
         <ProductUpdates updates={productUpdates} />

@@ -1,5 +1,4 @@
 import { cn } from "@/lib/utils";
-import Button from "@/components/shared/Button";
 import Image from "next/image";
 
 type AdminNavItem = {
@@ -30,30 +29,26 @@ const adminNavGroups: AdminNavGroup[] = [
 
 export default function AdminSidePanel() {
     return (
-        <div
+        <aside
             data-variant="Dashboard"
-            className="w-69 h-screen pl-24 pr-7 pt-5 bg-white shadow-[0px_0px_5px_0px_rgba(0,0,0,0.25)] outline outline-1 outline-offset-[-1px] outline-white inline-flex flex-col justify-start items-start gap-8"
+            className="w-[268px] shrink-0 min-h-[calc(100vh-106px)] pl-[90px] pr-[30px] pt-5 pb-[100px] bg-white border-r border-white drop-shadow-[0px_0px_2.5px_rgba(0,0,0,0.25)] flex flex-col gap-8 items-start select-none"
         >
             {adminNavGroups.map((group) => (
                 <AdminNavigationGroup key={group.label} group={group} />
             ))}
-        </div>
+        </aside>
     );
 }
 
 function AdminNavigationGroup({ group }: { group: AdminNavGroup }) {
     return (
-        <div className="self-stretch flex flex-col justify-start items-start gap-2.5">
-            <div className="size- py-2 inline-flex justify-start items-center gap-1 overflow-hidden">
-                <div className="size- flex justify-start items-center gap-2">
-                    <div className="size- inline-flex flex-col justify-center items-start overflow-hidden">
-                        <div className="self-stretch justify-start text-stone-300 text-xs font-normal leading-4">
-                            {group.label}
-                        </div>
-                    </div>
-                </div>
+        <div className="flex flex-col gap-2.5 items-start w-full">
+            <div className="py-2 flex items-center">
+                <span className="text-[#c3c3c3] text-xs font-normal leading-[1.4] tracking-[-0.228px]">
+                    {group.label}
+                </span>
             </div>
-            <div className="size- flex flex-col justify-start items-start gap-4">
+            <div className="flex flex-col gap-4 items-start w-full">
                 {group.items.map((item) => (
                     <AdminNavigationItem key={item.label} item={item} />
                 ))}
@@ -66,50 +61,34 @@ function AdminNavigationItem({ item }: { item: AdminNavItem }) {
     const isSelected = item.isSelected === true;
 
     return (
-        <Button
+        <button
             type="button"
             data-state={isSelected ? "Selected" : "Default"}
-            variant={isSelected ? "lightGradWhiteText" : "whiteBtnBlackText"}
-            value={item.label}
-            leftIcon={
-                <AdminNavigationIcon icon={item.icon} isSelected={isSelected} />
-            }
-            rightIcon={null}
             className={cn(
-                "overflow-hidden",
-                isSelected ? "rounded-[10px]" : "rounded-sm"
+                "w-[148px] px-4 py-2 flex items-center gap-2 cursor-pointer transition-all",
+                isSelected
+                    ? "bg-gradient-to-r from-[#097283] from-[6.931%] to-[#45c9e3] rounded-[10px] text-white"
+                    : "rounded text-[#0f1422] hover:bg-neutral-100"
             )}
-            style={{
-                width: "9rem",
-                padding: "0.5rem 1rem",
-                borderRadius: isSelected ? "10px" : "0.125rem",
-                gap: "0.3rem",
-                justifyContent: "flex-start",
-                fontSize: "1rem",
-                lineHeight: "1.75rem",
-                letterSpacing: "0",
-            }}
-        />
-    );
-}
-
-function AdminNavigationIcon({
-    icon,
-    isSelected,
-}: {
-    icon: string;
-    isSelected: boolean;
-}) {
-    return (
-        <div className="size-5 relative overflow-hidden">
-            <Image
-                src={icon}
-                alt=""
-                width={16}
-                height={16}
-                aria-hidden="true"
-                className={cn(isSelected ? "brightness-0 invert" : "")}
-            />
-        </div>
+        >
+            <div className="size-[15px] relative shrink-0 overflow-hidden flex items-center justify-center">
+                <Image
+                    src={item.icon}
+                    alt=""
+                    width={15}
+                    height={15}
+                    aria-hidden="true"
+                    className={cn(isSelected ? "brightness-0 invert" : "")}
+                />
+            </div>
+            <span
+                className={cn(
+                    "text-lg font-normal leading-[1.5] tracking-[-0.342px] whitespace-nowrap",
+                    isSelected ? "text-white" : "text-[#0f1422]"
+                )}
+            >
+                {item.label}
+            </span>
+        </button>
     );
 }

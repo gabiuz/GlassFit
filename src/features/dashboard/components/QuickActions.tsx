@@ -18,11 +18,11 @@ const quickActionButtonStyle: CSSProperties = {
 
 export function QuickActions({ actions }: QuickActionsProps) {
   return (
-    <div className="size- inline-flex flex-col justify-start items-start gap-5">
-      <div className="self-stretch justify-start text-black text-2xl font-medium leading-7">
+    <div className="flex flex-col gap-[19px] items-start shrink-0 select-none">
+      <h2 className="text-black text-2xl font-medium leading-[1.2] tracking-[-0.456px]">
         Quick Actions
-      </div>
-      <div className="size- flex flex-col justify-start items-start gap-6">
+      </h2>
+      <div className="flex flex-col gap-[26px] items-start shrink-0">
         {actions.map((action) => (
           <QuickActionCard key={action.title} action={action} />
         ))}
@@ -37,22 +37,21 @@ function QuickActionCard({ action }: { action: QuickAction }) {
   return (
     <div
       className={cn(
-        "size- p-5 rounded-3xl flex flex-col justify-start items-start gap-5",
-        isFeatured
-          ? "bg-gray-900 shadow-[0px_0px_5px_0px_rgba(0,0,0,0.25)]"
-          : "bg-white"
+        "p-5 rounded-[20px] flex flex-col gap-5 items-start shrink-0",
+        isFeatured ? "bg-[#0f1422]" : "bg-white"
       )}
     >
-      <div className="size- inline-flex justify-center items-center gap-5">
-        <div
+      <div className="flex items-center justify-center shrink-0">
+        <p
           className={cn(
-            "w-40 justify-start text-base font-normal leading-6",
-            isFeatured ? "text-white" : "text-gray-900"
+            "w-40 text-base font-medium leading-[1.4] tracking-[-0.304px]",
+            isFeatured ? "text-white" : "text-[#0f1422]"
           )}
         >
           {action.title}
-        </div>
+        </p>
       </div>
+
       <Button
         type="button"
         variant={isFeatured ? "whiteBtnBlackText" : "greenBtnWhiteText"}
@@ -60,8 +59,7 @@ function QuickActionCard({ action }: { action: QuickAction }) {
         leftIcon={null}
         rightIcon={null}
         className={cn(
-          "shadow-[0px_4px_50px_0px_rgba(0,0,0,0.25)]",
-          isFeatured ? "outline outline-1 outline-offset-[-1px] outline-stone-300" : ""
+          isFeatured ? "outline outline-1 outline-offset-[-1px] outline-[#c3c3c3]" : ""
         )}
         style={quickActionButtonStyle}
       />

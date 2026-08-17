@@ -6,19 +6,19 @@ type ProductUpdatesProps = {
 
 export function ProductUpdates({ updates }: ProductUpdatesProps) {
   return (
-    <div className="size-93 p-7 bg-white rounded-[20px] inline-flex flex-col justify-start items-start gap-5">
-      <div className="size- inline-flex justify-start items-center gap-12">
-        <div className="justify-start text-cyan-500 text-2xl font-medium leading-7">
+    <div className="p-[30px] bg-white rounded-[20px] flex flex-col gap-5 items-start shrink-0 select-none">
+      <div className="w-full flex items-center justify-between gap-[50px] whitespace-nowrap">
+        <h2 className="text-[#07b6d3] text-2xl font-medium leading-[1.2] tracking-[-0.456px]">
           Product Update
-        </div>
+        </h2>
         <button
           type="button"
-          className="justify-start text-stone-300 text-base font-normal leading-6"
+          className="text-[#c3c3c3] text-base font-normal leading-[1.4] tracking-[-0.304px] hover:text-black transition-colors cursor-pointer"
         >
           View All
         </button>
       </div>
-      <div className="self-stretch flex flex-col justify-start items-start gap-2.5">
+      <div className="w-full flex flex-col gap-2.5 items-start">
         {updates.map((update) => (
           <ProductUpdateItem key={`${update.productName}-${update.description}`} update={update} />
         ))}
@@ -29,15 +29,15 @@ export function ProductUpdates({ updates }: ProductUpdatesProps) {
 
 function ProductUpdateItem({ update }: { update: ProductUpdate }) {
   return (
-    <div className="size- inline-flex justify-center items-center gap-3.5">
-      <div className="size-2 bg-cyan-500 rounded-full"></div>
-      <div className="size- inline-flex flex-col justify-start items-start gap-1">
-        <div className="self-stretch justify-start text-black text-xs font-light leading-4">
+    <div className="flex items-center gap-[15px] shrink-0">
+      <div className="size-2 bg-[#07b6d3] rounded-full shrink-0" />
+      <div className="w-[144px] flex flex-col gap-1 items-start shrink-0">
+        <p className="w-full text-black text-xs font-normal leading-[1.4] tracking-[-0.228px]">
           {update.productName}
-        </div>
-        <div className="self-stretch justify-start text-stone-300 text-xs font-light leading-4">
+        </p>
+        <p className="w-full text-[#c3c3c3] text-xs font-normal leading-[1.4] tracking-[-0.228px]">
           {update.description}
-        </div>
+        </p>
       </div>
     </div>
   );

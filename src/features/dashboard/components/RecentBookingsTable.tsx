@@ -9,9 +9,9 @@ type RecentBookingsTableProps = {
 };
 
 const statusStyles: Record<BookingStatus, string> = {
-  Confirmed: "bg-green-600",
-  Pending: "bg-orange-300",
-  Cancelled: "bg-red-500",
+  Confirmed: "bg-[#05b64b]",
+  Pending: "bg-[#ffc876]",
+  Cancelled: "bg-[#e74242]",
 };
 
 const BOOKINGS_PER_PAGE = 5;
@@ -35,42 +35,44 @@ export function RecentBookingsTable({ bookings }: RecentBookingsTableProps) {
   };
 
   return (
-    <div className="size-138 p-7 bg-white rounded-[20px] inline-flex flex-col justify-start items-start gap-5">
-      <div className="self-stretch inline-flex justify-start items-center gap-32">
-        <div className="flex-1 justify-start text-cyan-500 text-2xl font-medium leading-7">
+    <div className="p-[30px] bg-white rounded-[20px] flex flex-col items-start gap-5 shrink-0 select-none">
+      <div className="w-full flex items-center justify-between gap-[124px]">
+        <h2 className="flex-1 text-[#07b6d3] text-2xl font-medium leading-[1.2] tracking-[-0.456px] whitespace-nowrap">
           Recent Booking Request
-        </div>
+        </h2>
         <button
           type="button"
-          className="justify-start text-stone-300 text-base font-normal leading-6"
+          className="text-[#c3c3c3] text-base font-normal leading-[1.4] tracking-[-0.304px] whitespace-nowrap hover:text-black transition-colors cursor-pointer"
         >
           View All
         </button>
       </div>
-      <div className="w-124 flex flex-col justify-start items-start gap-2.5">
+
+      <div className="w-[489px] flex flex-col items-start gap-2.5">
         <BookingTableHeader />
-        <div className="w-124 h-0 outline-1 outline-stone-300"></div>
+        <div className="w-[489px] h-0 border-b border-[#e5e5e5]" />
         {visibleBookings.map((booking) => (
           <BookingTableRow key={booking.id} booking={booking} />
         ))}
       </div>
+
       <div className="self-stretch flex justify-end items-center gap-2 text-xs leading-4">
         <button
           type="button"
           onClick={goToPreviousPage}
           disabled={!canGoPrevious}
-          className="px-2.5 py-1 rounded-[10px] bg-[#F5F5F5] text-gray-900 disabled:text-stone-300 disabled:cursor-not-allowed"
+          className="px-2.5 py-1 rounded-[10px] bg-[#F5F5F5] text-gray-900 disabled:text-stone-300 disabled:cursor-not-allowed cursor-pointer hover:bg-neutral-200 transition-colors"
         >
           Prev
         </button>
-        <span className="text-stone-300">
+        <span className="text-stone-400">
           {currentPage} / {totalPages}
         </span>
         <button
           type="button"
           onClick={goToNextPage}
           disabled={!canGoNext}
-          className="px-2.5 py-1 rounded-[10px] bg-[#F5F5F5] text-gray-900 disabled:text-stone-300 disabled:cursor-not-allowed"
+          className="px-2.5 py-1 rounded-[10px] bg-[#F5F5F5] text-gray-900 disabled:text-stone-300 disabled:cursor-not-allowed cursor-pointer hover:bg-neutral-200 transition-colors"
         >
           Next
         </button>
@@ -81,10 +83,10 @@ export function RecentBookingsTable({ bookings }: RecentBookingsTableProps) {
 
 function BookingTableHeader() {
   return (
-    <div className="self-stretch inline-flex justify-start items-center gap-12">
+    <div className="w-full flex items-center gap-[50px]">
       <HeaderCell>Booking ID</HeaderCell>
       <HeaderCell>Customer</HeaderCell>
-      <HeaderCell className="w-full">Product Name</HeaderCell>
+      <HeaderCell className="w-[90px] shrink-0">Product Name</HeaderCell>
       <HeaderCell>Status</HeaderCell>
     </div>
   );
@@ -92,21 +94,21 @@ function BookingTableHeader() {
 
 function BookingTableRow({ booking }: { booking: BookingRequest }) {
   return (
-    <div className="self-stretch inline-flex justify-start items-center gap-12">
+    <div className="w-full flex items-center gap-[50px]">
       <TableCell>{booking.id}</TableCell>
       <TableCell>{booking.customer}</TableCell>
-      <TableCell className="w-24">{booking.productName}</TableCell>
+      <TableCell className="w-[90px] shrink-0 text-center">{booking.productName}</TableCell>
       <TableCell>
         <div
           data-status={booking.status}
           className={cn(
-            "size- px-2.5 py-[5px] rounded-[20px] flex justify-center items-center gap-2.5",
+            "px-2.5 py-[5px] rounded-[20px] flex items-center justify-center shrink-0",
             statusStyles[booking.status]
           )}
         >
-          <div className="justify-start text-white text-xs font-normal leading-4">
+          <span className="text-white text-xs font-normal leading-[1.4] tracking-[-0.228px] whitespace-nowrap">
             {booking.status}
-          </div>
+          </span>
         </div>
       </TableCell>
     </div>
@@ -121,10 +123,10 @@ function HeaderCell({
   className?: string;
 }) {
   return (
-    <div className={cn("flex-1 p-[5px] flex justify-center items-center gap-2.5", className)}>
-      <div className="justify-start text-black text-xs font-medium leading-4">
+    <div className={cn("flex-1 min-w-0 p-[5px] flex items-center justify-center", className)}>
+      <span className="text-black text-xs font-medium leading-[1.4] tracking-[-0.228px] whitespace-nowrap">
         {children}
-      </div>
+      </span>
     </div>
   );
 }
@@ -137,11 +139,11 @@ function TableCell({
   className?: string;
 }) {
   return (
-    <div className={cn("flex-1 p-[5px] flex justify-center items-center gap-2.5", className)}>
+    <div className={cn("flex-1 min-w-0 p-[5px] flex items-center justify-center", className)}>
       {typeof children === "string" ? (
-        <div className="justify-start text-black text-xs font-light leading-4">
+        <span className="text-black text-xs font-normal leading-[1.4] tracking-[-0.228px] whitespace-nowrap">
           {children}
-        </div>
+        </span>
       ) : (
         children
       )}
