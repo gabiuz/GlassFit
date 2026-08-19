@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import Image from "next/image";
-import { X, Upload, Plus, Trash2 } from "lucide-react";
+import { X, Plus, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { AdminProductItem } from "./productData";
 
@@ -51,6 +51,9 @@ type GlassFinishItem = {
   bgStyle?: React.CSSProperties;
 };
 
+const generateProductId = (): string => `PD_${Math.floor(100 + Math.random() * 900)}`;
+const generateOptionId = (): string => `opt-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`;
+
 export function AddProductModal({
   isOpen,
   onClose,
@@ -87,9 +90,6 @@ export function AddProductModal({
       options: [{ id: "opt-gt1", name: "New Option", priceModifier: "0" }],
     },
   ]);
-  const [newGroupTitle, setNewGroupTitle] = useState("");
-  const [isAddingGroup, setIsAddingGroup] = useState(false);
-
   const [photoAssets, setPhotoAssets] = useState<PhotoAsset[]>([
     { id: "p1", name: "main_view.png", url: "/product_card_placeholder.png" },
     { id: "p2", name: "side_view.png", url: "/product_card_placeholder.png" },
@@ -207,7 +207,7 @@ export function AddProductModal({
             options: [
               ...group.options,
               {
-                id: `opt-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+                id: generateOptionId(),
                 name: "New Option",
                 priceModifier: "0",
               },
@@ -254,28 +254,17 @@ export function AddProductModal({
     );
   };
 
-  const handleAddGroup = () => {
-    if (!newGroupTitle.trim()) return;
-    setVariationGroups((prev) => [
-      ...prev,
-      {
-        id: `group-${Date.now()}`,
-        title: newGroupTitle.trim(),
-        options: [
-          { id: `opt-${Date.now()}`, name: "New Option", priceModifier: "0" },
-        ],
-      },
-    ]);
-    setNewGroupTitle("");
-    setIsAddingGroup(false);
-  };
-
   const handleRemoveGroup = (groupId: string) => {
     setVariationGroups((prev) => prev.filter((group) => group.id !== groupId));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (currentStep < 3) {
+      setCurrentStep((prev) => (prev < 3 ? ((prev + 1) as Step) : 3));
+      return;
+    }
 
     const formattedPrice = basePrice.startsWith("₱")
       ? basePrice
@@ -285,7 +274,7 @@ export function AddProductModal({
       })}`;
 
     const newProduct: AdminProductItem = {
-      id: productId.trim() || `PD_${Math.floor(100 + Math.random() * 900)}`,
+      id: productId.trim() || generateProductId(),
       name: productName.trim() || "New Product",
       type: category.trim() || "General",
       description: description.trim() || "No description provided",
@@ -663,40 +652,6 @@ export function AddProductModal({
                   </div>
                 ))}
               </div>
-
-              {isAddingGroup ? (
-                <div className="flex items-center gap-3 bg-[#f5f5f5] p-4 rounded-[16px]">
-                  <input
-                    type="text"
-                    value={newGroupTitle}
-                    onChange={(e) => setNewGroupTitle(e.target.value)}
-                    placeholder="Category title (e.g. Frame Material)"
-                    className="bg-white border border-[#c3c3c3] rounded-[8px] px-3 py-2 text-sm text-[#0f1422] focus:outline-none focus:border-[#07b6d3] flex-1"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleAddGroup}
-                    className="bg-[#0f1422] text-white text-xs px-4 py-2 rounded-[8px] hover:bg-black transition-colors cursor-pointer"
-                  >
-                    Add Category
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsAddingGroup(false)}
-                    className="text-stone-500 text-xs hover:text-black transition-colors cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setIsAddingGroup(true)}
-                  className="self-start text-[#07b6d3] text-sm font-medium hover:underline flex items-center gap-1 cursor-pointer pt-1"
-                >
-                  <Plus className="size-4" /> Add Variation Group Category
-                </button>
-              )}
             </div>
           )}
 
@@ -964,8 +919,11 @@ export function AddProductModal({
             {currentStep > 1 ? (
               <button
                 type="button"
-                onClick={() => setCurrentStep((prev) => (prev - 1) as Step)}
-                className="bg-[#c3c3c3] text-white text-sm font-medium px-5 py-2.5 rounded-[10px] hover:bg-stone-400 transition-colors cursor-pointer"
+                onClick={(e) => {
+                  e.preventDefault();
+                  setCurrentStep((prev) => (prev > 1 ? ((prev - 1) as Step) : 1));
+                }}
+                className="bg-[#c3c3c3] text-white text-[14px] font-normal leading-[1.4] tracking-[-0.266px] px-[15px] py-[5px] rounded-[10px] hover:bg-stone-400 transition-colors cursor-pointer flex items-center justify-center gap-[10px]"
               >
                 Back
               </button>
@@ -976,15 +934,18 @@ export function AddProductModal({
             {currentStep < 3 ? (
               <button
                 type="button"
-                onClick={() => setCurrentStep((prev) => (prev + 1) as Step)}
-                className="bg-[#05b64b] text-white text-sm font-medium px-5 py-2.5 rounded-[10px] hover:bg-emerald-600 transition-colors cursor-pointer"
+                onClick={(e) => {
+                  e.preventDefault();
+                  setCurrentStep((prev) => (prev < 3 ? ((prev + 1) as Step) : 3));
+                }}
+                className="bg-[#05b64b] text-white text-[14px] font-normal leading-[1.4] tracking-[-0.266px] px-[15px] py-[5px] rounded-[10px] hover:bg-emerald-600 transition-colors cursor-pointer flex items-center justify-center gap-[10px]"
               >
                 Continue
               </button>
             ) : (
               <button
                 type="submit"
-                className="bg-[#05b64b] text-white text-sm font-medium px-6 py-2.5 rounded-[10px] hover:bg-emerald-600 transition-colors cursor-pointer"
+                className="bg-[#05b64b] text-white text-[14px] font-normal leading-[1.4] tracking-[-0.266px] px-[15px] py-[5px] rounded-[10px] hover:bg-emerald-600 transition-colors cursor-pointer flex items-center justify-center gap-[10px]"
               >
                 Save Product
               </button>
