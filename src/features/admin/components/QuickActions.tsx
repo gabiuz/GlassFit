@@ -11,9 +11,9 @@ type QuickActionsProps = {
 };
 
 const quickActionButtonStyle: CSSProperties = {
-  padding: "5px 14px",
+  padding: "8px 16px",
   borderRadius: "10px",
-  gap: "10px",
+  gap: "8px",
   fontSize: "0.875rem",
   lineHeight: "1.25rem",
   letterSpacing: "0",
@@ -21,11 +21,11 @@ const quickActionButtonStyle: CSSProperties = {
 
 export function QuickActions({ actions }: QuickActionsProps) {
   return (
-    <div className="flex flex-col gap-[19px] items-start shrink-0 select-none">
-      <h2 className="text-black text-2xl font-medium leading-[1.2] tracking-[-0.456px]">
+    <div className="flex flex-col gap-4 sm:gap-5 w-full select-none">
+      <h2 className="text-black text-xl sm:text-2xl font-medium leading-tight tracking-tight">
         Quick Actions
       </h2>
-      <div className="flex flex-col gap-[26px] items-start shrink-0">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-4 sm:gap-5 w-full">
         {actions.map((action) => (
           <QuickActionCard key={action.title} action={action} />
         ))}
@@ -49,14 +49,14 @@ function QuickActionCard({ action }: { action: QuickAction }) {
   return (
     <div
       className={cn(
-        "p-5 rounded-[20px] flex flex-col gap-5 items-start shrink-0",
+        "p-5 rounded-[20px] flex flex-col justify-between gap-4 sm:gap-5 w-full shadow-xs transition-shadow hover:shadow-md",
         isFeatured ? "bg-[#0f1422]" : "bg-white"
       )}
     >
-      <div className="flex items-center justify-center shrink-0">
+      <div className="flex items-center justify-start w-full">
         <p
           className={cn(
-            "w-40 text-base font-medium leading-[1.4] tracking-[-0.304px]",
+            "text-base font-medium leading-snug tracking-tight",
             isFeatured ? "text-white" : "text-[#0f1422]"
           )}
         >
@@ -72,7 +72,7 @@ function QuickActionCard({ action }: { action: QuickAction }) {
         leftIcon={null}
         rightIcon={null}
         className={cn(
-          "cursor-pointer hover:opacity-90 transition-opacity",
+          "cursor-pointer hover:opacity-90 transition-opacity self-start",
           isFeatured ? "outline outline-1 outline-offset-[-1px] outline-[#c3c3c3]" : ""
         )}
         style={quickActionButtonStyle}
@@ -80,3 +80,4 @@ function QuickActionCard({ action }: { action: QuickAction }) {
     </div>
   );
 }
+

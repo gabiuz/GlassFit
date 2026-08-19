@@ -62,23 +62,19 @@ function StatusBadge({ status }: { status: AdminProductStatus }) {
 
 function ActionButtons() {
   return (
-    <div className="flex items-center justify-center shrink-0">
-      <div className="flex items-center p-[5px] shrink-0">
-        <button
-          type="button"
-          className="bg-[#0f1422] px-[15px] py-[5px] rounded-[10px] text-white text-xs font-normal leading-[1.4] tracking-[-0.228px] whitespace-nowrap cursor-pointer hover:bg-black transition-colors"
-        >
-          Edit
-        </button>
-      </div>
-      <div className="flex items-center p-[5px] shrink-0 w-[90px]">
-        <button
-          type="button"
-          className="bg-[#c50000] px-[15px] py-[5px] rounded-[10px] text-white text-xs font-normal leading-[1.4] tracking-[-0.228px] whitespace-nowrap cursor-pointer hover:bg-red-700 transition-colors"
-        >
-          Delete
-        </button>
-      </div>
+    <div className="flex items-center justify-center gap-2 shrink-0">
+      <button
+        type="button"
+        className="bg-[#0f1422] px-[15px] py-[5px] rounded-[10px] text-white text-xs font-normal leading-[1.4] tracking-[-0.228px] whitespace-nowrap cursor-pointer hover:bg-black transition-colors"
+      >
+        Edit
+      </button>
+      <button
+        type="button"
+        className="bg-[#c50000] px-[15px] py-[5px] rounded-[10px] text-white text-xs font-normal leading-[1.4] tracking-[-0.228px] whitespace-nowrap cursor-pointer hover:bg-red-700 transition-colors"
+      >
+        Delete
+      </button>
     </div>
   );
 }
@@ -146,65 +142,69 @@ export function ProductsContent() {
   }, [products, searchQuery]);
 
   return (
-    <div className="flex flex-col items-start gap-[30px] w-full max-w-[1106px] pt-4 pb-12 select-none">
-      <div className="w-full h-[72px] flex items-center justify-between gap-[67px]">
-        <div className="flex flex-col gap-1.5 items-start shrink-0 whitespace-nowrap">
-          <h1 className="text-black text-[32px] font-medium leading-[1.2] tracking-[-0.608px]">
+    <div className="flex flex-col items-start gap-6 sm:gap-8 w-full max-w-[1240px] pb-12 select-none">
+      <div className="w-full flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4 xl:gap-6">
+        <div className="flex flex-col gap-1 items-start min-w-0">
+          <h1 className="text-black text-2xl sm:text-3xl lg:text-[32px] font-medium leading-tight tracking-tight">
             Product
           </h1>
-          <p className="text-black text-xl font-normal leading-[1.4] tracking-[-0.38px]">
+          <p className="text-neutral-700 text-sm sm:text-base lg:text-lg font-normal leading-snug">
             Manage your product catalog and variations
           </p>
         </div>
 
-        <SearchBar
-          value={searchQuery}
-          onChange={setSearchQuery}
-          placeholder="Search for products"
-          inputClassName="w-[340px]"
-        />
+        <div className="w-full xl:w-auto flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+          <div className="flex-1 sm:w-auto">
+            <SearchBar
+              value={searchQuery}
+              onChange={setSearchQuery}
+              placeholder="Search for products"
+              inputClassName="w-full sm:w-[300px] md:w-[340px]"
+            />
+          </div>
 
-        <button
-          type="button"
-          onClick={() => setIsAddModalOpen(true)}
-          className="bg-[#0f1422] rounded-[25px] px-5 py-[15px] flex items-start gap-[15px] cursor-pointer hover:bg-black transition-colors shrink-0"
-        >
-          <span className="text-white text-xl font-normal leading-[1.4] tracking-[-0.38px] whitespace-nowrap">
-            Add Product
-          </span>
-        </button>
+          <button
+            type="button"
+            onClick={() => setIsAddModalOpen(true)}
+            className="bg-[#0f1422] rounded-[25px] px-5 py-3 sm:py-3.5 flex items-center justify-center gap-2 cursor-pointer hover:bg-black transition-colors shrink-0 shadow-xs"
+          >
+            <span className="text-white text-base sm:text-lg font-medium leading-tight whitespace-nowrap">
+              + Add Product
+            </span>
+          </button>
+        </div>
       </div>
 
-      <div className="w-full flex flex-col gap-[22px] items-start">
-        <div className="w-full flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => setIsCategoryOpen((prev) => !prev)}
-              className="bg-[#c3c3c3] text-white text-base font-normal leading-[1.4] tracking-[-0.304px] px-5 py-2.5 rounded-[25px] flex items-center gap-[15px] cursor-pointer hover:bg-stone-400 transition-colors whitespace-nowrap"
-            >
-              All categories
-              <DropdownChevron isOpen={isCategoryOpen} />
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsStatusOpen((prev) => !prev)}
-              className="bg-[#c3c3c3] text-white text-base font-normal leading-[1.4] tracking-[-0.304px] px-5 py-2.5 rounded-[25px] flex items-center gap-[15px] cursor-pointer hover:bg-stone-400 transition-colors whitespace-nowrap"
-            >
-              All Status
-              <DropdownChevron isOpen={isStatusOpen} />
-            </button>
-          </div>
-          <p className="text-[#c3c3c3] text-base font-normal leading-[1.4] tracking-[-0.304px] whitespace-nowrap">
-            Showing {filtered.length} of {products.length} products
-          </p>
+      <div className="w-full flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5 sm:gap-3 flex-wrap">
+          <button
+            type="button"
+            onClick={() => setIsCategoryOpen((prev) => !prev)}
+            className="bg-[#c3c3c3] text-white text-xs sm:text-sm font-normal px-4 py-2 rounded-[25px] flex items-center gap-2.5 cursor-pointer hover:bg-stone-400 transition-colors whitespace-nowrap shadow-xs"
+          >
+            All categories
+            <DropdownChevron isOpen={isCategoryOpen} />
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsStatusOpen((prev) => !prev)}
+            className="bg-[#c3c3c3] text-white text-xs sm:text-sm font-normal px-4 py-2 rounded-[25px] flex items-center gap-2.5 cursor-pointer hover:bg-stone-400 transition-colors whitespace-nowrap shadow-xs"
+          >
+            All Status
+            <DropdownChevron isOpen={isStatusOpen} />
+          </button>
         </div>
+        <p className="text-[#c3c3c3] text-xs sm:text-sm font-normal leading-snug whitespace-nowrap">
+          Showing {filtered.length} of {products.length} products
+        </p>
+      </div>
 
-        <div className="bg-white rounded-[20px] p-[30px] flex flex-col items-start w-full">
-          <div className="flex flex-col gap-2.5 items-start w-full">
-            <div className="w-full flex items-center gap-[30px]">
-              <ColHeader>Product_ID</ColHeader>
-              <ColHeader>Product Name </ColHeader>
+      <div className="bg-white rounded-[20px] p-4 sm:p-6 lg:p-[30px] flex flex-col items-start w-full shadow-xs overflow-hidden">
+        <div className="w-full overflow-x-auto pb-2">
+          <div className="w-full min-w-[760px] flex flex-col gap-2.5 items-start">
+            <div className="w-full flex items-center gap-4">
+              <ColHeader>Product ID</ColHeader>
+              <ColHeader>Product Name</ColHeader>
               <ColHeader>Product Type</ColHeader>
               <ColHeader>Description</ColHeader>
               <ColHeader>Base Price</ColHeader>
@@ -232,12 +232,12 @@ export function ProductsContent() {
 
 function ProductRow({ product }: { product: AdminProductItem }) {
   return (
-    <div className="w-full flex items-center gap-[30px]">
-      <ColCell>{product.id}</ColCell>
-      <ColCell>{product.name}</ColCell>
+    <div className="w-full flex items-center gap-4 py-1">
+      <ColCell className="font-medium text-neutral-600">{product.id}</ColCell>
+      <ColCell className="font-medium text-[#0f1422]">{product.name}</ColCell>
       <ColCell>{product.type}</ColCell>
-      <ColCell>{product.description}</ColCell>
-      <ColCell>{product.basePrice}</ColCell>
+      <ColCell className="truncate">{product.description}</ColCell>
+      <ColCell className="font-medium">{product.basePrice}</ColCell>
       <ColCell>
         <StatusBadge status={product.status} />
       </ColCell>
@@ -247,3 +247,4 @@ function ProductRow({ product }: { product: AdminProductItem }) {
     </div>
   );
 }
+

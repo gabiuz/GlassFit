@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, type ReactNode } from "react";
+import Link from "next/link";
 import { cn } from "@/lib/utils";
 import type { BookingRequest, BookingStatus } from "../data";
 
@@ -35,28 +36,30 @@ export function RecentBookingsTable({ bookings }: RecentBookingsTableProps) {
   };
 
   return (
-    <div className="p-[30px] bg-white rounded-[20px] flex flex-col items-start gap-5 shrink-0 select-none">
-      <div className="w-full flex items-center justify-between gap-[124px]">
-        <h2 className="flex-1 text-[#07b6d3] text-2xl font-medium leading-[1.2] tracking-[-0.456px] whitespace-nowrap">
+    <div className="p-5 sm:p-6 lg:p-[30px] bg-white rounded-[20px] flex flex-col items-start gap-4 sm:gap-5 w-full select-none shadow-xs">
+      <div className="w-full flex items-center justify-between gap-4">
+        <h2 className="text-[#07b6d3] text-xl sm:text-2xl font-medium leading-tight tracking-tight whitespace-nowrap">
           Recent Booking Request
         </h2>
-        <button
-          type="button"
-          className="text-[#c3c3c3] text-base font-normal leading-[1.4] tracking-[-0.304px] whitespace-nowrap hover:text-black transition-colors cursor-pointer"
+        <Link
+          href="/admin/bookings"
+          className="text-[#c3c3c3] text-sm sm:text-base font-normal leading-[1.4] tracking-tight whitespace-nowrap hover:text-black transition-colors"
         >
           View All
-        </button>
+        </Link>
       </div>
 
-      <div className="w-[489px] flex flex-col items-start gap-2.5">
-        <BookingTableHeader />
-        <div className="w-[489px] h-0 border-b border-[#e5e5e5]" />
-        {visibleBookings.map((booking) => (
-          <BookingTableRow key={booking.id} booking={booking} />
-        ))}
+      <div className="w-full overflow-x-auto pb-1">
+        <div className="w-full min-w-[380px] sm:min-w-0 flex flex-col items-start gap-2.5">
+          <BookingTableHeader />
+          <div className="w-full h-0 border-b border-[#e5e5e5]" />
+          {visibleBookings.map((booking) => (
+            <BookingTableRow key={booking.id} booking={booking} />
+          ))}
+        </div>
       </div>
 
-      <div className="self-stretch flex justify-end items-center gap-2 text-xs leading-4">
+      <div className="self-stretch flex justify-end items-center gap-2 text-xs leading-4 pt-1">
         <button
           type="button"
           onClick={goToPreviousPage}
@@ -65,7 +68,7 @@ export function RecentBookingsTable({ bookings }: RecentBookingsTableProps) {
         >
           Prev
         </button>
-        <span className="text-stone-400">
+        <span className="text-stone-400 font-medium">
           {currentPage} / {totalPages}
         </span>
         <button
@@ -83,30 +86,30 @@ export function RecentBookingsTable({ bookings }: RecentBookingsTableProps) {
 
 function BookingTableHeader() {
   return (
-    <div className="w-full flex items-center gap-[50px]">
-      <HeaderCell>Booking ID</HeaderCell>
-      <HeaderCell>Customer</HeaderCell>
-      <HeaderCell className="w-[90px] shrink-0">Product Name</HeaderCell>
-      <HeaderCell>Status</HeaderCell>
+    <div className="w-full grid grid-cols-[70px_1fr_1fr_80px] sm:grid-cols-[80px_1fr_1fr_90px] items-center gap-2 sm:gap-3">
+      <HeaderCell align="start">Booking ID</HeaderCell>
+      <HeaderCell align="start">Customer</HeaderCell>
+      <HeaderCell align="start">Product Name</HeaderCell>
+      <HeaderCell align="center">Status</HeaderCell>
     </div>
   );
 }
 
 function BookingTableRow({ booking }: { booking: BookingRequest }) {
   return (
-    <div className="w-full flex items-center gap-[50px]">
-      <TableCell>{booking.id}</TableCell>
-      <TableCell>{booking.customer}</TableCell>
-      <TableCell className="w-[90px] shrink-0 text-center">{booking.productName}</TableCell>
-      <TableCell>
+    <div className="w-full grid grid-cols-[70px_1fr_1fr_80px] sm:grid-cols-[80px_1fr_1fr_90px] items-center gap-2 sm:gap-3 py-1">
+      <TableCell align="start" className="font-medium text-neutral-600 truncate">{booking.id}</TableCell>
+      <TableCell align="start" className="font-medium text-[#0f1422] truncate">{booking.customer}</TableCell>
+      <TableCell align="start" className="text-neutral-700 truncate">{booking.productName}</TableCell>
+      <TableCell align="center">
         <div
           data-status={booking.status}
           className={cn(
-            "px-2.5 py-[5px] rounded-[20px] flex items-center justify-center shrink-0",
+            "px-2 sm:px-2.5 py-[3px] sm:py-[5px] rounded-[20px] flex items-center justify-center shrink-0 w-fit mx-auto",
             statusStyles[booking.status]
           )}
         >
-          <span className="text-white text-xs font-normal leading-[1.4] tracking-[-0.228px] whitespace-nowrap">
+          <span className="text-white text-[11px] sm:text-xs font-normal leading-tight tracking-tight whitespace-nowrap">
             {booking.status}
           </span>
         </div>
@@ -118,13 +121,15 @@ function BookingTableRow({ booking }: { booking: BookingRequest }) {
 function HeaderCell({
   children,
   className,
+  align = "start",
 }: {
   children: ReactNode;
   className?: string;
+  align?: "start" | "center" | "end";
 }) {
   return (
-    <div className={cn("flex-1 min-w-0 p-[5px] flex items-center justify-center", className)}>
-      <span className="text-black text-xs font-medium leading-[1.4] tracking-[-0.228px] whitespace-nowrap">
+    <div className={cn("min-w-0 p-[3px] sm:p-[5px] flex items-center", align === "center" ? "justify-center" : align === "end" ? "justify-end" : "justify-start", className)}>
+      <span className="text-black text-xs font-medium leading-[1.4] tracking-tight whitespace-nowrap">
         {children}
       </span>
     </div>
@@ -134,14 +139,16 @@ function HeaderCell({
 function TableCell({
   children,
   className,
+  align = "start",
 }: {
   children: ReactNode;
   className?: string;
+  align?: "start" | "center" | "end";
 }) {
   return (
-    <div className={cn("flex-1 min-w-0 p-[5px] flex items-center justify-center", className)}>
+    <div className={cn("min-w-0 p-[3px] sm:p-[5px] flex items-center", align === "center" ? "justify-center" : align === "end" ? "justify-end" : "justify-start", className)}>
       {typeof children === "string" ? (
-        <span className="text-black text-xs font-normal leading-[1.4] tracking-[-0.228px] whitespace-nowrap">
+        <span className="text-black text-xs sm:text-sm font-normal leading-[1.4] tracking-tight truncate">
           {children}
         </span>
       ) : (
@@ -150,3 +157,4 @@ function TableCell({
     </div>
   );
 }
+

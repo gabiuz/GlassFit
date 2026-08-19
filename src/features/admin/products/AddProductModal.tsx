@@ -368,13 +368,13 @@ export function AddProductModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-200">
       <div className="absolute inset-0" onClick={handleClose} />
 
-      <div className="relative z-10 bg-white rounded-[20px] p-[30px] w-full max-w-[1084px] max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col gap-[30px]">
-        <div className="flex items-center justify-between w-full">
-          <div className="flex flex-col gap-1.5 text-[#0f1422]">
-            <h2 className="text-[24px] font-medium leading-[1.2] tracking-[-0.456px]">
+      <div className="relative z-10 bg-white rounded-[20px] p-4 sm:p-6 lg:p-[30px] w-full max-w-[1084px] max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col gap-5 sm:gap-6 lg:gap-[30px]">
+        <div className="flex items-start sm:items-center justify-between w-full gap-4">
+          <div className="flex flex-col gap-1 text-[#0f1422]">
+            <h2 className="text-xl sm:text-2xl font-medium leading-tight tracking-tight">
               Add Product
             </h2>
-            <p className="text-[20px] font-normal leading-[1.4] tracking-[-0.38px]">
+            <p className="text-xs sm:text-base lg:text-lg font-normal leading-snug text-neutral-600">
               Fill in Product Info, upload Assets, then configure Variations
             </p>
           </div>
@@ -382,28 +382,28 @@ export function AddProductModal({
           <button
             type="button"
             onClick={handleClose}
-            className="size-[35px] bg-[#e74242] rounded-full flex items-center justify-center text-white hover:opacity-90 transition-opacity cursor-pointer shrink-0"
+            className="size-8 sm:size-[35px] bg-[#e74242] rounded-full flex items-center justify-center text-white hover:opacity-90 transition-opacity cursor-pointer shrink-0"
             aria-label="Close modal"
           >
-            <X className="size-5" />
+            <X className="size-4 sm:size-5" />
           </button>
         </div>
 
-        <div className="flex gap-[11px] items-center">
+        <div className="flex items-center gap-1.5 sm:gap-3 w-full">
           <button
             type="button"
             onClick={() => setCurrentStep(1)}
             className={cn(
-              "h-[45px] px-[20px] py-[15px] rounded-[25px] flex items-center justify-center gap-[15px] cursor-pointer transition-colors whitespace-nowrap",
+              "flex-1 sm:flex-none h-9 sm:h-[45px] px-2 sm:px-5 py-1.5 sm:py-2.5 rounded-[25px] flex items-center justify-center gap-1.5 sm:gap-3 cursor-pointer transition-colors min-w-0",
               currentStep === 1
-                ? "bg-[#07b6d3] text-white"
+                ? "bg-[#07b6d3] text-white shadow-xs"
                 : "bg-[#c3c3c3] text-white hover:bg-stone-400"
             )}
           >
-            <div className="bg-white rounded-[10px] px-[6px] py-[2px] text-[#0f1422] text-[12px] font-normal leading-[1.4] tracking-[-0.228px] text-center min-w-[20px]">
+            <div className="bg-white rounded-[10px] px-1.5 py-[1px] text-[#0f1422] text-[11px] sm:text-xs font-semibold text-center min-w-[16px] sm:min-w-[18px] shrink-0">
               1
             </div>
-            <span className="text-[20px] font-normal leading-[1.4] tracking-[-0.38px]">
+            <span className="text-xs sm:text-base lg:text-lg font-normal leading-tight truncate">
               Product Info
             </span>
           </button>
@@ -412,16 +412,16 @@ export function AddProductModal({
             type="button"
             onClick={() => setCurrentStep(2)}
             className={cn(
-              "h-[45px] px-[20px] py-[15px] rounded-[25px] flex items-center justify-center gap-[15px] cursor-pointer transition-colors whitespace-nowrap",
+              "flex-1 sm:flex-none h-9 sm:h-[45px] px-2 sm:px-5 py-1.5 sm:py-2.5 rounded-[25px] flex items-center justify-center gap-1.5 sm:gap-3 cursor-pointer transition-colors min-w-0",
               currentStep === 2
-                ? "bg-[#07b6d3] text-white"
+                ? "bg-[#07b6d3] text-white shadow-xs"
                 : "bg-[#c3c3c3] text-white hover:bg-stone-400"
             )}
           >
-            <div className="bg-white rounded-[10px] px-[6px] py-[2px] text-[#0f1422] text-[12px] font-normal leading-[1.4] tracking-[-0.228px] text-center min-w-[20px]">
+            <div className="bg-white rounded-[10px] px-1.5 py-[1px] text-[#0f1422] text-[11px] sm:text-xs font-semibold text-center min-w-[16px] sm:min-w-[18px] shrink-0">
               2
             </div>
-            <span className="text-[20px] font-normal leading-[1.4] tracking-[-0.38px]">
+            <span className="text-xs sm:text-base lg:text-lg font-normal leading-tight truncate">
               Variation
             </span>
           </button>
@@ -430,24 +430,25 @@ export function AddProductModal({
             type="button"
             onClick={() => setCurrentStep(3)}
             className={cn(
-              "h-[45px] px-[20px] py-[15px] rounded-[25px] flex items-center justify-center gap-[15px] cursor-pointer transition-colors whitespace-nowrap",
+              "flex-1 sm:flex-none h-9 sm:h-[45px] px-2 sm:px-5 py-1.5 sm:py-2.5 rounded-[25px] flex items-center justify-center gap-1.5 sm:gap-3 cursor-pointer transition-colors min-w-0",
               currentStep === 3
-                ? "bg-[#07b6d3] text-white"
+                ? "bg-[#07b6d3] text-white shadow-xs"
                 : "bg-[#c3c3c3] text-white hover:bg-stone-400"
             )}
           >
-            <div className="bg-white rounded-[10px] px-[6px] py-[2px] text-[#0f1422] text-[12px] font-normal leading-[1.4] tracking-[-0.228px] text-center min-w-[20px]">
+            <div className="bg-white rounded-[10px] px-1.5 py-[1px] text-[#0f1422] text-[11px] sm:text-xs font-semibold text-center min-w-[16px] sm:min-w-[18px] shrink-0">
               3
             </div>
-            <span className="text-[20px] font-normal leading-[1.4] tracking-[-0.38px]">
+            <span className="text-xs sm:text-base lg:text-lg font-normal leading-tight truncate">
               Assets
             </span>
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-[30px]">
+        <form onSubmit={handleSubmit} className="flex flex-col gap-6 sm:gap-[30px]">
           {currentStep === 1 && (
             <div className="flex flex-col gap-[20px]">
+
               <div className="flex flex-col lg:flex-row gap-[40px] items-start">
                 <div className="flex flex-col gap-[5px] w-full lg:w-[314px] shrink-0">
                   <label className="text-[20px] font-normal leading-[1.4] text-[#0f1422] tracking-[-0.38px]">
@@ -593,7 +594,7 @@ export function AddProductModal({
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-[40px] w-full pt-1">
+                    <div className="hidden md:flex items-center gap-[40px] w-full pt-1">
                       <div className="w-[314px] shrink-0 text-[#c3c3c3] text-[12px] font-normal leading-[1.4] tracking-[-0.228px]">
                         Variation Name
                       </div>
@@ -606,9 +607,12 @@ export function AddProductModal({
                       {group.options.map((opt) => (
                         <div
                           key={opt.id}
-                          className="flex items-center gap-[40px] w-full"
+                          className="flex flex-col md:flex-row items-stretch md:items-center gap-2.5 md:gap-[40px] w-full bg-white md:bg-transparent p-3 md:p-0 rounded-xl md:rounded-none border border-neutral-200 md:border-0"
                         >
-                          <div className="w-[314px] shrink-0">
+                          <div className="w-full md:w-[314px] shrink-0">
+                            <label className="block md:hidden text-[#c3c3c3] text-[11px] font-normal mb-1">
+                              Variation Name
+                            </label>
                             <input
                               type="text"
                               value={opt.name}
@@ -620,11 +624,11 @@ export function AddProductModal({
                             />
                           </div>
 
-                          <div className="flex items-center gap-[10px]">
+                          <div className="flex items-center gap-[10px] w-full md:w-auto">
                             <span className="text-[#c3c3c3] text-[12px] font-normal leading-[1.4] tracking-[-0.228px] shrink-0">
                               + ₱
                             </span>
-                            <div className="w-[314px] shrink-0">
+                            <div className="flex-1 md:flex-none md:w-[314px] shrink-0">
                               <input
                                 type="text"
                                 value={opt.priceModifier}
@@ -639,7 +643,7 @@ export function AddProductModal({
                               <button
                                 type="button"
                                 onClick={() => handleRemoveOption(group.id, opt.id)}
-                                className="text-stone-400 hover:text-[#e74242] transition-colors p-1 cursor-pointer ml-2"
+                                className="text-stone-400 hover:text-[#e74242] transition-colors p-1.5 cursor-pointer ml-auto md:ml-2 shrink-0"
                                 aria-label="Remove option"
                               >
                                 <Trash2 className="size-4" />

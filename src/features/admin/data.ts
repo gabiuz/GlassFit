@@ -3,7 +3,7 @@ export type DashboardMetric = {
   value: string;
   iconSrc: string;
   widthClass?: string;
-  isFeatured?: boolean;
+  variant?: "dark" | "light";
 };
 
 export type QuickAction = {
@@ -45,13 +45,14 @@ export const dashboardMetrics: DashboardMetric[] = [
     label: "All Products",
     value: "167",
     iconSrc: "/admin/all-product.svg",
-    isFeatured: true,
+    variant: "dark",
   },
   {
     label: "New Booking",
     value: "6",
     iconSrc: "/admin/new-booking.svg",
   },
+
   {
     label: "Pending booking",
     value: "7",
