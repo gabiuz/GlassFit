@@ -83,7 +83,24 @@ function ActionButtons() {
   );
 }
 
-function DropdownChevron() {
+function DropdownChevron({
+  isOpen: controlledIsOpen,
+  onClick,
+}: {
+  isOpen?: boolean;
+  onClick?: () => void;
+}) {
+  const [internalIsOpen, setInternalIsOpen] = useState(false);
+  const isOpen = controlledIsOpen !== undefined ? controlledIsOpen : internalIsOpen;
+
+  const handleClick = (e: React.MouseEvent) => {
+    if (onClick) {
+      onClick();
+    } else if (controlledIsOpen === undefined) {
+      setInternalIsOpen((prev) => !prev);
+    }
+  };
+
   return (
     <svg
       width="25"
@@ -91,15 +108,14 @@ function DropdownChevron() {
       viewBox="0 0 25 25"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
-      className="shrink-0"
+      onClick={handleClick}
+      className={cn(
+        "transition-transform duration-200 ease-in-out shrink-0",
+        isOpen && "rotate-180"
+      )}
     >
-      <path
-        d="M6 9L12.5 16L19 9"
-        stroke="white"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+      <path opacity="0.4" d="M7.75781 10.625L12.5 15.3672L17.2422 10.625H7.75781Z" fill="white" />
+      <path d="M13.3829 17.1328C12.8946 17.6211 12.1017 17.6211 11.6134 17.1328L5.36339 10.8828C5.00402 10.5234 4.89855 9.98828 5.09386 9.51953C5.28917 9.05078 5.7462 8.75 6.25011 8.75H18.7501C19.254 8.75 19.711 9.05469 19.9064 9.52344C20.1017 9.99219 19.9923 10.5273 19.6368 10.8867L13.3868 17.1367L13.3829 17.1328ZM17.2423 10.625H7.75792L12.5001 15.3672L17.2423 10.625Z" fill="white" />
     </svg>
   );
 }
@@ -108,6 +124,8 @@ export function ProductsContent() {
   const [products, setProducts] = useState<AdminProductItem[]>(initialAdminProducts);
   const [searchQuery, setSearchQuery] = useState("");
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isCategoryOpen, setIsCategoryOpen] = useState(false);
+  const [isStatusOpen, setIsStatusOpen] = useState(false);
 
   const handleAddProduct = (newProduct: AdminProductItem) => {
     setProducts((prev) => [newProduct, ...prev]);
@@ -160,17 +178,19 @@ export function ProductsContent() {
           <div className="flex items-center gap-3">
             <button
               type="button"
+              onClick={() => setIsCategoryOpen((prev) => !prev)}
               className="bg-[#c3c3c3] text-white text-base font-normal leading-[1.4] tracking-[-0.304px] px-5 py-2.5 rounded-[25px] flex items-center gap-[15px] cursor-pointer hover:bg-stone-400 transition-colors whitespace-nowrap"
             >
               All categories
-              <DropdownChevron />
+              <DropdownChevron isOpen={isCategoryOpen} />
             </button>
             <button
               type="button"
+              onClick={() => setIsStatusOpen((prev) => !prev)}
               className="bg-[#c3c3c3] text-white text-base font-normal leading-[1.4] tracking-[-0.304px] px-5 py-2.5 rounded-[25px] flex items-center gap-[15px] cursor-pointer hover:bg-stone-400 transition-colors whitespace-nowrap"
             >
               All Status
-              <DropdownChevron />
+              <DropdownChevron isOpen={isStatusOpen} />
             </button>
           </div>
           <p className="text-[#c3c3c3] text-base font-normal leading-[1.4] tracking-[-0.304px] whitespace-nowrap">
