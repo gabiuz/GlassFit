@@ -72,7 +72,7 @@ export function HowItWorksSection() {
                 key={step.title}
                 className="flex flex-col items-start sm:items-start gap-3 sm:gap-5 lg:gap-7.5 lg:flex-row"
               >
-                <div className="relative h-9 w-9 sm:h-12 sm:w-12 lg:h-16.5 lg:w-16.5 shrink-0">
+                <div className="relative w-[50px] h-[50px] md:w-14 md:h-14 lg:h-16.5 lg:w-16.5 shrink-0">
                   <Image
                     src={step.icon}
                     alt=""
