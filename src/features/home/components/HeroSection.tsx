@@ -39,7 +39,7 @@ export function HeroSection() {
           ))}
         </div>
       </div>
-      <div className="relative min-h-252.5 lg:min-h-screen xl:min-h-[120vh] min-[2400px]:min-h-[110vh]!">
+      <div className="relative min-h-[85vh] md:min-h-[85vh] lg:min-h-screen xl:min-h-[120vh] 5xl:min-h-[110vh]!">
         <div className="absolute inset-0 overflow-hidden">
           <video
             className="absolute inset-0 h-full w-full object-cover"
@@ -53,7 +53,7 @@ export function HeroSection() {
           <div className="absolute inset-0 bg-white/70"></div>
         </div>
         <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-24 shadow-[inset_0_-26px_30px_-26px_rgba(0,0,0,0.25)]"></div>
-        <div className="hidden xl:block pointer-events-none absolute -bottom-2 right-0 z-20 h-30 w-[38%] 2xl:w-[45%] min-[1920px]:w-[50%] min-[2400px]:!w-[55%] min-[1920px]:h-40 min-[2400px]:!h-48 filter-[drop-shadow(0_-2px_24px_rgba(0,0,0,0.25))]">
+        <div className="hidden xl:block pointer-events-none absolute -bottom-2 right-0 z-20 h-30 w-[38%] 2xl:w-[45%] 4xl:w-[50%] 5xl:!w-[55%] 4xl:h-40 5xl:!h-48 filter-[drop-shadow(0_-2px_24px_rgba(0,0,0,0.25))]">
           <div className="h-full w-full bg-white [clip-path:polygon(40%_0,100%_0,100%_100%,0_100%)]"></div>
         </div>
         <Image
@@ -62,16 +62,16 @@ export function HeroSection() {
           width={2000}
           height={1125}
           aria-hidden="true"
-          className="hidden xl:block pointer-events-none absolute xl:w-167.5 xl:h-236.5 xl:-bottom-22 2xl:w-192.5 2xl:h-272 2xl:-bottom-30 min-[2400px]:w-280! min-[2400px]:h-395! min-[2400px]:-bottom-44! right-0 z-30"
+          className="hidden xl:block pointer-events-none absolute xl:w-167.5 xl:h-236.5 xl:-bottom-22 2xl:w-192.5 2xl:h-272 2xl:-bottom-30 5xl:w-280! 5xl:h-395! 5xl:-bottom-44! right-0 z-30"
         />
         <div className="relative z-10">
-          <div className="px-6 pt-32 pb-12 flex justify-start items-start md:pl-16 md:pt-48 lg:pl-27 lg:pt-57 lg:pb-0 min-[1920px]:pl-36 min-[1920px]:pt-64 min-[2400px]:pl-48! min-[2400px]:pt-72!">
-            <div className="flex flex-col gap-8.5 min-[1920px]:gap-10 min-[2400px]:gap-12">
-              <div className="flex flex-col gap-2.5 min-[1920px]:gap-4 min-[2400px]:gap-6">
-                <h3 className="text-green text-xl md:text-2xl lg:text-3xl min-[1920px]:text-4xl min-[2400px]:text-5xl! font-normal leading-7 lg:leading-10 min-[1920px]:leading-13">
+          <div className="px-6 pt-32 pb-12 flex justify-start items-start md:pl-16 md:pt-48 lg:pl-27 lg:pt-57 lg:pb-0 4xl:pl-36 4xl:pt-64 5xl:pl-48! 5xl:pt-72!">
+            <div className="flex flex-col gap-8.5 4xl:gap-10 5xl:gap-12">
+              <div className="flex flex-col gap-2.5 4xl:gap-4 5xl:gap-6">
+                <h3 className="text-green text-xl md:text-2xl lg:text-3xl 4xl:text-4xl 5xl:text-5xl! font-normal leading-7 lg:leading-10 4xl:leading-13">
                   See. Fit. Transform.
                 </h3>
-                <h1 className="text-4xl sm:text-6xl lg:text-8xl min-[1920px]:text-[112px] min-[2400px]:text-[150px]! text-black font-medium uppercase leading-tight lg:leading-[115.20px] min-[1920px]:leading-32 min-[2400px]:leading-38!">
+                <h1 className="text-4xl md:text-7xl lg:text-8xl 4xl:text-[112px] 5xl:text-[150px]! text-black font-medium uppercase leading-tight lg:leading-[115.20px] 4xl:leading-32 5xl:leading-38!">
                   The Future Is
                   <br />
                   <span className="bg-grad-light bg-clip-text text-transparent">
@@ -80,12 +80,12 @@ export function HeroSection() {
                 </h1>
               </div>
               <div>
-                <p className="text-black text-lg lg:text-xl min-[1920px]:text-2xl min-[2400px]:text-3xl! font-normal leading-7 min-[1920px]:leading-9 min-[2400px]:leading-10!">
+                <p className="text-black text-lg lg:text-xl 4xl:text-2xl 5xl:text-3xl! font-normal leading-7 4xl:leading-9 5xl:leading-10!">
                   A smarter way to preview customized fittings using your actual
                   <br className="hidden lg:inline" /> space photo
                 </p>
               </div>
-              <div className="flex flex-col sm:flex-row gap-3.75 min-[1920px]:gap-5">
+              <div className="flex flex-col sm:flex-row gap-3.75 4xl:gap-5">
                 <Link href="/visualization" className="w-full sm:w-auto">
                   <Button
                     variant="lightGradWhiteText"
@@ -97,10 +97,10 @@ export function HeroSection() {
                         width={25}
                         height={25}
                         alt=""
-                        className="min-[1920px]:w-7 min-[1920px]:h-7 min-[2400px]:w-8 min-[2400px]:h-8"
+                        className="4xl:w-7 4xl:h-7 5xl:w-8 5xl:h-8"
                       ></Image>
                     }
-                    className="w-full sm:w-auto justify-center min-[1920px]:px-7 min-[1920px]:py-4 min-[1920px]:text-xl min-[2400px]:px-9! min-[2400px]:py-5! min-[2400px]:text-3xl!"
+                    className="w-full sm:w-auto justify-center 4xl:px-7 4xl:py-4 4xl:text-xl 5xl:px-9! 5xl:py-5! 5xl:text-3xl!"
                   ></Button>
                 </Link>
                 <Link href="/product" className="w-full sm:w-auto">
@@ -109,7 +109,7 @@ export function HeroSection() {
                     value="View Product Catalog"
                     leftIcon={null}
                     rightIcon={null}
-                    className="w-full sm:w-auto justify-center min-[1920px]:px-7 min-[1920px]:py-4 min-[1920px]:text-xl min-[2400px]:px-9! min-[2400px]:py-5! min-[2400px]:text-2xl"
+                    className="w-full sm:w-auto justify-center 4xl:px-7 4xl:py-4 4xl:text-xl 5xl:px-9! 5xl:py-5! 5xl:text-2xl"
                   ></Button>
                 </Link>
               </div>
