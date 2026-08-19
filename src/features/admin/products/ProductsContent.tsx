@@ -8,14 +8,12 @@ import {
   type AdminProductItem,
   type AdminProductStatus,
 } from "./productData";
+import { AddProductModal } from "./AddProductModal";
 
 const statusBg: Record<AdminProductStatus, string> = {
   Published: "bg-[#05b64b]",
   Draft: "bg-[#ffc876]",
 };
-
-
-// subcomponents
 
 function ColHeader({ children }: { children: React.ReactNode }) {
   return (
@@ -106,10 +104,14 @@ function DropdownChevron() {
   );
 }
 
-
 export function ProductsContent() {
-  const [products] = useState<AdminProductItem[]>(initialAdminProducts);
+  const [products, setProducts] = useState<AdminProductItem[]>(initialAdminProducts);
   const [searchQuery, setSearchQuery] = useState("");
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+
+  const handleAddProduct = (newProduct: AdminProductItem) => {
+    setProducts((prev) => [newProduct, ...prev]);
+  };
 
   const filtered = useMemo(() => {
     if (!searchQuery.trim()) return products;
@@ -125,9 +127,7 @@ export function ProductsContent() {
 
   return (
     <div className="flex flex-col items-start gap-[30px] w-full max-w-[1106px] pt-4 pb-12 select-none">
-
       <div className="w-full h-[72px] flex items-center justify-between gap-[67px]">
-
         <div className="flex flex-col gap-1.5 items-start shrink-0 whitespace-nowrap">
           <h1 className="text-black text-[32px] font-medium leading-[1.2] tracking-[-0.608px]">
             Product
@@ -146,6 +146,7 @@ export function ProductsContent() {
 
         <button
           type="button"
+          onClick={() => setIsAddModalOpen(true)}
           className="bg-[#0f1422] rounded-[25px] px-5 py-[15px] flex items-start gap-[15px] cursor-pointer hover:bg-black transition-colors shrink-0"
         >
           <span className="text-white text-xl font-normal leading-[1.4] tracking-[-0.38px] whitespace-nowrap">
@@ -154,7 +155,6 @@ export function ProductsContent() {
         </button>
       </div>
 
-      {/* Filter row + product count */}
       <div className="w-full flex flex-col gap-[22px] items-start">
         <div className="w-full flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -178,11 +178,8 @@ export function ProductsContent() {
           </p>
         </div>
 
-        {/* Products table */}
         <div className="bg-white rounded-[20px] p-[30px] flex flex-col items-start w-full">
           <div className="flex flex-col gap-2.5 items-start w-full">
-
-            {/* Table header row */}
             <div className="w-full flex items-center gap-[30px]">
               <ColHeader>Product_ID</ColHeader>
               <ColHeader>Product Name </ColHeader>
@@ -193,16 +190,20 @@ export function ProductsContent() {
               <ColHeader>Actions</ColHeader>
             </div>
 
-            {/* Horizontal divider */}
             <div className="w-full border-t border-[#e5e5e5]" />
 
-            {/* Data rows */}
             {filtered.map((product) => (
               <ProductRow key={product.id} product={product} />
             ))}
           </div>
         </div>
       </div>
+
+      <AddProductModal
+        isOpen={isAddModalOpen}
+        onClose={() => setIsAddModalOpen(false)}
+        onAddProduct={handleAddProduct}
+      />
     </div>
   );
 }
