@@ -94,6 +94,8 @@ function DropdownChevron({
   const isOpen = controlledIsOpen !== undefined ? controlledIsOpen : internalIsOpen;
 
   const handleClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
     if (onClick) {
       onClick();
     } else if (controlledIsOpen === undefined) {
