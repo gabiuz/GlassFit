@@ -118,7 +118,7 @@ export function DetailSection() {
 
   return (
     <section className="relative flex flex-col gap-17.5 bg-white py-12 px-6 lg:py-24 lg:px-28">
-      <div className="w-full mx-auto text-center flex flex-col lg:flex-row justify-between items-center gap-6 lg:gap-12.5">
+      <div className="w-full mx-auto text-center flex flex-col lg:flex-row justify-between items-center gap-6 lg:gap-12.5 3xl:max-w-420 5xl:max-w-410">
         <h2 className="text-3xl text-center sm:text-4xl lg:text-5xl font-medium capitalize leading-tight lg:leading-[57.60px] lg:text-start">
           <span className="bg-grad-light bg-clip-text text-transparent">
             Plan Your Glass and Aluminum
@@ -184,9 +184,8 @@ export function DetailSection() {
                   type="button"
                   key={card.number}
                   onClick={() => handlePaginationClick(index)}
-                  className={`h-2.5 cursor-pointer rounded-full transition-all duration-300 ${
-                    isActiveDot ? "w-5 bg-green" : "w-2.5 bg-black/30"
-                  }`}
+                  className={`h-2.5 cursor-pointer rounded-full transition-all duration-300 ${isActiveDot ? "w-5 bg-green" : "w-2.5 bg-black/30"
+                    }`}
                 />
               );
             })}

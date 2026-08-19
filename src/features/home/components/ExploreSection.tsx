@@ -11,7 +11,7 @@ function CardDoors() {
           <span className="text-xs sm:text-xl xl:text-2xl font-normal leading-normal xl:leading-8">1</span>
         </div>
       </div>
-      <p className="w-full text-xs sm:text-base xl:text-xl font-normal leading-[1.4] tracking-[-0.38px] pr-4 sm:pr-7.5">
+      <p className="w-full xl:text-xl font-normal leading-[1.4] tracking-[-0.38px] pr-4 sm:pr-7.5">
         Explore glass and aluminum door styles for entrances, rooms, and
         office areas.
       </p>
@@ -188,7 +188,7 @@ export function ExploreSection() {
     <section className="relative bg-grad-dark px-4 py-12 lg:px-27.5 lg:py-25">
       <div className="flex flex-col items-center gap-10 md:gap-14 lg:gap-20.25">
         <div className="flex flex-col items-center gap-5 text-center text-white">
-          <h2 className="text-2xl sm:text-4xl lg:text-[48px] font-medium leading-[1.2] tracking-[-0.912px]">
+          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-medium leading-[1.2] tracking-[-0.912px]">
             Explore Glass and Aluminum Products
           </h2>
           <p className="text-sm sm:text-base lg:text-[20px] font-normal leading-[1.4] tracking-[-0.38px]">
