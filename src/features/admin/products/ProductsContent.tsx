@@ -1,0 +1,249 @@
+"use client";
+
+import { useState, useMemo } from "react";
+import { cn } from "@/lib/utils";
+import { SearchBar } from "@/components/shared/SearchBar";
+import {
+  initialAdminProducts,
+  type AdminProductItem,
+  type AdminProductStatus,
+} from "./productData";
+import { AddProductModal } from "./AddProductModal";
+
+const statusBg: Record<AdminProductStatus, string> = {
+  Published: "bg-[#05b64b]",
+  Draft: "bg-[#ffc876]",
+};
+
+function ColHeader({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex-1 min-w-0 p-[5px] flex items-center justify-center">
+      <p className="flex-1 min-w-0 text-black text-sm font-medium leading-[1.4] tracking-[-0.266px] text-center">
+        {children}
+      </p>
+    </div>
+  );
+}
+
+function ColCell({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={cn("flex-1 min-w-0 p-[5px] flex items-center justify-center", className)}>
+      {typeof children === "string" ? (
+        <p className="flex-1 min-w-0 text-black text-sm font-normal leading-[1.4] tracking-[-0.266px] text-center">
+          {children}
+        </p>
+      ) : (
+        children
+      )}
+    </div>
+  );
+}
+
+function StatusBadge({ status }: { status: AdminProductStatus }) {
+  return (
+    <div
+      className={cn(
+        "px-2.5 py-[5px] rounded-[20px] flex items-center justify-center shrink-0",
+        statusBg[status]
+      )}
+    >
+      <span className="text-white text-xs font-normal leading-[1.4] tracking-[-0.228px] whitespace-nowrap">
+        {status}
+      </span>
+    </div>
+  );
+}
+
+function ActionButtons() {
+  return (
+    <div className="flex items-center justify-center shrink-0">
+      <div className="flex items-center p-[5px] shrink-0">
+        <button
+          type="button"
+          className="bg-[#0f1422] px-[15px] py-[5px] rounded-[10px] text-white text-xs font-normal leading-[1.4] tracking-[-0.228px] whitespace-nowrap cursor-pointer hover:bg-black transition-colors"
+        >
+          Edit
+        </button>
+      </div>
+      <div className="flex items-center p-[5px] shrink-0 w-[90px]">
+        <button
+          type="button"
+          className="bg-[#c50000] px-[15px] py-[5px] rounded-[10px] text-white text-xs font-normal leading-[1.4] tracking-[-0.228px] whitespace-nowrap cursor-pointer hover:bg-red-700 transition-colors"
+        >
+          Delete
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function DropdownChevron({
+  isOpen: controlledIsOpen,
+  onClick,
+}: {
+  isOpen?: boolean;
+  onClick?: () => void;
+}) {
+  const [internalIsOpen, setInternalIsOpen] = useState(false);
+  const isOpen = controlledIsOpen !== undefined ? controlledIsOpen : internalIsOpen;
+
+  const handleClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (onClick) {
+      onClick();
+    } else if (controlledIsOpen === undefined) {
+      setInternalIsOpen((prev) => !prev);
+    }
+  };
+
+  return (
+    <svg
+      width="25"
+      height="25"
+      viewBox="0 0 25 25"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      onClick={handleClick}
+      className={cn(
+        "transition-transform duration-200 ease-in-out shrink-0",
+        isOpen && "rotate-180"
+      )}
+    >
+      <path opacity="0.4" d="M7.75781 10.625L12.5 15.3672L17.2422 10.625H7.75781Z" fill="white" />
+      <path d="M13.3829 17.1328C12.8946 17.6211 12.1017 17.6211 11.6134 17.1328L5.36339 10.8828C5.00402 10.5234 4.89855 9.98828 5.09386 9.51953C5.28917 9.05078 5.7462 8.75 6.25011 8.75H18.7501C19.254 8.75 19.711 9.05469 19.9064 9.52344C20.1017 9.99219 19.9923 10.5273 19.6368 10.8867L13.3868 17.1367L13.3829 17.1328ZM17.2423 10.625H7.75792L12.5001 15.3672L17.2423 10.625Z" fill="white" />
+    </svg>
+  );
+}
+
+export function ProductsContent() {
+  const [products, setProducts] = useState<AdminProductItem[]>(initialAdminProducts);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isCategoryOpen, setIsCategoryOpen] = useState(false);
+  const [isStatusOpen, setIsStatusOpen] = useState(false);
+
+  const handleAddProduct = (newProduct: AdminProductItem) => {
+    setProducts((prev) => [newProduct, ...prev]);
+  };
+
+  const filtered = useMemo(() => {
+    if (!searchQuery.trim()) return products;
+    const q = searchQuery.toLowerCase();
+    return products.filter(
+      (p) =>
+        p.id.toLowerCase().includes(q) ||
+        p.name.toLowerCase().includes(q) ||
+        p.type.toLowerCase().includes(q) ||
+        p.description.toLowerCase().includes(q)
+    );
+  }, [products, searchQuery]);
+
+  return (
+    <div className="flex flex-col items-start gap-[30px] w-full max-w-[1106px] pt-4 pb-12 select-none">
+      <div className="w-full h-[72px] flex items-center justify-between gap-[67px]">
+        <div className="flex flex-col gap-1.5 items-start shrink-0 whitespace-nowrap">
+          <h1 className="text-black text-[32px] font-medium leading-[1.2] tracking-[-0.608px]">
+            Product
+          </h1>
+          <p className="text-black text-xl font-normal leading-[1.4] tracking-[-0.38px]">
+            Manage your product catalog and variations
+          </p>
+        </div>
+
+        <SearchBar
+          value={searchQuery}
+          onChange={setSearchQuery}
+          placeholder="Search for products"
+          inputClassName="w-[340px]"
+        />
+
+        <button
+          type="button"
+          onClick={() => setIsAddModalOpen(true)}
+          className="bg-[#0f1422] rounded-[25px] px-5 py-[15px] flex items-start gap-[15px] cursor-pointer hover:bg-black transition-colors shrink-0"
+        >
+          <span className="text-white text-xl font-normal leading-[1.4] tracking-[-0.38px] whitespace-nowrap">
+            Add Product
+          </span>
+        </button>
+      </div>
+
+      <div className="w-full flex flex-col gap-[22px] items-start">
+        <div className="w-full flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setIsCategoryOpen((prev) => !prev)}
+              className="bg-[#c3c3c3] text-white text-base font-normal leading-[1.4] tracking-[-0.304px] px-5 py-2.5 rounded-[25px] flex items-center gap-[15px] cursor-pointer hover:bg-stone-400 transition-colors whitespace-nowrap"
+            >
+              All categories
+              <DropdownChevron isOpen={isCategoryOpen} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsStatusOpen((prev) => !prev)}
+              className="bg-[#c3c3c3] text-white text-base font-normal leading-[1.4] tracking-[-0.304px] px-5 py-2.5 rounded-[25px] flex items-center gap-[15px] cursor-pointer hover:bg-stone-400 transition-colors whitespace-nowrap"
+            >
+              All Status
+              <DropdownChevron isOpen={isStatusOpen} />
+            </button>
+          </div>
+          <p className="text-[#c3c3c3] text-base font-normal leading-[1.4] tracking-[-0.304px] whitespace-nowrap">
+            Showing {filtered.length} of {products.length} products
+          </p>
+        </div>
+
+        <div className="bg-white rounded-[20px] p-[30px] flex flex-col items-start w-full">
+          <div className="flex flex-col gap-2.5 items-start w-full">
+            <div className="w-full flex items-center gap-[30px]">
+              <ColHeader>Product_ID</ColHeader>
+              <ColHeader>Product Name </ColHeader>
+              <ColHeader>Product Type</ColHeader>
+              <ColHeader>Description</ColHeader>
+              <ColHeader>Base Price</ColHeader>
+              <ColHeader>Status</ColHeader>
+              <ColHeader>Actions</ColHeader>
+            </div>
+
+            <div className="w-full border-t border-[#e5e5e5]" />
+
+            {filtered.map((product) => (
+              <ProductRow key={product.id} product={product} />
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <AddProductModal
+        isOpen={isAddModalOpen}
+        onClose={() => setIsAddModalOpen(false)}
+        onAddProduct={handleAddProduct}
+      />
+    </div>
+  );
+}
+
+function ProductRow({ product }: { product: AdminProductItem }) {
+  return (
+    <div className="w-full flex items-center gap-[30px]">
+      <ColCell>{product.id}</ColCell>
+      <ColCell>{product.name}</ColCell>
+      <ColCell>{product.type}</ColCell>
+      <ColCell>{product.description}</ColCell>
+      <ColCell>{product.basePrice}</ColCell>
+      <ColCell>
+        <StatusBadge status={product.status} />
+      </ColCell>
+      <ColCell className="justify-center">
+        <ActionButtons />
+      </ColCell>
+    </div>
+  );
+}
