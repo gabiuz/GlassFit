@@ -13,11 +13,15 @@ export default function LayoutWrapper({
 }) {
   const pathname = usePathname();
 
-  // Paths where navbar and footer should be hidden (auth pages)
+  // Paths where navbar and footer should be hidden (auth & admin dashboard pages)
   const isAuthPage =
     pathname === "/login" ||
     pathname === "/register" ||
-    pathname === "/create-account";
+    pathname === "/create-account" ||
+    pathname === "/dashboard" ||
+    pathname.startsWith("/dashboard/") ||
+    pathname === "/admin" ||
+    pathname.startsWith("/admin/");
 
   if (isAuthPage) {
     return (
