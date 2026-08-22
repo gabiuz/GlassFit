@@ -84,9 +84,9 @@ export default function AdminSidePanel({
                 data-variant="Dashboard"
                 className={cn(
                     "w-[270px] sm:w-[285px] lg:w-[300px] shrink-0 bg-white border-r border-neutral-200 lg:border-white drop-shadow-[0px_0px_2.5px_rgba(0,0,0,0.25)] flex flex-col gap-6 lg:gap-8 items-start select-none",
-                    "pl-6 sm:pl-8 lg:pl-[87px] pr-5 lg:pr-6 pt-5 pb-[100px]",
+                    "pl-6 sm:pl-8 lg:pl-[87px] pr-5 lg:pr-6 pt-5 pb-6",
                     "fixed top-0 left-0 z-50 h-full overflow-y-auto transition-transform duration-300 ease-in-out",
-                    "lg:static lg:z-auto lg:h-auto lg:self-stretch lg:min-h-[calc(100vh-106px)] lg:overflow-visible",
+                    "lg:static lg:z-auto lg:h-auto lg:self-stretch lg:overflow-visible",
                     isOpen ? "translate-x-0 shadow-2xl" : "-translate-x-full lg:translate-x-0"
                 )}
             >
