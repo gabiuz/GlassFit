@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { MoreHorizontal, UserX, UserCheck, Mail } from "lucide-react";
 import { suspendStaff, reactivateStaff, resendInvite, type StaffActionResult } from "@/app/admin/(protected)/staff/actions";
 import { useAdminSession } from "@/features/admin/auth/AdminSessionProvider";
@@ -16,8 +17,38 @@ export function StaffActionsMenu({ profileId, email, status, onResult }: StaffAc
     const { profileId: currentProfileId } = useAdminSession();
     const [isOpen, setIsOpen] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
+    const [menuPosition, setMenuPosition] = useState<{ top: number; right: number; openUpwards: boolean } | null>(null);
+    const buttonRef = useRef<HTMLButtonElement>(null);
 
     const isSelf = profileId === currentProfileId;
+
+    const handleToggle = () => {
+        if (!isOpen && buttonRef.current) {
+            const rect = buttonRef.current.getBoundingClientRect();
+            const spaceBelow = window.innerHeight - rect.bottom;
+            const openUpwards = spaceBelow < 180;
+
+            setMenuPosition({
+                top: openUpwards ? rect.top - 6 : rect.bottom + 6,
+                right: Math.max(16, window.innerWidth - rect.right),
+                openUpwards,
+            });
+        }
+        setIsOpen((prev) => !prev);
+    };
+
+    useEffect(() => {
+        if (!isOpen) return;
+
+        const handleScrollOrResize = () => setIsOpen(false);
+        window.addEventListener("scroll", handleScrollOrResize, true);
+        window.addEventListener("resize", handleScrollOrResize);
+
+        return () => {
+            window.removeEventListener("scroll", handleScrollOrResize, true);
+            window.removeEventListener("resize", handleScrollOrResize);
+        };
+    }, [isOpen]);
 
     const handleAction = async (action: () => Promise<StaffActionResult>) => {
         setIsOpen(false);
@@ -31,11 +62,12 @@ export function StaffActionsMenu({ profileId, email, status, onResult }: StaffAc
     };
 
     return (
-        <div className="relative">
+        <div className="relative inline-flex items-center justify-end">
             <button
+                ref={buttonRef}
                 type="button"
                 id={`staff-actions-${profileId}`}
-                onClick={() => setIsOpen((prev) => !prev)}
+                onClick={handleToggle}
                 disabled={isLoading}
                 className="p-1.5 rounded-lg text-[#c3c3c3] hover:text-[#0f1422] hover:bg-neutral-100 transition-colors disabled:opacity-50"
                 aria-label="Staff actions"
@@ -50,17 +82,25 @@ export function StaffActionsMenu({ profileId, email, status, onResult }: StaffAc
                 )}
             </button>
 
-            {isOpen && (
+            {isOpen && menuPosition && typeof document !== "undefined" && createPortal(
                 <>
                     {/* Backdrop */}
                     <div
-                        className="fixed inset-0 z-40"
+                        className="fixed inset-0 z-[9999]"
                         onClick={() => setIsOpen(false)}
                         aria-hidden="true"
                     />
 
                     {/* Dropdown */}
-                    <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-[10px] shadow-[0px_4px_20px_0px_rgba(0,0,0,0.12)] border border-neutral-100 z-50 overflow-hidden">
+                    <div
+                        style={{
+                            position: "fixed",
+                            top: menuPosition.openUpwards ? undefined : `${menuPosition.top}px`,
+                            bottom: menuPosition.openUpwards ? `${window.innerHeight - menuPosition.top}px` : undefined,
+                            right: `${menuPosition.right}px`,
+                        }}
+                        className="w-48 bg-white rounded-[10px] shadow-[0px_4px_20px_0px_rgba(0,0,0,0.12)] border border-neutral-100 z-[10000] overflow-hidden"
+                    >
                         {status === "Active" && !isSelf && (
                             <MenuButton
                                 icon={<UserX className="w-4 h-4" />}
@@ -91,7 +131,8 @@ export function StaffActionsMenu({ profileId, email, status, onResult }: StaffAc
                             }
                         />
                     </div>
-                </>
+                </>,
+                document.body
             )}
         </div>
     );
