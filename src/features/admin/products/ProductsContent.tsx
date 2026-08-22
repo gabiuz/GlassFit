@@ -4,7 +4,6 @@ import { useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { SearchBar } from "@/components/shared/SearchBar";
 import {
-  initialAdminProducts,
   type AdminProductItem,
   type AdminProductStatus,
 } from "./productData";
@@ -118,8 +117,8 @@ function DropdownChevron({
   );
 }
 
-export function ProductsContent() {
-  const [products, setProducts] = useState<AdminProductItem[]>(initialAdminProducts);
+export function ProductsContent({ initialProducts }: { initialProducts: AdminProductItem[] }) {
+  const [products, setProducts] = useState<AdminProductItem[]>(initialProducts);
   const [searchQuery, setSearchQuery] = useState("");
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isCategoryOpen, setIsCategoryOpen] = useState(false);
