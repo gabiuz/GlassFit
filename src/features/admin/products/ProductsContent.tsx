@@ -7,8 +7,7 @@ import {
   type AdminProductItem,
   type AdminProductStatus,
 } from "./productData";
-import { AddProductModal } from "./AddProductModal";
-
+import Link from "next/link";
 const statusBg: Record<AdminProductStatus, string> = {
   Published: "bg-[#05b64b]",
   Draft: "bg-[#ffc876]",
@@ -59,20 +58,42 @@ function StatusBadge({ status }: { status: AdminProductStatus }) {
   );
 }
 
-function ActionButtons() {
+import { deleteProduct } from "@/lib/admin/products/productMutations";
+import { useTransition } from "react";
+import { useRouter } from "next/navigation";
+
+function ActionButtons({ productId }: { productId: string }) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+
+  const handleDelete = () => {
+    if (confirm("Are you sure you want to delete this product? This will remove all associated assets from Cloudflare R2 and cannot be undone.")) {
+      startTransition(async () => {
+        try {
+          await deleteProduct(productId);
+          // router.refresh() happens automatically because we revalidatePath in the action
+        } catch (e: any) {
+          alert(`Error deleting product: ${e.message}`);
+        }
+      });
+    }
+  };
+
   return (
     <div className="flex items-center justify-center gap-2 shrink-0">
-      <button
-        type="button"
+      <Link
+        href={`/admin/products/${productId}/setup`}
         className="bg-[#0f1422] px-[15px] py-[5px] rounded-[10px] text-white text-xs font-normal leading-[1.4] tracking-[-0.228px] whitespace-nowrap cursor-pointer hover:bg-black transition-colors"
       >
         Edit
-      </button>
+      </Link>
       <button
         type="button"
-        className="bg-[#c50000] px-[15px] py-[5px] rounded-[10px] text-white text-xs font-normal leading-[1.4] tracking-[-0.228px] whitespace-nowrap cursor-pointer hover:bg-red-700 transition-colors"
+        onClick={handleDelete}
+        disabled={isPending}
+        className="bg-[#c50000] px-[15px] py-[5px] rounded-[10px] text-white text-xs font-normal leading-[1.4] tracking-[-0.228px] whitespace-nowrap cursor-pointer hover:bg-red-700 transition-colors disabled:opacity-50"
       >
-        Delete
+        {isPending ? "Deleting..." : "Delete"}
       </button>
     </div>
   );
@@ -120,13 +141,11 @@ function DropdownChevron({
 export function ProductsContent({ initialProducts }: { initialProducts: AdminProductItem[] }) {
   const [products, setProducts] = useState<AdminProductItem[]>(initialProducts);
   const [searchQuery, setSearchQuery] = useState("");
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isCategoryOpen, setIsCategoryOpen] = useState(false);
   const [isStatusOpen, setIsStatusOpen] = useState(false);
 
-  const handleAddProduct = (newProduct: AdminProductItem) => {
-    setProducts((prev) => [newProduct, ...prev]);
-  };
+  // We could still keep local product state or just let the page refresh handle it
+  // For now, we keep local state just in case, though adding new products happens on another page.
 
   const filtered = useMemo(() => {
     if (!searchQuery.trim()) return products;
@@ -162,15 +181,14 @@ export function ProductsContent({ initialProducts }: { initialProducts: AdminPro
             />
           </div>
 
-          <button
-            type="button"
-            onClick={() => setIsAddModalOpen(true)}
+          <Link
+            href="/admin/products/new"
             className="bg-[#0f1422] rounded-[25px] px-5 py-3 sm:py-3.5 flex items-center justify-center gap-2 cursor-pointer hover:bg-black transition-colors shrink-0 shadow-xs"
           >
             <span className="text-white text-base sm:text-lg font-medium leading-tight whitespace-nowrap">
               + Add Product
             </span>
-          </button>
+          </Link>
         </div>
       </div>
 
@@ -220,11 +238,6 @@ export function ProductsContent({ initialProducts }: { initialProducts: AdminPro
         </div>
       </div>
 
-      <AddProductModal
-        isOpen={isAddModalOpen}
-        onClose={() => setIsAddModalOpen(false)}
-        onAddProduct={handleAddProduct}
-      />
     </div>
   );
 }
@@ -241,7 +254,7 @@ function ProductRow({ product }: { product: AdminProductItem }) {
         <StatusBadge status={product.status} />
       </ColCell>
       <ColCell className="justify-center">
-        <ActionButtons />
+        <ActionButtons productId={product.id} />
       </ColCell>
     </div>
   );

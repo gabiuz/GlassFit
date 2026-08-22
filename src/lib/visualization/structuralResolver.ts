@@ -102,7 +102,7 @@ function matchesCondition(
   condition: Record<string, unknown>,
   resolvedValues: Record<string, unknown>,
 ) {
-  const parameter = typeof condition.parameter === "string" ? condition.parameter : null;
+  const parameter = typeof condition.parameter === "string" ? condition.parameter : (typeof condition.parameter_key === "string" ? condition.parameter_key : null);
   const operator = typeof condition.operator === "string" ? condition.operator : null;
 
   if (!parameter || !operator) {
@@ -136,6 +136,7 @@ function applyRuleAction(
   resolvedValues: Record<string, unknown>,
   componentQuantities: Record<string, number>,
 ) {
+  // Support legacy nested structure
   const set = action.set;
   if (set && typeof set === "object" && !Array.isArray(set)) {
     Object.assign(resolvedValues, set);
@@ -146,6 +147,13 @@ function applyRuleAction(
     for (const [key, value] of Object.entries(quantities)) {
       componentQuantities[normalizeComponentKey(key)] = Math.max(0, toNumber(value, 0));
     }
+  }
+
+  // Support new flat structure from admin UI builder
+  if (action.target_type === "component" && action.action_type === "set_quantity" && typeof action.target_key === "string") {
+      componentQuantities[normalizeComponentKey(action.target_key)] = Math.max(0, toNumber(action.value, 0));
+  } else if (action.target_type === "parameter" && action.action_type === "set_value" && typeof action.target_key === "string") {
+      resolvedValues[action.target_key] = action.value;
   }
 }
 
