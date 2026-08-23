@@ -86,16 +86,25 @@ function buildWindowLikeProduct(
     resolved.numericValuesMm.height ?? profile.defaultHeightMm,
     profile.topFrameHeightMm + profile.bottomFrameHeightMm + 160,
   );
-  const paneCount = Math.max(1, Math.round(toNumber(resolved.resolvedValues.pane_count, 2)));
-  const mullionCount = Math.max(
-    0,
-    Math.round(
-      toNumber(
-        resolved.resolvedValues.mullion_count,
-        resolved.componentQuantities["frame-center"] ?? Math.max(0, paneCount - 1),
-      ),
-    ),
-  );
+  const explicitMullionCount = resolved.componentQuantities["frame-center"];
+  const explicitGlassCount = resolved.componentQuantities["glass-panel"];
+  
+  let mullionCount = 0;
+  let paneCount = 1;
+
+  if (explicitMullionCount !== undefined && explicitGlassCount !== undefined) {
+      mullionCount = explicitMullionCount;
+      paneCount = explicitGlassCount;
+  } else if (explicitMullionCount !== undefined) {
+      mullionCount = explicitMullionCount;
+      paneCount = mullionCount + 1;
+  } else if (explicitGlassCount !== undefined) {
+      paneCount = explicitGlassCount;
+      mullionCount = Math.max(0, paneCount - 1);
+  } else {
+      paneCount = Math.max(1, Math.round(toNumber(resolved.resolvedValues.pane_count, 2)));
+      mullionCount = Math.max(0, Math.round(toNumber(resolved.resolvedValues.mullion_count, paneCount - 1)));
+  }
 
   const innerWidthMm =
     widthMm -

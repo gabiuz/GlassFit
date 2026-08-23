@@ -5,7 +5,6 @@ import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { SearchBar } from "@/components/shared/SearchBar";
 import {
-  initialAdminBookings,
   type AdminBookingItem,
   type BookingStatus,
 } from "./bookingData";
@@ -25,10 +24,10 @@ const filterTabs: Array<{ label: string; value: BookingStatus | "All" }> = [
   { label: "Cancelled", value: "Cancelled" },
 ];
 
-export function BookingsContent() {
-  const [bookings, setBookings] = useState<AdminBookingItem[]>(initialAdminBookings);
+export function BookingsContent({ initialBookings }: { initialBookings: AdminBookingItem[] }) {
+  const [bookings, setBookings] = useState<AdminBookingItem[]>(initialBookings);
   const [selectedBookingId, setSelectedBookingId] = useState<string>(
-    initialAdminBookings[0]?.id || ""
+    initialBookings[0]?.id || ""
   );
   const [activeTab, setActiveTab] = useState<BookingStatus | "All">("All");
   const [searchQuery, setSearchQuery] = useState("");
