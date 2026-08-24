@@ -19,6 +19,8 @@ export function ProductAwareWorkspacePage({
     spaceImageSession,
     finalSnapshotDataUrl,
     setStructuralDefinition,
+    setProductConfiguration,
+    setVariationSnapshots,
     setFinalSnapshotDataUrl,
     resetVisualizationSession,
   } = useVisualizationSession();
@@ -60,6 +62,8 @@ export function ProductAwareWorkspacePage({
           structuralDefinition={structuralDefinition}
           selectedProductName={structuralDefinition.product.productName}
           initialSnapshotDataUrl={finalSnapshotDataUrl}
+          onConfigurationChange={setProductConfiguration}
+          onVariationSnapshotsChange={setVariationSnapshots}
           onSnapshotChange={setFinalSnapshotDataUrl}
           onBack={() => {
             resetVisualizationSession();

@@ -1,6 +1,11 @@
 "use client";
 
-import React from "react";
+import React, { useMemo } from "react";
+import { useVisualizationSession } from "@/lib/visualization/visualizationSession";
+import type {
+  ProductConfigurationSnapshot,
+  ProductStructuralDefinition,
+} from "@/lib/visualization/types";
 import { PriceCard, ProductDetailsData } from "./PriceCard";
 
 interface ProductItem {
@@ -13,48 +18,24 @@ interface ProductItem {
   details: ProductDetailsData;
 }
 
-const productsData: ProductItem[] = [
-  {
-    productId: "GF_001",
-    productName: "Product Name",
-    specSummary: "Cabinet | Analok (Champagne gold) | W90 × H180 × D40cm",
-    qty: 1,
-    unitPrice: 0o0000,
-    imageUrl: "/images/modular_cabinets.png",
-    details: {
-      category: "Cabinet",
-      variant: "Kitchen Cabinet",
-      material: "Aluminum/Glass",
-      aluminumFinish: "Analok (Champagne Gold)",
-      glassFinish: "Clear",
-      glassType: "Tempered Glass",
-      thickness: "3mm",
-      profileGrade: "High-end",
-      dimension: "W 90cm X H 180cm x D 40cm",
-    },
-  },
-  {
-    productId: "GF_002",
-    productName: "Product Name",
-    specSummary: "Cabinet | Analok (Champagne gold) | W90 × H180 × D40cm",
-    qty: 1,
-    unitPrice: 0o0000,
-    imageUrl: "/images/modular_cabinets.png",
-    details: {
-      category: "Cabinet",
-      variant: "Kitchen Cabinet",
-      material: "Aluminum/Glass",
-      aluminumFinish: "Analok (Champagne Gold)",
-      glassFinish: "Clear",
-      glassType: "Tempered Glass",
-      thickness: "3mm",
-      profileGrade: "High-end",
-      dimension: "W 90cm X H 180cm x D 40cm",
-    },
-  },
-];
-
 export function ProductSummary() {
+  const { finalSnapshotDataUrl, productConfiguration, structuralDefinition } =
+    useVisualizationSession();
+
+  const productsData = useMemo(
+    () =>
+      structuralDefinition
+        ? [
+            createProductSummaryItem(
+              structuralDefinition,
+              productConfiguration,
+              finalSnapshotDataUrl,
+            ),
+          ]
+        : [],
+    [finalSnapshotDataUrl, productConfiguration, structuralDefinition],
+  );
+
   const total = productsData.reduce((sum, item) => sum + item.unitPrice * item.qty, 0);
 
   const formattedTotal = new Intl.NumberFormat("en-PH", {
@@ -71,19 +52,25 @@ export function ProductSummary() {
         </h2>
       </div>
       <div className="flex flex-col gap-6 w-full">
-        {productsData.map((prod) => (
-          <PriceCard
-            key={prod.productId}
-            productId={prod.productId}
-            productName={prod.productName}
-            specSummary={prod.specSummary}
-            qty={prod.qty}
-            unitPrice={prod.unitPrice}
-            imageUrl={prod.imageUrl}
-            details={prod.details}
-            initiallyExpanded={prod.productId === "GF_001"}
-          />
-        ))}
+        {productsData.length > 0 ? (
+          productsData.map((prod) => (
+            <PriceCard
+              key={prod.productId}
+              productId={prod.productId}
+              productName={prod.productName}
+              specSummary={prod.specSummary}
+              qty={prod.qty}
+              unitPrice={prod.unitPrice}
+              imageUrl={prod.imageUrl}
+              details={prod.details}
+              initiallyExpanded
+            />
+          ))
+        ) : (
+          <div className="rounded-[20px] bg-white px-6 py-7.5 text-black shadow-sm">
+            No configured product was found for this quotation yet.
+          </div>
+        )}
       </div>
       <div className="w-full bg-green text-white flex flex-col md:flex-row gap-4 items-center justify-between px-6 md:px-12 py-7.5 rounded-[20px] drop-shadow-[0px_0px_2.5px_rgba(0,0,0,0.25)] select-none">
         <span className="text-xl font-medium leading-7">
@@ -95,4 +82,118 @@ export function ProductSummary() {
       </div>
     </div>
   );
+}
+
+function createProductSummaryItem(
+  definition: ProductStructuralDefinition,
+  configuration: ProductConfigurationSnapshot | null,
+  finalSnapshotDataUrl: string | null,
+): ProductItem {
+  const widthCm = configuration?.widthCm ?? getDefaultDimensionCm(definition, "width", 210);
+  const heightCm = configuration?.heightCm ?? getDefaultDimensionCm(definition, "height", 150);
+  const depthCm = getDefaultDimensionCm(definition, "depth", 0);
+  const thicknessMm = configuration?.thicknessMm ?? getDefaultNumber(definition, "thickness", 3);
+  const aluminumFinish = getAluminumFinishLabel(configuration?.aluminumFinish);
+  const glassFinish = getGlassFinishLabel(configuration?.glassAppearance);
+  const dimension = formatDimension(widthCm, heightCm, depthCm);
+  const material = inferMaterial(definition);
+
+  return {
+    productId: definition.product.productId,
+    productName: definition.product.productName,
+    specSummary: [
+      definition.product.productType,
+      aluminumFinish,
+      dimension,
+    ].filter(Boolean).join(" | "),
+    qty: configuration?.quantity ?? 1,
+    unitPrice: definition.product.basePrice ?? 0,
+    imageUrl:
+      definition.product.catalogImageUrl ??
+      finalSnapshotDataUrl ??
+      "/images/modular_cabinets.png",
+    details: {
+      category: definition.product.productType,
+      variant: definition.template.templateName,
+      material,
+      aluminumFinish,
+      glassFinish,
+      glassType: glassFinish,
+      thickness: `${thicknessMm}mm`,
+      profileGrade: definition.template.modelStrategy,
+      dimension,
+    },
+  };
+}
+
+function getDefaultDimensionCm(
+  definition: ProductStructuralDefinition,
+  parameterKey: string,
+  fallbackCm: number,
+) {
+  return getDefaultNumber(definition, parameterKey, fallbackCm * 10) / 10;
+}
+
+function getDefaultNumber(
+  definition: ProductStructuralDefinition,
+  parameterKey: string,
+  fallback: number,
+) {
+  const parameter = definition.parameters.find(
+    (item) => item.parameterKey === parameterKey,
+  );
+  const value =
+    parameter?.defaultValue ??
+    definition.template.baseConfiguration[parameterKey] ??
+    fallback;
+  const parsed = typeof value === "number" ? value : Number(value);
+
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function formatDimension(widthCm: number, heightCm: number, depthCm: number) {
+  const parts = [`W ${Math.round(widthCm)}cm`, `H ${Math.round(heightCm)}cm`];
+  if (depthCm > 0) {
+    parts.push(`D ${Math.round(depthCm)}cm`);
+  }
+
+  return parts.join(" X ");
+}
+
+function inferMaterial(definition: ProductStructuralDefinition) {
+  const componentTypes = Array.from(
+    new Set(definition.components.map((component) => component.componentType)),
+  );
+
+  return componentTypes.length > 0 ? componentTypes.join("/") : "Configured Product";
+}
+
+function getAluminumFinishLabel(value: string | null | undefined) {
+  switch (value) {
+    case "black":
+      return "Black Aluminum";
+    case "silver":
+      return "Silver Aluminum";
+    case "white":
+      return "White Aluminum";
+    default:
+      return "Configured Finish";
+  }
+}
+
+function getGlassFinishLabel(value: string | null | undefined) {
+  switch (value) {
+    case "frosted":
+      return "Frosted Glass";
+    case "opaque":
+      return "Opaque Glass";
+    case "reflective":
+      return "Reflective Glass";
+    case "outdoor":
+      return "Outdoor Reflection Glass";
+    case "clear":
+      return "Clear Glass";
+    default:
+      return "Configured Glass";
+  }
 }

@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { ProductStructuralDefinition } from "@/lib/visualization/types";
 import type { LightingAnalysis } from "@/lib/imageApi";
 import type { GlassAppearanceMode } from "./types";
@@ -11,6 +12,7 @@ import { preloadComponentModels } from "@/lib/visualization/componentModelCache"
 let cachedEnvironmentMap: THREE.Texture | null = null;
 let isEnvironmentLoading = false;
 let environmentLoadQueue: Array<(envMap: THREE.Texture) => void> = [];
+const fixedModelLoader = new GLTFLoader();
 
 function loadCityEnvironment(renderer: THREE.WebGLRenderer): Promise<THREE.Texture> {
   return new Promise((resolve) => {
@@ -54,7 +56,8 @@ function loadCityEnvironment(renderer: THREE.WebGLRenderer): Promise<THREE.Textu
 }
 
 const CAMERA_DIRECTION = new THREE.Vector3(3.4, 1.8, 5.6).normalize();
-const CAMERA_BASE_DISTANCE = 6.8;
+const CAMERA_BASE_DISTANCE = 3.8;
+const CAMERA_BASE_VERTICAL_FOV_DEGREES = 38;
 
 export class ProductModelRenderer {
   private renderer: THREE.WebGLRenderer;
@@ -62,6 +65,8 @@ export class ProductModelRenderer {
   private camera: THREE.PerspectiveCamera;
   private canvas: HTMLCanvasElement;
   private modelGroup: THREE.Group;
+  private modelLoadVersion = 0;
+  private lockedHorizontalFovRadians: number | null = null;
   
   private ambientLight: THREE.AmbientLight;
   private mainLight: THREE.DirectionalLight;
@@ -88,7 +93,12 @@ export class ProductModelRenderer {
 
     this.scene = new THREE.Scene();
 
-    this.camera = new THREE.PerspectiveCamera(38, width / height, 0.1, 100);
+    this.camera = new THREE.PerspectiveCamera(
+      CAMERA_BASE_VERTICAL_FOV_DEGREES,
+      width / height,
+      0.1,
+      100,
+    );
     this.camera.position.copy(CAMERA_DIRECTION).multiplyScalar(CAMERA_BASE_DISTANCE);
     this.camera.lookAt(0, 0, 0);
 
@@ -115,6 +125,30 @@ export class ProductModelRenderer {
     this.scene.add(this.fillLight);
   }
 
+  setSize(width: number, height: number) {
+    this.canvas.width = width;
+    this.canvas.height = height;
+    this.renderer.setSize(width, height, false);
+
+    const aspect = Math.max(width / Math.max(height, 1), 0.01);
+    if (this.lockedHorizontalFovRadians === null) {
+      this.lockedHorizontalFovRadians =
+        2 *
+        Math.atan(
+          Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2) * aspect,
+        );
+    }
+
+    this.camera.aspect = aspect;
+    this.camera.fov = THREE.MathUtils.radToDeg(
+      2 *
+        Math.atan(
+          Math.tan(this.lockedHorizontalFovRadians / 2) / aspect,
+        ),
+    );
+    this.camera.updateProjectionMatrix();
+  }
+
   async loadModel(
     definition: ProductStructuralDefinition,
     values: Record<string, unknown>,
@@ -122,19 +156,18 @@ export class ProductModelRenderer {
     includeSill: boolean,
     alumFinish?: string
   ) {
-    // Clear previous
-    while (this.modelGroup.children.length > 0) {
-      const child = this.modelGroup.children[0];
-      this.modelGroup.remove(child);
-    }
+    const loadVersion = (this.modelLoadVersion += 1);
 
-    const resolved = resolveProductStructure({ definition, values });
-    const cache = await preloadComponentModels(definition.components);
-    const { group } = buildParametricProduct(definition, resolved, cache, {
-      glassAppearance,
-      includeSill,
-      alumFinish,
-    });
+    const group =
+      definition.template.modelStrategy === "Fixed"
+        ? await this.loadFixedModel(definition)
+        : await this.loadParametricModel(
+            definition,
+            values,
+            glassAppearance,
+            includeSill,
+            alumFinish,
+          );
 
     // Ensure the environment map is loaded before rendering
     try {
@@ -146,10 +179,61 @@ export class ProductModelRenderer {
       console.warn("Failed to load environment map", e);
     }
 
-    group.position.set(0, 0, 0);
-    group.scale.setScalar(1);
+    if (loadVersion !== this.modelLoadVersion) {
+      return;
+    }
+
+    while (this.modelGroup.children.length > 0) {
+      const child = this.modelGroup.children[0];
+      this.modelGroup.remove(child);
+    }
 
     this.modelGroup.add(group);
+  }
+
+  private async loadParametricModel(
+    definition: ProductStructuralDefinition,
+    values: Record<string, unknown>,
+    glassAppearance: GlassAppearanceMode,
+    includeSill: boolean,
+    alumFinish?: string,
+  ) {
+    const resolved = resolveProductStructure({ definition, values });
+    const cache = await preloadComponentModels(definition.components);
+    const { group } = buildParametricProduct(definition, resolved, cache, {
+      glassAppearance,
+      includeSill,
+      alumFinish,
+    });
+
+    return group;
+  }
+
+  private async loadFixedModel(definition: ProductStructuralDefinition) {
+    const asset = definition.assets?.find(
+      (item) =>
+        (item.assetType === "Whole Model" ||
+          item.assetType === "Catalog 3D Preview") &&
+        item.status === "Active" &&
+        item.url,
+    );
+
+    if (!asset?.url) {
+      throw new Error("This fixed product does not have an active 3D model asset.");
+    }
+
+    const gltf = await fixedModelLoader.loadAsync(asset.url);
+    const source = gltf.scene;
+
+    if (!source || source.children.length === 0) {
+      throw new Error(`The 3D model for ${definition.product.productName} is empty.`);
+    }
+
+    const group = new THREE.Group();
+    group.add(source);
+    normalizeModelForViewer(group, source);
+
+    return group;
   }
 
   applyLighting(lighting: LightingAnalysis | null) {
@@ -201,56 +285,20 @@ export class ProductModelRenderer {
   }
 }
 
-export function getOriginPreservingSourceBounds(canvas: HTMLCanvasElement) {
-  // We cannot call getContext("2d") on a WebGL canvas, so we must copy it to a temp 2D canvas first
-  const tempCanvas = document.createElement("canvas");
-  tempCanvas.width = canvas.width;
-  tempCanvas.height = canvas.height;
-  const context = tempCanvas.getContext("2d", { willReadFrequently: true });
-  
-  if (!context) {
-    return { x: 0, y: 0, width: canvas.width, height: canvas.height };
+function normalizeModelForViewer(container: THREE.Group, source: THREE.Object3D) {
+  container.updateMatrixWorld(true);
+
+  const bounds = new THREE.Box3().setFromObject(container);
+  const size = new THREE.Vector3();
+  const center = new THREE.Vector3();
+  bounds.getSize(size);
+  bounds.getCenter(center);
+
+  const maxDimension = Math.max(size.x, size.y, size.z);
+  if (!Number.isFinite(maxDimension) || maxDimension <= 0) {
+    return;
   }
 
-  context.drawImage(canvas, 0, 0);
-  const { width, height } = tempCanvas;
-  const imageData = context.getImageData(0, 0, width, height);
-  const { data } = imageData;
-
-  let minX = width;
-  let minY = height;
-  let maxX = 0;
-  let maxY = 0;
-  let hasVisiblePixels = false;
-
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      const alpha = data[(y * width + x) * 4 + 3];
-      if (alpha > 5) {
-        hasVisiblePixels = true;
-        if (x < minX) minX = x;
-        if (x > maxX) maxX = x;
-        if (y < minY) minY = y;
-        if (y > maxY) maxY = y;
-      }
-    }
-  }
-
-  if (!hasVisiblePixels) {
-    return { x: 0, y: 0, width: canvas.width, height: canvas.height };
-  }
-
-  // Use the absolute tightest bounding box to eliminate gaps
-  const padding = 10;
-  const left = Math.max(0, minX - padding);
-  const top = Math.max(0, minY - padding);
-  const right = Math.min(width, maxX + padding);
-  const bottom = Math.min(height, maxY + padding);
-
-  return {
-    x: left,
-    y: top,
-    width: right - left,
-    height: bottom - top,
-  };
+  source.position.sub(center);
+  container.scale.setScalar(2.4 / maxDimension);
 }

@@ -4,6 +4,7 @@ import type {
   JsonObject,
   ProductComponentDefinition,
   ProductParameter,
+  ProductStructuralAsset,
   ProductStructuralDefinition,
   SelectedVisualizationProduct,
   SourceDimensionsMm,
@@ -76,7 +77,7 @@ export async function getProductStructuralDefinition(
 
   const { data: product, error: productError } = await supabase
     .from("products")
-    .select("product_id, product_name, product_type, status")
+    .select("product_id, product_name, product_type, description, base_price, status")
     .eq("product_id", productId)
     .eq("status", "Active")
     .single();
@@ -103,6 +104,7 @@ export async function getProductStructuralDefinition(
     componentsResult,
     rulesResult,
     assetsResult,
+    publishAssetsResult,
   ] = await Promise.all([
     supabase
       .from("product_parameters")
@@ -158,6 +160,21 @@ export async function getProductStructuralDefinition(
       .eq("status", "Active")
       .order("is_primary", { ascending: false })
       .order("display_order", { ascending: true }),
+    supabase
+      .from("product_assets")
+      .select(`
+        asset_id,
+        asset_type,
+        r2_object_key,
+        file_name,
+        is_primary,
+        status
+      `)
+      .eq("product_id", productId)
+      .in("asset_type", ["Whole Model", "Catalog 3D Preview", "Catalog Image"])
+      .eq("status", "Active")
+      .order("is_primary", { ascending: false })
+      .order("display_order", { ascending: true }),
   ]);
 
   if (parametersResult.error) {
@@ -174,6 +191,10 @@ export async function getProductStructuralDefinition(
 
   if (assetsResult.error) {
     throw new Error("Product component assets could not be loaded.");
+  }
+
+  if (publishAssetsResult.error) {
+    throw new Error("Product 3D model assets could not be loaded.");
   }
 
   const componentAssets = new Map<string, AssetRow>();
@@ -212,8 +233,26 @@ export async function getProductStructuralDefinition(
     });
   }
 
-  if (components.length === 0) {
+  const productAssets = mapStructuralAssets(publishAssetsResult.data ?? []);
+  const catalogAsset = productAssets.find(
+    (asset) =>
+      asset.assetType === "Catalog Image" &&
+      asset.isPrimary &&
+      asset.status === "Active",
+  );
+  const fixedModelAssets = productAssets.filter(
+    (asset) =>
+      (asset.assetType === "Whole Model" ||
+        asset.assetType === "Catalog 3D Preview") &&
+      asset.status === "Active",
+  );
+
+  if (template.model_strategy === "Parametric" && components.length === 0) {
     throw new Error("This product has no active structural components.");
+  }
+
+  if (template.model_strategy === "Fixed" && fixedModelAssets.length === 0) {
+    throw new Error("This fixed product does not have an active 3D model asset.");
   }
 
   return {
@@ -221,6 +260,9 @@ export async function getProductStructuralDefinition(
       productId: product.product_id,
       productName: product.product_name,
       productType: product.product_type,
+      description: typeof product.description === "string" ? product.description : null,
+      basePrice: toNumber(product.base_price, 0),
+      catalogImageUrl: catalogAsset?.url ?? null,
     },
     template: {
       templateId,
@@ -250,6 +292,7 @@ export async function getProductStructuralDefinition(
       conditionData: toJsonObject(row.condition_data),
       actionData: toJsonObject(row.action_data),
     })),
+    assets: productAssets,
   };
 }
 
@@ -261,7 +304,7 @@ export async function getDraftStructuralDefinition(
   // Same as getProductStructuralDefinition but without eq("status", "Active") for product and template
   const { data: product, error: productError } = await supabase
     .from("products")
-    .select("product_id, product_name, product_type, status")
+    .select("product_id, product_name, product_type, description, base_price, status")
     .eq("product_id", productId)
     .single();
 
@@ -286,6 +329,7 @@ export async function getDraftStructuralDefinition(
     componentsResult,
     rulesResult,
     assetsResult,
+    publishAssetsResult,
   ] = await Promise.all([
     supabase
       .from("product_parameters")
@@ -337,12 +381,28 @@ export async function getDraftStructuralDefinition(
       .eq("asset_type", "Component Model")
       .order("is_primary", { ascending: false })
       .order("display_order", { ascending: true }),
+    supabase
+      .from("product_assets")
+      .select(`
+        asset_id,
+        asset_type,
+        r2_object_key,
+        file_name,
+        is_primary,
+        status
+      `)
+      .eq("product_id", productId)
+      .in("asset_type", ["Whole Model", "Catalog 3D Preview", "Catalog Image"])
+      .eq("status", "Active")
+      .order("is_primary", { ascending: false })
+      .order("display_order", { ascending: true }),
   ]);
 
   if (parametersResult.error) throw new Error("Product parameters could not be loaded.");
   if (componentsResult.error) throw new Error("Product components could not be loaded.");
   if (rulesResult.error) throw new Error("Product structural rules could not be loaded.");
   if (assetsResult.error) throw new Error("Product component assets could not be loaded.");
+  if (publishAssetsResult.error) throw new Error("Product 3D preview assets could not be loaded.");
 
   const componentAssets = new Map<string, AssetRow>();
   for (const asset of (assetsResult.data ?? []) as AssetRow[]) {
@@ -380,11 +440,22 @@ export async function getDraftStructuralDefinition(
     });
   }
 
+  const productAssets = mapStructuralAssets(publishAssetsResult.data ?? []);
+  const catalogAsset = productAssets.find(
+    (asset) =>
+      asset.assetType === "Catalog Image" &&
+      asset.isPrimary &&
+      asset.status === "Active",
+  );
+
   return {
     product: {
       productId: product.product_id,
       productName: product.product_name,
       productType: product.product_type,
+      description: typeof product.description === "string" ? product.description : null,
+      basePrice: toNumber(product.base_price, 0),
+      catalogImageUrl: catalogAsset?.url ?? null,
     },
     template: {
       templateId,
@@ -414,7 +485,20 @@ export async function getDraftStructuralDefinition(
       conditionData: toJsonObject(row.condition_data),
       actionData: toJsonObject(row.action_data),
     })),
+    assets: productAssets,
   };
+}
+
+function mapStructuralAssets(assets: unknown[]): ProductStructuralAsset[] {
+  return (assets as AssetRow[]).map<ProductStructuralAsset>((asset) => ({
+    assetId: asset.asset_id,
+    assetType: asset.asset_type,
+    r2ObjectKey: asset.r2_object_key,
+    url: getR2AssetUrl(asset.r2_object_key),
+    fileName: asset.file_name,
+    isPrimary: Boolean(asset.is_primary),
+    status: asset.status,
+  }));
 }
 
 function toJsonObject(value: unknown): JsonObject {

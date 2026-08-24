@@ -26,12 +26,33 @@ export async function activateProduct(productId: string) {
     }
 
     if (template.model_strategy === "Fixed") {
-        if (!draft.product_assets || draft.product_assets.length === 0) {
+        const hasFixedModelAsset = draft.product_assets?.some((asset) =>
+            (asset.asset_type === "Whole Model" || asset.asset_type === "Catalog 3D Preview") &&
+            asset.status === "Active"
+        );
+
+        if (!hasFixedModelAsset) {
              throw new Error("Fixed products require a 3D model asset.");
         }
     }
 
-    // 2. Update status to Active
+    // 2. Publish the template first so the customer-side loader can find it
+    // as soon as the product becomes visible in the catalog.
+    const { error: templateError } = await supabase
+        .from("product_templates")
+        .update({
+            status: "Active",
+            updated_by: adminCtx.profileId,
+            updated_at: new Date().toISOString()
+        })
+        .eq("template_id", template.template_id);
+
+    if (templateError) {
+        console.error("Failed to activate product template:", templateError);
+        throw new Error(templateError.message);
+    }
+
+    // 3. Update product status to Active
     const { error } = await supabase
         .from("products")
         .update({
@@ -46,11 +67,14 @@ export async function activateProduct(productId: string) {
         throw new Error(error.message);
     }
 
-    // 3. Revalidate frontend paths
+    // 4. Revalidate frontend paths
     revalidatePath(`/admin/products/${productId}`);
+    revalidatePath(`/admin/products/${productId}/setup`);
     revalidatePath(`/admin/products`);
-    revalidatePath(`/products`);
-    revalidatePath(`/products/${productId}`);
+    revalidatePath(`/product`);
+    revalidatePath(`/product-details/${productId}`);
+    revalidatePath(`/visualize/${productId}/upload`);
+    revalidatePath(`/visualize/${productId}/workspace`);
 
     return true;
 }

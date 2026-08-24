@@ -12,7 +12,7 @@ export type UpsertComponentInput = {
     componentType: ComponentType;
     baseQuantity: number;
     assemblyGroup?: string;
-    componentData?: any; // To store source_dimensions_mm, etc.
+    componentData?: Record<string, unknown>; // To store source_dimensions_mm, etc.
 };
 
 export async function upsertProductComponent(input: UpsertComponentInput) {
@@ -76,6 +76,10 @@ export async function upsertProductComponent(input: UpsertComponentInput) {
     if (finalError) {
         console.error("Failed to upsert product component:", finalError);
         throw new Error(finalError.message);
+    }
+
+    if (!finalData) {
+        throw new Error("Product component could not be saved.");
     }
 
     return finalData.component_id;

@@ -12,13 +12,17 @@ import type { SpaceImageSession } from "@/lib/imageApi";
 import type {
   ActiveOverlay,
   PlacedOverlay,
+  ProductConfigurationSnapshot,
   ProductStructuralDefinition,
+  ProductVariationSnapshot,
   VisualizationSessionState,
 } from "./types";
 
 type VisualizationSessionContextValue = VisualizationSessionState & {
   setPreparedSpaceImage: (productId: string, session: SpaceImageSession) => void;
   setStructuralDefinition: (definition: ProductStructuralDefinition | null) => void;
+  setProductConfiguration: (configuration: ProductConfigurationSnapshot | null) => void;
+  setVariationSnapshots: (snapshots: ProductVariationSnapshot[]) => void;
   setActiveOverlay: (overlay: ActiveOverlay | null) => void;
   setPlacedOverlays: (overlays: PlacedOverlay[]) => void;
   setFinalSnapshotDataUrl: (dataUrl: string | null) => void;
@@ -32,6 +36,8 @@ const initialState: VisualizationSessionState = {
   selectedProductId: null,
   spaceImageSession: null,
   structuralDefinition: null,
+  productConfiguration: null,
+  variationSnapshots: [],
   activeOverlay: null,
   placedOverlays: [],
   finalSnapshotDataUrl: null,
@@ -54,6 +60,8 @@ export function VisualizationSessionProvider({
         selectedProductId: productId,
         spaceImageSession: session,
         structuralDefinition: null,
+        productConfiguration: null,
+        variationSnapshots: [],
         activeOverlay: null,
         placedOverlays: [],
         finalSnapshotDataUrl: null,
@@ -67,13 +75,42 @@ export function VisualizationSessionProvider({
 
   const setStructuralDefinition = useCallback(
     (definition: ProductStructuralDefinition | null) => {
-      setState((current) => ({
-        ...current,
-        structuralDefinition: definition,
-      }));
+      setState((current) => {
+        const nextState = {
+          ...current,
+          structuralDefinition: definition,
+        };
+        writeStoredVisualizationSession(nextState);
+        return nextState;
+      });
     },
     [],
   );
+
+  const setProductConfiguration = useCallback(
+    (configuration: ProductConfigurationSnapshot | null) => {
+      setState((current) => {
+        const nextState = {
+          ...current,
+          productConfiguration: configuration,
+        };
+        writeStoredVisualizationSession(nextState);
+        return nextState;
+      });
+    },
+    [],
+  );
+
+  const setVariationSnapshots = useCallback((snapshots: ProductVariationSnapshot[]) => {
+    setState((current) => {
+      const nextState = {
+        ...current,
+        variationSnapshots: snapshots,
+      };
+      writeStoredVisualizationSession(nextState);
+      return nextState;
+    });
+  }, []);
 
   const setActiveOverlay = useCallback((overlay: ActiveOverlay | null) => {
     setState((current) => ({
@@ -110,6 +147,8 @@ export function VisualizationSessionProvider({
       ...state,
       setPreparedSpaceImage,
       setStructuralDefinition,
+      setProductConfiguration,
+      setVariationSnapshots,
       setActiveOverlay,
       setPlacedOverlays,
       setFinalSnapshotDataUrl,
@@ -119,6 +158,8 @@ export function VisualizationSessionProvider({
       state,
       setPreparedSpaceImage,
       setStructuralDefinition,
+      setProductConfiguration,
+      setVariationSnapshots,
       setActiveOverlay,
       setPlacedOverlays,
       setFinalSnapshotDataUrl,
@@ -152,7 +193,19 @@ function readStoredVisualizationSession(): VisualizationSessionState {
     return {
       selectedProductId: parsed.selectedProductId,
       spaceImageSession: parsed.spaceImageSession,
-      structuralDefinition: null,
+      structuralDefinition:
+        parsed.structuralDefinition &&
+        typeof parsed.structuralDefinition === "object"
+          ? parsed.structuralDefinition
+          : null,
+      productConfiguration:
+        parsed.productConfiguration &&
+        typeof parsed.productConfiguration === "object"
+          ? parsed.productConfiguration
+          : null,
+      variationSnapshots: Array.isArray(parsed.variationSnapshots)
+        ? parsed.variationSnapshots
+        : [],
       activeOverlay: null,
       placedOverlays: [],
       finalSnapshotDataUrl:
@@ -176,6 +229,9 @@ function writeStoredVisualizationSession(state: VisualizationSessionState) {
       JSON.stringify({
         selectedProductId: state.selectedProductId,
         spaceImageSession: state.spaceImageSession,
+        structuralDefinition: state.structuralDefinition,
+        productConfiguration: state.productConfiguration,
+        variationSnapshots: state.variationSnapshots,
         finalSnapshotDataUrl: state.finalSnapshotDataUrl,
       }),
     );
