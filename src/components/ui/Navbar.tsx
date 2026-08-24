@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import * as motion from "motion/react-client";
 import Button from "@/components/shared/Button";
 import { useAuth } from "@/features/auth";
@@ -20,12 +20,36 @@ type ClassNameProps = {
 
 export default function Navbar({ className = "" }: ClassNameProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const { user, isLoading } = useAuth();
 
-  const [hoveredLabel, setHoveredLabel] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
+
+  const isCurrentPage = (href: string) => {
+    if (!pathname) return false;
+    if (href === "/") {
+      return pathname === "/";
+    }
+    if (href === "/product") {
+      return (
+        pathname === "/product" ||
+        pathname.startsWith("/product/") ||
+        pathname === "/product-details" ||
+        pathname.startsWith("/product-details/")
+      );
+    }
+    if (href === "/visualization") {
+      return (
+        pathname === "/visualization" ||
+        pathname.startsWith("/visualization/") ||
+        pathname === "/visualize" ||
+        pathname.startsWith("/visualize/")
+      );
+    }
+    return pathname === href || pathname.startsWith(`${href}/`);
+  };
 
   useEffect(() => {
     const handleScroll = () => setIsScrolled(window.scrollY > 10);
@@ -128,9 +152,7 @@ export default function Navbar({ className = "" }: ClassNameProps) {
       {/* Desktop Links */}
       <div className="navbar-links hidden lg:flex min-w-0 gap-4 xl:gap-8 2xl:gap-15">
         {navLinks.map(({ label, href }) => {
-          const isActive =
-            label === "Home" &&
-            (hoveredLabel === null || hoveredLabel === "Home");
+          const isActive = isCurrentPage(href);
 
           return (
             <motion.span
@@ -139,13 +161,11 @@ export default function Navbar({ className = "" }: ClassNameProps) {
               animate={isActive ? "active" : "rest"}
               whileHover="hover"
               className="relative inline-flex items-center shrink-0"
-              onMouseEnter={() => setHoveredLabel(label)}
-              onMouseLeave={() => setHoveredLabel(null)}
             >
               <Link
                 href={href}
                 className={`text-base xl:text-lg leading-4 whitespace-nowrap navbar-link flex hover:text-green ${
-                  isActive ? "text-green font-bold" : ""
+                  isActive ? "text-green" : ""
                 }`}
                 aria-current={isActive ? "page" : undefined}
               >
@@ -190,16 +210,22 @@ export default function Navbar({ className = "" }: ClassNameProps) {
       {isOpen && (
         <div className="absolute top-full left-0 right-0 mt-2 bg-white/95 backdrop-blur-md border border-green rounded-[20px] p-6 flex flex-col gap-6 shadow-lg lg:hidden">
           <div className="flex flex-col gap-4">
-            {navLinks.map(({ label, href }) => (
-              <Link
-                key={label}
-                href={href}
-                onClick={() => setIsOpen(false)}
-                className="text-lg text-black hover:text-green py-1"
-              >
-                {label}
-              </Link>
-            ))}
+            {navLinks.map(({ label, href }) => {
+              const isActive = isCurrentPage(href);
+              return (
+                <Link
+                  key={label}
+                  href={href}
+                  onClick={() => setIsOpen(false)}
+                  className={`text-lg py-1 transition-colors ${
+                    isActive ? "text-green" : "text-black hover:text-green"
+                  }`}
+                  aria-current={isActive ? "page" : undefined}
+                >
+                  {label}
+                </Link>
+              );
+            })}
           </div>
           <hr className="border-[#c3c3c3]" />
           {!isLoading && (
