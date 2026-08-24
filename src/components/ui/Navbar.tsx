@@ -165,7 +165,7 @@ export default function Navbar({ className = "" }: ClassNameProps) {
               <Link
                 href={href}
                 className={`text-base xl:text-lg leading-4 whitespace-nowrap navbar-link flex hover:text-green ${
-                  isActive ? "text-green font-bold" : ""
+                  isActive ? "text-green" : ""
                 }`}
                 aria-current={isActive ? "page" : undefined}
               >
@@ -218,7 +218,7 @@ export default function Navbar({ className = "" }: ClassNameProps) {
                   href={href}
                   onClick={() => setIsOpen(false)}
                   className={`text-lg py-1 transition-colors ${
-                    isActive ? "text-green font-bold" : "text-black hover:text-green"
+                    isActive ? "text-green" : "text-black hover:text-green"
                   }`}
                   aria-current={isActive ? "page" : undefined}
                 >
