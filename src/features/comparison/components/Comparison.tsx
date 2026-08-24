@@ -7,6 +7,13 @@ import Link from "next/link";
 import Image from "next/image";
 import Button from "@/components/shared/Button";
 import { useVisualizationSession } from "@/lib/visualization/visualizationSession";
+import {
+  ALUMINUM_COLOR_VARIATIONS,
+  getAlternateAluminumFinish,
+  getAluminumVariationTitle,
+  normalizeAluminumFinish,
+  type AluminumFinishKey,
+} from "@/lib/visualization/colorVariations";
 
 const BEFORE_IMAGE = "/comparison_assets/room_without_furniture.png";
 const AFTER_IMAGE = "/comparison_assets/room_with_furniture.png";
@@ -89,14 +96,15 @@ function AfterState({ src }: { src: string }) {
   );
 }
 
-const getVariantLabel = (variant: "A" | "B" | "C") => {
-  return "Variant " + variant;
+const getVariantLabel = (variant: AluminumFinishKey) => {
+  return getAluminumVariationTitle(variant);
 };
 
 type ComparisonPanelCardProps = {
   title: string;
   label: string;
   imageSrc: string;
+  swatchClassName: string;
   isSelected: boolean;
   isDisabled: boolean;
   onClick: () => void;
@@ -106,6 +114,7 @@ function ComparisonPanelCard({
   title,
   label,
   imageSrc,
+  swatchClassName,
   isSelected,
   isDisabled,
   onClick,
@@ -123,6 +132,7 @@ function ComparisonPanelCard({
           }`}
       >
         <AfterState src={imageSrc} />
+        <div className={`absolute bottom-2 left-2 h-7 w-7 rounded-full shadow-md ${swatchClassName}`} />
 
         {isSelected && (
           <div className="absolute top-2.75 right-2.75 w-7.5 h-7.5 bg-[#129044]/30 border-[2.5px] border-[#129044] rounded-[50%] flex items-center justify-center z-20 animate-in zoom-in duration-200">
@@ -160,14 +170,23 @@ function ComparisonPanelCard({
 
 export function Comparison() {
   const router = useRouter();
-  const { finalSnapshotDataUrl, placedOverlays, spaceImageSession } =
+  const {
+    finalSnapshotDataUrl,
+    placedOverlays,
+    productConfiguration,
+    spaceImageSession,
+    variationSnapshots,
+  } =
     useVisualizationSession();
   const [viewAs, setViewAs] = useState<"left" | "right">("left"); // left = Side-by-Side, right = Slider
   const [compareMode, setCompareMode] = useState<"left" | "right">("left"); // left = Before and After, right = Product Variant
 
   // Variant Selections for Product Variant Comparison
-  const [leftVariant, setLeftVariant] = useState<"A" | "B" | "C">("A");
-  const [rightVariant, setRightVariant] = useState<"A" | "B" | "C">("B");
+  const configuredFinish = normalizeAluminumFinish(productConfiguration?.aluminumFinish);
+  const [leftVariant, setLeftVariant] = useState<AluminumFinishKey>(configuredFinish);
+  const [rightVariant, setRightVariant] = useState<AluminumFinishKey>(
+    getAlternateAluminumFinish(configuredFinish),
+  );
 
   const handleSwap = () => {
     setLeftVariant(rightVariant);
@@ -182,6 +201,10 @@ export function Comparison() {
     finalSnapshotDataUrl ??
     latestPlacedOverlay?.flattenedImageDataUrl ??
     AFTER_IMAGE;
+  const imageForFinish = (finish: AluminumFinishKey) =>
+    variationSnapshots.find((item) => item.key === finish)?.imageDataUrl ?? afterImage;
+  const leftVariantImage = imageForFinish(leftVariant);
+  const rightVariantImage = imageForFinish(rightVariant);
 
   // Slider State & Logic
   const [sliderPosition, setSliderPosition] = useState(50);
@@ -317,7 +340,7 @@ export function Comparison() {
               ) : (
                 /* Variant: Selected Left Finish */
                 <>
-                  <AfterState src={afterImage} />
+                  <AfterState src={leftVariantImage} />
                   <div className="absolute top-6 left-6 bg-black border border-[#c3c3c3] px-3.5 py-1.5 rounded-[20px] z-10 shadow-md">
                     <p className="text-base text-white font-normal tracking-wide">
                       {getVariantLabel(leftVariant)}
@@ -342,7 +365,7 @@ export function Comparison() {
               ) : (
                 /* Variant: Selected Right Finish */
                 <>
-                  <AfterState src={afterImage} />
+                  <AfterState src={rightVariantImage} />
                   <div className="absolute top-6 left-6 bg-black border border-[#c3c3c3] px-3.5 py-1.5 rounded-[20px] z-10 shadow-md">
                     <p className="text-base text-white font-normal tracking-wide">
                       {getVariantLabel(rightVariant)}
@@ -360,7 +383,7 @@ export function Comparison() {
           >
             {/* Underlay / Bottom state (Visible on the right side of the slider) */}
             <div className="absolute inset-0 w-full h-full">
-              <AfterState src={afterImage} />
+              <AfterState src={isBeforeAfter ? afterImage : rightVariantImage} />
             </div>
 
             {/* Overlay / Top state (Clipped, visible on the left side of the slider) */}
@@ -371,7 +394,7 @@ export function Comparison() {
               {isBeforeAfter ? (
                 <BeforeState src={beforeImage} />
               ) : (
-                <AfterState src={afterImage} />
+                <AfterState src={leftVariantImage} />
               )}
             </div>
 
@@ -413,30 +436,18 @@ export function Comparison() {
               Panel A - Left
             </p>
             <div className="flex flex-wrap sm:flex-nowrap gap-4 items-center justify-center sm:justify-between w-full">
-              <ComparisonPanelCard
-                title="Variant A - Title"
-                label="Variant A - Label"
-                imageSrc={afterImage}
-                isSelected={leftVariant === "A"}
-                isDisabled={rightVariant === "A"}
-                onClick={() => setLeftVariant("A")}
-              />
-              <ComparisonPanelCard
-                title="Variant B - Title"
-                label="Variant B - Label"
-                imageSrc={afterImage}
-                isSelected={leftVariant === "B"}
-                isDisabled={rightVariant === "B"}
-                onClick={() => setLeftVariant("B")}
-              />
-              <ComparisonPanelCard
-                title="Variant C - Title"
-                label="Variant C - Label"
-                imageSrc={afterImage}
-                isSelected={leftVariant === "C"}
-                isDisabled={rightVariant === "C"}
-                onClick={() => setLeftVariant("C")}
-              />
+              {ALUMINUM_COLOR_VARIATIONS.map((variation) => (
+                <ComparisonPanelCard
+                  key={variation.key}
+                  title={variation.title}
+                  label={variation.label}
+                  imageSrc={imageForFinish(variation.key)}
+                  swatchClassName={variation.swatchClassName}
+                  isSelected={leftVariant === variation.key}
+                  isDisabled={rightVariant === variation.key}
+                  onClick={() => setLeftVariant(variation.key)}
+                />
+              ))}
             </div>
           </div>
 
@@ -463,30 +474,18 @@ export function Comparison() {
               Panel B - Right
             </p>
             <div className="flex flex-wrap sm:flex-nowrap gap-4 items-center justify-center sm:justify-between w-full">
-              <ComparisonPanelCard
-                title="Variant A - Title"
-                label="Variant A - Label"
-                imageSrc={afterImage}
-                isSelected={rightVariant === "A"}
-                isDisabled={leftVariant === "A"}
-                onClick={() => setRightVariant("A")}
-              />
-              <ComparisonPanelCard
-                title="Variant B - Title"
-                label="Variant B - Label"
-                imageSrc={afterImage}
-                isSelected={rightVariant === "B"}
-                isDisabled={leftVariant === "B"}
-                onClick={() => setRightVariant("B")}
-              />
-              <ComparisonPanelCard
-                title="Variant C - Title"
-                label="Variant C - Label"
-                imageSrc={afterImage}
-                isSelected={rightVariant === "C"}
-                isDisabled={leftVariant === "C"}
-                onClick={() => setRightVariant("C")}
-              />
+              {ALUMINUM_COLOR_VARIATIONS.map((variation) => (
+                <ComparisonPanelCard
+                  key={variation.key}
+                  title={variation.title}
+                  label={variation.label}
+                  imageSrc={imageForFinish(variation.key)}
+                  swatchClassName={variation.swatchClassName}
+                  isSelected={rightVariant === variation.key}
+                  isDisabled={leftVariant === variation.key}
+                  onClick={() => setRightVariant(variation.key)}
+                />
+              ))}
             </div>
           </div>
         </div>

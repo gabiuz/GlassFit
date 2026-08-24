@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence, useDragControls } from "motion/react";
@@ -8,11 +8,14 @@ import { RotateCw, FlipHorizontal, RotateCcw, Trash2 } from "lucide-react";
 import Button from "@/components/shared/Button";
 import { AddProductModal, type Product } from "./AddProductModal";
 import type { SpaceImageSession, LightingAnalysis } from "@/lib/imageApi";
-import { ProductModelRenderer, getOriginPreservingSourceBounds } from "@/lib/visualization/modelRenderer";
+import { ProductModelRenderer } from "@/lib/visualization/modelRenderer";
 import {
   GlassAppearanceMode,
+  ProductConfigurationSnapshot,
   ProductStructuralDefinition,
+  ProductVariationSnapshot,
 } from "@/lib/visualization/types";
+import { ALUMINUM_COLOR_VARIATIONS } from "@/lib/visualization/colorVariations";
 export type ProjectedModelBounds = {
   left: number;
   top: number;
@@ -26,6 +29,8 @@ interface ProductModelWorkspaceProps {
   structuralDefinition?: ProductStructuralDefinition | null;
   selectedProductName?: string;
   initialSnapshotDataUrl?: string | null;
+  onConfigurationChange?: (configuration: ProductConfigurationSnapshot) => void;
+  onVariationSnapshotsChange?: (snapshots: ProductVariationSnapshot[]) => void;
   onSnapshotChange?: (dataUrl: string) => void;
   onBack: () => void;
 }
@@ -68,8 +73,11 @@ const MIN_SCENE_ZOOM = -55;
 const MAX_SCENE_ZOOM = 150;
 const DEFAULT_PRODUCT_WIDTH_CM = 210;
 const DEFAULT_PRODUCT_HEIGHT_CM = 150;
-const DEFAULT_OVERLAY_WIDTH_PX = 320;
-const DEFAULT_OVERLAY_HEIGHT_PX = 230;
+const DEFAULT_OVERLAY_WIDTH_PX = 540;
+const DEFAULT_OVERLAY_HEIGHT_PX = 385;
+const MAX_MODEL_RENDER_SIDE = 2048;
+const MIN_MODEL_RENDER_SIDE = 512;
+const MODEL_CONTROLS_PADDING_PX = 8;
 
 export function ProductModelWorkspace({
   uploadedImage,
@@ -77,6 +85,8 @@ export function ProductModelWorkspace({
   structuralDefinition,
   selectedProductName,
   initialSnapshotDataUrl,
+  onConfigurationChange,
+  onVariationSnapshotsChange,
   onSnapshotChange,
   onBack,
 }: ProductModelWorkspaceProps) {
@@ -100,8 +110,8 @@ export function ProductModelWorkspace({
   const [alumFinish, setAlumFinish] = useState<"black" | "white" | "silver">("white");
   const [glassAppearance, setGlassAppearance] = useState<GlassAppearanceMode>("clear");
   const [includeSill, setIncludeSill] = useState(true);
-  const [widthCm, setWidthCm] = useState("140");
-  const [heightCm, setHeightCm] = useState("120");
+  const [widthCm, setWidthCm] = useState(String(DEFAULT_PRODUCT_WIDTH_CM));
+  const [heightCm, setHeightCm] = useState(String(DEFAULT_PRODUCT_HEIGHT_CM));
   const [thicknessMm, setThicknessMm] = useState("3");
   const [quantity, setQuantity] = useState(1);
   const [activeOcclusionIds, setActiveOcclusionIds] = useState<string[]>([]);
@@ -116,6 +126,11 @@ export function ProductModelWorkspace({
   const [productBuildError, setProductBuildError] = useState<string | null>(null);
   const initialOverlaySize = getOverlaySizeFromDimensions(widthCm, heightCm);
   const [overlaySize, setOverlaySize] = useState(initialOverlaySize);
+  const renderFrameSize = useMemo(
+    () => getModelRenderFrameSize(overlaySize),
+    [overlaySize],
+  );
+  const renderFrameSizeRef = useRef(renderFrameSize);
   // We simulate a static 100% bounding box for the MVP engine
   const [projectedModelBounds, setProjectedModelBounds] =
     useState<ProjectedModelBounds | null>({ left: 0, top: 0, width: 1, height: 1 });
@@ -192,7 +207,16 @@ export function ProductModelWorkspace({
   }, []);
 
   useEffect(() => {
+    renderFrameSizeRef.current = renderFrameSize;
+  }, [renderFrameSize]);
+
+  useEffect(() => {
     if (!mvpRendererRef.current || !structuralDefinition) return;
+    mvpRendererRef.current.setSize(
+      renderFrameSizeRef.current.width,
+      renderFrameSizeRef.current.height,
+    );
+
     mvpRendererRef.current.loadModel(
       structuralDefinition,
       {
@@ -217,8 +241,10 @@ export function ProductModelWorkspace({
     mvpRendererRef.current.applyLighting(effectiveLighting ?? null);
   }, [effectiveLighting]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!mvpRendererRef.current || !mvpCanvasRef.current || !structuralDefinition) return;
+
+    mvpRendererRef.current.setSize(renderFrameSize.width, renderFrameSize.height);
     
     const sourceCanvas = mvpRendererRef.current.render(yaw, pitch);
     if (!sourceCanvas) return;
@@ -227,23 +253,29 @@ export function ProductModelWorkspace({
     if (!ctx) return;
 
     ctx.clearRect(0, 0, mvpCanvasRef.current.width, mvpCanvasRef.current.height);
-    const sourceBounds = getOriginPreservingSourceBounds(sourceCanvas);
-    
     ctx.drawImage(
       sourceCanvas,
-      sourceBounds.x,
-      sourceBounds.y,
-      sourceBounds.width,
-      sourceBounds.height,
+      0,
+      0,
+      sourceCanvas.width,
+      sourceCanvas.height,
       0,
       0,
       mvpCanvasRef.current.width,
       mvpCanvasRef.current.height
     );
-  }, [yaw, pitch, structuralDefinition, widthCm, heightCm, includeSill, glassAppearance, alumFinish, effectiveLighting, modelRevision]);
+
+    if (!isOutlineMeasurementPaused) {
+      setProjectedModelBounds(getVisibleModelBounds(mvpCanvasRef.current));
+    }
+  }, [yaw, pitch, structuralDefinition, widthCm, heightCm, includeSill, glassAppearance, alumFinish, effectiveLighting, modelRevision, renderFrameSize, isOutlineMeasurementPaused]);
 
   const outlineControlsStyle = useMemo(
     () => getOutlineControlsStyle(structuralDefinition ? projectedModelBounds : null),
+    [projectedModelBounds, structuralDefinition],
+  );
+  const toolbarControlsStyle = useMemo(
+    () => getToolbarControlsStyle(structuralDefinition ? projectedModelBounds : null),
     [projectedModelBounds, structuralDefinition],
   );
   const isEditingProduct = !isSnapshotApplied;
@@ -270,6 +302,51 @@ export function ProductModelWorkspace({
     setOverlaySize(getOverlaySizeFromDimensions(nextWidthCm, nextHeightCm));
     appliedTemplateDefaultsRef.current = templateId;
   }, [structuralDefinition]);
+
+  useEffect(() => {
+    if (!structuralDefinition || !onConfigurationChange) {
+      return;
+    }
+
+    const width = Number(widthCm) || DEFAULT_PRODUCT_WIDTH_CM;
+    const height = Number(heightCm) || DEFAULT_PRODUCT_HEIGHT_CM;
+    const thickness = Number(thicknessMm) || 3;
+
+    onConfigurationChange({
+      widthCm: width,
+      heightCm: height,
+      thicknessMm: thickness,
+      quantity,
+      aluminumFinish: alumFinish,
+      glassAppearance,
+      includeSill,
+      yaw,
+      pitch,
+      rotateAngle,
+      isFlipped,
+      visualParameterValues: {
+        width: width * 10,
+        height: height * 10,
+        thickness: thickness,
+        includeSill,
+        include_sill: includeSill,
+      },
+    });
+  }, [
+    alumFinish,
+    glassAppearance,
+    heightCm,
+    includeSill,
+    isFlipped,
+    onConfigurationChange,
+    pitch,
+    quantity,
+    rotateAngle,
+    structuralDefinition,
+    thicknessMm,
+    widthCm,
+    yaw,
+  ]);
 
   const handleRotate = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -403,13 +480,124 @@ export function ProductModelWorkspace({
     }
   }, [captureCurrentSnapshot]);
 
-  const handleContinueToComparison = useCallback(async () => {
-    const ready = isSnapshotApplied || (await applyVisualizationSnapshot());
-
-    if (ready) {
-      router.push("/comparison");
+  const generateVariationSnapshots = useCallback(async () => {
+    if (!structuralDefinition) {
+      onVariationSnapshotsChange?.([]);
+      return [];
     }
-  }, [applyVisualizationSnapshot, isSnapshotApplied, router]);
+
+    const snapshots: ProductVariationSnapshot[] = [];
+    const width = Number(widthCm) || DEFAULT_PRODUCT_WIDTH_CM;
+    const height = Number(heightCm) || DEFAULT_PRODUCT_HEIGHT_CM;
+
+    for (const variation of ALUMINUM_COLOR_VARIATIONS) {
+      const renderer = new ProductModelRenderer(
+        renderFrameSize.width,
+        renderFrameSize.height,
+      );
+
+      try {
+        renderer.setSize(renderFrameSize.width, renderFrameSize.height);
+        renderer.applyLighting(effectiveLighting ?? null);
+        await renderer.loadModel(
+          structuralDefinition,
+          {
+            width: width * 10,
+            height: height * 10,
+            includeSill,
+            include_sill: includeSill,
+          },
+          glassAppearance,
+          includeSill,
+          variation.key,
+        );
+
+        const renderedCanvas = renderer.render(yaw, pitch);
+        if (!renderedCanvas) {
+          continue;
+        }
+
+        const generatedCanvasOverride = cloneCanvas(renderedCanvas);
+        const imageDataUrl = await captureWorkspaceSnapshot({
+          canvasElement: canvasRef.current,
+          overlayElement: overlayBoxRef.current,
+          backgroundImageUrl: bgImage,
+          fallbackProductImageUrl: productOverlayImage,
+          hasGeneratedProduct: true,
+          activeOcclusionObjects,
+          rotateAngle,
+          isFlipped,
+          modelFilter: exportModelFilter,
+          generatedCanvasOverride,
+          structuralDefinition,
+          yaw,
+          pitch,
+          lighting: effectiveLighting ?? null,
+          glassAppearance,
+          includeSill,
+          widthCm: width,
+          heightCm: height,
+        });
+
+        snapshots.push({
+          key: variation.key,
+          title: variation.title,
+          label: variation.label,
+          swatchClassName: variation.swatchClassName,
+          imageDataUrl,
+        });
+      } finally {
+        renderer.dispose();
+      }
+    }
+
+    onVariationSnapshotsChange?.(snapshots);
+    return snapshots;
+  }, [
+    activeOcclusionObjects,
+    bgImage,
+    effectiveLighting,
+    exportModelFilter,
+    glassAppearance,
+    heightCm,
+    includeSill,
+    isFlipped,
+    onVariationSnapshotsChange,
+    pitch,
+    productOverlayImage,
+    renderFrameSize,
+    rotateAngle,
+    structuralDefinition,
+    widthCm,
+    yaw,
+  ]);
+
+  const handleContinueToComparison = useCallback(async () => {
+    setIsCapturingSnapshot(true);
+
+    try {
+      if (!isSnapshotApplied) {
+        await captureCurrentSnapshot();
+        setIsSnapshotApplied(true);
+      }
+
+      await generateVariationSnapshots();
+      router.push("/comparison");
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Unable to prepare the visualization comparison.";
+      setProductBuildError(message);
+    } finally {
+      setIsCapturingSnapshot(false);
+    }
+  }, [
+    captureCurrentSnapshot,
+    generateVariationSnapshots,
+    isSnapshotApplied,
+    router,
+  ]);
 
   const applySceneZoom = useCallback((nextZoomLevel: number) => {
     setZoomLevel((currentZoomLevel) => {
@@ -448,15 +636,6 @@ export function ProductModelWorkspace({
     setHeightCm(value);
     setOverlaySize(getOverlaySizeFromDimensions(widthCm, value));
   };
-
-  const handleProjectedModelBounds = useCallback(
-    (bounds: ProjectedModelBounds | null) => {
-      if (!isOutlineMeasurementPaused) {
-        setProjectedModelBounds(bounds);
-      }
-    },
-    [isOutlineMeasurementPaused],
-  );
 
   const handleIncludeSillToggle = useCallback(() => {
     setIncludeSill((current) => !current);
@@ -780,18 +959,23 @@ export function ProductModelWorkspace({
                     dragElastic={0}
                     dragMomentum={false}
                     className={[
-                      "pointer-events-auto flex flex-col items-center justify-center gap-6",
+                      "pointer-events-auto relative",
                       !isEditingProduct || isUsingTransformHandle
                         ? "cursor-default"
                         : "cursor-grab active:cursor-grabbing",
                     ].join(" ")}
+                    style={{
+                      width: overlaySize.width,
+                      height: overlaySize.height,
+                    }}
                   >
                   {/* Adjustment Tool Floating Action Toolbar (Figma 605:4867) */}
                   <div
                     className={[
-                      "flex items-center gap-2.5 z-30 select-none animate-in fade-in slide-in-from-bottom-2 duration-200",
+                      "absolute flex items-center gap-2.5 z-30 select-none animate-in fade-in slide-in-from-bottom-2 duration-200",
                       isEditingProduct ? "" : "invisible pointer-events-none",
                     ].join(" ")}
+                    style={toolbarControlsStyle}
                   >
                     {/* Rotate Button */}
                     <button
@@ -864,8 +1048,8 @@ export function ProductModelWorkspace({
                           <canvas 
                             ref={mvpCanvasRef} 
                             className="w-full h-full object-fill" 
-                            width={2048} // Fixed high resolution to prevent flickering on resize
-                            height={2048} 
+                            width={renderFrameSize.width}
+                            height={renderFrameSize.height}
                           />
                         </div>
                       ) : (
@@ -1511,6 +1695,18 @@ function clampNumber(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
+function cloneCanvas(source: HTMLCanvasElement) {
+  const canvas = document.createElement("canvas");
+  canvas.width = source.width;
+  canvas.height = source.height;
+  const context = canvas.getContext("2d");
+  if (context) {
+    context.drawImage(source, 0, 0);
+  }
+
+  return canvas;
+}
+
 type SnapshotOcclusionObject = SpaceImageSession["objects"][number];
 
 // Snapshot of the overlay's DOM state captured synchronously — before any async
@@ -1533,6 +1729,7 @@ async function captureWorkspaceSnapshot({
   rotateAngle,
   isFlipped,
   modelFilter,
+  generatedCanvasOverride,
   structuralDefinition,
   yaw,
   pitch,
@@ -1551,6 +1748,7 @@ async function captureWorkspaceSnapshot({
   rotateAngle: number;
   isFlipped: boolean;
   modelFilter: React.CSSProperties["filter"];
+  generatedCanvasOverride?: HTMLCanvasElement | null;
   structuralDefinition: ProductStructuralDefinition | null;
   yaw: number;
   pitch: number;
@@ -1583,7 +1781,8 @@ async function captureWorkspaceSnapshot({
       width,
       height,
       // querySelector is synchronous — grab the Three.js WebGL canvas now.
-      generatedCanvas: overlayElement.querySelector("canvas"),
+      generatedCanvas:
+        generatedCanvasOverride ?? overlayElement.querySelector("canvas"),
     };
   }
   // ── End synchronous DOM capture ──────────────────────────────────────────
@@ -1885,6 +2084,78 @@ function getOverlaySizeFromDimensions(widthCmValue: string, heightCmValue: strin
   };
 }
 
+function getModelRenderFrameSize(size: { width: number; height: number }) {
+  const aspectRatio = Math.max(size.width, 1) / Math.max(size.height, 1);
+
+  if (aspectRatio >= 1) {
+    return {
+      width: MAX_MODEL_RENDER_SIDE,
+      height: Math.max(
+        MIN_MODEL_RENDER_SIDE,
+        Math.round(MAX_MODEL_RENDER_SIDE / aspectRatio),
+      ),
+    };
+  }
+
+  return {
+    width: Math.max(
+      MIN_MODEL_RENDER_SIDE,
+      Math.round(MAX_MODEL_RENDER_SIDE * aspectRatio),
+    ),
+    height: MAX_MODEL_RENDER_SIDE,
+  };
+}
+
+function getVisibleModelBounds(canvas: HTMLCanvasElement): ProjectedModelBounds | null {
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) {
+    return null;
+  }
+
+  try {
+    const { width, height } = canvas;
+    const imageData = context.getImageData(0, 0, width, height);
+    const { data } = imageData;
+
+    let minX = width;
+    let minY = height;
+    let maxX = 0;
+    let maxY = 0;
+    let hasVisiblePixels = false;
+
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const alpha = data[(y * width + x) * 4 + 3];
+        if (alpha > 5) {
+          hasVisiblePixels = true;
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+
+    if (!hasVisiblePixels) {
+      return null;
+    }
+
+    const left = Math.max(0, minX - MODEL_CONTROLS_PADDING_PX);
+    const top = Math.max(0, minY - MODEL_CONTROLS_PADDING_PX);
+    const right = Math.min(width, maxX + MODEL_CONTROLS_PADDING_PX);
+    const bottom = Math.min(height, maxY + MODEL_CONTROLS_PADDING_PX);
+
+    return {
+      left: left / width,
+      top: top / height,
+      width: Math.max(0.04, (right - left) / width),
+      height: Math.max(0.04, (bottom - top) / height),
+    };
+  } catch {
+    return null;
+  }
+}
+
 function getStructuralDefaultMm(
   definition: ProductStructuralDefinition,
   parameterKey: string,
@@ -1942,6 +2213,23 @@ function getOutlineControlsStyle(
     top: `${resolvedBounds.top * 100}%`,
     width: `${resolvedBounds.width * 100}%`,
     height: `${resolvedBounds.height * 100}%`,
+  };
+}
+
+function getToolbarControlsStyle(
+  bounds: ProjectedModelBounds | null,
+): React.CSSProperties {
+  const resolvedBounds = bounds ?? {
+    left: 0.08,
+    top: 0.08,
+    width: 0.84,
+    height: 0.84,
+  };
+
+  return {
+    left: `${(resolvedBounds.left + resolvedBounds.width / 2) * 100}%`,
+    top: `${resolvedBounds.top * 100}%`,
+    transform: "translate(-50%, calc(-100% - 12px))",
   };
 }
 

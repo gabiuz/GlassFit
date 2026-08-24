@@ -110,7 +110,7 @@ export async function upsertProductTemplate(productId: string, input: UpsertTemp
 }
 
 export async function getProductDraft(productId: string) {
-    const adminCtx = await requirePermission("manage_products");
+    await requirePermission("manage_products");
     const supabase = await createSupabaseServerClient();
 
     const { data: product, error } = await supabase
@@ -162,7 +162,9 @@ export async function getProductDraft(productId: string) {
                 mime_type,
                 byte_size,
                 r2_object_key,
-                component_id
+                component_id,
+                is_primary,
+                status
             )
         `)
         .eq("product_id", productId)

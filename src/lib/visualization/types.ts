@@ -1,4 +1,5 @@
 import type { SpaceImageSession } from "@/lib/imageApi";
+import type { AluminumFinishKey } from "./colorVariations";
 
 export type JsonObject = Record<string, unknown>;
 
@@ -51,6 +52,16 @@ export type ProductComponentDefinition = {
   model: ProductComponentModel;
 };
 
+export type ProductStructuralAsset = {
+  assetId: string;
+  assetType: string;
+  r2ObjectKey: string;
+  url: string | null;
+  fileName: string;
+  isPrimary: boolean;
+  status: string;
+};
+
 export type StructuralRule = {
   ruleId: string;
   ruleName: string;
@@ -64,6 +75,9 @@ export type ProductStructuralDefinition = {
     productId: string;
     productName: string;
     productType: string;
+    description?: string | null;
+    basePrice?: number;
+    catalogImageUrl?: string | null;
   };
   template: {
     templateId: string;
@@ -75,6 +89,7 @@ export type ProductStructuralDefinition = {
   parameters: ProductParameter[];
   components: ProductComponentDefinition[];
   rules: StructuralRule[];
+  assets?: ProductStructuralAsset[];
 };
 
 export type ResolvedStructure = {
@@ -111,7 +126,32 @@ export type VisualizationSessionState = {
   selectedProductId: string | null;
   spaceImageSession: SpaceImageSession | null;
   structuralDefinition: ProductStructuralDefinition | null;
+  productConfiguration: ProductConfigurationSnapshot | null;
+  variationSnapshots: ProductVariationSnapshot[];
   activeOverlay: ActiveOverlay | null;
   placedOverlays: PlacedOverlay[];
   finalSnapshotDataUrl: string | null;
+};
+
+export type ProductVariationSnapshot = {
+  key: AluminumFinishKey;
+  title: string;
+  label: string;
+  swatchClassName: string;
+  imageDataUrl: string;
+};
+
+export type ProductConfigurationSnapshot = {
+  widthCm: number;
+  heightCm: number;
+  thicknessMm: number;
+  quantity: number;
+  aluminumFinish: "black" | "white" | "silver" | string;
+  glassAppearance: GlassAppearanceMode;
+  includeSill: boolean;
+  yaw: number;
+  pitch: number;
+  rotateAngle: number;
+  isFlipped: boolean;
+  visualParameterValues: Record<string, unknown>;
 };

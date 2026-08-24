@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState } from "react";
-import Image from "next/image";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
@@ -74,12 +73,11 @@ export function PriceCard({
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 w-full">
         <div className="flex flex-1 flex-col sm:flex-row gap-4 sm:gap-5 items-start sm:items-center min-w-0 w-full">
           <div className="relative shrink-0 w-full sm:w-33.5 h-44 sm:h-22 rounded-[10px] overflow-hidden border border-neutral-100 bg-neutral-50 shadow-sm">
-            <Image
+            <img
               alt={productName}
-              className="object-cover size-full"
+              className="size-full object-cover"
+              draggable={false}
               src={imageUrl}
-              fill
-              sizes="134px"
             />
           </div>
           <div className="flex flex-col gap-2 items-start min-w-0">
