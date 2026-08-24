@@ -83,10 +83,10 @@ export default function AdminSidePanel({
             <aside
                 data-variant="Dashboard"
                 className={cn(
-                    "w-[268px] shrink-0 bg-white border-r border-neutral-200 lg:border-white drop-shadow-[0px_0px_2.5px_rgba(0,0,0,0.25)] flex flex-col gap-6 lg:gap-8 items-start select-none",
-                    "pl-6 sm:pl-8 lg:pl-[90px] pr-6 lg:pr-[30px] pt-5 pb-[100px]",
+                    "w-[270px] sm:w-[285px] lg:w-[300px] shrink-0 bg-white border-r border-neutral-200 lg:border-white drop-shadow-[0px_0px_2.5px_rgba(0,0,0,0.25)] flex flex-col gap-6 lg:gap-8 items-start select-none",
+                    "pl-6 sm:pl-8 lg:pl-[87px] pr-5 lg:pr-6 pt-5 pb-6",
                     "fixed top-0 left-0 z-50 h-full overflow-y-auto transition-transform duration-300 ease-in-out",
-                    "lg:static lg:z-auto lg:h-auto lg:self-stretch lg:min-h-[calc(100vh-106px)] lg:overflow-visible",
+                    "lg:static lg:z-auto lg:h-auto lg:self-stretch lg:overflow-visible",
                     isOpen ? "translate-x-0 shadow-2xl" : "-translate-x-full lg:translate-x-0"
                 )}
             >
@@ -170,10 +170,10 @@ function AdminNavigationItem({
             onClick={onClick}
             data-state={isSelected ? "Selected" : "Default"}
             className={cn(
-                "w-[160px] lg:w-[148px] px-4 py-2 flex items-center gap-2 cursor-pointer transition-all",
+                "w-full px-3.5 sm:px-4 py-2 flex items-center gap-2.5 cursor-pointer transition-all rounded-[10px]",
                 isSelected
-                    ? "bg-gradient-to-r from-[#097283] from-[6.931%] to-[#45c9e3] rounded-[10px] text-white"
-                    : "rounded text-[#0f1422] hover:bg-neutral-100"
+                    ? "bg-gradient-to-r from-[#097283] from-[6.931%] to-[#45c9e3] text-white"
+                    : "text-[#0f1422] hover:bg-neutral-100"
             )}
         >
             <div className="size-[15px] relative shrink-0 overflow-hidden flex items-center justify-center">

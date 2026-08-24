@@ -8,15 +8,80 @@ import {
   type AdminProductStatus,
 } from "./productData";
 import Link from "next/link";
+import { Copy, Check } from "lucide-react";
+import { deleteProduct } from "@/lib/admin/products/productMutations";
+import { DeleteProductModal } from "./DeleteProductModal";
+
 const statusBg: Record<AdminProductStatus, string> = {
   Published: "bg-[#05b64b]",
   Draft: "bg-[#ffc876]",
 };
 
-function ColHeader({ children }: { children: React.ReactNode }) {
+function ProductIdBadge({ id }: { id: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(id);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Fallback
+    }
+  };
+
+  const shortId = id.length > 8 ? `${id.slice(0, 8)}...` : id;
+
   return (
-    <div className="flex-1 min-w-0 p-[5px] flex items-center justify-center">
-      <p className="flex-1 min-w-0 text-black text-sm font-medium leading-[1.4] tracking-[-0.266px] text-center">
+    <button
+      type="button"
+      onClick={handleCopy}
+      title={`Click to copy full ID: ${id}`}
+      className="group relative inline-flex items-center gap-1.5 px-2 py-1 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 hover:text-black rounded-md text-xs font-mono transition-colors cursor-pointer"
+    >
+      <span>{shortId}</span>
+      {copied ? (
+        <Check className="size-3 text-green-600 animate-in zoom-in-50 duration-150 shrink-0" />
+      ) : (
+        <Copy className="size-3 text-neutral-400 group-hover:text-neutral-700 transition-colors shrink-0" />
+      )}
+      {copied && (
+        <span className="absolute -top-7 left-1/2 -translate-x-1/2 bg-black text-white text-[10px] font-sans px-1.5 py-0.5 rounded shadow-sm whitespace-nowrap animate-in fade-in duration-150 z-10">
+          Copied!
+        </span>
+      )}
+    </button>
+  );
+}
+
+function ColHeader({
+  children,
+  align = "left",
+  className,
+}: {
+  children: React.ReactNode;
+  align?: "left" | "center" | "right";
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "flex-1 min-w-0 p-[5px] flex items-center",
+        align === "left" && "justify-start text-left",
+        align === "center" && "justify-center text-center",
+        align === "right" && "justify-end text-right",
+        className
+      )}
+    >
+      <p
+        className={cn(
+          "flex-1 min-w-0 text-black text-sm font-medium leading-[1.4] tracking-[-0.266px]",
+          align === "left" && "text-left",
+          align === "center" && "text-center",
+          align === "right" && "text-right"
+        )}
+      >
         {children}
       </p>
     </div>
@@ -25,15 +90,32 @@ function ColHeader({ children }: { children: React.ReactNode }) {
 
 function ColCell({
   children,
+  align = "left",
   className,
 }: {
   children: React.ReactNode;
+  align?: "left" | "center" | "right";
   className?: string;
 }) {
   return (
-    <div className={cn("flex-1 min-w-0 p-[5px] flex items-center justify-center", className)}>
+    <div
+      className={cn(
+        "flex-1 min-w-0 p-[5px] flex items-center",
+        align === "left" && "justify-start text-left",
+        align === "center" && "justify-center text-center",
+        align === "right" && "justify-end text-right",
+        className
+      )}
+    >
       {typeof children === "string" ? (
-        <p className="flex-1 min-w-0 text-black text-sm font-normal leading-[1.4] tracking-[-0.266px] text-center">
+        <p
+          className={cn(
+            "flex-1 min-w-0 text-black text-sm font-normal leading-[1.4] tracking-[-0.266px]",
+            align === "left" && "text-left",
+            align === "center" && "text-center",
+            align === "right" && "text-right"
+          )}
+        >
           {children}
         </p>
       ) : (
@@ -58,27 +140,13 @@ function StatusBadge({ status }: { status: AdminProductStatus }) {
   );
 }
 
-import { deleteProduct } from "@/lib/admin/products/productMutations";
-import { useTransition } from "react";
-import { useRouter } from "next/navigation";
-
-function ActionButtons({ productId }: { productId: string }) {
-  const router = useRouter();
-  const [isPending, startTransition] = useTransition();
-
-  const handleDelete = () => {
-    if (confirm("Are you sure you want to delete this product? This will remove all associated assets from Cloudflare R2 and cannot be undone.")) {
-      startTransition(async () => {
-        try {
-          await deleteProduct(productId);
-          // router.refresh() happens automatically because we revalidatePath in the action
-        } catch (e: any) {
-          alert(`Error deleting product: ${e.message}`);
-        }
-      });
-    }
-  };
-
+function ActionButtons({
+  productId,
+  onDelete,
+}: {
+  productId: string;
+  onDelete: () => void;
+}) {
   return (
     <div className="flex items-center justify-center gap-2 shrink-0">
       <Link
@@ -89,11 +157,10 @@ function ActionButtons({ productId }: { productId: string }) {
       </Link>
       <button
         type="button"
-        onClick={handleDelete}
-        disabled={isPending}
-        className="bg-[#c50000] px-[15px] py-[5px] rounded-[10px] text-white text-xs font-normal leading-[1.4] tracking-[-0.228px] whitespace-nowrap cursor-pointer hover:bg-red-700 transition-colors disabled:opacity-50"
+        onClick={onDelete}
+        className="bg-[#c50000] px-[15px] py-[5px] rounded-[10px] text-white text-xs font-normal leading-[1.4] tracking-[-0.228px] whitespace-nowrap cursor-pointer hover:bg-red-700 transition-colors"
       >
-        {isPending ? "Deleting..." : "Delete"}
+        Delete
       </button>
     </div>
   );
@@ -143,9 +210,8 @@ export function ProductsContent({ initialProducts }: { initialProducts: AdminPro
   const [searchQuery, setSearchQuery] = useState("");
   const [isCategoryOpen, setIsCategoryOpen] = useState(false);
   const [isStatusOpen, setIsStatusOpen] = useState(false);
-
-  // We could still keep local product state or just let the page refresh handle it
-  // For now, we keep local state just in case, though adding new products happens on another page.
+  const [productToDelete, setProductToDelete] = useState<AdminProductItem | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const filtered = useMemo(() => {
     if (!searchQuery.trim()) return products;
@@ -159,8 +225,22 @@ export function ProductsContent({ initialProducts }: { initialProducts: AdminPro
     );
   }, [products, searchQuery]);
 
+  const handleConfirmDelete = async () => {
+    if (!productToDelete) return;
+    setIsDeleting(true);
+    try {
+      await deleteProduct(productToDelete.id);
+      setProducts((prev) => prev.filter((p) => p.id !== productToDelete.id));
+      setProductToDelete(null);
+    } catch (e: any) {
+      alert(`Error deleting product: ${e?.message || "Something went wrong"}`);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   return (
-    <div className="flex flex-col items-start gap-6 sm:gap-8 w-full max-w-[1240px] pb-12 select-none">
+    <div className="flex flex-col items-start gap-6 sm:gap-8 w-full max-w-[1240px] select-none">
       <div className="w-full flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4 xl:gap-6">
         <div className="flex flex-col gap-1 items-start min-w-0">
           <h1 className="text-black text-2xl sm:text-3xl lg:text-[32px] font-medium leading-tight tracking-tight">
@@ -220,41 +300,73 @@ export function ProductsContent({ initialProducts }: { initialProducts: AdminPro
         <div className="w-full overflow-x-auto pb-2">
           <div className="w-full min-w-[760px] flex flex-col gap-2.5 items-start">
             <div className="w-full flex items-center gap-4">
-              <ColHeader>Product ID</ColHeader>
-              <ColHeader>Product Name</ColHeader>
-              <ColHeader>Product Type</ColHeader>
-              <ColHeader>Description</ColHeader>
-              <ColHeader>Base Price</ColHeader>
-              <ColHeader>Status</ColHeader>
-              <ColHeader>Actions</ColHeader>
+              <ColHeader align="left">Product ID</ColHeader>
+              <ColHeader align="left">Product Name</ColHeader>
+              <ColHeader align="left">Product Type</ColHeader>
+              <ColHeader align="left">Description</ColHeader>
+              <ColHeader align="right">Base Price</ColHeader>
+              <ColHeader align="center">Status</ColHeader>
+              <ColHeader align="center">Actions</ColHeader>
             </div>
 
             <div className="w-full border-t border-[#e5e5e5]" />
 
             {filtered.map((product) => (
-              <ProductRow key={product.id} product={product} />
+              <ProductRow
+                key={product.id}
+                product={product}
+                onDelete={() => setProductToDelete(product)}
+              />
             ))}
           </div>
         </div>
       </div>
 
+      {/* Delete Product Confirmation Modal */}
+      <DeleteProductModal
+        isOpen={!!productToDelete}
+        onClose={() => {
+          if (!isDeleting) setProductToDelete(null);
+        }}
+        onConfirm={handleConfirmDelete}
+        productName={productToDelete?.name || ""}
+        isDeleting={isDeleting}
+      />
     </div>
   );
 }
 
-function ProductRow({ product }: { product: AdminProductItem }) {
+function ProductRow({
+  product,
+  onDelete,
+}: {
+  product: AdminProductItem;
+  onDelete: () => void;
+}) {
   return (
-    <div className="w-full flex items-center gap-4 py-1">
-      <ColCell className="font-medium text-neutral-600">{product.id}</ColCell>
-      <ColCell className="font-medium text-[#0f1422]">{product.name}</ColCell>
-      <ColCell>{product.type}</ColCell>
-      <ColCell className="truncate">{product.description}</ColCell>
-      <ColCell className="font-medium">{product.basePrice}</ColCell>
-      <ColCell>
+    <div className="w-full flex items-center gap-4 py-2 hover:bg-neutral-50/70 rounded-lg transition-colors">
+      <ColCell align="left">
+        <ProductIdBadge id={product.id} />
+      </ColCell>
+      <ColCell align="left" className="font-medium text-[#0f1422]">
+        {product.name}
+      </ColCell>
+      <ColCell align="left">{product.type}</ColCell>
+      <ColCell align="left" className="truncate text-neutral-600">
+        {product.description?.trim() ? (
+          <span className="truncate">{product.description}</span>
+        ) : (
+          <span className="text-neutral-300 font-light">—</span>
+        )}
+      </ColCell>
+      <ColCell align="right" className="font-medium text-[#0f1422]">
+        {product.basePrice}
+      </ColCell>
+      <ColCell align="center">
         <StatusBadge status={product.status} />
       </ColCell>
-      <ColCell className="justify-center">
-        <ActionButtons productId={product.id} />
+      <ColCell align="center">
+        <ActionButtons productId={product.id} onDelete={onDelete} />
       </ColCell>
     </div>
   );
