@@ -26,7 +26,7 @@ export function CreateMyPreview() {
           <Link href="/visualization">
             <Button
               variant="blackBtnWhiteText"
-              value="Create My Preview"
+              value="Create my Preview"
               leftIcon={null}
               rightIcon={null}
             />
