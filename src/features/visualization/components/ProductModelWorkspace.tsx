@@ -148,9 +148,9 @@ export function ProductModelWorkspace({
   const bgImage = uploadedImage || "/comparison_assets/room_without_furniture.png";
   const productOverlayImage = activeProduct?.image || "/images/modular_cabinets.png";
   const overlayName = selectedProductName ?? activeProduct?.name ?? "Selected Product";
-  const workspaceAspectRatio = spaceImageSession?.workspaceImage
-    ? `${spaceImageSession.workspaceImage.width} / ${spaceImageSession.workspaceImage.height}`
-    : "636 / 579";
+  const aspectWidth = spaceImageSession?.workspaceImage?.width ?? 636;
+  const aspectHeight = spaceImageSession?.workspaceImage?.height ?? 579;
+  const workspaceAspectRatio = `${aspectWidth} / ${aspectHeight}`;
   const effectiveLighting = ambientLight ? spaceImageSession?.lighting : null;
   const isWindowProduct =
     structuralDefinition?.product.productType === "Window" ||
@@ -833,9 +833,9 @@ export function ProductModelWorkspace({
   );
 
   return (
-    <div className="w-full max-w-367 mx-auto px-4 sm:px-6 flex flex-col gap-10 items-center">
+    <div className="w-full max-w-367 mx-auto px-4 sm:px-6">
       {/* ── Section Header ── */}
-      <div className="flex flex-col gap-4 items-center justify-center text-center">
+      <div className="flex flex-col gap-4 items-center justify-center text-center mb-10">
         <h1 className="text-3xl sm:text-4xl lg:text-5xl font-medium tracking-tight text-black leading-tight">
           View <span className="text-green">Product Model</span>
         </h1>
@@ -845,7 +845,7 @@ export function ProductModelWorkspace({
       </div>
 
       {/* ── Top Toolbar Controls ── */}
-      <div className="w-full flex flex-col md:flex-row items-center justify-between gap-6">
+      <div className="w-full flex flex-col md:flex-row items-center justify-between gap-6 mb-10">
         {/* Left: Undo, Redo, Zoom */}
         <div className="flex flex-wrap items-center gap-4 sm:gap-6 justify-center md:justify-start">
           {/* Undo / Redo */}
@@ -933,20 +933,25 @@ export function ProductModelWorkspace({
       {/* ── Main Interactive Layout (Canvas + Sidebar) ── */}
       <div className="w-full flex flex-col lg:flex-row gap-8 lg:gap-10 items-start">
         {/* Left Side: Space Canvas + Instructions */}
-        <div className="flex-1 flex flex-col gap-6 w-full min-w-0 lg:sticky lg:top-35 lg:self-start">
+        <div className="flex-1 min-w-0 flex flex-col gap-6 w-full lg:sticky lg:top-35 lg:self-start">
           {/* Main Space Canvas Card */}
-          <div className="bg-white/10 border border-[#f5f5f5] p-3 sm:p-5 rounded-[20px] shadow-[0px_0px_5px_0px_rgba(0,0,0,0.25)] relative w-full overflow-hidden">
+          <div className="bg-white/10 border border-[#f5f5f5] p-3 sm:p-5 rounded-[20px] shadow-[0px_0px_5px_0px_rgba(0,0,0,0.25)] relative w-full flex items-center justify-center overflow-hidden">
             <div
               ref={canvasRef}
-              className="relative w-full rounded-[15px] overflow-hidden bg-neutral-100"
-              style={{ aspectRatio: workspaceAspectRatio }}
+              className="relative mx-auto rounded-[15px] overflow-hidden bg-neutral-100"
+              style={{
+                aspectRatio: workspaceAspectRatio,
+                width: `min(100%, calc(55vh * ${aspectWidth} / ${aspectHeight}))`,
+                maxWidth: "100%",
+                maxHeight: "55vh",
+              }}
             >
               {/* Background Space Image */}
               <img
                 src={bgImage}
                 alt="Space image background"
                 draggable={false}
-                className="w-full h-full object-contain select-none"
+                className="w-full h-full object-cover select-none"
               />
 
               {/* Product Overlay Element on Canvas with Adjustment Tool (Figma 605:4867) */}

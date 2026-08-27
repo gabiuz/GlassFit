@@ -54,23 +54,21 @@ export function ProductAwareWorkspacePage({
   }
 
   return (
-    <main className="flex min-h-screen flex-col">
-      <div className="flex flex-col gap-14 px-6 py-28 md:px-12 lg:px-24.25">
-        <ProductModelWorkspace
-          uploadedImage={spaceImageSession.workspaceImage.url}
-          spaceImageSession={spaceImageSession}
-          structuralDefinition={structuralDefinition}
-          selectedProductName={structuralDefinition.product.productName}
-          initialSnapshotDataUrl={finalSnapshotDataUrl}
-          onConfigurationChange={setProductConfiguration}
-          onVariationSnapshotsChange={setVariationSnapshots}
-          onSnapshotChange={setFinalSnapshotDataUrl}
-          onBack={() => {
-            resetVisualizationSession();
-            router.push(`/visualize/${productId}/upload`);
-          }}
-        />
-      </div>
+    <main className="flex min-h-screen flex-col gap-14 px-6 py-28 md:px-12 lg:px-24.25">
+      <ProductModelWorkspace
+        uploadedImage={spaceImageSession.workspaceImage.url}
+        spaceImageSession={spaceImageSession}
+        structuralDefinition={structuralDefinition}
+        selectedProductName={structuralDefinition.product.productName}
+        initialSnapshotDataUrl={finalSnapshotDataUrl}
+        onConfigurationChange={setProductConfiguration}
+        onVariationSnapshotsChange={setVariationSnapshots}
+        onSnapshotChange={setFinalSnapshotDataUrl}
+        onBack={() => {
+          resetVisualizationSession();
+          router.push(`/visualize/${productId}/upload`);
+        }}
+      />
     </main>
   );
 }

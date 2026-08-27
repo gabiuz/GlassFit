@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
+import { AnimatePresence, motion } from "motion/react";
 import { MoreHorizontal, UserX, UserCheck, Mail } from "lucide-react";
 import { suspendStaff, reactivateStaff, resendInvite, type StaffActionResult } from "@/app/admin/(protected)/staff/actions";
 import { useAdminSession } from "@/features/admin/auth/AdminSessionProvider";
@@ -83,55 +84,64 @@ export function StaffActionsMenu({ profileId, email, status, onResult }: StaffAc
             </button>
 
             {isOpen && menuPosition && typeof document !== "undefined" && createPortal(
-                <>
-                    {/* Backdrop */}
-                    <div
-                        className="fixed inset-0 z-[9999]"
-                        onClick={() => setIsOpen(false)}
-                        aria-hidden="true"
-                    />
+                <AnimatePresence>
+                  {isOpen && (
+                    <>
+                      {/* Backdrop */}
+                      <div
+                          className="fixed inset-0 z-[9999]"
+                          onClick={() => setIsOpen(false)}
+                          aria-hidden="true"
+                      />
 
-                    {/* Dropdown */}
-                    <div
-                        style={{
-                            position: "fixed",
-                            top: menuPosition.openUpwards ? undefined : `${menuPosition.top}px`,
-                            bottom: menuPosition.openUpwards ? `${window.innerHeight - menuPosition.top}px` : undefined,
-                            right: `${menuPosition.right}px`,
-                        }}
-                        className="w-48 bg-white rounded-[10px] shadow-[0px_4px_20px_0px_rgba(0,0,0,0.12)] border border-neutral-100 z-[10000] overflow-hidden"
-                    >
-                        {status === "Active" && !isSelf && (
-                            <MenuButton
-                                icon={<UserX className="w-4 h-4" />}
-                                label="Suspend"
-                                className="text-[#e74242]"
-                                onClick={() =>
-                                    handleAction(() => suspendStaff(profileId))
-                                }
-                            />
-                        )}
+                      {/* Dropdown */}
+                      <motion.div
+                          initial={{ opacity: 0, transform: "scale(0.95) translateY(-4px)" }}
+                          animate={{ opacity: 1, transform: "scale(1) translateY(0px)" }}
+                          exit={{ opacity: 0, transform: "scale(0.95) translateY(-4px)" }}
+                          transition={{ duration: 0.15, ease: [0.23, 1, 0.32, 1] }}
+                          style={{
+                              position: "fixed",
+                              top: menuPosition.openUpwards ? undefined : `${menuPosition.top}px`,
+                              bottom: menuPosition.openUpwards ? `${window.innerHeight - menuPosition.top}px` : undefined,
+                              right: `${menuPosition.right}px`,
+                              transformOrigin: menuPosition.openUpwards ? "bottom right" : "top right",
+                          }}
+                          className="w-48 bg-white rounded-[10px] shadow-[0px_4px_20px_0px_rgba(0,0,0,0.12)] border border-neutral-100 z-[10000] overflow-hidden"
+                      >
+                          {status === "Active" && !isSelf && (
+                              <MenuButton
+                                  icon={<UserX className="w-4 h-4" />}
+                                  label="Suspend"
+                                  className="text-[#e74242]"
+                                  onClick={() =>
+                                      handleAction(() => suspendStaff(profileId))
+                                  }
+                              />
+                          )}
 
-                        {status === "Suspended" && (
-                            <MenuButton
-                                icon={<UserCheck className="w-4 h-4" />}
-                                label="Reactivate"
-                                className="text-[#05b64b]"
-                                onClick={() =>
-                                    handleAction(() => reactivateStaff(profileId))
-                                }
-                            />
-                        )}
+                          {status === "Suspended" && (
+                              <MenuButton
+                                  icon={<UserCheck className="w-4 h-4" />}
+                                  label="Reactivate"
+                                  className="text-[#05b64b]"
+                                  onClick={() =>
+                                      handleAction(() => reactivateStaff(profileId))
+                                  }
+                              />
+                          )}
 
-                        <MenuButton
-                            icon={<Mail className="w-4 h-4" />}
-                            label="Resend Invite"
-                            onClick={() =>
-                                handleAction(() => resendInvite(email))
-                            }
-                        />
-                    </div>
-                </>,
+                          <MenuButton
+                              icon={<Mail className="w-4 h-4" />}
+                              label="Resend Invite"
+                              onClick={() =>
+                                  handleAction(() => resendInvite(email))
+                              }
+                          />
+                      </motion.div>
+                    </>
+                  )}
+                </AnimatePresence>,
                 document.body
             )}
         </div>

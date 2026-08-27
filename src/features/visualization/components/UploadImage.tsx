@@ -104,8 +104,9 @@ export function UploadImage({ onImageSelected }: UploadImageProps = {}) {
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
                 onClick={handleBrowseClick}
+                data-dragging={isDragging ? "true" : "false"}
                 className={[
-                    "self-stretch py-12 md:py-24 rounded-[20px] shadow-[0px_0px_5px_0px_rgba(0,0,0,0.50)] border-[5px] border-dashed inline-flex flex-col justify-center items-center gap-4 sm:gap-6 md:gap-7 cursor-pointer transition-colors duration-200",
+                    "upload-dropzone self-stretch py-12 md:py-24 rounded-[20px] shadow-[0px_0px_5px_0px_rgba(0,0,0,0.50)] border-[5px] border-dashed inline-flex flex-col justify-center items-center gap-4 sm:gap-6 md:gap-7 cursor-pointer",
                     isDragging
                         ? "bg-cyan-50 border-cyan-400"
                         : "bg-neutral-100/30 border-cyan-500",

@@ -1,4 +1,9 @@
+"use client";
+
+import { useRef } from "react";
 import Image from "next/image";
+import { useInView } from "motion/react";
+
 
 const howItWorksSteps = [
   {
@@ -40,6 +45,10 @@ const howItWorksSteps = [
 ];
 
 export function HowItWorksSection() {
+  const stepsRef = useRef<HTMLDivElement>(null);
+  // once:true — fires once when the list enters the viewport, never re-triggers
+  const isInView = useInView(stepsRef, { once: true, amount: 0.15 });
+
   return (
     <section className="relative bg-white px-4 py-12 lg:px-27.5 lg:py-25">
       <div className="mx-auto flex w-full max-w-360 flex-col items-center gap-12 lg:gap-28">
@@ -66,11 +75,18 @@ export function HowItWorksSection() {
               priority
             />
           </div>
-          <div className="flex w-full min-w-0 flex-1 flex-col gap-5 sm:gap-6 lg:gap-7.5 lg:max-w-180.5">
+          <div
+            ref={stepsRef}
+            className="flex w-full min-w-0 flex-1 flex-col gap-5 sm:gap-6 lg:gap-7.5 lg:max-w-180.5"
+          >
             {howItWorksSteps.map((step) => (
               <div
                 key={step.title}
-                className="flex flex-col items-start sm:items-start gap-3 sm:gap-5 lg:gap-7.5 lg:flex-row"
+                className={[
+                  "flex flex-col items-start sm:items-start gap-3 sm:gap-5 lg:gap-7.5 lg:flex-row",
+                  // Only apply the animation class once the container is in view
+                  isInView ? "how-it-works-step" : "opacity-0",
+                ].join(" ")}
               >
                 <div className="relative w-[50px] h-[50px] md:w-14 md:h-14 lg:h-16.5 lg:w-16.5 shrink-0">
                   <Image
