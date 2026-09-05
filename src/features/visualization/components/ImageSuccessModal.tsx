@@ -2,6 +2,7 @@
 
 import React from "react";
 import Image from "next/image";
+import { motion, useReducedMotion } from "motion/react";
 
 interface ImageSuccessModalProps {
   isOpen: boolean;
@@ -14,13 +15,37 @@ export function ImageSuccessModal({
   onCancel,
   onPlaceProduct,
 }: ImageSuccessModalProps) {
+  const shouldReduceMotion = useReducedMotion();
+
   if (!isOpen) return null;
+
+  const iconAnimation = shouldReduceMotion
+    ? {
+        initial: { opacity: 0 },
+        animate: { opacity: 1 },
+        transition: { duration: 0.2 },
+      }
+    : {
+        initial: { transform: "scale(0.6)", opacity: 0 },
+        animate: { transform: "scale(1)", opacity: 1 },
+        transition: {
+          type: "spring" as const,
+          stiffness: 260,
+          damping: 20,
+          delay: 0.08,
+        },
+      };
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
       <div className="bg-white border border-white rounded-[20px] shadow-[0px_0px_25px_0px_rgba(0,0,0,0.25)] flex flex-col items-center justify-center p-8 sm:p-12 gap-8 max-w-[520px] w-full text-center select-none">
         {/* Green Success Circle Check Icon */}
-        <div className="relative size-24 sm:size-28 flex items-center justify-center">
+        <motion.div
+          className="relative size-24 sm:size-28 flex items-center justify-center"
+          initial={iconAnimation.initial}
+          animate={iconAnimation.animate}
+          transition={iconAnimation.transition}
+        >
           <Image
             src="/visualization/circle-check-duotone-regular-full 1.svg"
             alt="Success"
@@ -28,7 +53,7 @@ export function ImageSuccessModal({
             height={120}
             className="object-contain"
           />
-        </div>
+        </motion.div>
 
         {/* Text Labels */}
         <div className="flex flex-col gap-1.5 items-center justify-center max-w-xs sm:max-w-sm">

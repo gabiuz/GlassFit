@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useRouter, usePathname } from "next/navigation";
 import * as motion from "motion/react-client";
+import { AnimatePresence } from "motion/react";
 import Button from "@/components/shared/Button";
 import { useAuth } from "@/features/auth";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -207,8 +208,26 @@ export default function Navbar({ className = "" }: ClassNameProps) {
       </button>
 
       {/* Mobile Dropdown */}
-      {isOpen && (
-        <div className="absolute top-full left-0 right-0 mt-2 bg-white/95 backdrop-blur-md border border-green rounded-[20px] p-6 flex flex-col gap-6 shadow-lg lg:hidden">
+      <AnimatePresence initial={false}>
+        {isOpen && (
+          <motion.div
+            key="mobile-nav"
+            initial={{
+              opacity: 0,
+              transform: "translateY(-8px) scale(0.98)",
+            }}
+            animate={{
+              opacity: 1,
+              transform: "translateY(0px) scale(1)",
+            }}
+            exit={{
+              opacity: 0,
+              transform: "translateY(-8px) scale(0.98)",
+            }}
+            transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
+            style={{ transformOrigin: "top" }}
+            className="absolute top-full left-0 right-0 mt-2 bg-white/95 backdrop-blur-md border border-green rounded-[20px] p-6 flex flex-col gap-6 shadow-lg lg:hidden"
+          >
           <div className="flex flex-col gap-4">
             {navLinks.map(({ label, href }) => {
               const isActive = isCurrentPage(href);
@@ -284,8 +303,9 @@ export default function Navbar({ className = "" }: ClassNameProps) {
               )}
             </div>
           )}
-        </div>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </nav>
   );
 }

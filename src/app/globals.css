@@ -8,6 +8,11 @@
   --grad-light: linear-gradient(to right, #097283, #45c9e3);
   --grad-dark: linear-gradient(to right, #0f1422, #097283);
   --color-black: #0f1422;
+
+  /* Canonical easing tokens */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
   --color-white: #ffffff;
   --color-green: #07b6d3;
   --color-light: #e9f9fb;
@@ -82,6 +87,58 @@ body {
 
 .btn:active {
   transform: translateY(1px);
+}
+
+/* ── HowItWorks scroll-reveal stagger ─────────────────────────── */
+@keyframes howItWorksStepIn {
+  from {
+    opacity: 0;
+    transform: translateX(-14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.how-it-works-step {
+  opacity: 0; /* hidden until animation fires */
+  animation: howItWorksStepIn 350ms var(--ease-out) forwards;
+}
+
+/* Stagger delays for up to 6 steps */
+.how-it-works-step:nth-child(1) { animation-delay: 0ms; }
+.how-it-works-step:nth-child(2) { animation-delay: 65ms; }
+.how-it-works-step:nth-child(3) { animation-delay: 130ms; }
+.how-it-works-step:nth-child(4) { animation-delay: 195ms; }
+.how-it-works-step:nth-child(5) { animation-delay: 260ms; }
+.how-it-works-step:nth-child(6) { animation-delay: 325ms; }
+
+/* Reduced motion: fade only, no stagger delay */
+@media (prefers-reduced-motion: reduce) {
+  .how-it-works-step {
+    animation: howItWorksStepIn 0ms;
+    animation-delay: 0ms !important;
+    opacity: 1;
+  }
+}
+
+/* ── Drag-over dropzone scale ─────────────────────────────────── */
+.upload-dropzone {
+  transition:
+    transform 200ms var(--ease-out),
+    background-color 200ms var(--ease-out),
+    border-color 200ms var(--ease-out);
+}
+
+.upload-dropzone[data-dragging="true"] {
+  transform: scale(1.012);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .upload-dropzone[data-dragging="true"] {
+    transform: none; /* colour feedback is enough */
+  }
 }
 
 @theme inline {

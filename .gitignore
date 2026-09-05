@@ -41,3 +41,16 @@ fastapi-service/uvicorn.log
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# python & backend
+fastapi-service/venv/
+fastapi-service/.venv/
+venv/
+.venv/
+**/__pycache__/
+*.py[cod]
+fastapi-service/generated/
+
+# agent skills & local tooling
+.agents/
+skills-lock.json
