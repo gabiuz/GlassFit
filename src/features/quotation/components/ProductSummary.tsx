@@ -6,6 +6,7 @@ import type {
   ProductConfigurationSnapshot,
   ProductStructuralDefinition,
 } from "@/lib/visualization/types";
+import { calculateBOMFromStructuralDefinition } from "@/lib/pricing/pricingEngine";
 import { PriceCard, ProductDetailsData } from "./PriceCard";
 
 interface ProductItem {
@@ -98,6 +99,31 @@ function createProductSummaryItem(
   const dimension = formatDimension(widthCm, heightCm, depthCm);
   const material = inferMaterial(definition);
 
+  const widthMm = Math.round(widthCm * 10);
+  const heightMm = Math.round(heightCm * 10);
+  const hasSill = configuration?.includeSill ?? true;
+  const structuralWaiver = configuration?.structuralWaiver ?? false;
+  const panelCount = configuration?.panelCount ?? (widthMm >= 2400 ? 3 : 2);
+
+  // Map finish type to pricing engine enum
+  const finishType = configuration?.aluminumFinish === "white" ? "PowderCoatedWhite" : "Analok";
+  const glassType = thicknessMm >= 6 && configuration?.glassAppearance === "clear"
+    ? "6mm_clear"
+    : "6mm_bronze";
+
+  // Calculate accurate parametric BOM pricing prioritizing linked catalog raw materials
+  const bomCalc = calculateBOMFromStructuralDefinition(definition, {
+    widthMm,
+    heightMm,
+    panelCount,
+    hasSill,
+    finishType,
+    glassType,
+    structuralWaiver,
+  });
+
+  const unitPrice = bomCalc.finalQuotation > 0 ? bomCalc.finalQuotation : (definition.product.basePrice ?? 0);
+
   return {
     productId: definition.product.productId,
     productName: definition.product.productName,
@@ -105,12 +131,14 @@ function createProductSummaryItem(
       definition.product.productType,
       aluminumFinish,
       dimension,
+      !hasSill ? "Flush Base (No Sill)" : null,
+      panelCount > 2 ? `${panelCount}-Panel` : null,
     ].filter(Boolean).join(" | "),
     qty: configuration?.quantity ?? 1,
-    unitPrice: definition.product.basePrice ?? 0,
+    unitPrice,
     imageUrl:
-      definition.product.catalogImageUrl ??
       finalSnapshotDataUrl ??
+      definition.product.catalogImageUrl ??
       "/images/modular_cabinets.png",
     details: {
       category: definition.product.productType,
@@ -122,6 +150,16 @@ function createProductSummaryItem(
       thickness: `${thicknessMm}mm`,
       profileGrade: definition.template.modelStrategy,
       dimension,
+      hasSill,
+      structuralWaiver,
+      bomGroups: {
+        framingAmount: bomCalc.effectiveFramingCost,
+        glazingAmount: bomCalc.effectiveGlazingCost,
+        hardwareAmount: bomCalc.hardwareSubtotal + bomCalc.consumablesSubtotal,
+        laborAmount: bomCalc.fabricationLaborCost,
+        directMaterialsSubtotal: bomCalc.directMaterialsSubtotal,
+        contractorMargin: bomCalc.contractorMargin,
+      },
     },
   };
 }

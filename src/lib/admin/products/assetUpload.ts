@@ -5,6 +5,7 @@ import { requirePermission } from "@/lib/auth/admin";
 import { S3Client, PutObjectCommand, DeleteObjectsCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { revalidatePath } from "next/cache";
+import { getR2AssetUrl } from "@/lib/r2";
 
 // Assuming these environment variables are set in .env.local
 const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID;
@@ -144,6 +145,16 @@ export async function confirmAssetUpload(
         throw new Error(error.message);
     }
 
+    if (componentId) {
+        const publicUrl = getR2AssetUrl(objectKey);
+        if (publicUrl) {
+            await supabase
+                .from("product_components")
+                .update({ glb_file_url: publicUrl })
+                .eq("component_id", componentId);
+        }
+    }
+
     revalidatePath(`/admin/products/${productId}/setup`);
     return data;
 }
@@ -163,8 +174,9 @@ export async function deleteProductAssets(objectKeys: string[]) {
         });
 
         await s3Client.send(command);
-    } catch (err: any) {
+    } catch (err: unknown) {
         console.error("Failed to delete product assets from R2:", err);
-        throw new Error(err.message);
+        const msg = err instanceof Error ? err.message : "R2 deletion error";
+        throw new Error(msg);
     }
 }

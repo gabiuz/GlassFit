@@ -7,20 +7,40 @@ import { FileText, Download } from "lucide-react";
 interface Step1ViewPdfProps {
   onPreview: () => void;
   onSave: () => void;
+  structuralWaiver?: boolean;
+  hasSill?: boolean;
+  totalEstimatePhp?: number;
 }
 
 const listItems = [
-  "Selected products & specifications",
+  "Itemized 4-Group BOM & Cost Breakdown",
   "Visual output snapshot",
-  "Customization details",
-  "Estimated price breakdown",
-  "Payment terms & warranty",
-  "Client Information",
+  "Customization details & finish",
+  "Statutory legal disclaimer (RA 7394)",
+  "NSCP 2015 Structural Compliance",
+  "Client & site information",
 ];
 
-const tags = ["2 products", "Estimated Quotation", "Snapshot included"];
+export function Step1ViewPdf({
+  onPreview,
+  onSave,
+  structuralWaiver = false,
+  hasSill = true,
+  totalEstimatePhp = 4362.93,
+}: Step1ViewPdfProps) {
+  const formattedEstimate = new Intl.NumberFormat("en-PH", {
+    style: "currency",
+    currency: "PHP",
+    maximumFractionDigits: 0,
+  }).format(totalEstimatePhp).replace("PHP", "Php");
 
-export function Step1ViewPdf({ onPreview, onSave }: Step1ViewPdfProps) {
+  const tags = [
+    "Parametric Series 798",
+    formattedEstimate,
+    !hasSill ? "No Sill (Flush)" : "Standard Sill",
+    structuralWaiver ? "Structural Waiver Attached" : "NSCP 2015 Compliant",
+  ];
+
   return (
     <div className="flex flex-col gap-[52px] items-center justify-center w-full">
       {/* Title block */}
@@ -38,6 +58,19 @@ export function Step1ViewPdf({ onPreview, onSave }: Step1ViewPdfProps) {
 
       {/* Main card box */}
       <div className="bg-[#f5f5f5] flex flex-col gap-[37px] items-center justify-center p-6 md:p-[50px] relative rounded-[20px] w-full">
+        {/* Structural Waiver Alert in Step 1 */}
+        {structuralWaiver && (
+          <div className="w-full bg-amber-50 border border-amber-300 rounded-[14px] p-4 text-left flex flex-col gap-1 select-none">
+            <div className="flex items-center gap-2 text-amber-800 font-medium text-sm">
+              <span>⚠️</span>
+              <span>NSCP 2015 Structural Waiver Clause Included in PDF</span>
+            </div>
+            <p className="text-amber-700 text-xs">
+              This estimate notes that your configuration exceeds standard 2-panel span limits (&ge;2400mm). The formal disclaimer is printed directly on the generated PDF document.
+            </p>
+          </div>
+        )}
+
         {/* PDF Metadata Box */}
         <div className="flex flex-col md:flex-row gap-[37px] items-center relative w-full">
           {/* PDF Icon container */}
@@ -66,9 +99,13 @@ export function Step1ViewPdf({ onPreview, onSave }: Step1ViewPdfProps) {
               {tags.map((tag) => (
                 <div
                   key={tag}
-                  className="bg-[#c3c3c3] border border-[#c3c3c3] px-2.5 py-1.25 rounded-[20px]"
+                  className={`border px-2.5 py-1.25 rounded-[20px] ${
+                    tag.includes("Waiver")
+                      ? "bg-amber-100 border-amber-300 text-amber-900"
+                      : "bg-[#c3c3c3] border-[#c3c3c3] text-white"
+                  }`}
                 >
-                  <p className="text-white text-base font-normal tracking-[-0.304px] leading-[1.4] whitespace-nowrap">
+                  <p className="text-base font-normal tracking-[-0.304px] leading-[1.4] whitespace-nowrap">
                     {tag}
                   </p>
                 </div>

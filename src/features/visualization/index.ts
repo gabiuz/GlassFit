@@ -8,6 +8,7 @@ export { ImageSuccessModal } from "./components/ImageSuccessModal";
 export { AddProductModal } from "./components/AddProductModal";
 export { ProductAwareUploadPage } from "./components/ProductAwareUploadPage";
 export { ProductAwareWorkspacePage } from "./components/ProductAwareWorkspacePage";
+export { StructuralGuardrailModal } from "./components/StructuralGuardrailModal";
 
 
 

@@ -4,25 +4,35 @@ import React, { useState } from "react";
 import Image from "next/image";
 import { ArrowRight } from "lucide-react";
 
+import { formatBookingShareMessage } from "@/lib/pricing/quotationPdfGenerator";
+
 interface Step3SendReferenceProps {
   generatedLink: string;
   onSend: (method: "Messenger" | "Viber") => void;
+  totalEstimatePhp?: number;
+  hasStructuralWaiver?: boolean;
+  productName?: string;
+  quotationNumber?: string;
 }
 
 export function Step3SendReference({
   generatedLink,
   onSend,
+  totalEstimatePhp = 50000,
+  hasStructuralWaiver = false,
+  productName = "Series 798 Sliding Window",
+  quotationNumber = "Q-2026-0482",
 }: Step3SendReferenceProps) {
   const [copied, setCopied] = useState(false);
 
-  const messageText = `Hello R.R.D! I would like to inquire about a consultation for 2 products for my main living room:
-
-1. Kitchen Cabinet - Analok Champagne Gold - est. Php 18,000
-2. Double Swing Door - Powder Coated Oak - est. Php 32,000
-
-Here is my generated reference link: ${generatedLink}
-
-Combined estimate Php 50,000. Can we schedule a site visit? Thank you! - Juan`;
+  const { messageText, messengerUrl, viberUrl } = formatBookingShareMessage({
+    customerName: "Juan",
+    quotationNumber,
+    referenceLink: generatedLink,
+    productDescription: productName,
+    totalEstimatePhp,
+    hasStructuralWaiver,
+  });
 
   const handleCopyMessage = () => {
     navigator.clipboard.writeText(messageText);
@@ -31,9 +41,12 @@ Combined estimate Php 50,000. Can we schedule a site visit? Thank you! - Juan`;
   };
 
   const handleShare = (method: "Messenger" | "Viber") => {
-    // Copy the text automatically so the user has it ready to paste
     navigator.clipboard.writeText(messageText);
     onSend(method);
+    if (typeof window !== "undefined") {
+      const url = method === "Messenger" ? messengerUrl : viberUrl;
+      window.open(url, "_blank");
+    }
   };
 
   return (

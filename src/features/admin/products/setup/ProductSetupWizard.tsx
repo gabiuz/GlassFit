@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { getProductDraft } from "@/lib/admin/products/productMutations";
 import { BasicInfoSection } from "./BasicInfoSection";
 import { VisualizationStrategySection } from "./VisualizationStrategySection";
 import { CatalogAssetsSection } from "./CatalogAssetsSection";
@@ -46,6 +47,26 @@ export function ProductSetupWizard({ productId, initialData }: ProductSetupWizar
 
     const isDraft = !draftId;
 
+    const refreshDraft = useCallback(async (idToFetch?: string) => {
+        const id = idToFetch || draftId;
+        if (!id || id === "draft") return;
+        try {
+            const fresh = await getProductDraft(id);
+            if (fresh) {
+                setProductData(fresh);
+            }
+        } catch (err) {
+            console.error("Failed to revalidate product draft:", err);
+        }
+    }, [draftId]);
+
+    const handleStepChange = async (targetStep: StepKey) => {
+        setActiveStep(targetStep);
+        if (draftId && draftId !== "draft") {
+            refreshDraft(draftId);
+        }
+    };
+
     const handleProductCreated = (newId: string, data: any) => {
         setDraftId(newId);
         setProductData({ ...productData, ...data, product_id: newId });
@@ -54,8 +75,19 @@ export function ProductSetupWizard({ productId, initialData }: ProductSetupWizar
     };
 
     const handleStrategySaved = (data: any) => {
-        setProductData({ ...productData, product_templates: data });
+        const existingTemplate = Array.isArray(productData?.product_templates) 
+            ? productData.product_templates[0] 
+            : productData?.product_templates || {};
+        const mergedTemplate = {
+            ...existingTemplate,
+            ...data,
+        };
+        setProductData({
+            ...productData,
+            product_templates: Array.isArray(productData?.product_templates) ? [mergedTemplate] : mergedTemplate,
+        });
         setActiveStep("assets");
+        if (draftId) refreshDraft(draftId);
     };
 
     return (
@@ -81,7 +113,7 @@ export function ProductSetupWizard({ productId, initialData }: ProductSetupWizar
                             key={step.key}
                             type="button"
                             disabled={isDisabled}
-                            onClick={() => !isDisabled && setActiveStep(step.key)}
+                            onClick={() => !isDisabled && handleStepChange(step.key)}
                             className={cn(
                                 "flex-1 sm:flex-none h-9 sm:h-[45px] px-2 sm:px-5 py-1.5 sm:py-2.5 rounded-[25px] flex items-center justify-center gap-1.5 sm:gap-3 transition-colors min-w-0",
                                 isActive
@@ -128,7 +160,7 @@ export function ProductSetupWizard({ productId, initialData }: ProductSetupWizar
                             catalogImage: productData?.product_assets?.find?.((a: any) => a.asset_type === "Catalog Image" && a.is_primary !== false),
                             catalogPreview: productData?.product_assets?.find?.((a: any) => a.asset_type === "Catalog 3D Preview" && a.is_primary !== false)
                         }}
-                        onSave={() => setActiveStep("components")}
+                        onSave={() => handleStepChange("components")}
                     />
                 )}
                 {activeStep === "components" && (
@@ -136,32 +168,35 @@ export function ProductSetupWizard({ productId, initialData }: ProductSetupWizar
                         productId={draftId}
                         templateId={Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.template_id : productData?.product_templates?.template_id}
                         modelStrategy={Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.model_strategy : productData?.product_templates?.model_strategy}
+                        productType={productData?.product_type || "Window"}
                         initialData={Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.product_components : productData?.product_templates?.product_components}
-                        onSave={() => setActiveStep("parameters")}
+                        onSave={() => handleStepChange("parameters")}
                     />
                 )}
                 {activeStep === "parameters" && (
                     <ParametersAndRulesSection
                         templateId={Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.template_id : productData?.product_templates?.template_id}
                         modelStrategy={Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.model_strategy : productData?.product_templates?.model_strategy}
+                        productType={productData?.product_type || "Window"}
                         initialData={{
                             parameters: Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.product_parameters : productData?.product_templates?.product_parameters,
                             rules: Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.structural_rules : productData?.product_templates?.structural_rules,
                             components: Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.product_components : productData?.product_templates?.product_components
                         }}
-                        onSave={() => setActiveStep("validation")}
+                        onSave={() => handleStepChange("validation")}
                     />
                 )}
                 {activeStep === "validation" && (
                     <ValidationWorkspaceSection
                         productId={productId}
-                        onSave={() => setActiveStep("review")}
+                        onSave={() => handleStepChange("review")}
                     />
                 )}
                 {activeStep === "review" && (
                     <ReviewAndPublishSection productId={productId} />
                 )}
             </div>
+
         </div>
     );
 }

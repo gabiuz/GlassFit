@@ -7,14 +7,24 @@ interface Step2GenerateLinkProps {
   isLinkGenerated: boolean;
   onGenerateLink: () => void;
   generatedLink: string;
+  totalEstimatePhp?: number;
+  hasStructuralWaiver?: boolean;
 }
 
 export function Step2GenerateLink({
   isLinkGenerated,
   onGenerateLink,
   generatedLink,
+  totalEstimatePhp = 50000,
+  hasStructuralWaiver = false,
 }: Step2GenerateLinkProps) {
   const [copied, setCopied] = useState(false);
+
+  const formattedPrice = new Intl.NumberFormat("en-PH", {
+    style: "currency",
+    currency: "PHP",
+    maximumFractionDigits: 0,
+  }).format(totalEstimatePhp).replace("PHP", "Php");
 
   const handleCopyLink = () => {
     navigator.clipboard.writeText(generatedLink);
@@ -50,14 +60,16 @@ export function Step2GenerateLink({
             <span className="text-[#0f1422] whitespace-nowrap">CF-2026-001</span>
 
             <span className="text-[#c3c3c3] whitespace-nowrap">Selected Product</span>
-            <span className="text-[#0f1422] md:whitespace-nowrap">Kitchen Cabinet, Double Swing Door</span>
+            <span className="text-[#0f1422] md:whitespace-nowrap">
+              Series 798 Sliding Window {hasStructuralWaiver ? "(Waiver Active)" : ""}
+            </span>
 
             <span className="text-[#c3c3c3] whitespace-nowrap">Visual Output</span>
             <span className="text-[#0f1422] whitespace-nowrap">Livingroom.jpeg</span>
 
             {/* Row 2 / Items 7-12 */}
             <span className="text-[#c3c3c3] whitespace-nowrap">Estimated Price</span>
-            <span className="text-[#0f1422] whitespace-nowrap">Php 50000</span>
+            <span className="text-[#0f1422] whitespace-nowrap">{formattedPrice}</span>
 
             <span className="text-[#c3c3c3] whitespace-nowrap">Date Created</span>
             <span className="text-[#0f1422] md:whitespace-nowrap">May 21, 2026 · 3:42 PM</span>

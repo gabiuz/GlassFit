@@ -1,12 +1,19 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { Plus, X, Loader2, Info, Settings2, CodeSquare } from "lucide-react";
-import { upsertParametersAndRules, UpsertParameterInput, UpsertRuleInput } from "@/lib/admin/products/parameterMutations";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import { Plus, X, Loader2, Info, Settings2, CodeSquare, CheckCircle2, AlertCircle } from "lucide-react";
+import {
+    upsertParametersAndRules,
+    upsertProductParameters,
+    upsertStructuralRules,
+    UpsertParameterInput,
+    UpsertRuleInput
+} from "@/lib/admin/products/parameterMutations";
 
 export type ParametersAndRulesSectionProps = {
     templateId: string | null;
     modelStrategy: string | null;
+    productType?: string;
     initialData?: {
         parameters: any[];
         rules: any[];
@@ -15,59 +22,180 @@ export type ParametersAndRulesSectionProps = {
     onSave: () => void;
 };
 
-export function ParametersAndRulesSection({ templateId, modelStrategy, initialData, onSave }: ParametersAndRulesSectionProps) {
+export function ParametersAndRulesSection({ templateId, modelStrategy, productType = "Window", initialData, onSave }: ParametersAndRulesSectionProps) {
     const [isSaving, setIsSaving] = useState(false);
+    const [autoSaveStatus, setAutoSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<"parameters" | "rules">("parameters");
-
-    const [parameters, setParameters] = useState<UpsertParameterInput[]>(() => {
-        if (!initialData?.parameters || !Array.isArray(initialData.parameters)) {
-            // Default params if none exist
-            return [
-                {
-                    parameter_name: "Width",
-                    parameter_key: "width",
-                    parameter_type: "Number",
-                    minimum_value: 500,
-                    default_value: 1000,
-                    maximum_value: 3000,
-                    step_value: 1,
-                    unit: "mm",
-                    affects_structure: true,
-                    display_order: 1
-                },
-                {
-                    parameter_name: "Height",
-                    parameter_key: "height",
-                    parameter_type: "Number",
-                    minimum_value: 500,
-                    default_value: 2000,
-                    maximum_value: 3000,
-                    step_value: 1,
-                    unit: "mm",
-                    affects_structure: true,
-                    display_order: 2
-                }
-            ];
-        }
-        return initialData.parameters;
-    });
-
-    const [rules, setRules] = useState<UpsertRuleInput[]>(() => {
-        return Array.isArray(initialData?.rules) ? initialData.rules : [];
-    });
 
     // Reference data for rules
     const componentKeys = useMemo(() => {
         if (!initialData?.components || !Array.isArray(initialData.components)) return [];
-        return initialData.components.map(c => ({ key: c.component_key, name: c.component_name }));
+        return initialData.components.map(c => ({
+            key: String(c.component_key || "").trim(),
+            name: String(c.component_name || c.component_key || "").trim()
+        }));
     }, [initialData?.components]);
 
+    const hasFrameCenter = useMemo(() => componentKeys.some(c => c.key.toLowerCase().includes("center") || c.key.toLowerCase().includes("mullion")), [componentKeys]);
+    const hasGlassPanel = useMemo(() => componentKeys.some(c => c.key.toLowerCase().includes("glass") || c.key.toLowerCase().includes("pane")), [componentKeys]);
+
+    const defaultCenterKey = useMemo(() => {
+        const found = componentKeys.find(c => c.key.toLowerCase().includes("center") || c.key.toLowerCase().includes("mullion"));
+        return found ? found.key : componentKeys[0]?.key || "frame-center";
+    }, [componentKeys]);
+
+    const defaultGlassKey = useMemo(() => {
+        const found = componentKeys.find(c => c.key.toLowerCase().includes("glass") || c.key.toLowerCase().includes("pane"));
+        return found ? found.key : componentKeys[0]?.key || "glass-panel";
+    }, [componentKeys]);
+
+    const [parameters, setParameters] = useState<UpsertParameterInput[]>(() => {
+        if (Array.isArray(initialData?.parameters) && initialData.parameters.length > 0) {
+            return initialData.parameters;
+        }
+        // Default standard parameters for fenestration products
+        return [
+            {
+                parameter_name: "Width",
+                parameter_key: "width",
+                parameter_type: "Number",
+                minimum_value: 500,
+                default_value: 1200,
+                maximum_value: 3600,
+                step_value: 1,
+                unit: "mm",
+                affects_structure: true,
+                display_order: 1
+            },
+            {
+                parameter_name: "Height",
+                parameter_key: "height",
+                parameter_type: "Number",
+                minimum_value: 500,
+                default_value: 1200,
+                maximum_value: 3000,
+                step_value: 1,
+                unit: "mm",
+                affects_structure: true,
+                display_order: 2
+            }
+        ];
+    });
+
+    const [rules, setRules] = useState<UpsertRuleInput[]>(() => {
+        if (Array.isArray(initialData?.rules) && initialData.rules.length > 0) {
+            return initialData.rules;
+        }
+
+        // Only seed default window rules if suitable components exist or default placeholders match
+        const isWindow = productType.toLowerCase().includes("window");
+        if (isWindow && componentKeys.length > 0) {
+            const rulesList: UpsertRuleInput[] = [];
+
+            if (hasFrameCenter) {
+                rulesList.push({
+                    rule_name: "2-Panel Wide Window (1 Center Mullion)",
+                    priority: 1,
+                    condition_data: { parameter_key: "width", operator: ">=", value: 1800 },
+                    action_data: { target_type: "component", target_key: defaultCenterKey, action_type: "set_quantity", value: 1 }
+                });
+            }
+
+            if (hasGlassPanel) {
+                rulesList.push({
+                    rule_name: "2-Panel Glass Infill (2 Glass Panels)",
+                    priority: 2,
+                    condition_data: { parameter_key: "width", operator: ">=", value: 1800 },
+                    action_data: { target_type: "component", target_key: defaultGlassKey, action_type: "set_quantity", value: 2 }
+                });
+            }
+
+            if (hasFrameCenter) {
+                rulesList.push({
+                    rule_name: "3-Panel Extra Wide Window (2 Center Mullions)",
+                    priority: 3,
+                    condition_data: { parameter_key: "width", operator: ">=", value: 2600 },
+                    action_data: { target_type: "component", target_key: defaultCenterKey, action_type: "set_quantity", value: 2 }
+                });
+            }
+
+            if (hasGlassPanel) {
+                rulesList.push({
+                    rule_name: "3-Panel Glass Infill (3 Glass Panels)",
+                    priority: 4,
+                    condition_data: { parameter_key: "width", operator: ">=", value: 2600 },
+                    action_data: { target_type: "component", target_key: defaultGlassKey, action_type: "set_quantity", value: 3 }
+                });
+            }
+
+            return rulesList;
+        }
+
+        return [];
+    });
+
+    // Auto-save logic with debounce
+    const isFirstMount = useRef(true);
+    const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+    const performAutoSave = useCallback(async (paramsToSave: UpsertParameterInput[], rulesToSave: UpsertRuleInput[]) => {
+        if (!templateId || modelStrategy !== "Parametric") return;
+        
+        try {
+            setAutoSaveStatus("saving");
+            setErrorMsg(null);
+
+            // Filter out rules with invalid target components so parameters can always be saved cleanly
+            const validRules = rulesToSave.filter(rule => {
+                if (!paramsToSave.some(p => p.parameter_key === rule.condition_data.parameter_key)) {
+                    return false;
+                }
+                if (rule.action_data.target_type === "component") {
+                    return componentKeys.length === 0 || componentKeys.some(c => c.key === rule.action_data.target_key);
+                }
+                return true;
+            });
+
+            await upsertParametersAndRules(templateId, paramsToSave, validRules);
+            setAutoSaveStatus("saved");
+        } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : "Auto-save failed";
+            console.error("Auto-save parameters failed:", err);
+            setAutoSaveStatus("error");
+            setErrorMsg(msg);
+        }
+    }, [templateId, modelStrategy, componentKeys]);
+
+    // Initial mount auto-save for freshly generated default parameters
+    useEffect(() => {
+        if (!templateId || modelStrategy !== "Parametric") return;
+
+        const hasDbParams = Array.isArray(initialData?.parameters) && initialData.parameters.length > 0;
+        if (!hasDbParams && parameters.length > 0 && isFirstMount.current) {
+            isFirstMount.current = false;
+            performAutoSave(parameters, rules);
+        } else {
+            isFirstMount.current = false;
+        }
+    }, [templateId, modelStrategy, initialData?.parameters, parameters, rules, performAutoSave]);
+
+    // Trigger debounced auto-save on parameter or rule edits
+    const triggerDebouncedSave = (newParams: UpsertParameterInput[], newRules: UpsertRuleInput[]) => {
+        if (saveTimerRef.current) {
+            clearTimeout(saveTimerRef.current);
+        }
+        setAutoSaveStatus("saving");
+        saveTimerRef.current = setTimeout(() => {
+            performAutoSave(newParams, newRules);
+        }, 600);
+    };
+
     const addParameter = () => {
-        setParameters([
+        const newParams = [
             ...parameters, 
             {
-                parameter_name: "New Parameter",
+                parameter_name: `Parameter ${parameters.length + 1}`,
                 parameter_key: `param_${parameters.length + 1}`,
                 parameter_type: "Number",
                 minimum_value: 0,
@@ -78,39 +206,50 @@ export function ParametersAndRulesSection({ templateId, modelStrategy, initialDa
                 affects_structure: true,
                 display_order: parameters.length + 1
             }
-        ]);
+        ];
+        setParameters(newParams);
+        triggerDebouncedSave(newParams, rules);
     };
 
     const updateParameter = (index: number, updates: Partial<UpsertParameterInput>) => {
         const newParams = [...parameters];
         newParams[index] = { ...newParams[index], ...updates };
         setParameters(newParams);
+        triggerDebouncedSave(newParams, rules);
     };
 
     const removeParameter = (index: number) => {
-        setParameters(parameters.filter((_, i) => i !== index));
+        const newParams = parameters.filter((_, i) => i !== index);
+        setParameters(newParams);
+        triggerDebouncedSave(newParams, rules);
     };
 
     const addRule = () => {
-        setRules([
+        const fallbackTarget = componentKeys[0]?.key || "frame-center";
+        const newRules = [
             ...rules,
             {
                 rule_name: `Rule ${rules.length + 1}`,
                 priority: rules.length + 1,
-                condition_data: { parameter_key: parameters[0]?.parameter_key || "", operator: ">=", value: 0 },
-                action_data: { target_type: "component", target_key: componentKeys[0]?.key || "", action_type: "set_quantity", value: 1 }
+                condition_data: { parameter_key: parameters[0]?.parameter_key || "width", operator: ">=", value: 0 },
+                action_data: { target_type: "component", target_key: fallbackTarget, action_type: "set_quantity", value: 1 }
             }
-        ]);
+        ];
+        setRules(newRules);
+        triggerDebouncedSave(parameters, newRules);
     };
 
     const updateRule = (index: number, updates: Partial<UpsertRuleInput>) => {
         const newRules = [...rules];
         newRules[index] = { ...newRules[index], ...updates };
         setRules(newRules);
+        triggerDebouncedSave(parameters, newRules);
     };
 
     const removeRule = (index: number) => {
-        setRules(rules.filter((_, i) => i !== index));
+        const newRules = rules.filter((_, i) => i !== index);
+        setRules(newRules);
+        triggerDebouncedSave(parameters, newRules);
     };
 
     const handleSave = async () => {
@@ -121,23 +260,25 @@ export function ParametersAndRulesSection({ templateId, modelStrategy, initialDa
             // Basic validation
             for (const param of parameters) {
                 if (param.minimum_value !== null && param.maximum_value !== null && param.minimum_value > param.maximum_value) {
-                    throw new Error(`Parameter ${param.parameter_name} has minimum > maximum.`);
+                    throw new Error(`Parameter ${param.parameter_name} has minimum value greater than maximum value.`);
                 }
             }
 
             for (const rule of rules) {
                 if (!parameters.find(p => p.parameter_key === rule.condition_data.parameter_key)) {
-                    throw new Error(`Rule ${rule.rule_name} references an invalid parameter.`);
+                    throw new Error(`Rule ${rule.rule_name} references an invalid parameter (${rule.condition_data.parameter_key}).`);
                 }
-                if (rule.action_data.target_type === "component" && !componentKeys.find(c => c.key === rule.action_data.target_key)) {
-                    throw new Error(`Rule ${rule.rule_name} references a component (${rule.action_data.target_key}) that doesn't exist.`);
+                if (rule.action_data.target_type === "component" && componentKeys.length > 0 && !componentKeys.find(c => c.key === rule.action_data.target_key)) {
+                    throw new Error(`Rule ${rule.rule_name} references a component (${rule.action_data.target_key}) that is not in the uploaded components.`);
                 }
             }
 
             await upsertParametersAndRules(templateId, parameters, rules);
+            setAutoSaveStatus("saved");
             onSave();
-        } catch (e: any) {
-            setErrorMsg(e.message);
+        } catch (e: unknown) {
+            const msg = e instanceof Error ? e.message : "Failed to save parameters and rules.";
+            setErrorMsg(msg);
         } finally {
             setIsSaving(false);
         }
@@ -160,13 +301,34 @@ export function ParametersAndRulesSection({ templateId, modelStrategy, initialDa
 
     return (
         <div className="flex flex-col gap-[20px]">
-            <div className="flex flex-col gap-1 text-[#0f1422]">
-                <h2 className="text-xl sm:text-2xl font-medium leading-tight tracking-tight">
-                    Dimensions & Structural Rules
-                </h2>
-                <p className="text-xs sm:text-base font-normal leading-snug text-neutral-600">
-                    Define the adjustable dimensions and set behavioral rules (e.g. changing component quantities at specific sizes).
-                </p>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[#0f1422]">
+                <div className="flex flex-col gap-1">
+                    <h2 className="text-xl sm:text-2xl font-medium leading-tight tracking-tight">
+                        Dimensions & Structural Rules
+                    </h2>
+                    <p className="text-xs sm:text-base font-normal leading-snug text-neutral-600">
+                        Define the adjustable dimensions and set behavioral rules (e.g. changing component quantities at specific sizes).
+                    </p>
+                </div>
+
+                {/* Auto-save badge */}
+                <div className="flex items-center gap-1.5 text-xs font-medium self-start sm:self-auto shrink-0">
+                    {autoSaveStatus === "saving" && (
+                        <span className="flex items-center gap-1.5 text-[#07b6d3] bg-[#07b6d3]/10 px-2.5 py-1 rounded-full">
+                            <Loader2 className="size-3 animate-spin" /> Saving...
+                        </span>
+                    )}
+                    {autoSaveStatus === "saved" && (
+                        <span className="flex items-center gap-1.5 text-green-700 bg-green-50 px-2.5 py-1 rounded-full">
+                            <CheckCircle2 className="size-3 text-green-600" /> Saved
+                        </span>
+                    )}
+                    {autoSaveStatus === "error" && (
+                        <span className="flex items-center gap-1.5 text-red-600 bg-red-50 px-2.5 py-1 rounded-full">
+                            <AlertCircle className="size-3" /> Auto-save paused
+                        </span>
+                    )}
+                </div>
             </div>
 
             {/* Tabs */}
@@ -177,7 +339,7 @@ export function ParametersAndRulesSection({ templateId, modelStrategy, initialDa
                         activeTab === "parameters" ? "border-[#07b6d3] text-[#07b6d3]" : "border-transparent text-neutral-500 hover:text-neutral-800"
                     }`}
                 >
-                    <Settings2 className="size-4" /> Parameters
+                    <Settings2 className="size-4" /> Parameters ({parameters.length})
                 </button>
                 <button
                     onClick={() => setActiveTab("rules")}
@@ -185,7 +347,7 @@ export function ParametersAndRulesSection({ templateId, modelStrategy, initialDa
                         activeTab === "rules" ? "border-[#07b6d3] text-[#07b6d3]" : "border-transparent text-neutral-500 hover:text-neutral-800"
                     }`}
                 >
-                    <CodeSquare className="size-4" /> Logic Rules
+                    <CodeSquare className="size-4" /> Logic Rules ({rules.length})
                 </button>
             </div>
 
@@ -386,14 +548,5 @@ export function ParametersAndRulesSection({ templateId, modelStrategy, initialDa
                 </button>
             </div>
         </div>
-    );
-}
-
-// Temporary for missing icon
-function AlertCircle({ className }: { className?: string }) {
-    return (
-        <svg className={className} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line>
-        </svg>
     );
 }

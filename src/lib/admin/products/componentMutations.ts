@@ -2,6 +2,7 @@
 
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { requirePermission } from "@/lib/auth/admin";
+import type { DimensionBinding, PresentationCategory } from "@/lib/pricing/types";
 
 export type ComponentType = "Procedural" | "Model" | "Glass" | "Frame" | "Panel" | "Hardware" | "Other";
 
@@ -11,6 +12,13 @@ export type UpsertComponentInput = {
     componentName: string;
     componentType: ComponentType;
     baseQuantity: number;
+    rawMaterialId?: string | null;
+    dimensionBinding?: DimensionBinding;
+    spanRatio?: number;
+    isRemovable?: boolean;
+    togglePropertyKey?: string | null;
+    presentationCategory?: PresentationCategory;
+    glbFileUrl?: string | null;
     assemblyGroup?: string;
     componentData?: Record<string, unknown>; // To store source_dimensions_mm, etc.
 };
@@ -36,16 +44,25 @@ export async function upsertProductComponent(input: UpsertComponentInput) {
         assembly_group: input.assemblyGroup || undefined,
     };
 
+    const payload = {
+        component_name: input.componentName,
+        component_type: input.componentType,
+        base_quantity: input.baseQuantity,
+        raw_material_id: input.rawMaterialId || null,
+        dimension_binding: input.dimensionBinding || "FIXED",
+        span_ratio: typeof input.spanRatio === "number" ? input.spanRatio : 1.0,
+        is_removable: Boolean(input.isRemovable),
+        toggle_property_key: input.togglePropertyKey || null,
+        presentation_category: input.presentationCategory || "Framing",
+        glb_file_url: input.glbFileUrl || null,
+        component_data: mergedComponentData,
+        updated_by: adminCtx.profileId,
+    };
+
     if (existing) {
         const { data, error } = await supabase
             .from("product_components")
-            .update({
-                component_name: input.componentName,
-                component_type: input.componentType,
-                base_quantity: input.baseQuantity,
-                component_data: mergedComponentData,
-                updated_by: adminCtx.profileId,
-            })
+            .update(payload)
             .eq("component_id", existing.component_id)
             .select("component_id")
             .single();
@@ -58,13 +75,9 @@ export async function upsertProductComponent(input: UpsertComponentInput) {
             .insert({
                 template_id: input.templateId,
                 created_by: adminCtx.profileId,
-                updated_by: adminCtx.profileId,
                 component_key: input.componentKey,
-                component_name: input.componentName,
-                component_type: input.componentType,
-                base_quantity: input.baseQuantity,
-                component_data: mergedComponentData,
                 status: "Active",
+                ...payload,
             })
             .select("component_id")
             .single();
@@ -84,3 +97,4 @@ export async function upsertProductComponent(input: UpsertComponentInput) {
 
     return finalData.component_id;
 }
+

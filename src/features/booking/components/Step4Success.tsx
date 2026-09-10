@@ -7,12 +7,20 @@ import Button from "@/components/shared/Button";
 interface Step4SuccessProps {
   sharingMethod: string;
   onBackToHome: () => void;
+  totalEstimatePhp?: number;
 }
 
 export function Step4Success({
   sharingMethod,
   onBackToHome,
+  totalEstimatePhp = 50000,
 }: Step4SuccessProps) {
+  const formattedEstimate = new Intl.NumberFormat("en-PH", {
+    style: "currency",
+    currency: "PHP",
+    maximumFractionDigits: 0,
+  }).format(totalEstimatePhp).replace("PHP", "Php");
+
   return (
     <div className="fixed inset-0 bg-black/60 z-[9999] flex items-center justify-center p-4 overflow-y-auto backdrop-blur-sm transition-all duration-300">
       <div className="bg-white w-full max-w-[550px] rounded-[24px] p-6 md:p-8 shadow-2xl relative flex flex-col gap-6 items-center justify-center select-none my-8 animate-in fade-in zoom-in-95 duration-200">
@@ -55,7 +63,7 @@ export function Step4Success({
 
               <p className="text-[#c3c3c3] font-medium leading-[1.4]">Estimated Price</p>
               <p className="text-right leading-[1.4] font-semibold text-[#0f1422]">
-                Php 50,000
+                {formattedEstimate}
               </p>
             </div>
           </div>

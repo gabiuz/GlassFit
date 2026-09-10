@@ -4,6 +4,9 @@ import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { ChevronLeft } from "lucide-react";
+import { useVisualizationSession } from "@/lib/visualization/visualizationSession";
+import { calculateStandardSeries798, calculateBOMFromStructuralDefinition } from "@/lib/pricing/pricingEngine";
+import { generateQuotationPdfHtml } from "@/lib/pricing/quotationPdfGenerator";
 import { Stepper } from "./Stepper";
 import { Step1ViewPdf } from "./Step1ViewPdf";
 import { Step2GenerateLink } from "./Step2GenerateLink";
@@ -17,7 +20,82 @@ export function BookingFlow() {
   const [isLinkGenerated, setIsLinkGenerated] = useState(false);
   const [sharingMethod, setSharingMethod] = useState("");
 
-  const generatedLink = "glassfit.ph/q/c4d2e8a1-7f9e-4d2b-a3c8-1e9f8b7c6d5a";
+  const { productConfiguration, structuralDefinition, finalSnapshotDataUrl } =
+    useVisualizationSession();
+
+  const widthMm = Math.round((productConfiguration?.widthCm ?? 120) * 10);
+  const heightMm = Math.round((productConfiguration?.heightCm ?? 120) * 10);
+  const hasSill = productConfiguration?.includeSill ?? true;
+  const structuralWaiver = productConfiguration?.structuralWaiver ?? false;
+  const panelCount = productConfiguration?.panelCount ?? (widthMm >= 2400 ? 3 : 2);
+  const finishType = productConfiguration?.aluminumFinish === "white" ? "PowderCoatedWhite" : "Analok";
+  const glassType = (productConfiguration?.thicknessMm ?? 6) >= 6 && productConfiguration?.glassAppearance === "clear"
+    ? "6mm_clear"
+    : "6mm_bronze";
+
+  const bomCalc = structuralDefinition
+    ? calculateBOMFromStructuralDefinition(structuralDefinition, {
+        widthMm,
+        heightMm,
+        panelCount,
+        hasSill,
+        finishType,
+        glassType,
+        structuralWaiver,
+      })
+    : calculateStandardSeries798({
+        widthMm,
+        heightMm,
+        panelCount,
+        hasSill,
+        finishType,
+        glassType,
+        structuralWaiver,
+      });
+
+  const quotationNumber = "Q-2026-0482";
+  const referenceCode = "CF-2026-001";
+  const generatedLink = `glassfit.ph/q/${referenceCode.toLowerCase()}`;
+
+  const handlePreviewPdf = () => {
+    const html = generateQuotationPdfHtml({
+      quotationNumber,
+      referenceCode,
+      customerName: "Juan Dela Cruz",
+      createdAtFormatted: "May 21, 2026 · 3:42 PM",
+      validUntilFormatted: "June 4, 2026",
+      hasSill,
+      structuralWaiver,
+      bomResult: bomCalc,
+      snapshotImageUrl: finalSnapshotDataUrl,
+    });
+    const printWindow = window.open("", "_blank");
+    if (printWindow) {
+      printWindow.document.write(html);
+      printWindow.document.close();
+    }
+  };
+
+  const handleSavePdf = () => {
+    const html = generateQuotationPdfHtml({
+      quotationNumber,
+      referenceCode,
+      customerName: "Juan Dela Cruz",
+      createdAtFormatted: "May 21, 2026 · 3:42 PM",
+      validUntilFormatted: "June 4, 2026",
+      hasSill,
+      structuralWaiver,
+      bomResult: bomCalc,
+      snapshotImageUrl: finalSnapshotDataUrl,
+    });
+    const blob = new Blob([html], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `GlassFit_Quotation_${quotationNumber}.html`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const handleNext = () => {
     if (step < 4) {
@@ -58,8 +136,11 @@ export function BookingFlow() {
       <div className="w-full flex-1">
         {step === 1 && (
           <Step1ViewPdf
-            onPreview={() => alert("Opening PDF Preview...")}
-            onSave={() => alert("Saving PDF to your device...")}
+            onPreview={handlePreviewPdf}
+            onSave={handleSavePdf}
+            structuralWaiver={structuralWaiver}
+            hasSill={hasSill}
+            totalEstimatePhp={bomCalc.finalQuotation}
           />
         )}
         {step === 2 && (
@@ -67,12 +148,17 @@ export function BookingFlow() {
             isLinkGenerated={isLinkGenerated}
             onGenerateLink={handleGenerateLink}
             generatedLink={generatedLink}
+            totalEstimatePhp={bomCalc.finalQuotation}
+            hasStructuralWaiver={structuralWaiver}
           />
         )}
         {step === 3 && (
           <Step3SendReference
             generatedLink={generatedLink}
             onSend={handleSend}
+            totalEstimatePhp={bomCalc.finalQuotation}
+            hasStructuralWaiver={structuralWaiver}
+            productName={structuralDefinition?.product.productName || "Series 798 Sliding Window"}
           />
         )}
         {step === 4 && (
@@ -92,6 +178,7 @@ export function BookingFlow() {
             <Step4Success
               sharingMethod={sharingMethod}
               onBackToHome={handleBackToHome}
+              totalEstimatePhp={bomCalc.finalQuotation}
             />
           </>
         )}
