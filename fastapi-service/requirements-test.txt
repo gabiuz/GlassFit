@@ -1,0 +1,3 @@
+-r requirements.txt
+# QAD-TC4 and QAD-VG2 automated verification
+pytest==9.1.1

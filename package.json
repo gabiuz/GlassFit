@@ -18,6 +18,8 @@
     "test:products": "npx tsx --test tests/unit/products.test.ts",
     "test:visualization": "npx tsx --test tests/unit/visualization.test.ts",
     "test:legal": "npx tsx --test tests/unit/legal.test.ts",
+    "test:fastapi": "node scripts/run-fastapi-tests.mjs",
+    "test:fastapi:performance": "node scripts/run-fastapi-tests.mjs tests/test_real_inference.py --run-real-cv",
     "test:milestone1": "npx tsx --test tests/unit/milestone1-database-schema.test.ts",
     "test:milestone2": "npx tsx --test tests/unit/milestone2-raw-materials.test.ts",
     "test:milestone3": "npx tsx --test tests/unit/milestone3-part-inspector.test.ts",
