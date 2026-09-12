@@ -41,6 +41,7 @@ When implementing or modifying any user interface within these milestones (such 
 | MS-8 | Automated Test Suites & Numerical Validation | QA / Testing | Vitest unit tests verifying scenarios 1 through 4 against benchmark data, Playwright E2E tests for guardrail modal and admin wizard | Sprint 4 (Days 16-17) | `QAD-TC5`, `QAD-TC10`, `QAD-TC15` to `QAD-TC18` |
 | MS-9 | Master Documentation & Governance Reconciliation | Specifications / Docs Hub | Reconcile all 8 existing documentation files in `docs/` with `pricing.md` and `milestone.md` without em-dashes | Sprint 4 (Day 18) | `INDEX`, `BRD`, `PRD`, `SDD`, `DSD`, `ERD`, `QAD`, `BUILD` |
 | MS-10 | Admin Product Setup Wizard State & Component Persistence | Admin UI & State Layer | Bidirectional state synchronization, tab transition auto-refresh from DB, zero component loss between steps, seamless UX | Sprint 5 (Days 19-20) | `PRD-F14`, `SDD-C9`, `DSD-UI10`, `ERD-E4`, `ERD-E6`, `QAD-TC19` |
+| MS-11 | Full-Codebase Automated Test Suite Consolidation & Comprehensive Unit Coverage | QA / Testing & Domain Services | Unified test runner (`tests/unit/*.test.ts`), full codebase domain test suites (Booking, Auth & Permissions, Utilities, Products, Visualization, Legal & Compliance), consolidation of redundant milestone test scripts (Pricing MS-4/MS-5, Governance MS-9/MS-10), and 100% test pass rate with zero lint/typecheck regressions | Sprint 5 (Days 21-22) | `QAD-TC20`, `QAD-TC21` |
 
 ---
 
@@ -355,6 +356,34 @@ Eliminate state desynchronization, parameter loss, and rule-blocking traps in th
 
 ---
 
+### Milestone 11: Full-Codebase Automated Test Suite Consolidation & Comprehensive Unit Coverage (QA & Domain Layer)
+
+**Objective:**  
+Consolidate similar and redundant test suites into cohesive domain test files, build comprehensive unit test coverage across all previously uncovered application domains (Consultation Booking, Authentication & RBAC permissions, Core Utilities, Product adapters & schemas, Visualization color variations & structural resolver, and Legal & Compliance data), update package execution scripts, and verify zero regressions across the entire Next.js and domain architecture.
+
+**Technical Tasks:**
+1. Consolidated Similar Test Suites:
+   - Merge redundant pricing test scenarios from MS-4 and MS-5 into `tests/unit/pricing.test.ts` with comprehensive numerical verification across Scenarios 1 to 4, scrap factor calculations, labor floor boundaries, and frozen snapshot schemas.
+   - Merge documentation governance checks from MS-9 and MS-10 into `tests/unit/governance.test.ts` to audit all 10 project specifications against hard bans (BAN-PUNCT-01 zero em-dashes and BAN-DIAG-03 zero box diagrams in code blocks) in a single unified suite.
+2. Full Codebase Domain Coverage:
+   - Create `tests/unit/booking.test.ts` covering `src/lib/booking/` schemas, platform enums, booking status lifecycles, and SHA-256 token hashing validation (`QAD-TC12`, `QAD-TC13`, `QAD-TC20`).
+   - Create `tests/unit/auth.test.ts` covering `src/lib/auth/permissions.ts` permission keys, permission parsing fallbacks, and authorization evaluation logic (`QAD-TC14`, `QAD-TC20`).
+   - Create `tests/unit/utils.test.ts` covering `src/lib/utils.ts` class name concatenation and Tailwind CSS conflict resolution overrides (`QAD-TC20`).
+   - Create `tests/unit/products.test.ts` covering `src/lib/products/` renderer strategies, catalog mapping, and component binding schemas (`QAD-TC1`, `QAD-TC20`).
+   - Create `tests/unit/visualization.test.ts` covering `src/lib/visualization/colorVariations.ts` and `structuralResolver.ts` parameter normalization and rule evaluations (`QAD-TC5`, `QAD-TC20`).
+   - Create `tests/unit/legal.test.ts` covering `src/features/privacy/components/privacyData.ts` and `src/features/terms/components/termsData.ts` section integrity and structural liability disclaimers (`QAD-TC20`).
+   - Create `tests/unit/milestone11.test.ts` verifying Milestone 11 registration and overall test suite completeness (`QAD-TC21`).
+3. Package Test Runner Optimization:
+   - Configure `package.json` test scripts (`npm test`, `npm run test:milestones`, `npm run test:whole-codebase`, `npm run test:pricing`, `npm run test:guardrails`, `npm run test:governance`, `npm run test:booking`).
+   - Ensure all unit tests run via `npx tsx --test` in under 10 seconds.
+
+**Definition of Done (Exit Criteria):**
+- All unit test suites execute cleanly and pass 100% via `npm test`.
+- All major domain libraries in `src/lib/` and static compliance features have dedicated, robust unit tests.
+- Reconciled documentation passes BAN-PUNCT-01 and BAN-DIAG-03 with zero violations.
+
+---
+
 ## 4. End-to-End Traceability Reference Matrix
 
 | Milestone ID | Upstream PRD | Upstream SDD | Data Entities (ERD) | UI Components (DSD) | QA Test Cases |
@@ -369,6 +398,7 @@ Eliminate state desynchronization, parameter loss, and rule-blocking traps in th
 | MS-8 | All Features | All Components | All Entities | All UI Components | `QAD-TC1` to `QAD-TC18` |
 | MS-9 | Governance | Governance | Governance | Governance | Governance |
 | MS-10 | `PRD-F14` | `SDD-C9` | `ERD-E4`, `ERD-E6` | `DSD-UI10` | `QAD-TC19` |
+| MS-11 | All Features | All Components | All Entities | All UI Components | `QAD-TC20`, `QAD-TC21` |
 
 ---
 
@@ -387,10 +417,11 @@ Completing these milestones arms the capstone team with robust academic and empi
 
 ## Self-Check & Governance Audit
 
-- [x] All 10 milestones sequenced logically from relational database foundation to wizard state persistence
+- [x] All 11 milestones sequenced logically from relational database foundation to whole-codebase test suite consolidation
 - [x] Zero em-dashes used anywhere in document; standard hyphens, colons, and parentheses used exclusively (BAN-PUNCT-01)
 - [x] Every milestone explicitly maps to PRD-F#, SDD-C#, ERD-E#, and QAD-TC# identifiers (BAN-SPEC-02)
 - [x] No box diagrams or tree diagrams inside code blocks; normalized Markdown tables and prose used (BAN-DIAG-03)
 - [x] All 4 numerical validation scenarios from docs/pricing.md integrated into verification requirements
 - [x] Structural guardrails (dead-load 2.5 rule, Series 798 limits, Behavior B prompt modal) fully addressed
 - [x] Admin wizard state persistence between component and parameter tabs explicitly specified in MS-10
+- [x] Full-codebase test suite consolidation and domain unit tests verified in MS-11

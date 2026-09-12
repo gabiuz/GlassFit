@@ -2,8 +2,6 @@ import { describe, it } from "node:test";
 import assert from "node:assert";
 import {
   calculateStandardSeries798,
-  calculateParametricBOM,
-  generateQuotationSnapshot,
 } from "../../src/lib/pricing/pricingEngine.js";
 import {
   validateEngineeringGuardrails,
@@ -15,14 +13,6 @@ import {
   formatBookingShareMessage,
 } from "../../src/lib/pricing/quotationPdfGenerator.js";
 import { autoDetectComponentSettings } from "../../src/lib/admin/products/autoDetection.js";
-import {
-  QuotationBOMSummarySchema,
-  FrozenPricingDetailsSchema,
-  RawMaterialSchema,
-  ProductComponentBindingSchema,
-  StructuralRulePayloadSchema,
-} from "../../src/lib/pricing/types.js";
-import { UpsertRawMaterialInputSchema } from "../../src/lib/admin/materials/types.js";
 
 describe("Milestone 8: Automated Test Suites & Numerical Validation (QA Layer)", () => {
   // --------------------------------------------------------------------------
