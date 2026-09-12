@@ -10,12 +10,26 @@ import { VisualizationComparison } from "./VisualizationComparison";
 import { ProductSummary } from "./ProductSummary";
 import { BookingInfo } from "./BookingInfo";
 
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+
 export function Quotation() {
   const router = useRouter();
 
-  const handleSendBooking = () => {
-    console.log("Send Booking clicked. Initiating authentication flow...");
-    router.push("/login");
+  const handleSendBooking = async () => {
+    try {
+      const supabase = createSupabaseBrowserClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (user) {
+        router.push("/send-booking");
+      } else {
+        router.push("/login?next=/send-booking");
+      }
+    } catch {
+      router.push("/login?next=/send-booking");
+    }
   };
 
   return (

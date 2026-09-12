@@ -16,6 +16,12 @@ import {
   ProductVariationSnapshot,
 } from "@/lib/visualization/types";
 import { ALUMINUM_COLOR_VARIATIONS } from "@/lib/visualization/colorVariations";
+import {
+  validateEngineeringGuardrails,
+  type EngineeringValidationResult,
+} from "@/lib/visualization/guardrailEngine";
+import { calculateBOMFromStructuralDefinition } from "@/lib/pricing/pricingEngine";
+import { StructuralGuardrailModal } from "./StructuralGuardrailModal";
 export type ProjectedModelBounds = {
   left: number;
   top: number;
@@ -29,6 +35,7 @@ interface ProductModelWorkspaceProps {
   structuralDefinition?: ProductStructuralDefinition | null;
   selectedProductName?: string;
   initialSnapshotDataUrl?: string | null;
+  initialConfiguration?: ProductConfigurationSnapshot | null;
   onConfigurationChange?: (configuration: ProductConfigurationSnapshot) => void;
   onVariationSnapshotsChange?: (snapshots: ProductVariationSnapshot[]) => void;
   onSnapshotChange?: (dataUrl: string) => void;
@@ -84,7 +91,8 @@ export function ProductModelWorkspace({
   spaceImageSession,
   structuralDefinition,
   selectedProductName,
-  initialSnapshotDataUrl,
+  initialSnapshotDataUrl: _initialSnapshotDataUrl,
+  initialConfiguration,
   onConfigurationChange,
   onVariationSnapshotsChange,
   onSnapshotChange,
@@ -96,35 +104,95 @@ export function ProductModelWorkspace({
   const outlineControlsRef = useRef<HTMLDivElement>(null);
   const resizeSessionRef = useRef<ResizeSession | null>(null);
   const rotationSessionRef = useRef<RotationSession | null>(null);
-  const appliedTemplateDefaultsRef = useRef<string | null>(null);
+  const appliedTemplateDefaultsRef = useRef<string | null>(
+    initialConfiguration ? structuralDefinition?.template.templateId ?? null : null,
+  );
   const dragControls = useDragControls();
-  const [zoomLevel, setZoomLevel] = useState(10);
+  const [zoomLevel, setZoomLevel] = useState(
+    initialConfiguration?.zoomLevel ?? 10,
+  );
   const [openAccordions, setOpenAccordions] = useState<string[]>([]);
 
   // Accordion State Values
-  const [ambientLight, setAmbientLight] = useState(true);
-  const [autoShadow, setAutoShadow] = useState(true);
-  const [autoRealism, setAutoRealism] = useState(true);
-  const [yaw, setYaw] = useState(0);
-  const [pitch, setPitch] = useState(0);
-  const [alumFinish, setAlumFinish] = useState<"black" | "white" | "silver">("white");
-  const [glassAppearance, setGlassAppearance] = useState<GlassAppearanceMode>("clear");
-  const [includeSill, setIncludeSill] = useState(true);
-  const [widthCm, setWidthCm] = useState(String(DEFAULT_PRODUCT_WIDTH_CM));
-  const [heightCm, setHeightCm] = useState(String(DEFAULT_PRODUCT_HEIGHT_CM));
-  const [thicknessMm, setThicknessMm] = useState("3");
-  const [quantity, setQuantity] = useState(1);
-  const [activeOcclusionIds, setActiveOcclusionIds] = useState<string[]>([]);
+  const [ambientLight, setAmbientLight] = useState(
+    initialConfiguration?.ambientLight ?? true,
+  );
+  const [autoShadow, setAutoShadow] = useState(
+    initialConfiguration?.autoShadow ?? true,
+  );
+  const [autoRealism, setAutoRealism] = useState(
+    initialConfiguration?.autoRealism ?? true,
+  );
+  const [yaw, setYaw] = useState(initialConfiguration?.yaw ?? 0);
+  const [pitch, setPitch] = useState(initialConfiguration?.pitch ?? 0);
+  const [alumFinish, setAlumFinish] = useState<"black" | "white" | "silver">(
+    (initialConfiguration?.aluminumFinish as "black" | "white" | "silver") || "white",
+  );
+  const [glassAppearance, setGlassAppearance] = useState<GlassAppearanceMode>(
+    initialConfiguration?.glassAppearance || "clear",
+  );
+  const [includeSill, setIncludeSill] = useState(
+    initialConfiguration?.includeSill ?? true,
+  );
+  const [panelCount, setPanelCount] = useState<number>(
+    initialConfiguration?.panelCount ?? 2,
+  );
+  const [structuralWaiver, setStructuralWaiver] = useState<boolean>(
+    initialConfiguration?.structuralWaiver ?? false,
+  );
+  const [isGuardrailModalOpen, setIsGuardrailModalOpen] = useState<boolean>(false);
+  const [guardrailValidation, setGuardrailValidation] = useState<EngineeringValidationResult | null>(null);
+  const [widthCm, setWidthCm] = useState(
+    initialConfiguration?.widthCm
+      ? String(initialConfiguration.widthCm)
+      : String(DEFAULT_PRODUCT_WIDTH_CM),
+  );
+  const [heightCm, setHeightCm] = useState(
+    initialConfiguration?.heightCm
+      ? String(initialConfiguration.heightCm)
+      : String(DEFAULT_PRODUCT_HEIGHT_CM),
+  );
+  const [thicknessMm, setThicknessMm] = useState(
+    initialConfiguration?.thicknessMm
+      ? String(initialConfiguration.thicknessMm)
+      : "3",
+  );
+  const [quantity, setQuantity] = useState(initialConfiguration?.quantity ?? 1);
+  const [activeOcclusionIds, setActiveOcclusionIds] = useState<string[]>(
+    initialConfiguration?.activeOcclusionIds ?? [],
+  );
 
   const [selectedProduct, setSelectedProduct] = useState(true);
-  const [rotateAngle, setRotateAngle] = useState(0);
-  const [isFlipped, setIsFlipped] = useState(false);
+  const [rotateAngle, setRotateAngle] = useState(
+    initialConfiguration?.rotateAngle ?? 0,
+  );
+  const [isFlipped, setIsFlipped] = useState(
+    initialConfiguration?.isFlipped ?? false,
+  );
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [modalTitle, setModalTitle] = useState("Add Product");
   const [activeProduct, setActiveProduct] = useState<Product | null>(null);
   const [productBuildError, setProductBuildError] = useState<string | null>(null);
-  const initialOverlaySize = getOverlaySizeFromDimensions(widthCm, heightCm);
+  const initialOverlaySize = useMemo(() => {
+    const wStr = initialConfiguration?.widthCm
+      ? String(initialConfiguration.widthCm)
+      : String(DEFAULT_PRODUCT_WIDTH_CM);
+    const hStr = initialConfiguration?.heightCm
+      ? String(initialConfiguration.heightCm)
+      : String(DEFAULT_PRODUCT_HEIGHT_CM);
+    const baseSize = getOverlaySizeFromDimensions(wStr, hStr);
+    const zoom = initialConfiguration?.zoomLevel ?? 10;
+    const scale = 1 + zoom / 100;
+    return {
+      width: Math.round(baseSize.width * scale),
+      height: Math.round(baseSize.height * scale),
+    };
+  }, [
+    initialConfiguration?.heightCm,
+    initialConfiguration?.widthCm,
+    initialConfiguration?.zoomLevel,
+  ]);
   const [overlaySize, setOverlaySize] = useState(initialOverlaySize);
   const renderFrameSize = useMemo(
     () => getModelRenderFrameSize(overlaySize),
@@ -140,9 +208,7 @@ export function ProductModelWorkspace({
   const mvpRendererRef = useRef<ProductModelRenderer | null>(null);
   const [isUsingTransformHandle, setIsUsingTransformHandle] = useState(false);
   const [isOutlineMeasurementPaused, setIsOutlineMeasurementPaused] = useState(false);
-  const [isSnapshotApplied, setIsSnapshotApplied] = useState(
-    Boolean(initialSnapshotDataUrl),
-  );
+  const [isSnapshotApplied, setIsSnapshotApplied] = useState(false);
   const [isCapturingSnapshot, setIsCapturingSnapshot] = useState(false);
 
   const bgImage = uploadedImage || "/comparison_assets/room_without_furniture.png";
@@ -197,6 +263,81 @@ export function ProductModelWorkspace({
       ),
     [activeOcclusionIds, spaceImageSession?.objects],
   );
+
+  // Real-time Parametric BOM Pricing Calculation
+  const realtimePricing = useMemo(() => {
+    const widthValCm = Number(widthCm) || DEFAULT_PRODUCT_WIDTH_CM;
+    const heightValCm = Number(heightCm) || DEFAULT_PRODUCT_HEIGHT_CM;
+    const thicknessValMm = Number(thicknessMm) || 3;
+    const widthMm = Math.round(widthValCm * 10);
+    const heightMm = Math.round(heightValCm * 10);
+    const finishType = alumFinish === "white" ? "PowderCoatedWhite" : "Analok";
+    const glassType = thicknessValMm >= 6 && glassAppearance === "clear"
+      ? "6mm_clear"
+      : "6mm_bronze";
+
+    if (structuralDefinition) {
+      const bomCalc = calculateBOMFromStructuralDefinition(structuralDefinition, {
+        widthMm,
+        heightMm,
+        panelCount,
+        hasSill: includeSill,
+        finishType,
+        glassType,
+        structuralWaiver,
+      });
+
+      const unitPrice = bomCalc.finalQuotation > 0
+        ? bomCalc.finalQuotation
+        : (structuralDefinition.product.basePrice ?? 0);
+
+      const totalPrice = unitPrice * Math.max(1, quantity);
+
+      return {
+        unitPrice,
+        totalPrice,
+        bomCalc,
+      };
+    }
+
+    return {
+      unitPrice: 0,
+      totalPrice: 0,
+      bomCalc: null,
+    };
+  }, [
+    structuralDefinition,
+    widthCm,
+    heightCm,
+    thicknessMm,
+    quantity,
+    alumFinish,
+    glassAppearance,
+    includeSill,
+    panelCount,
+    structuralWaiver,
+  ]);
+
+  const formattedPrice = useMemo(() => {
+    return new Intl.NumberFormat("en-PH", {
+      style: "currency",
+      currency: "PHP",
+      maximumFractionDigits: 0,
+    })
+      .format(realtimePricing.totalPrice)
+      .replace("PHP", "Php");
+  }, [realtimePricing.totalPrice]);
+
+  const formattedUnitPrice = useMemo(() => {
+    return new Intl.NumberFormat("en-PH", {
+      style: "currency",
+      currency: "PHP",
+      maximumFractionDigits: 0,
+    })
+      .format(realtimePricing.unitPrice)
+      .replace("PHP", "Php");
+  }, [realtimePricing.unitPrice]);
+
   // Removed unused structuralProductModels variable
   useEffect(() => {
     mvpRendererRef.current = new ProductModelRenderer(2048, 2048);
@@ -222,6 +363,7 @@ export function ProductModelWorkspace({
       {
         width: Number(widthCm) * 10,
         height: Number(heightCm) * 10,
+        pane_count: panelCount,
         includeSill,
         include_sill: includeSill,
       },
@@ -234,7 +376,7 @@ export function ProductModelWorkspace({
       setModelRevision((prev) => prev + 1);
       setProductBuildError(null);
     });
-  }, [structuralDefinition, widthCm, heightCm, includeSill, glassAppearance, alumFinish]);
+  }, [structuralDefinition, widthCm, heightCm, panelCount, includeSill, glassAppearance, alumFinish]);
 
   useEffect(() => {
     if (!mvpRendererRef.current) return;
@@ -317,6 +459,8 @@ export function ProductModelWorkspace({
       heightCm: height,
       thicknessMm: thickness,
       quantity,
+      panelCount,
+      structuralWaiver,
       aluminumFinish: alumFinish,
       glassAppearance,
       includeSill,
@@ -324,28 +468,41 @@ export function ProductModelWorkspace({
       pitch,
       rotateAngle,
       isFlipped,
+      zoomLevel,
+      activeOcclusionIds,
+      ambientLight,
+      autoShadow,
+      autoRealism,
       visualParameterValues: {
         width: width * 10,
         height: height * 10,
         thickness: thickness,
+        pane_count: panelCount,
         includeSill,
         include_sill: includeSill,
       },
     });
   }, [
+    activeOcclusionIds,
     alumFinish,
+    ambientLight,
+    autoRealism,
+    autoShadow,
     glassAppearance,
     heightCm,
     includeSill,
     isFlipped,
     onConfigurationChange,
+    panelCount,
     pitch,
     quantity,
     rotateAngle,
     structuralDefinition,
+    structuralWaiver,
     thicknessMm,
     widthCm,
     yaw,
+    zoomLevel,
   ]);
 
   const handleRotate = (e: React.MouseEvent) => {
@@ -504,6 +661,7 @@ export function ProductModelWorkspace({
           {
             width: width * 10,
             height: height * 10,
+            pane_count: panelCount,
             includeSill,
             include_sill: includeSill,
           },
@@ -563,6 +721,7 @@ export function ProductModelWorkspace({
     includeSill,
     isFlipped,
     onVariationSnapshotsChange,
+    panelCount,
     pitch,
     productOverlayImage,
     renderFrameSize,
@@ -576,11 +735,8 @@ export function ProductModelWorkspace({
     setIsCapturingSnapshot(true);
 
     try {
-      if (!isSnapshotApplied) {
-        await captureCurrentSnapshot();
-        setIsSnapshotApplied(true);
-      }
-
+      await captureCurrentSnapshot();
+      setIsSnapshotApplied(true);
       await generateVariationSnapshots();
       router.push("/comparison");
     } catch (error) {
@@ -595,7 +751,6 @@ export function ProductModelWorkspace({
   }, [
     captureCurrentSnapshot,
     generateVariationSnapshots,
-    isSnapshotApplied,
     router,
   ]);
 
@@ -627,15 +782,60 @@ export function ProductModelWorkspace({
     applySceneZoom(zoomLevel - 5);
   };
 
+  const checkAndTriggerGuardrails = useCallback(
+    (widthValCm: number, heightValCm: number, currentPanelCount: number) => {
+      const valMm = widthValCm * 10;
+      const heightMm = heightValCm * 10;
+      const validation = validateEngineeringGuardrails({
+        widthMm: valMm,
+        heightMm: heightMm,
+        panelCount: currentPanelCount,
+        glassThicknessMm: Number(thicknessMm) || 6,
+      });
+
+      setGuardrailValidation(validation);
+
+      // Trigger prompt modal if 2-panel configuration reaches or exceeds 2400mm
+      if (validation.isSpanLimitExceeded && currentPanelCount === 2) {
+        setIsGuardrailModalOpen(true);
+      }
+    },
+    [thicknessMm],
+  );
+
   const handleWidthCmChange = (value: string) => {
     setWidthCm(value);
     setOverlaySize(getOverlaySizeFromDimensions(value, heightCm));
+
+    const numericWidth = Number(value);
+    const numericHeight = Number(heightCm);
+    if (!Number.isNaN(numericWidth) && numericWidth > 0) {
+      checkAndTriggerGuardrails(numericWidth, numericHeight || DEFAULT_PRODUCT_HEIGHT_CM, panelCount);
+    }
   };
 
   const handleHeightCmChange = (value: string) => {
     setHeightCm(value);
     setOverlaySize(getOverlaySizeFromDimensions(widthCm, value));
+
+    const numericWidth = Number(widthCm);
+    const numericHeight = Number(value);
+    if (!Number.isNaN(numericHeight) && numericHeight > 0) {
+      checkAndTriggerGuardrails(numericWidth || DEFAULT_PRODUCT_WIDTH_CM, numericHeight, panelCount);
+    }
   };
+
+  const handleSwitchTo3Panels = useCallback(() => {
+    setPanelCount(3);
+    setStructuralWaiver(false);
+    setIsGuardrailModalOpen(false);
+  }, []);
+
+  const handleAcknowledgeAndProceed = useCallback(() => {
+    setPanelCount(2);
+    setStructuralWaiver(true);
+    setIsGuardrailModalOpen(false);
+  }, []);
 
   const handleIncludeSillToggle = useCallback(() => {
     setIncludeSill((current) => !current);
@@ -1189,15 +1389,25 @@ export function ProductModelWorkspace({
 
           {/* Price Card */}
           <div className="bg-grad-light rounded-[20px] p-6 sm:p-7 flex flex-col gap-2.5 w-full text-white shadow-md">
-            <span className="text-xl sm:text-2xl font-normal text-white/90 tracking-[-0.456px]">
-              Price:
-            </span>
+            <div className="flex items-center justify-between">
+              <span className="text-xl sm:text-2xl font-normal text-white/90 tracking-[-0.456px]">
+                Price:
+              </span>
+              {quantity > 1 && (
+                <span className="text-xs font-medium bg-white/20 px-2.5 py-1 rounded-full text-white">
+                  Qty: {quantity}
+                </span>
+              )}
+            </div>
             <span className="text-3xl sm:text-4xl font-medium tracking-[-0.608px] text-white">
-              ₱ 18,000
+              {formattedPrice}
             </span>
-            <span className="text-xs font-normal text-white/80 tracking-[-0.228px]">
-              excl. install, final after consultation, etc
-            </span>
+            <div className="flex flex-col gap-0.5 text-xs font-normal text-white/80 tracking-[-0.228px]">
+              {quantity > 1 && (
+                <span>{formattedUnitPrice} each</span>
+              )}
+              <span>excl. install, final after consultation, etc</span>
+            </div>
           </div>
 
           {/* Workspace Accordions with Motion Animation */}
@@ -1682,6 +1892,15 @@ export function ProductModelWorkspace({
           />
         </div>
       </div>
+
+      {/* ── Structural Guardrail Hybrid Prompt Modal (MS-6) ── */}
+      <StructuralGuardrailModal
+        isOpen={isGuardrailModalOpen}
+        validation={guardrailValidation}
+        onSwitchTo3Panels={handleSwitchTo3Panels}
+        onAcknowledgeAndProceed={handleAcknowledgeAndProceed}
+        onClose={() => setIsGuardrailModalOpen(false)}
+      />
     </div>
   );
 }

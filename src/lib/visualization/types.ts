@@ -1,4 +1,5 @@
 import type { SpaceImageSession } from "@/lib/imageApi";
+import type { RawMaterial } from "@/lib/pricing/types";
 import type { AluminumFinishKey } from "./colorVariations";
 
 export type JsonObject = Record<string, unknown>;
@@ -48,6 +49,13 @@ export type ProductComponentDefinition = {
   componentName: string;
   componentType: string;
   baseQuantity: number;
+  rawMaterialId?: string | null;
+  rawMaterial?: RawMaterial | null;
+  dimensionBinding?: "WIDTH" | "HEIGHT" | "AREA" | "FIXED";
+  spanRatio?: number;
+  isRemovable?: boolean;
+  togglePropertyKey?: string | null;
+  presentationCategory?: "Framing" | "Glazing" | "Hardware" | "Consumable" | "Other";
   componentData: JsonObject;
   model: ProductComponentModel;
 };
@@ -146,6 +154,8 @@ export type ProductConfigurationSnapshot = {
   heightCm: number;
   thicknessMm: number;
   quantity: number;
+  panelCount?: number;
+  structuralWaiver?: boolean;
   aluminumFinish: "black" | "white" | "silver" | string;
   glassAppearance: GlassAppearanceMode;
   includeSill: boolean;
@@ -153,5 +163,10 @@ export type ProductConfigurationSnapshot = {
   pitch: number;
   rotateAngle: number;
   isFlipped: boolean;
+  zoomLevel?: number;
+  activeOcclusionIds?: string[];
+  ambientLight?: boolean;
+  autoShadow?: boolean;
+  autoRealism?: boolean;
   visualParameterValues: Record<string, unknown>;
 };

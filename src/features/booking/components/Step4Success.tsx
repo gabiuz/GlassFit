@@ -7,12 +7,24 @@ import Button from "@/components/shared/Button";
 interface Step4SuccessProps {
   sharingMethod: string;
   onBackToHome: () => void;
+  totalEstimatePhp?: number;
+  referenceCode?: string;
+  dateFormatted?: string;
 }
 
 export function Step4Success({
   sharingMethod,
   onBackToHome,
+  totalEstimatePhp = 50000,
+  referenceCode = "CF-2026-001",
+  dateFormatted = "June 3, 2026",
 }: Step4SuccessProps) {
+  const formattedEstimate = new Intl.NumberFormat("en-PH", {
+    style: "currency",
+    currency: "PHP",
+    maximumFractionDigits: 0,
+  }).format(totalEstimatePhp).replace("PHP", "Php");
+
   return (
     <div className="fixed inset-0 bg-black/60 z-[9999] flex items-center justify-center p-4 overflow-y-auto backdrop-blur-sm transition-all duration-300">
       <div className="bg-white w-full max-w-[550px] rounded-[24px] p-6 md:p-8 shadow-2xl relative flex flex-col gap-6 items-center justify-center select-none my-8 animate-in fade-in zoom-in-95 duration-200">
@@ -45,17 +57,17 @@ export function Step4Success({
           <div className="bg-white p-4 sm:p-5 rounded-[12px] shadow-sm">
             <div className="grid grid-cols-2 gap-y-3 gap-x-6 text-[#0f1422] text-sm">
               <p className="text-[#c3c3c3] font-medium leading-[1.4]">Reference Number</p>
-              <p className="font-normal text-right leading-[1.4]">CF-2026-001</p>
+              <p className="font-normal text-right leading-[1.4]">{referenceCode}</p>
 
               <p className="text-[#c3c3c3] font-medium leading-[1.4]">Sent via</p>
               <p className="font-normal text-right leading-[1.4]">{sharingMethod}</p>
 
               <p className="text-[#c3c3c3] font-medium leading-[1.4]">Date Created</p>
-              <p className="font-normal text-right leading-[1.4]">June 3, 2026</p>
+              <p className="font-normal text-right leading-[1.4]">{dateFormatted}</p>
 
               <p className="text-[#c3c3c3] font-medium leading-[1.4]">Estimated Price</p>
               <p className="text-right leading-[1.4] font-semibold text-[#0f1422]">
-                Php 50,000
+                {formattedEstimate}
               </p>
             </div>
           </div>

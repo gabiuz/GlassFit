@@ -3,6 +3,7 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { requirePermission } from "@/lib/auth/admin";
 import { revalidatePath } from "next/cache";
+import { getR2AssetUrl } from "@/lib/r2";
 import { deleteProductAssets } from "./assetUpload";
 
 export type CreateProductInput = {
@@ -132,6 +133,13 @@ export async function getProductDraft(productId: string) {
                     component_name,
                     component_type,
                     base_quantity,
+                    raw_material_id,
+                    dimension_binding,
+                    span_ratio,
+                    is_removable,
+                    toggle_property_key,
+                    presentation_category,
+                    glb_file_url,
                     component_data
                 ),
                 product_parameters (
@@ -175,6 +183,30 @@ export async function getProductDraft(productId: string) {
             console.error("Failed to get product draft:", error);
         }
         return null;
+    }
+
+    if (!product) return null;
+
+    // Resolve component glb_file_url from product_assets if null or unpopulated
+    const assets = Array.isArray(product.product_assets) ? product.product_assets : [];
+    const componentAssetMap = new Map<string, string>();
+    for (const a of assets) {
+        if (a.component_id && a.r2_object_key && a.status === "Active") {
+            const url = getR2AssetUrl(a.r2_object_key);
+            if (url) componentAssetMap.set(a.component_id, url);
+        }
+    }
+
+    if (Array.isArray(product.product_templates)) {
+        for (const tmpl of product.product_templates) {
+            if (Array.isArray(tmpl.product_components)) {
+                for (const comp of tmpl.product_components) {
+                    if (!comp.glb_file_url && componentAssetMap.has(comp.component_id)) {
+                        comp.glb_file_url = componentAssetMap.get(comp.component_id);
+                    }
+                }
+            }
+        }
     }
 
     return product;

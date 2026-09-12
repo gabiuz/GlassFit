@@ -94,16 +94,21 @@ function buildWindowLikeProduct(
 
   if (explicitMullionCount !== undefined && explicitGlassCount !== undefined) {
       mullionCount = explicitMullionCount;
-      paneCount = explicitGlassCount;
+      paneCount = Math.max(1, explicitGlassCount);
   } else if (explicitMullionCount !== undefined) {
       mullionCount = explicitMullionCount;
       paneCount = mullionCount + 1;
   } else if (explicitGlassCount !== undefined) {
-      paneCount = explicitGlassCount;
+      paneCount = Math.max(1, explicitGlassCount);
       mullionCount = Math.max(0, paneCount - 1);
   } else {
       paneCount = Math.max(1, Math.round(toNumber(resolved.resolvedValues.pane_count, 2)));
       mullionCount = Math.max(0, Math.round(toNumber(resolved.resolvedValues.mullion_count, paneCount - 1)));
+  }
+
+  // Ensure window structural invariant: pane count must always be at least mullion count + 1
+  if (paneCount < mullionCount + 1) {
+      paneCount = mullionCount + 1;
   }
 
   const innerWidthMm =
@@ -194,17 +199,30 @@ function buildWindowLikeProduct(
     );
   }
 
-  const sill = componentsByKey.get("window-sill");
-  const includeSill =
-    options.includeSill ??
-    (
-      readBoolean(resolved.resolvedValues.includeSill, true) &&
-      readBoolean(resolved.resolvedValues.include_sill, true)
+  const sill =
+    componentsByKey.get("window-sill") ||
+    componentsByKey.get("sill") ||
+    Array.from(componentsByKey.values()).find(
+      (c) =>
+        normalizeComponentKey(c.componentKey).includes("sill") ||
+        (c.togglePropertyKey && c.togglePropertyKey.toLowerCase().includes("sill")) ||
+        c.componentName.toLowerCase().includes("sill")
     );
+
+  const includeSill =
+    options.includeSill !== undefined
+      ? Boolean(options.includeSill)
+      : (
+          readBoolean(resolved.resolvedValues.includeSill, true) &&
+          readBoolean(resolved.resolvedValues.include_sill, true) &&
+          readBoolean(resolved.resolvedValues.has_sill, true) &&
+          readBoolean(resolved.resolvedValues.hasSill, true)
+        );
+
   if (
     includeSill &&
     sill &&
-    (resolved.componentQuantities["window-sill"] ?? sill.baseQuantity) > 0
+    (resolved.componentQuantities[normalizeComponentKey(sill.componentKey)] ?? sill.baseQuantity) > 0
   ) {
     accessories.add(
       createPart("Window_Sill", sill, cache, {
@@ -234,8 +252,27 @@ function buildStackedProduct(
   group.name = "GeneratedProduct";
   let cursorX = 0;
 
+  const includeSill =
+    options.includeSill !== undefined
+      ? Boolean(options.includeSill)
+      : (
+          readBoolean(resolved.resolvedValues.includeSill, true) &&
+          readBoolean(resolved.resolvedValues.include_sill, true) &&
+          readBoolean(resolved.resolvedValues.has_sill, true) &&
+          readBoolean(resolved.resolvedValues.hasSill, true)
+        );
+
   for (const component of definition.components) {
     const key = normalizeComponentKey(component.componentKey);
+    const isSill =
+      key.includes("sill") ||
+      component.componentName.toLowerCase().includes("sill") ||
+      (component.togglePropertyKey && component.togglePropertyKey.toLowerCase().includes("sill"));
+
+    if (isSill && !includeSill) {
+      continue;
+    }
+
     const quantity = Math.max(0, Math.round(resolved.componentQuantities[key] ?? component.baseQuantity));
 
     for (let index = 0; index < quantity; index += 1) {
@@ -275,7 +312,13 @@ function createPart(
   const sourceSize = cache.getSourceSizeMeters(component.componentId);
 
   wrapper.name = name;
+  wrapper.userData.componentKey = component.componentKey;
+  wrapper.userData.componentId = component.componentId;
+  wrapper.userData.componentName = component.componentName;
   clone.name = `${name}_Source`;
+  clone.userData.componentKey = component.componentKey;
+  clone.userData.componentId = component.componentId;
+  clone.userData.componentName = component.componentName;
   recenterChildAtOrigin(clone);
   wrapper.add(clone);
   wrapper.position.set(

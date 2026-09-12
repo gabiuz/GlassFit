@@ -18,6 +18,8 @@ export function VisualizationComparison() {
     productConfiguration,
     spaceImageSession,
     variationSnapshots,
+    setFinalSnapshotDataUrl,
+    setProductConfiguration,
   } = useVisualizationSession();
   const configuredFinish = normalizeAluminumFinish(productConfiguration?.aluminumFinish);
   const [selectedFinish, setSelectedFinish] =
@@ -35,6 +37,20 @@ export function VisualizationComparison() {
   const selectedVariation =
     variations.find((variation) => variation.key === selectedFinish) ??
     variations[0];
+
+  const handleSelectFinish = (finishKey: AluminumFinishKey) => {
+    setSelectedFinish(finishKey);
+    const chosenImage = variations.find((v) => v.key === finishKey)?.imageDataUrl;
+    if (chosenImage) {
+      setFinalSnapshotDataUrl(chosenImage);
+    }
+    if (productConfiguration && finishKey !== productConfiguration.aluminumFinish) {
+      setProductConfiguration({
+        ...productConfiguration,
+        aluminumFinish: finishKey,
+      });
+    }
+  };
 
   return (
     <div className="w-full flex flex-col gap-9 select-none">
@@ -64,7 +80,7 @@ export function VisualizationComparison() {
               <button
                 key={variation.key}
                 type="button"
-                onClick={() => setSelectedFinish(variation.key)}
+                onClick={() => handleSelectFinish(variation.key)}
                 className="flex flex-col gap-2.25 items-center relative w-44 cursor-pointer group select-none text-left"
               >
                 <div

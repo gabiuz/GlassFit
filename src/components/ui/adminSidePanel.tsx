@@ -31,6 +31,10 @@ function buildNavGroups(permissions: AdminPermissions): AdminNavGroup[] {
         generalItems.push({ label: "Product", icon: "/admin/product-icon.svg", href: "/admin/products" });
     }
 
+    if (permissions.manageProducts || permissions.managePricing) {
+        generalItems.push({ label: "Raw Materials", icon: "/admin/product-icon.svg", href: "/admin/materials" });
+    }
+
     if (permissions.manageBookings) {
         generalItems.push({ label: "Booking", icon: "/admin/booking-icon.svg", href: "/admin/bookings" });
     }

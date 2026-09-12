@@ -174,8 +174,11 @@ export function Comparison() {
     finalSnapshotDataUrl,
     placedOverlays,
     productConfiguration,
+    selectedProductId,
     spaceImageSession,
     variationSnapshots,
+    setFinalSnapshotDataUrl,
+    setProductConfiguration,
   } =
     useVisualizationSession();
   const [viewAs, setViewAs] = useState<"left" | "right">("left"); // left = Side-by-Side, right = Slider
@@ -193,8 +196,20 @@ export function Comparison() {
     setRightVariant(leftVariant);
   };
 
+  const handleEditPlacement = () => {
+    if (!isBeforeAfter && productConfiguration && productConfiguration.aluminumFinish !== leftVariant) {
+      setProductConfiguration({
+        ...productConfiguration,
+        aluminumFinish: leftVariant,
+      });
+    }
+  };
+
   const isSideBySide = viewAs === "left";
   const isBeforeAfter = compareMode === "left";
+  const editPlacementHref = selectedProductId
+    ? `/visualize/${selectedProductId}/workspace`
+    : "/visualization";
   const latestPlacedOverlay = placedOverlays[placedOverlays.length - 1];
   const beforeImage = spaceImageSession?.workspaceImage.url ?? BEFORE_IMAGE;
   const afterImage =
@@ -270,6 +285,23 @@ export function Comparison() {
       window.removeEventListener("touchend", handleTouchEnd);
     };
   }, [isDragging]);
+
+  const handleProceedToQuotation = () => {
+    if (!isBeforeAfter) {
+      const chosenFinish = leftVariant;
+      const chosenImage = imageForFinish(chosenFinish);
+      if (chosenImage) {
+        setFinalSnapshotDataUrl(chosenImage);
+      }
+      if (productConfiguration) {
+        setProductConfiguration({
+          ...productConfiguration,
+          aluminumFinish: chosenFinish,
+        });
+      }
+    }
+    router.push("/quotation");
+  };
 
   return (
     <div className="w-full max-w-325 mx-auto px-6 py-12 md:py-16 flex flex-col gap-12 items-center">
@@ -492,7 +524,11 @@ export function Comparison() {
       )}
       {/* Bottom Footer Actions Box */}
       <div className="bg-[#f5f5f5] w-full flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 p-5 rounded-[20px] shadow-sm select-none">
-        <Link href="/visualization" className="w-full sm:w-auto">
+        <Link
+          href={editPlacementHref}
+          onClick={handleEditPlacement}
+          className="w-full sm:w-auto"
+        >
           <Button
             variant="blackBtnWhiteText"
             value="Edit Placement"
@@ -520,7 +556,7 @@ export function Comparison() {
             fontSize: "var(--btn-font-size, 20px)",
             gap: "var(--btn-gap, 15px)",
           }}
-          onClick={() => router.push("/quotation")}
+          onClick={handleProceedToQuotation}
         />
       </div>
     </div>

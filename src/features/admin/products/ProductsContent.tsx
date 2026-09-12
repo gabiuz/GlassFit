@@ -10,7 +10,9 @@ import {
 import Link from "next/link";
 import { Copy, Check } from "lucide-react";
 import { deleteProduct } from "@/lib/admin/products/productMutations";
+import { duplicateProductPreset } from "@/lib/admin/products/presetDuplication";
 import { DeleteProductModal } from "./DeleteProductModal";
+import { useRouter } from "next/navigation";
 
 const statusBg: Record<AdminProductStatus, string> = {
   Published: "bg-[#05b64b]",
@@ -143,22 +145,34 @@ function StatusBadge({ status }: { status: AdminProductStatus }) {
 function ActionButtons({
   productId,
   onDelete,
+  onDuplicate,
+  isDuplicating,
 }: {
   productId: string;
   onDelete: () => void;
+  onDuplicate: () => void;
+  isDuplicating?: boolean;
 }) {
   return (
     <div className="flex items-center justify-center gap-2 shrink-0">
       <Link
         href={`/admin/products/${productId}/setup`}
-        className="bg-[#0f1422] px-[15px] py-[5px] rounded-[10px] text-white text-xs font-normal leading-[1.4] tracking-[-0.228px] whitespace-nowrap cursor-pointer hover:bg-black transition-colors"
+        className="bg-[#0f1422] px-[12px] py-[5px] rounded-[10px] text-white text-xs font-normal leading-[1.4] tracking-[-0.228px] whitespace-nowrap cursor-pointer hover:bg-black transition-colors"
       >
         Edit
       </Link>
       <button
         type="button"
+        onClick={onDuplicate}
+        disabled={isDuplicating}
+        className="bg-[#07b6d3] px-[12px] py-[5px] rounded-[10px] text-white text-xs font-normal leading-[1.4] tracking-[-0.228px] whitespace-nowrap cursor-pointer hover:bg-[#06a2bc] transition-colors disabled:opacity-50"
+      >
+        {isDuplicating ? "Cloning..." : "Duplicate"}
+      </button>
+      <button
+        type="button"
         onClick={onDelete}
-        className="bg-[#c50000] px-[15px] py-[5px] rounded-[10px] text-white text-xs font-normal leading-[1.4] tracking-[-0.228px] whitespace-nowrap cursor-pointer hover:bg-red-700 transition-colors"
+        className="bg-[#c50000] px-[12px] py-[5px] rounded-[10px] text-white text-xs font-normal leading-[1.4] tracking-[-0.228px] whitespace-nowrap cursor-pointer hover:bg-red-700 transition-colors"
       >
         Delete
       </button>
@@ -206,12 +220,14 @@ function DropdownChevron({
 }
 
 export function ProductsContent({ initialProducts }: { initialProducts: AdminProductItem[] }) {
+  const router = useRouter();
   const [products, setProducts] = useState<AdminProductItem[]>(initialProducts);
   const [searchQuery, setSearchQuery] = useState("");
   const [isCategoryOpen, setIsCategoryOpen] = useState(false);
   const [isStatusOpen, setIsStatusOpen] = useState(false);
   const [productToDelete, setProductToDelete] = useState<AdminProductItem | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
 
   const filtered = useMemo(() => {
     if (!searchQuery.trim()) return products;
@@ -225,6 +241,19 @@ export function ProductsContent({ initialProducts }: { initialProducts: AdminPro
     );
   }, [products, searchQuery]);
 
+  const handleDuplicateProduct = async (product: AdminProductItem) => {
+    try {
+      setDuplicatingId(product.id);
+      const res = await duplicateProductPreset(product.id, `${product.name} (Copy)`);
+      router.push(`/admin/products/${res.newProductId}/setup`);
+    } catch (e: unknown) {
+      console.error("Duplicate failed:", e);
+      alert(`Error duplicating preset: ${e instanceof Error ? e.message : "Something went wrong"}`);
+    } finally {
+      setDuplicatingId(null);
+    }
+  };
+
   const handleConfirmDelete = async () => {
     if (!productToDelete) return;
     setIsDeleting(true);
@@ -232,8 +261,8 @@ export function ProductsContent({ initialProducts }: { initialProducts: AdminPro
       await deleteProduct(productToDelete.id);
       setProducts((prev) => prev.filter((p) => p.id !== productToDelete.id));
       setProductToDelete(null);
-    } catch (e: any) {
-      alert(`Error deleting product: ${e?.message || "Something went wrong"}`);
+    } catch (e: unknown) {
+      alert(`Error deleting product: ${e instanceof Error ? e.message : "Something went wrong"}`);
     } finally {
       setIsDeleting(false);
     }
@@ -316,6 +345,8 @@ export function ProductsContent({ initialProducts }: { initialProducts: AdminPro
                 key={product.id}
                 product={product}
                 onDelete={() => setProductToDelete(product)}
+                onDuplicate={() => handleDuplicateProduct(product)}
+                isDuplicating={duplicatingId === product.id}
               />
             ))}
           </div>
@@ -339,9 +370,13 @@ export function ProductsContent({ initialProducts }: { initialProducts: AdminPro
 function ProductRow({
   product,
   onDelete,
+  onDuplicate,
+  isDuplicating,
 }: {
   product: AdminProductItem;
   onDelete: () => void;
+  onDuplicate: () => void;
+  isDuplicating?: boolean;
 }) {
   return (
     <div className="w-full flex items-center gap-4 py-2 hover:bg-neutral-50/70 rounded-lg transition-colors">
@@ -366,7 +401,12 @@ function ProductRow({
         <StatusBadge status={product.status} />
       </ColCell>
       <ColCell align="center">
-        <ActionButtons productId={product.id} onDelete={onDelete} />
+        <ActionButtons 
+          productId={product.id} 
+          onDelete={onDelete} 
+          onDuplicate={onDuplicate}
+          isDuplicating={isDuplicating}
+        />
       </ColCell>
     </div>
   );

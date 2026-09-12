@@ -1,5 +1,6 @@
 import { getR2AssetUrl } from "@/lib/r2";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import type { RawMaterial } from "@/lib/pricing/types";
 import type {
   JsonObject,
   ProductComponentDefinition,
@@ -10,6 +11,24 @@ import type {
   SourceDimensionsMm,
   StructuralRule,
 } from "./types";
+
+function parseRawMaterial(rawMatData: unknown): RawMaterial | null {
+  if (!rawMatData) return null;
+  const row = Array.isArray(rawMatData) ? rawMatData[0] : rawMatData;
+  if (!row || typeof row !== "object" || !("id" in row)) return null;
+  const r = row as Record<string, unknown>;
+  return {
+    id: String(r.id),
+    material_code: String(r.material_code ?? ""),
+    description: String(r.description ?? ""),
+    category: (r.category as RawMaterial["category"]) || "Aluminum",
+    finish_type: (r.finish_type as RawMaterial["finish_type"]) || "Analok",
+    billing_unit: (r.billing_unit as RawMaterial["billing_unit"]) || "m",
+    unit_price: Number(r.unit_price) || 0,
+    waste_allowance: Number(r.waste_allowance) || 0,
+    is_active: Boolean(r.is_active ?? true),
+  };
+}
 
 type AssetRow = {
   asset_id: string;
@@ -132,7 +151,24 @@ export async function getProductStructuralDefinition(
         component_name,
         component_type,
         base_quantity,
-        component_data
+        raw_material_id,
+        dimension_binding,
+        span_ratio,
+        is_removable,
+        toggle_property_key,
+        presentation_category,
+        component_data,
+        raw_materials:raw_material_id (
+          id,
+          material_code,
+          description,
+          category,
+          finish_type,
+          billing_unit,
+          unit_price,
+          waste_allowance,
+          is_active
+        )
       `)
       .eq("template_id", templateId)
       .eq("status", "Active")
@@ -222,6 +258,13 @@ export async function getProductStructuralDefinition(
       componentName: row.component_name,
       componentType: row.component_type,
       baseQuantity: toNumber(row.base_quantity, 0),
+      rawMaterialId: (row.raw_material_id as string) || null,
+      rawMaterial: parseRawMaterial((row as Record<string, unknown>).raw_materials),
+      dimensionBinding: row.dimension_binding || "FIXED",
+      spanRatio: typeof row.span_ratio === "number" ? row.span_ratio : 1.0,
+      isRemovable: Boolean(row.is_removable),
+      togglePropertyKey: (row.toggle_property_key as string) || null,
+      presentationCategory: row.presentation_category || "Framing",
       componentData,
       model: {
         assetId: asset.asset_id,
@@ -356,7 +399,24 @@ export async function getDraftStructuralDefinition(
         component_name,
         component_type,
         base_quantity,
-        component_data
+        raw_material_id,
+        dimension_binding,
+        span_ratio,
+        is_removable,
+        toggle_property_key,
+        presentation_category,
+        component_data,
+        raw_materials:raw_material_id (
+          id,
+          material_code,
+          description,
+          category,
+          finish_type,
+          billing_unit,
+          unit_price,
+          waste_allowance,
+          is_active
+        )
       `)
       .eq("template_id", templateId)
       .order("component_key", { ascending: true }),
@@ -429,6 +489,13 @@ export async function getDraftStructuralDefinition(
       componentName: row.component_name,
       componentType: row.component_type,
       baseQuantity: toNumber(row.base_quantity, 0),
+      rawMaterialId: (row.raw_material_id as string) || null,
+      rawMaterial: parseRawMaterial((row as Record<string, unknown>).raw_materials),
+      dimensionBinding: row.dimension_binding || "FIXED",
+      spanRatio: typeof row.span_ratio === "number" ? row.span_ratio : 1.0,
+      isRemovable: Boolean(row.is_removable),
+      togglePropertyKey: (row.toggle_property_key as string) || null,
+      presentationCategory: row.presentation_category || "Framing",
       componentData,
       model: {
         assetId: asset.asset_id,

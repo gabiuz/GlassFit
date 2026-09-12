@@ -4,10 +4,11 @@ import { useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { SearchBar } from "@/components/shared/SearchBar";
 import {
-  initialAdminProducts,
   type AdminProductItem,
   type AdminProductStatus,
-} from "./productData";
+} from "@/features/admin/products/productData";
+
+const initialAdminProducts: AdminProductItem[] = [];
 
 const statusBg: Record<AdminProductStatus, string> = {
   Published: "bg-[#05b64b]",

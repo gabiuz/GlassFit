@@ -6,7 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "npx tsx --test tests/unit/milestone1.test.ts tests/unit/milestone2.test.ts tests/unit/milestone3.test.ts tests/unit/milestone4.test.ts tests/unit/milestone5.test.ts tests/unit/milestone6.test.ts tests/unit/milestone7.test.ts tests/unit/milestone8.test.ts tests/unit/milestone9.test.ts",
+    "test:milestone8": "npx tsx --test tests/unit/milestone8.test.ts",
+    "test:milestone9": "npx tsx --test tests/unit/milestone9.test.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1116.0",

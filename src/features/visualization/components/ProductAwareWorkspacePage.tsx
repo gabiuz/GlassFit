@@ -17,6 +17,7 @@ export function ProductAwareWorkspacePage({
   const {
     selectedProductId,
     spaceImageSession,
+    productConfiguration,
     finalSnapshotDataUrl,
     setStructuralDefinition,
     setProductConfiguration,
@@ -61,6 +62,7 @@ export function ProductAwareWorkspacePage({
         structuralDefinition={structuralDefinition}
         selectedProductName={structuralDefinition.product.productName}
         initialSnapshotDataUrl={finalSnapshotDataUrl}
+        initialConfiguration={productConfiguration}
         onConfigurationChange={setProductConfiguration}
         onVariationSnapshotsChange={setVariationSnapshots}
         onSnapshotChange={setFinalSnapshotDataUrl}
