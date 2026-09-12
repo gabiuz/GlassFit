@@ -5,18 +5,32 @@ import Image from "next/image";
 
 interface Step2GenerateLinkProps {
   isLinkGenerated: boolean;
+  isGenerating?: boolean;
   onGenerateLink: () => void;
   generatedLink: string;
   totalEstimatePhp?: number;
   hasStructuralWaiver?: boolean;
+  customerName?: string;
+  referenceCode?: string;
+  productName?: string;
+  fileName?: string;
+  dateFormatted?: string;
+  expiresFormatted?: string;
 }
 
 export function Step2GenerateLink({
   isLinkGenerated,
+  isGenerating = false,
   onGenerateLink,
   generatedLink,
   totalEstimatePhp = 50000,
   hasStructuralWaiver = false,
+  customerName = "Juan Dela Cruz",
+  referenceCode = "CF-2026-001",
+  productName = "Series 798 Sliding Window",
+  fileName = "Livingroom.jpeg",
+  dateFormatted = "May 21, 2026 · 3:42 PM",
+  expiresFormatted = "June 3, 2026",
 }: Step2GenerateLinkProps) {
   const [copied, setCopied] = useState(false);
 
@@ -57,25 +71,25 @@ export function Step2GenerateLink({
           <div className="grid grid-cols-[auto_1fr] md:grid-cols-[auto_auto_auto_auto_auto_auto] gap-x-4 md:gap-x-[67px] gap-y-2.5 md:gap-y-[10px] text-sm font-normal items-baseline">
             {/* Row 1 / Items 1-6 */}
             <span className="text-[#c3c3c3] whitespace-nowrap">Configuration No:</span>
-            <span className="text-[#0f1422] whitespace-nowrap">CF-2026-001</span>
+            <span className="text-[#0f1422] whitespace-nowrap">{referenceCode}</span>
 
             <span className="text-[#c3c3c3] whitespace-nowrap">Selected Product</span>
             <span className="text-[#0f1422] md:whitespace-nowrap">
-              Series 798 Sliding Window {hasStructuralWaiver ? "(Waiver Active)" : ""}
+              {productName} {hasStructuralWaiver ? "(Waiver Active)" : ""}
             </span>
 
             <span className="text-[#c3c3c3] whitespace-nowrap">Visual Output</span>
-            <span className="text-[#0f1422] whitespace-nowrap">Livingroom.jpeg</span>
+            <span className="text-[#0f1422] whitespace-nowrap">{fileName}</span>
 
             {/* Row 2 / Items 7-12 */}
             <span className="text-[#c3c3c3] whitespace-nowrap">Estimated Price</span>
             <span className="text-[#0f1422] whitespace-nowrap">{formattedPrice}</span>
 
             <span className="text-[#c3c3c3] whitespace-nowrap">Date Created</span>
-            <span className="text-[#0f1422] md:whitespace-nowrap">May 21, 2026 · 3:42 PM</span>
+            <span className="text-[#0f1422] md:whitespace-nowrap">{dateFormatted}</span>
 
             <span className="text-[#c3c3c3] whitespace-nowrap">Customer</span>
-            <span className="text-[#0f1422] whitespace-nowrap">Juan Dela Cruz</span>
+            <span className="text-[#0f1422] whitespace-nowrap">{customerName}</span>
           </div>
         </div>
 
@@ -103,17 +117,24 @@ export function Step2GenerateLink({
             </div>
             <button
               onClick={onGenerateLink}
-              className="border border-[#0f1422] bg-white hover:bg-neutral-50 active:bg-neutral-100 transition-colors px-6 py-3.5 rounded-[25px] flex items-center gap-3.5 cursor-pointer text-[#0f1422] font-normal text-[20px] tracking-[-0.38px] leading-[1.4] shadow-sm"
+              disabled={isGenerating}
+              className={`border border-[#0f1422] bg-white transition-colors px-6 py-3.5 rounded-[25px] flex items-center gap-3.5 text-[#0f1422] font-normal text-[20px] tracking-[-0.38px] leading-[1.4] shadow-sm ${
+                isGenerating ? "opacity-60 cursor-not-allowed" : "hover:bg-neutral-50 active:bg-neutral-100 cursor-pointer"
+              }`}
             >
-              <div className="relative w-[20px] h-[20px]">
-                <Image
-                  src="/send-booking/link.svg"
-                  alt="Link Icon"
-                  fill
-                  className="object-contain brightness-0"
-                />
-              </div>
-              <span>Generate Link</span>
+              {isGenerating ? (
+                <div className="w-5 h-5 border-2 border-[#0f1422] border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <div className="relative w-[20px] h-[20px]">
+                  <Image
+                    src="/send-booking/link.svg"
+                    alt="Link Icon"
+                    fill
+                    className="object-contain brightness-0"
+                  />
+                </div>
+              )}
+              <span>{isGenerating ? "Generating Secure Link..." : "Generate Link"}</span>
             </button>
           </div>
         ) : (
@@ -168,14 +189,14 @@ export function Step2GenerateLink({
                 <span className="text-[#c3c3c3] text-[14px] font-normal tracking-[-0.266px]">Expires</span>
                 <span className="text-[#c3c3c3] text-[14px] font-normal tracking-[-0.266px]">Scope</span>
                 <span className="text-[#c3c3c3] text-[14px] font-normal tracking-[-0.266px]">Access </span>
-                <span className="text-[#ffa010] text-[16px] font-normal tracking-[-0.304px]">June 3, 2026</span>
+                <span className="text-[#ffa010] text-[16px] font-normal tracking-[-0.304px]">{expiresFormatted}</span>
                 <span className="text-[#0f1422] text-[16px] font-normal tracking-[-0.304px]">Read Only</span>
                 <span className="text-[#0f1422] text-[16px] font-normal tracking-[-0.304px]">Estimate Quotation, Snapshot and product summary</span>
               </div>
               <div className="flex flex-col gap-4 pt-4 border-t border-neutral-100 select-none text-left md:hidden">
                 <div className="flex flex-col gap-1">
                   <span className="text-[#c3c3c3] text-[14px] font-normal tracking-[-0.266px]">Expires</span>
-                  <span className="text-[#ffa010] text-[16px] font-normal tracking-[-0.304px]">June 3, 2026</span>
+                  <span className="text-[#ffa010] text-[16px] font-normal tracking-[-0.304px]">{expiresFormatted}</span>
                 </div>
                 <div className="flex flex-col gap-1">
                   <span className="text-[#c3c3c3] text-[14px] font-normal tracking-[-0.266px]">Scope</span>

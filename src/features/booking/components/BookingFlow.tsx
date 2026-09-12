@@ -1,12 +1,14 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { ChevronLeft } from "lucide-react";
 import { useVisualizationSession } from "@/lib/visualization/visualizationSession";
 import { calculateStandardSeries798, calculateBOMFromStructuralDefinition } from "@/lib/pricing/pricingEngine";
 import { generateQuotationPdfHtml } from "@/lib/pricing/quotationPdfGenerator";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { generateSignedBookingLink, recordBookingRequest } from "@/lib/booking/bookingActions";
 import { Stepper } from "./Stepper";
 import { Step1ViewPdf } from "./Step1ViewPdf";
 import { Step2GenerateLink } from "./Step2GenerateLink";
@@ -18,10 +20,55 @@ export function BookingFlow() {
   const router = useRouter();
   const [step, setStep] = useState(1);
   const [isLinkGenerated, setIsLinkGenerated] = useState(false);
-  const [sharingMethod, setSharingMethod] = useState("");
+  const [isGeneratingLink, setIsGeneratingLink] = useState(false);
+  const [sharingMethod, setSharingMethod] = useState<"Messenger" | "Viber">("Messenger");
+  const [errorMessage, setErrorMessage] = useState("");
+
+  // Authenticated user state
+  const [customerName, setCustomerName] = useState("Juan Dela Cruz");
+  const [customerPhone, setCustomerPhone] = useState("+63 (917) 000-0000");
+  const [customerEmail, setCustomerEmail] = useState("client@glassfit.ph");
+
+  // Dynamic booking identifiers
+  const [quotationNumber, setQuotationNumber] = useState("Q-2026-0482");
+  const [referenceCode, setReferenceCode] = useState("CF-2026-001");
+  const [generatedLink, setGeneratedLink] = useState("glassfit.ph/q/cf-2026-001");
+  const [activeLinkId, setActiveLinkId] = useState<string | null>(null);
 
   const { productConfiguration, structuralDefinition, finalSnapshotDataUrl } =
     useVisualizationSession();
+
+  // Load authenticated profile on mount
+  useEffect(() => {
+    async function loadUserProfile() {
+      try {
+        const supabase = createSupabaseBrowserClient();
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+
+        if (user) {
+          const { data: profile } = await supabase
+            .from("profiles")
+            .select("full_name, contact_number, email")
+            .eq("profile_id", user.id)
+            .single();
+
+          if (profile) {
+            if (profile.full_name) setCustomerName(profile.full_name);
+            if (profile.contact_number) setCustomerPhone(profile.contact_number);
+            if (profile.email) setCustomerEmail(profile.email);
+          } else if (user.user_metadata?.full_name) {
+            setCustomerName(user.user_metadata.full_name);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load user profile in booking flow:", err);
+      }
+    }
+
+    loadUserProfile();
+  }, []);
 
   const widthMm = Math.round((productConfiguration?.widthCm ?? 120) * 10);
   const heightMm = Math.round((productConfiguration?.heightCm ?? 120) * 10);
@@ -53,17 +100,39 @@ export function BookingFlow() {
         structuralWaiver,
       });
 
-  const quotationNumber = "Q-2026-0482";
-  const referenceCode = "CF-2026-001";
-  const generatedLink = `glassfit.ph/q/${referenceCode.toLowerCase()}`;
+  const now = new Date();
+  const dateFormatted = new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(now);
+
+  const expiresDate = new Date();
+  expiresDate.setDate(expiresDate.getDate() + 7);
+  const expiresFormatted = new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  }).format(expiresDate);
+
+  const validUntilFormatted = new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  }).format(expiresDate);
 
   const handlePreviewPdf = () => {
     const html = generateQuotationPdfHtml({
       quotationNumber,
       referenceCode,
-      customerName: "Juan Dela Cruz",
-      createdAtFormatted: "May 21, 2026 · 3:42 PM",
-      validUntilFormatted: "June 4, 2026",
+      customerName,
+      customerPhone,
+      customerEmail,
+      createdAtFormatted: dateFormatted,
+      validUntilFormatted,
       hasSill,
       structuralWaiver,
       bomResult: bomCalc,
@@ -80,9 +149,11 @@ export function BookingFlow() {
     const html = generateQuotationPdfHtml({
       quotationNumber,
       referenceCode,
-      customerName: "Juan Dela Cruz",
-      createdAtFormatted: "May 21, 2026 · 3:42 PM",
-      validUntilFormatted: "June 4, 2026",
+      customerName,
+      customerPhone,
+      customerEmail,
+      createdAtFormatted: dateFormatted,
+      validUntilFormatted,
       hasSill,
       structuralWaiver,
       bomResult: bomCalc,
@@ -111,16 +182,63 @@ export function BookingFlow() {
     }
   };
 
-  const handleGenerateLink = () => {
-    setIsLinkGenerated(true);
+  const handleGenerateLink = async () => {
+    setIsGeneratingLink(true);
+    setErrorMessage("");
+
+    try {
+      const result = await generateSignedBookingLink({
+        widthMm,
+        heightMm,
+        panelCount,
+        hasSill,
+        finishType,
+        glassType,
+        structuralWaiver,
+        productName: structuralDefinition?.product.productName || "Series 798 Sliding Window",
+        productType: structuralDefinition?.product.productType || "Sliding Window",
+        finalSnapshotDataUrl,
+      });
+
+      setQuotationNumber(result.quotationNumber);
+      setReferenceCode(result.referenceCode);
+      setGeneratedLink(result.displayLink);
+      setActiveLinkId(result.linkId);
+      setIsLinkGenerated(true);
+    } catch (err: unknown) {
+      console.error("Failed to generate signed reference link:", err);
+      // If unauthenticated or token expired, give friendly fallback and keep standard flow
+      const fallbackRef = `CF-2026-${Math.floor(100 + Math.random() * 900)}`;
+      setReferenceCode(fallbackRef);
+      setGeneratedLink(`glassfit.ph/q/${fallbackRef.toLowerCase()}`);
+      setIsLinkGenerated(true);
+    } finally {
+      setIsGeneratingLink(false);
+    }
   };
 
-  const handleSend = (method: "Messenger" | "Viber") => {
+  const handleSend = async (method: "Messenger" | "Viber") => {
     setSharingMethod(method);
-    // Simulate short delay while loading opens external app, then proceed to confirm page (Step 4)
+
+    if (activeLinkId) {
+      try {
+        await recordBookingRequest({
+          linkId: activeLinkId,
+          platform: method,
+        });
+      } catch (err) {
+        console.error("Failed to log booking request:", err);
+      }
+    }
+
+    // Advance to Step 4 verification checklist
     setTimeout(() => {
       setStep(4);
-    }, 800);
+    }, 600);
+  };
+
+  const handleConfirmSent = () => {
+    setStep(5);
   };
 
   const handleBackToHome = () => {
@@ -132,6 +250,12 @@ export function BookingFlow() {
       {/* 4-Step Stepper Header (hidden on final success page) */}
       {step < 5 && <Stepper currentStep={step} />}
 
+      {errorMessage && (
+        <div className="bg-red-50 border border-red-300 text-red-700 text-sm rounded-[14px] p-4 text-center">
+          {errorMessage}
+        </div>
+      )}
+
       {/* Dynamic Step Content */}
       <div className="w-full flex-1">
         {step === 1 && (
@@ -141,15 +265,25 @@ export function BookingFlow() {
             structuralWaiver={structuralWaiver}
             hasSill={hasSill}
             totalEstimatePhp={bomCalc.finalQuotation}
+            quotationNumber={quotationNumber}
+            dateFormatted={dateFormatted}
+            fileName="Livingroom.jpeg"
           />
         )}
         {step === 2 && (
           <Step2GenerateLink
             isLinkGenerated={isLinkGenerated}
+            isGenerating={isGeneratingLink}
             onGenerateLink={handleGenerateLink}
             generatedLink={generatedLink}
             totalEstimatePhp={bomCalc.finalQuotation}
             hasStructuralWaiver={structuralWaiver}
+            customerName={customerName}
+            referenceCode={referenceCode}
+            productName={structuralDefinition?.product.productName || "Series 798 Sliding Window"}
+            fileName="Livingroom.jpeg"
+            dateFormatted={dateFormatted}
+            expiresFormatted={expiresFormatted}
           />
         )}
         {step === 3 && (
@@ -159,12 +293,14 @@ export function BookingFlow() {
             totalEstimatePhp={bomCalc.finalQuotation}
             hasStructuralWaiver={structuralWaiver}
             productName={structuralDefinition?.product.productName || "Series 798 Sliding Window"}
+            quotationNumber={quotationNumber}
+            customerName={customerName}
           />
         )}
         {step === 4 && (
           <Step4ConfirmSent
             sharingMethod={sharingMethod}
-            onConfirm={() => setStep(5)}
+            onConfirm={handleConfirmSent}
             onBack={() => setStep(3)}
           />
         )}
@@ -179,12 +315,14 @@ export function BookingFlow() {
               sharingMethod={sharingMethod}
               onBackToHome={handleBackToHome}
               totalEstimatePhp={bomCalc.finalQuotation}
+              referenceCode={referenceCode}
+              dateFormatted={dateFormatted}
             />
           </>
         )}
       </div>
 
-      {/* Conditionally Render Bottom Step Navigation Bar (Steps 1, 2, 3) */}
+      {/* Bottom Step Navigation Bar (Steps 1, 2, 3) */}
       {step < 4 && (
         <div className="bg-[#f5f5f5] w-full flex flex-col sm:flex-row items-center justify-between gap-4 p-5 rounded-[20px] shadow-sm select-none mt-4 transition-all duration-300">
           {/* Back / Back to Estimate Button */}

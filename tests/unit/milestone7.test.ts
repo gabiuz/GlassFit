@@ -217,4 +217,63 @@ describe("Milestone 7: Quotation Summary & Consultation PDF Handoff", () => {
       assert.ok(booking.messengerUrl.includes(encodeURIComponent("Structural waiver attached")));
     });
   });
+
+  // --------------------------------------------------------------------------
+  // 4. Booking Domain Schemas & Token Hash Validation
+  // --------------------------------------------------------------------------
+  describe("Booking Domain Schemas & Token Hash Validation", () => {
+    it("should validate GenerateBookingLinkInputSchema and default options", async () => {
+      const { GenerateBookingLinkInputSchema } = await import("../../src/lib/booking/types.js");
+
+      const parsed = GenerateBookingLinkInputSchema.parse({
+        widthMm: 1800,
+        heightMm: 1200,
+      });
+
+      assert.strictEqual(parsed.widthMm, 1800);
+      assert.strictEqual(parsed.heightMm, 1200);
+      assert.strictEqual(parsed.panelCount, 2);
+      assert.strictEqual(parsed.hasSill, true);
+      assert.strictEqual(parsed.finishType, "Analok");
+      assert.strictEqual(parsed.structuralWaiver, false);
+    });
+
+    it("should validate GeneratedBookingLinkResultSchema with 64-hex SHA-256 token hash", async () => {
+      const { GeneratedBookingLinkResultSchema } = await import("../../src/lib/booking/types.js");
+
+      const validResult = {
+        linkId: "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+        quotationId: "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6e",
+        quotationNumber: "Q-2026-0482",
+        referenceCode: "CF-2026-001",
+        tokenHash: "a".repeat(64),
+        signedUrl: "https://glassfit.ph/q/" + "a".repeat(64),
+        displayLink: "glassfit.ph/q/cf-2026-001",
+        expiresAt: new Date(Date.now() + 7 * 86400000).toISOString(),
+        totalEstimatedAmount: 5670.74,
+        hasStructuralWaiver: false,
+      };
+
+      const parsed = GeneratedBookingLinkResultSchema.parse(validResult);
+      assert.strictEqual(parsed.referenceCode, "CF-2026-001");
+      assert.strictEqual(parsed.tokenHash.length, 64);
+    });
+
+    it("should validate RecordBookingRequestInputSchema and UpdateBookingStatusInputSchema", async () => {
+      const { RecordBookingRequestInputSchema, UpdateBookingStatusInputSchema } = await import("../../src/lib/booking/types.js");
+
+      const recordInput = RecordBookingRequestInputSchema.parse({
+        linkId: "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+        platform: "Messenger",
+      });
+      assert.strictEqual(recordInput.platform, "Messenger");
+
+      const updateInput = UpdateBookingStatusInputSchema.parse({
+        bookingRequestId: "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+        status: "Done",
+      });
+      assert.strictEqual(updateInput.status, "Done");
+    });
+  });
 });
+

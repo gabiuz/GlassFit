@@ -13,6 +13,7 @@ interface Step3SendReferenceProps {
   hasStructuralWaiver?: boolean;
   productName?: string;
   quotationNumber?: string;
+  customerName?: string;
 }
 
 export function Step3SendReference({
@@ -22,11 +23,12 @@ export function Step3SendReference({
   hasStructuralWaiver = false,
   productName = "Series 798 Sliding Window",
   quotationNumber = "Q-2026-0482",
+  customerName = "Juan Dela Cruz",
 }: Step3SendReferenceProps) {
   const [copied, setCopied] = useState(false);
 
   const { messageText, messengerUrl, viberUrl } = formatBookingShareMessage({
-    customerName: "Juan",
+    customerName,
     quotationNumber,
     referenceLink: generatedLink,
     productDescription: productName,

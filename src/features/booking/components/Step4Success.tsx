@@ -8,12 +8,16 @@ interface Step4SuccessProps {
   sharingMethod: string;
   onBackToHome: () => void;
   totalEstimatePhp?: number;
+  referenceCode?: string;
+  dateFormatted?: string;
 }
 
 export function Step4Success({
   sharingMethod,
   onBackToHome,
   totalEstimatePhp = 50000,
+  referenceCode = "CF-2026-001",
+  dateFormatted = "June 3, 2026",
 }: Step4SuccessProps) {
   const formattedEstimate = new Intl.NumberFormat("en-PH", {
     style: "currency",
@@ -53,13 +57,13 @@ export function Step4Success({
           <div className="bg-white p-4 sm:p-5 rounded-[12px] shadow-sm">
             <div className="grid grid-cols-2 gap-y-3 gap-x-6 text-[#0f1422] text-sm">
               <p className="text-[#c3c3c3] font-medium leading-[1.4]">Reference Number</p>
-              <p className="font-normal text-right leading-[1.4]">CF-2026-001</p>
+              <p className="font-normal text-right leading-[1.4]">{referenceCode}</p>
 
               <p className="text-[#c3c3c3] font-medium leading-[1.4]">Sent via</p>
               <p className="font-normal text-right leading-[1.4]">{sharingMethod}</p>
 
               <p className="text-[#c3c3c3] font-medium leading-[1.4]">Date Created</p>
-              <p className="font-normal text-right leading-[1.4]">June 3, 2026</p>
+              <p className="font-normal text-right leading-[1.4]">{dateFormatted}</p>
 
               <p className="text-[#c3c3c3] font-medium leading-[1.4]">Estimated Price</p>
               <p className="text-right leading-[1.4] font-semibold text-[#0f1422]">

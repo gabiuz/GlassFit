@@ -10,6 +10,9 @@ interface Step1ViewPdfProps {
   structuralWaiver?: boolean;
   hasSill?: boolean;
   totalEstimatePhp?: number;
+  quotationNumber?: string;
+  dateFormatted?: string;
+  fileName?: string;
 }
 
 const listItems = [
@@ -27,6 +30,9 @@ export function Step1ViewPdf({
   structuralWaiver = false,
   hasSill = true,
   totalEstimatePhp = 4362.93,
+  quotationNumber = "Q-2026-0482",
+  dateFormatted = "May 21, 2026 · 3:42 PM",
+  fileName = "Livingroom.jpeg",
 }: Step1ViewPdfProps) {
   const formattedEstimate = new Intl.NumberFormat("en-PH", {
     style: "currency",
@@ -89,10 +95,10 @@ export function Step1ViewPdf({
           {/* PDF info details */}
           <div className="flex flex-col gap-5 items-start relative select-none text-center md:text-left">
             <p className="font-normal text-[#0f1422] text-base md:text-[20px] tracking-[-0.38px] leading-[1.4]">
-              Generated May 21, 2026 · 3:42 PM · 248 KB
+              Generated {dateFormatted} · 248 KB
             </p>
             <p className="font-medium text-[#0f1422] text-xl sm:text-[32px] tracking-[-0.608px] leading-[1.2]">
-              GlassFit_Quotation_Q-2026-0482.pdf
+              GlassFit_Quotation_{quotationNumber}.pdf
             </p>
             {/* Tags row */}
             <div className="flex flex-wrap gap-3.5 items-center justify-center md:justify-start">

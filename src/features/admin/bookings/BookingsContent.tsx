@@ -24,6 +24,8 @@ const filterTabs: Array<{ label: string; value: BookingStatus | "All" }> = [
   { label: "Cancelled", value: "Cancelled" },
 ];
 
+import { updateBookingRequestStatus } from "@/lib/booking/bookingActions";
+
 export function BookingsContent({ initialBookings }: { initialBookings: AdminBookingItem[] }) {
   const [bookings, setBookings] = useState<AdminBookingItem[]>(initialBookings);
   const [selectedBookingId, setSelectedBookingId] = useState<string>(
@@ -31,6 +33,8 @@ export function BookingsContent({ initialBookings }: { initialBookings: AdminBoo
   );
   const [activeTab, setActiveTab] = useState<BookingStatus | "All">("All");
   const [searchQuery, setSearchQuery] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [feedbackToast, setFeedbackToast] = useState<string | null>(null);
 
   const counts = useMemo(() => {
     return {
@@ -77,13 +81,36 @@ export function BookingsContent({ initialBookings }: { initialBookings: AdminBoo
     setCurrentStatus(newStatus);
   };
 
-  const handleSaveChanges = () => {
+  const handleSaveChanges = async () => {
     if (!selectedBooking) return;
-    setBookings((prev) =>
-      prev.map((b) =>
-        b.id === selectedBooking.id ? { ...b, status: currentStatus } : b
-      )
-    );
+    setIsSaving(true);
+    try {
+      // Map UI Reviewing/Confirmed to DB status values
+      let dbStatus: "Pending" | "Ongoing" | "Done" | "Cancelled" = "Pending";
+      if (currentStatus === "Reviewing") dbStatus = "Ongoing";
+      else if (currentStatus === "Confirmed") dbStatus = "Done";
+      else if (currentStatus === "Cancelled") dbStatus = "Cancelled";
+
+      await updateBookingRequestStatus({
+        bookingRequestId: selectedBooking.id,
+        status: dbStatus,
+      });
+
+      setBookings((prev) =>
+        prev.map((b) =>
+          b.id === selectedBooking.id ? { ...b, status: currentStatus } : b
+        )
+      );
+
+      setFeedbackToast(`Status updated to ${currentStatus} successfully`);
+      setTimeout(() => setFeedbackToast(null), 3000);
+    } catch (err: unknown) {
+      console.error("Failed to update status:", err);
+      setFeedbackToast("Failed to save changes. Please try again.");
+      setTimeout(() => setFeedbackToast(null), 4000);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleDiscardChanges = () => {
@@ -338,21 +365,42 @@ export function BookingsContent({ initialBookings }: { initialBookings: AdminBoo
               <button
                 type="button"
                 onClick={handleDiscardChanges}
-                className="bg-[#c50000] text-white text-xs font-medium px-4 py-2 rounded-[10px] cursor-pointer hover:bg-red-700 transition-colors"
+                disabled={isSaving}
+                className="bg-[#c50000] text-white text-xs font-medium px-4 py-2 rounded-[10px] cursor-pointer hover:bg-red-700 transition-colors disabled:opacity-50"
               >
                 Discard
               </button>
               <button
                 type="button"
                 onClick={handleSaveChanges}
-                className="bg-[#05b64b] text-white text-xs font-medium px-4 py-2 rounded-[10px] cursor-pointer hover:bg-emerald-600 transition-colors"
+                disabled={isSaving}
+                className="bg-[#05b64b] text-white text-xs font-medium px-4 py-2 rounded-[10px] cursor-pointer hover:bg-emerald-600 transition-colors disabled:opacity-50 flex items-center gap-1.5"
               >
-                Save Changes
+                {isSaving && (
+                  <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                )}
+                <span>{isSaving ? "Saving..." : "Save Changes"}</span>
               </button>
             </div>
           </div>
         )}
       </div>
+
+      {/* Floating feedback toast */}
+      {feedbackToast && (
+        <div className="fixed bottom-6 right-6 z-50 bg-[#0f1422] text-white py-3 px-5 rounded-[12px] shadow-xl flex items-center gap-3 border border-neutral-800 transition-all duration-300">
+          <div className="bg-[#05b64b] flex items-center justify-center w-5 h-5 rounded-full shrink-0">
+            <Image
+              src="/send-booking/check.svg"
+              alt="Success"
+              width={10}
+              height={10}
+              className="object-contain"
+            />
+          </div>
+          <span className="text-sm font-normal tracking-tight">{feedbackToast}</span>
+        </div>
+      )}
     </div>
   );
 }
