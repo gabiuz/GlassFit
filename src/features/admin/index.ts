@@ -22,3 +22,6 @@ export { MaterialModal } from "./materials/MaterialModal";
 export { BatchPriceModal } from "./materials/BatchPriceModal";
 export { DeleteMaterialModal } from "./materials/DeleteMaterialModal";
 
+// Settings
+export { SettingsPage } from "./settings/SettingsPage";
+export { SettingsContent } from "./settings/SettingsContent";
