@@ -23,6 +23,7 @@ import {
   PlacedOverlay,
 } from "@/lib/visualization/types";
 import { ALUMINUM_COLOR_VARIATIONS } from "@/lib/visualization/colorVariations";
+import { createDuplicateConfiguration } from "@/lib/visualization/multiProductPresentation";
 import {
   validateEngineeringGuardrails,
   type EngineeringValidationResult,
@@ -661,7 +662,7 @@ export function ProductModelWorkspace({
 
     if (product.id === currentProductId) {
       setActiveOverlayId(crypto.randomUUID());
-      resetProductPlacement();
+      applyProductConfiguration(createDuplicateConfiguration(currentConfiguration));
     }
 
     setSelectedProduct(true);

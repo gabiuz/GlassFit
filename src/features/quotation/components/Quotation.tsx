@@ -11,9 +11,21 @@ import { ProductSummary } from "./ProductSummary";
 import { BookingInfo } from "./BookingInfo";
 
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { useVisualizationSession } from "@/lib/visualization/visualizationSession";
+import { getVisualizationHeaderDetails } from "@/lib/visualization/multiProductPresentation";
 
 export function Quotation() {
   const router = useRouter();
+  const {
+    spaceImageSession,
+    placedOverlays,
+    structuralDefinition,
+  } = useVisualizationSession();
+  const headerDetails = getVisualizationHeaderDetails({
+    originalFileName: spaceImageSession?.originalFileName,
+    placedOverlays,
+    activeProductName: structuralDefinition?.product.productName,
+  });
 
   const handleSendBooking = async () => {
     try {
@@ -43,9 +55,9 @@ export function Quotation() {
         </p>
       </div>
       <VisualizationHeader
-        fileName="Livingroom.jpeg"
-        productCount={2}
-        tags={["Kitchen Cabinet", "Double Swing Door"]}
+        fileName={headerDetails.fileName}
+        productCount={headerDetails.productCount}
+        tags={headerDetails.tags}
       />
       <VisualizationComparison />
       <ProductSummary />
