@@ -22,8 +22,15 @@ import {
   ProductVariationSnapshot,
   PlacedOverlay,
 } from "@/lib/visualization/types";
-import { ALUMINUM_COLOR_VARIATIONS } from "@/lib/visualization/colorVariations";
-import { createDuplicateConfiguration } from "@/lib/visualization/multiProductPresentation";
+import {
+  ALUMINUM_COLOR_VARIATIONS,
+  normalizeAluminumFinish,
+  type AluminumFinishKey,
+} from "@/lib/visualization/colorVariations";
+import {
+  createDuplicateConfiguration,
+  getPlacedLayerImageUrls,
+} from "@/lib/visualization/multiProductPresentation";
 import {
   validateEngineeringGuardrails,
   type EngineeringValidationResult,
@@ -753,16 +760,113 @@ export function ProductModelWorkspace({
     ],
   );
 
-  const createPlacedOverlay = useCallback(async (): Promise<PlacedOverlay> => ({
-    overlayId: activeOverlayId,
-    productId: currentProductId ?? structuralDefinition?.product.productId ?? "",
-    productName: overlayName,
-    templateId: structuralDefinition?.template.templateId ?? "catalog-image",
-    configuration: currentConfiguration,
-    flattenedImageDataUrl: await captureCurrentProductLayer(),
-  }), [
+  const captureCurrentProductVariationLayers = useCallback(async () => {
+    const variationImageDataUrls: Partial<Record<AluminumFinishKey, string>> = {};
+
+    if (!structuralDefinition) {
+      const fallbackLayer = await captureCurrentProductLayer();
+      for (const variation of ALUMINUM_COLOR_VARIATIONS) {
+        variationImageDataUrls[variation.key] = fallbackLayer;
+      }
+      return variationImageDataUrls;
+    }
+
+    const width = Number(widthCm) || DEFAULT_PRODUCT_WIDTH_CM;
+    const height = Number(heightCm) || DEFAULT_PRODUCT_HEIGHT_CM;
+
+    for (const variation of ALUMINUM_COLOR_VARIATIONS) {
+      const renderer = new ProductModelRenderer(
+        renderFrameSize.width,
+        renderFrameSize.height,
+      );
+
+      try {
+        renderer.setSize(renderFrameSize.width, renderFrameSize.height);
+        renderer.applyLighting(effectiveLighting ?? null);
+        await renderer.loadModel(
+          structuralDefinition,
+          {
+            width: width * 10,
+            height: height * 10,
+            pane_count: panelCount,
+            includeSill,
+            include_sill: includeSill,
+          },
+          glassAppearance,
+          includeSill,
+          variation.key,
+        );
+
+        const renderedCanvas = renderer.render(yaw, pitch);
+        if (!renderedCanvas) {
+          continue;
+        }
+
+        variationImageDataUrls[variation.key] = await captureWorkspaceSnapshot({
+          canvasElement: canvasRef.current,
+          overlayElement: overlayBoxRef.current,
+          backgroundImageUrl: null,
+          fallbackProductImageUrl: productOverlayImage,
+          hasGeneratedProduct: true,
+          activeOcclusionObjects: [],
+          rotateAngle,
+          isFlipped,
+          modelFilter: exportModelFilter,
+          generatedCanvasOverride: cloneCanvas(renderedCanvas),
+          structuralDefinition,
+          yaw,
+          pitch,
+          lighting: effectiveLighting ?? null,
+          glassAppearance,
+          includeSill,
+          widthCm: width,
+          heightCm: height,
+        });
+      } finally {
+        renderer.dispose();
+      }
+    }
+
+    return variationImageDataUrls;
+  }, [
+    captureCurrentProductLayer,
+    effectiveLighting,
+    exportModelFilter,
+    glassAppearance,
+    heightCm,
+    includeSill,
+    isFlipped,
+    panelCount,
+    pitch,
+    productOverlayImage,
+    renderFrameSize,
+    rotateAngle,
+    structuralDefinition,
+    widthCm,
+    yaw,
+  ]);
+
+  const createPlacedOverlay = useCallback(async (): Promise<PlacedOverlay> => {
+    const variationImageDataUrls = await captureCurrentProductVariationLayers();
+    const currentFinish = normalizeAluminumFinish(
+      currentConfiguration.aluminumFinish,
+    );
+    const flattenedImageDataUrl =
+      variationImageDataUrls[currentFinish] ?? await captureCurrentProductLayer();
+
+    return {
+      overlayId: activeOverlayId,
+      productId: currentProductId ?? structuralDefinition?.product.productId ?? "",
+      productName: overlayName,
+      templateId: structuralDefinition?.template.templateId ?? "catalog-image",
+      configuration: currentConfiguration,
+      flattenedImageDataUrl,
+      variationImageDataUrls,
+    };
+  }, [
     activeOverlayId,
     captureCurrentProductLayer,
+    captureCurrentProductVariationLayers,
     currentConfiguration,
     currentProductId,
     overlayName,
@@ -922,8 +1026,9 @@ export function ProductModelWorkspace({
           includeSill,
           widthCm: width,
           heightCm: height,
-          placedLayerImageUrls: placedOverlays.map(
-            (overlay) => overlay.flattenedImageDataUrl,
+          placedLayerImageUrls: getPlacedLayerImageUrls(
+            placedOverlays,
+            variation.key,
           ),
         });
 

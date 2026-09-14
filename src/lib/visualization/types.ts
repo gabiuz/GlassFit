@@ -133,6 +133,7 @@ export type PlacedOverlay = {
   templateId: string;
   configuration: ProductConfigurationSnapshot;
   flattenedImageDataUrl: string;
+  variationImageDataUrls?: Partial<Record<AluminumFinishKey, string>>;
 };
 
 export type VisualizationSessionState = {

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   createDuplicateConfiguration,
+  getPlacedLayerImageUrls,
   getVisualizationHeaderDetails,
 } from "../../src/lib/visualization/multiProductPresentation";
 import type {
@@ -62,5 +63,23 @@ describe("QAD-TC6: multi-product quotation presentation", () => {
     assert.equal(details.fileName, "customer-room.jpg");
     assert.equal(details.productCount, 3);
     assert.deepEqual(details.tags, ["Fixed Window x3"]);
+  });
+
+  it("composes every cached product layer using the selected aluminum finish", () => {
+    const first = placedOverlay("one");
+    const second = placedOverlay("two");
+    first.variationImageDataUrls = {
+      white: "data:image/png;base64,first-white",
+      black: "data:image/png;base64,first-black",
+    };
+    second.variationImageDataUrls = {
+      white: "data:image/png;base64,second-white",
+      black: "data:image/png;base64,second-black",
+    };
+
+    assert.deepEqual(getPlacedLayerImageUrls([first, second], "black"), [
+      "data:image/png;base64,first-black",
+      "data:image/png;base64,second-black",
+    ]);
   });
 });

@@ -1,7 +1,20 @@
 import type {
+  AluminumFinishKey,
+} from "./colorVariations";
+import type {
   PlacedOverlay,
   ProductConfigurationSnapshot,
 } from "./types";
+
+export function getPlacedLayerImageUrls(
+  placedOverlays: PlacedOverlay[],
+  finish: AluminumFinishKey,
+) {
+  return placedOverlays.map(
+    (overlay) =>
+      overlay.variationImageDataUrls?.[finish] ?? overlay.flattenedImageDataUrl,
+  );
+}
 
 export function createDuplicateConfiguration(
   configuration: ProductConfigurationSnapshot,
