@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter, usePathname } from "next/navigation";
@@ -27,6 +27,8 @@ export default function Navbar({ className = "" }: ClassNameProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   const isCurrentPage = (href: string) => {
     if (!pathname) return false;
@@ -59,11 +61,24 @@ export default function Navbar({ className = "" }: ClassNameProps) {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setIsDropdownOpen(false);
+      }
+    };
+    if (isDropdownOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [isDropdownOpen]);
+
   const handleSignOut = async () => {
     setIsSigningOut(true);
     const supabase = createSupabaseBrowserClient();
     await supabase.auth.signOut();
     setIsOpen(false);
+    setIsDropdownOpen(false);
     router.push("/");
     router.refresh();
     setIsSigningOut(false);
@@ -71,34 +86,153 @@ export default function Navbar({ className = "" }: ClassNameProps) {
 
   const displayName = user
     ? (user.user_metadata?.first_name as string | undefined) ??
-      user.email?.split("@")[0] ??
-      "Account"
+    user.email?.split("@")[0] ??
+    "Account"
     : null;
 
   const authSection = isLoading ? (
-    <div className="hidden lg:flex items-center gap-3 shrink-0">
-      <div className="h-9 w-20 rounded-[10px] bg-[#c3c3c3]/30 animate-pulse" />
-      <div className="h-9 w-28 rounded-[10px] bg-[#c3c3c3]/30 animate-pulse" />
+    <div className="hidden lg:flex items-center shrink-0">
+      <div className="h-[47px] w-[140px] rounded-[10px] bg-[#c3c3c3]/30 animate-pulse" />
     </div>
   ) : user ? (
-    <div className="hidden lg:flex items-center gap-3 xl:gap-4 shrink-0">
-      <div className="flex items-center gap-2 px-3 py-2 rounded-[10px] bg-green/10 border border-green/30">
-        <div className="w-7 h-7 rounded-full bg-green flex items-center justify-center shrink-0">
-          <span className="text-white text-xs font-semibold uppercase">
-            {displayName?.[0] ?? "U"}
-          </span>
-        </div>
-        <span className="text-sm font-medium text-green whitespace-nowrap max-w-[120px] truncate">
+    /* Profile dropdown pill - matches Figma node I1371:7438;363:2460 */
+    <div ref={dropdownRef} className="hidden lg:flex items-center relative shrink-0">
+      <button
+        id="navbar-profile-btn"
+        onClick={() => setIsDropdownOpen((prev) => !prev)}
+        aria-haspopup="true"
+        aria-expanded={isDropdownOpen}
+        className="flex items-center gap-[10px] px-5 py-[10px] rounded-[10px] bg-[#0f1422] text-white whitespace-nowrap hover:bg-neutral-800 active:scale-[0.98] transition-all cursor-pointer"
+      >
+        {/* User icon */}
+        <Image
+          src="/profile/user.svg"
+          alt=""
+          aria-hidden="true"
+          width={27}
+          height={27}
+          className="shrink-0"
+        />
+        {/* Display name */}
+        <span className="text-[18px] leading-[1.5] tracking-[-0.02em] max-w-[120px] truncate">
           {displayName}
         </span>
-      </div>
-      <button
-        onClick={handleSignOut}
-        disabled={isSigningOut}
-        className="flex items-center justify-center px-3 xl:px-5 py-2.5 rounded-[10px] bg-black text-white text-sm font-normal whitespace-nowrap hover:bg-neutral-800 active:scale-[0.98] transition-all disabled:opacity-60 cursor-pointer"
-      >
-        {isSigningOut ? "Signing out..." : "Log Out"}
+        {/* Caret-down chevron */}
+        <Image
+          src="/profile/caret.svg"
+          alt=""
+          aria-hidden="true"
+          width={15}
+          height={15}
+          className={`shrink-0 transition-transform duration-200 ${isDropdownOpen ? "rotate-180" : "rotate-0"
+            }`}
+          style={{ transitionTimingFunction: "cubic-bezier(0.23,1,0.32,1)" }}
+        />
       </button>
+
+      {/* Dropdown panel */}
+      <AnimatePresence>
+        {isDropdownOpen && (
+          <motion.div
+            key="profile-dropdown"
+            initial={{ opacity: 0, y: -6, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -6, scale: 0.97 }}
+            transition={{ duration: 0.18, ease: [0.23, 1, 0.32, 1] }}
+            style={{ transformOrigin: "top right" }}
+            className="absolute top-[calc(100%+8px)] right-0 w-[241px] bg-white rounded-[20px] shadow-[0_8px_30px_rgba(4,94,109,0.18)] border border-green/20 flex flex-col gap-[10px] p-[20px] z-50"
+          >
+            {/* Header: avatar + name + email — Figma node 1376:8202 */}
+            <div className="flex items-center gap-[7px] w-full min-w-0">
+              <div className="shrink-0 rounded-full border border-[#C3C3C3]">
+                <Image
+                  src="/profile/user.svg"
+                  alt=""
+                  aria-hidden="true"
+                  width={37}
+                  height={37}
+                  className="block rounded-full"
+                />
+              </div>
+              <div className="flex flex-col items-start min-w-0 flex-1 leading-[1.4] overflow-hidden">
+                <p className="text-[20px] font-medium tracking-[-0.38px] text-[#0f1422] w-full truncate">
+                  {displayName}
+                </p>
+                <p
+                  title={user.email}
+                  className="text-[14px] tracking-[-0.266px] text-[#c3c3c3] w-full truncate text-center"
+                >
+                  {user.email}
+                </p>
+              </div>
+            </div>
+
+            {/* Divider */}
+            <hr className="border-t border-[#c3c3c3]/40 w-full" />
+
+            {/* My Profile */}
+            <Link
+              href="/profile"
+              onClick={() => setIsDropdownOpen(false)}
+              className="flex items-center gap-[10px] group"
+            >
+              <Image
+                src="/profile/profile.svg"
+                alt=""
+                aria-hidden="true"
+                width={15}
+                height={15}
+                className="shrink-0"
+              />
+              <span className="text-[14px] leading-[1.4] tracking-[-0.019em] text-[#0f1422] group-hover:text-green transition-colors whitespace-nowrap">
+                My Profile
+              </span>
+            </Link>
+
+            {/* My Request */}
+            <Link
+              href="/dashboard"
+              onClick={() => setIsDropdownOpen(false)}
+              className="flex items-center gap-[10px] group"
+            >
+              <Image
+                src="/profile/request.svg"
+                alt=""
+                aria-hidden="true"
+                width={15}
+                height={15}
+                className="shrink-0"
+              />
+              <span className="text-[14px] leading-[1.4] tracking-[-0.019em] text-[#0f1422] group-hover:text-green transition-colors whitespace-nowrap">
+                My Request
+              </span>
+            </Link>
+
+            {/* Divider */}
+            <hr className="border-t border-[#c3c3c3]/40 w-full" />
+
+            {/* Log Out */}
+            <button
+              id="navbar-logout-btn"
+              onClick={handleSignOut}
+              disabled={isSigningOut}
+              className="flex items-center gap-[10px] disabled:opacity-60 cursor-pointer group"
+            >
+              <Image
+                src="/profile/log-out.svg"
+                alt=""
+                aria-hidden="true"
+                width={15}
+                height={15}
+                className="shrink-0"
+              />
+              <span className="text-[14px] leading-[1.4] tracking-[-0.019em] text-[#c50000] whitespace-nowrap">
+                {isSigningOut ? "Signing out..." : "Log Out"}
+              </span>
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   ) : (
     <div className="hidden lg:flex items-center gap-3 xl:gap-5 2xl:gap-6.25 shrink-0">
@@ -132,9 +266,8 @@ export default function Navbar({ className = "" }: ClassNameProps) {
 
   return (
     <nav
-      className={`z-100 w-full lg:w-11/12 fixed left-0 right-0 mx-auto bg-white/75 border-b lg:border border-green rounded-none lg:rounded-[30px] px-4 py-3 lg:px-6 xl:px-12 2xl:px-18.75 lg:py-5 flex justify-between items-center gap-2 lg:gap-4 xl:gap-6 shadow-[-5px_4px_30px_0px_rgba(4,94,109,0.30)] transition-all duration-300 ${
-        isScrolled ? "top-0 lg:top-2 shadow-md bg-white/90" : "top-0 lg:top-21.5"
-      } ${className}`}
+      className={`z-100 w-full lg:w-11/12 fixed left-0 right-0 mx-auto bg-white/75 border-b lg:border border-green rounded-none lg:rounded-[30px] px-4 py-3 lg:px-6 xl:px-12 2xl:px-18.75 lg:py-5 flex justify-between items-center gap-2 lg:gap-4 xl:gap-6 shadow-[-5px_4px_30px_0px_rgba(4,94,109,0.30)] transition-all duration-300 ${isScrolled ? "top-0 lg:top-2 shadow-md bg-white/90" : "top-0 lg:top-21.5"
+        } ${className}`}
     >
       {/* Logo */}
       <div className="navbar-logo shrink-0">
@@ -165,9 +298,8 @@ export default function Navbar({ className = "" }: ClassNameProps) {
             >
               <Link
                 href={href}
-                className={`text-base xl:text-lg leading-4 whitespace-nowrap navbar-link flex hover:text-green ${
-                  isActive ? "text-green" : ""
-                }`}
+                className={`text-base xl:text-lg leading-4 whitespace-nowrap navbar-link flex hover:text-green ${isActive ? "text-green" : ""
+                  }`}
                 aria-current={isActive ? "page" : undefined}
               >
                 {label}
@@ -228,81 +360,80 @@ export default function Navbar({ className = "" }: ClassNameProps) {
             style={{ transformOrigin: "top" }}
             className="absolute top-full left-0 right-0 mt-2 bg-white/95 backdrop-blur-md border border-green rounded-[20px] p-6 flex flex-col gap-6 shadow-lg lg:hidden"
           >
-          <div className="flex flex-col gap-4">
-            {navLinks.map(({ label, href }) => {
-              const isActive = isCurrentPage(href);
-              return (
-                <Link
-                  key={label}
-                  href={href}
-                  onClick={() => setIsOpen(false)}
-                  className={`text-lg py-1 transition-colors ${
-                    isActive ? "text-green" : "text-black hover:text-green"
-                  }`}
-                  aria-current={isActive ? "page" : undefined}
-                >
-                  {label}
-                </Link>
-              );
-            })}
-          </div>
-          <hr className="border-[#c3c3c3]" />
-          {!isLoading && (
-            <div className="flex flex-col gap-3">
-              {user ? (
-                <>
-                  <div className="flex items-center gap-3 px-3 py-2 rounded-[10px] bg-green/10 border border-green/30">
-                    <div className="w-8 h-8 rounded-full bg-green flex items-center justify-center shrink-0">
-                      <span className="text-white text-sm font-semibold uppercase">
-                        {displayName?.[0] ?? "U"}
-                      </span>
-                    </div>
-                    <div className="flex flex-col min-w-0">
-                      <span className="text-sm font-medium text-green truncate">
-                        {displayName}
-                      </span>
-                      <span className="text-xs text-[#c3c3c3] truncate">{user.email}</span>
-                    </div>
-                  </div>
-                  <button
-                    onClick={handleSignOut}
-                    disabled={isSigningOut}
-                    className="w-full flex items-center justify-center py-2.5 px-5 rounded-[10px] bg-black text-white text-sm font-normal hover:bg-neutral-800 transition-all disabled:opacity-60 cursor-pointer"
+            <div className="flex flex-col gap-4">
+              {navLinks.map(({ label, href }) => {
+                const isActive = isCurrentPage(href);
+                return (
+                  <Link
+                    key={label}
+                    href={href}
+                    onClick={() => setIsOpen(false)}
+                    className={`text-lg py-1 transition-colors ${isActive ? "text-green" : "text-black hover:text-green"
+                      }`}
+                    aria-current={isActive ? "page" : undefined}
                   >
-                    {isSigningOut ? "Signing out..." : "Log Out"}
-                  </button>
-                </>
-              ) : (
-                <>
-                  <Link href="/login" onClick={() => setIsOpen(false)}>
-                    <Button
-                      value="Log In"
-                      leftIcon={null}
-                      rightIcon={null}
-                      variant="blackBtnWhiteText"
-                      className="w-full justify-center px-5! py-2.5! rounded-[10px]!"
-                    />
+                    {label}
                   </Link>
-                  <Link href="/register" onClick={() => setIsOpen(false)}>
-                    <Button
-                      value="Sign Up"
-                      leftIcon={
-                        <Image
-                          src="/navbar_icons/user.svg"
-                          alt="user icon"
-                          width={27}
-                          height={27}
-                        />
-                      }
-                      rightIcon={null}
-                      variant="greenBtnWhiteText"
-                      className="w-full justify-center px-5! py-2.5! rounded-[10px]!"
-                    />
-                  </Link>
-                </>
-              )}
+                );
+              })}
             </div>
-          )}
+            <hr className="border-[#c3c3c3]" />
+            {!isLoading && (
+              <div className="flex flex-col gap-3">
+                {user ? (
+                  <>
+                    <div className="flex items-center gap-3 px-3 py-2 rounded-[10px] bg-green/10 border border-green/30">
+                      <div className="w-8 h-8 rounded-full bg-green flex items-center justify-center shrink-0">
+                        <span className="text-white text-sm font-semibold uppercase">
+                          {displayName?.[0] ?? "U"}
+                        </span>
+                      </div>
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-sm font-medium text-green truncate">
+                          {displayName}
+                        </span>
+                        <span className="text-xs text-[#c3c3c3] truncate">{user.email}</span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={handleSignOut}
+                      disabled={isSigningOut}
+                      className="w-full flex items-center justify-center py-2.5 px-5 rounded-[10px] bg-black text-white text-sm font-normal hover:bg-neutral-800 transition-all disabled:opacity-60 cursor-pointer"
+                    >
+                      {isSigningOut ? "Signing out..." : "Log Out"}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <Link href="/login" onClick={() => setIsOpen(false)}>
+                      <Button
+                        value="Log In"
+                        leftIcon={null}
+                        rightIcon={null}
+                        variant="blackBtnWhiteText"
+                        className="w-full justify-center px-5! py-2.5! rounded-[10px]!"
+                      />
+                    </Link>
+                    <Link href="/register" onClick={() => setIsOpen(false)}>
+                      <Button
+                        value="Sign Up"
+                        leftIcon={
+                          <Image
+                            src="/navbar_icons/user.svg"
+                            alt="user icon"
+                            width={27}
+                            height={27}
+                          />
+                        }
+                        rightIcon={null}
+                        variant="greenBtnWhiteText"
+                        className="w-full justify-center px-5! py-2.5! rounded-[10px]!"
+                      />
+                    </Link>
+                  </>
+                )}
+              </div>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
