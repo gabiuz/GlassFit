@@ -133,6 +133,7 @@ export type PlacedOverlay = ActiveOverlay & {
 export type VisualizationSessionState = {
   selectedProductId: string | null;
   spaceImageSession: SpaceImageSession | null;
+  workspaceBackgroundDataUrl: string | null;
   structuralDefinition: ProductStructuralDefinition | null;
   productConfiguration: ProductConfigurationSnapshot | null;
   variationSnapshots: ProductVariationSnapshot[];

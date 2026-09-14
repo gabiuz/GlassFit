@@ -5,24 +5,29 @@ import { useRouter } from "next/navigation";
 import { ProductModelWorkspace } from "@/features/visualization";
 import { useVisualizationSession } from "@/lib/visualization/visualizationSession";
 import type { ProductStructuralDefinition } from "@/lib/visualization/types";
+import type { CatalogProduct } from "@/lib/products/types";
 
 export function ProductAwareWorkspacePage({
   productId,
   structuralDefinition,
+  catalogProducts,
 }: {
   productId: string;
   structuralDefinition: ProductStructuralDefinition;
+  catalogProducts: CatalogProduct[];
 }) {
   const router = useRouter();
   const {
     selectedProductId,
     spaceImageSession,
+    workspaceBackgroundDataUrl,
     productConfiguration,
     finalSnapshotDataUrl,
     setStructuralDefinition,
     setProductConfiguration,
     setVariationSnapshots,
     setFinalSnapshotDataUrl,
+    selectWorkspaceProduct,
     resetVisualizationSession,
   } = useVisualizationSession();
 
@@ -57,15 +62,25 @@ export function ProductAwareWorkspacePage({
   return (
     <main className="flex min-h-screen flex-col gap-14 px-6 py-28 md:px-12 lg:px-24.25">
       <ProductModelWorkspace
-        uploadedImage={spaceImageSession.workspaceImage.url}
+        key={structuralDefinition.template.templateId}
+        uploadedImage={workspaceBackgroundDataUrl ?? spaceImageSession.workspaceImage.url}
         spaceImageSession={spaceImageSession}
         structuralDefinition={structuralDefinition}
+        catalogProducts={catalogProducts}
+        currentProductId={productId}
         selectedProductName={structuralDefinition.product.productName}
         initialSnapshotDataUrl={finalSnapshotDataUrl}
         initialConfiguration={productConfiguration}
         onConfigurationChange={setProductConfiguration}
         onVariationSnapshotsChange={setVariationSnapshots}
         onSnapshotChange={setFinalSnapshotDataUrl}
+        onProductSelect={(nextProductId, mode, flattenedBackgroundDataUrl) => {
+          selectWorkspaceProduct(
+            nextProductId,
+            mode === "add" ? flattenedBackgroundDataUrl : undefined,
+          );
+          router.push(`/visualize/${nextProductId}/workspace`);
+        }}
         onBack={() => {
           resetVisualizationSession();
           router.push(`/visualize/${productId}/upload`);

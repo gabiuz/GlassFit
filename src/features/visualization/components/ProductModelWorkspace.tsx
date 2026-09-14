@@ -6,7 +6,8 @@ import { useRouter } from "next/navigation";
 import { motion, AnimatePresence, useDragControls } from "motion/react";
 import { RotateCw, FlipHorizontal, RotateCcw, Trash2 } from "lucide-react";
 import Button from "@/components/shared/Button";
-import { AddProductModal, type Product } from "./AddProductModal";
+import { AddProductModal } from "./AddProductModal";
+import type { CatalogProduct } from "@/lib/products/types";
 import type { SpaceImageSession, LightingAnalysis } from "@/lib/imageApi";
 import { ProductModelRenderer } from "@/lib/visualization/modelRenderer";
 import {
@@ -33,12 +34,19 @@ interface ProductModelWorkspaceProps {
   uploadedImage: string | null;
   spaceImageSession?: SpaceImageSession | null;
   structuralDefinition?: ProductStructuralDefinition | null;
+  catalogProducts?: CatalogProduct[];
+  currentProductId?: string;
   selectedProductName?: string;
   initialSnapshotDataUrl?: string | null;
   initialConfiguration?: ProductConfigurationSnapshot | null;
   onConfigurationChange?: (configuration: ProductConfigurationSnapshot) => void;
   onVariationSnapshotsChange?: (snapshots: ProductVariationSnapshot[]) => void;
   onSnapshotChange?: (dataUrl: string) => void;
+  onProductSelect?: (
+    productId: string,
+    mode: "add" | "change",
+    flattenedBackgroundDataUrl?: string,
+  ) => void;
   onBack: () => void;
 }
 
@@ -90,12 +98,15 @@ export function ProductModelWorkspace({
   uploadedImage,
   spaceImageSession,
   structuralDefinition,
+  catalogProducts = [],
+  currentProductId,
   selectedProductName,
   initialSnapshotDataUrl: _initialSnapshotDataUrl,
   initialConfiguration,
   onConfigurationChange,
   onVariationSnapshotsChange,
   onSnapshotChange,
+  onProductSelect,
   onBack,
 }: ProductModelWorkspaceProps) {
   const router = useRouter();
@@ -172,7 +183,6 @@ export function ProductModelWorkspace({
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [modalTitle, setModalTitle] = useState("Add Product");
-  const [activeProduct, setActiveProduct] = useState<Product | null>(null);
   const [productBuildError, setProductBuildError] = useState<string | null>(null);
   const initialOverlaySize = useMemo(() => {
     const wStr = initialConfiguration?.widthCm
@@ -212,8 +222,9 @@ export function ProductModelWorkspace({
   const [isCapturingSnapshot, setIsCapturingSnapshot] = useState(false);
 
   const bgImage = uploadedImage || "/comparison_assets/room_without_furniture.png";
-  const productOverlayImage = activeProduct?.image || "/images/modular_cabinets.png";
-  const overlayName = selectedProductName ?? activeProduct?.name ?? "Selected Product";
+  const productOverlayImage =
+    structuralDefinition?.product.catalogImageUrl || "/images/modular_cabinets.png";
+  const overlayName = selectedProductName ?? "Selected Product";
   const aspectWidth = spaceImageSession?.workspaceImage?.width ?? 636;
   const aspectHeight = spaceImageSession?.workspaceImage?.height ?? 579;
   const workspaceAspectRatio = `${aspectWidth} / ${aspectHeight}`;
@@ -533,10 +544,18 @@ export function ProductModelWorkspace({
     setIsAddModalOpen(true);
   };
 
-  const handleSelectProduct = (product: Product) => {
-    setActiveProduct(product);
+  const handleSelectProduct = async (product: CatalogProduct) => {
+    if (!onProductSelect || product.id === currentProductId) {
+      return;
+    }
+
+    const mode = modalTitle === "Add Product" ? "add" : "change";
+    const flattenedBackgroundDataUrl =
+      mode === "add" ? await captureCurrentSnapshot() : undefined;
+
     setSelectedProduct(true);
     setIsSnapshotApplied(false);
+    onProductSelect(product.id, mode, flattenedBackgroundDataUrl);
   };
 
   const captureCurrentSnapshot = useCallback(async () => {
@@ -1125,6 +1144,8 @@ export function ProductModelWorkspace({
             isOpen={isAddModalOpen}
             onClose={() => setIsAddModalOpen(false)}
             onSelectProduct={handleSelectProduct}
+            products={catalogProducts}
+            currentProductId={currentProductId}
             title={modalTitle}
           />
         </div>

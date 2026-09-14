@@ -20,6 +20,10 @@ import type {
 
 type VisualizationSessionContextValue = VisualizationSessionState & {
   setPreparedSpaceImage: (productId: string, session: SpaceImageSession) => void;
+  selectWorkspaceProduct: (
+    productId: string,
+    workspaceBackgroundDataUrl?: string,
+  ) => void;
   setStructuralDefinition: (definition: ProductStructuralDefinition | null) => void;
   setProductConfiguration: (configuration: ProductConfigurationSnapshot | null) => void;
   setVariationSnapshots: (snapshots: ProductVariationSnapshot[]) => void;
@@ -35,6 +39,7 @@ const VisualizationSessionContext =
 const initialState: VisualizationSessionState = {
   selectedProductId: null,
   spaceImageSession: null,
+  workspaceBackgroundDataUrl: null,
   structuralDefinition: null,
   productConfiguration: null,
   variationSnapshots: [],
@@ -59,6 +64,7 @@ export function VisualizationSessionProvider({
       const nextState: VisualizationSessionState = {
         selectedProductId: productId,
         spaceImageSession: session,
+        workspaceBackgroundDataUrl: null,
         structuralDefinition: null,
         productConfiguration: null,
         variationSnapshots: [],
@@ -69,6 +75,28 @@ export function VisualizationSessionProvider({
 
       writeStoredVisualizationSession(nextState);
       setState(nextState);
+    },
+    [],
+  );
+
+  const selectWorkspaceProduct = useCallback(
+    (productId: string, workspaceBackgroundDataUrl?: string) => {
+      setState((current) => {
+        const nextState: VisualizationSessionState = {
+          ...current,
+          selectedProductId: productId,
+          workspaceBackgroundDataUrl:
+            workspaceBackgroundDataUrl ?? current.workspaceBackgroundDataUrl,
+          structuralDefinition: null,
+          productConfiguration: null,
+          variationSnapshots: [],
+          activeOverlay: null,
+          finalSnapshotDataUrl: null,
+        };
+
+        writeStoredVisualizationSession(nextState);
+        return nextState;
+      });
     },
     [],
   );
@@ -146,6 +174,7 @@ export function VisualizationSessionProvider({
     () => ({
       ...state,
       setPreparedSpaceImage,
+      selectWorkspaceProduct,
       setStructuralDefinition,
       setProductConfiguration,
       setVariationSnapshots,
@@ -157,6 +186,7 @@ export function VisualizationSessionProvider({
     [
       state,
       setPreparedSpaceImage,
+      selectWorkspaceProduct,
       setStructuralDefinition,
       setProductConfiguration,
       setVariationSnapshots,
@@ -193,6 +223,10 @@ function readStoredVisualizationSession(): VisualizationSessionState {
     return {
       selectedProductId: parsed.selectedProductId,
       spaceImageSession: parsed.spaceImageSession,
+      workspaceBackgroundDataUrl:
+        typeof parsed.workspaceBackgroundDataUrl === "string"
+          ? parsed.workspaceBackgroundDataUrl
+          : null,
       structuralDefinition:
         parsed.structuralDefinition &&
         typeof parsed.structuralDefinition === "object"
@@ -229,6 +263,7 @@ function writeStoredVisualizationSession(state: VisualizationSessionState) {
       JSON.stringify({
         selectedProductId: state.selectedProductId,
         spaceImageSession: state.spaceImageSession,
+        workspaceBackgroundDataUrl: state.workspaceBackgroundDataUrl,
         structuralDefinition: state.structuralDefinition,
         productConfiguration: state.productConfiguration,
         variationSnapshots: state.variationSnapshots,
