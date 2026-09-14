@@ -126,7 +126,12 @@ export type ActiveOverlay = {
   occlusionObjectIds: string[];
 };
 
-export type PlacedOverlay = ActiveOverlay & {
+export type PlacedOverlay = {
+  overlayId: string;
+  productId: string;
+  productName: string;
+  templateId: string;
+  configuration: ProductConfigurationSnapshot;
   flattenedImageDataUrl: string;
 };
 
@@ -169,5 +174,7 @@ export type ProductConfigurationSnapshot = {
   ambientLight?: boolean;
   autoShadow?: boolean;
   autoRealism?: boolean;
+  positionX?: number;
+  positionY?: number;
   visualParameterValues: Record<string, unknown>;
 };

@@ -3,8 +3,13 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { motion, AnimatePresence, useDragControls } from "motion/react";
-import { RotateCw, FlipHorizontal, RotateCcw, Trash2 } from "lucide-react";
+import {
+  motion,
+  AnimatePresence,
+  useDragControls,
+  useReducedMotion,
+} from "motion/react";
+import { ChevronDown, RotateCw, FlipHorizontal, RotateCcw, Trash2 } from "lucide-react";
 import Button from "@/components/shared/Button";
 import { AddProductModal } from "./AddProductModal";
 import type { CatalogProduct } from "@/lib/products/types";
@@ -15,6 +20,7 @@ import {
   ProductConfigurationSnapshot,
   ProductStructuralDefinition,
   ProductVariationSnapshot,
+  PlacedOverlay,
 } from "@/lib/visualization/types";
 import { ALUMINUM_COLOR_VARIATIONS } from "@/lib/visualization/colorVariations";
 import {
@@ -39,13 +45,16 @@ interface ProductModelWorkspaceProps {
   selectedProductName?: string;
   initialSnapshotDataUrl?: string | null;
   initialConfiguration?: ProductConfigurationSnapshot | null;
+  placedOverlays?: PlacedOverlay[];
   onConfigurationChange?: (configuration: ProductConfigurationSnapshot) => void;
   onVariationSnapshotsChange?: (snapshots: ProductVariationSnapshot[]) => void;
   onSnapshotChange?: (dataUrl: string) => void;
+  onPlacedOverlaysChange?: (overlays: PlacedOverlay[]) => void;
   onProductSelect?: (
     productId: string,
-    mode: "add" | "change",
+    mode: "add" | "change" | "edit",
     flattenedBackgroundDataUrl?: string,
+    configuration?: ProductConfigurationSnapshot,
   ) => void;
   onBack: () => void;
 }
@@ -86,6 +95,7 @@ const MAX_OVERLAY_WIDTH = 1800;
 const MAX_OVERLAY_HEIGHT = 1400;
 const MIN_SCENE_ZOOM = -55;
 const MAX_SCENE_ZOOM = 150;
+const DEFAULT_SCENE_ZOOM = 10;
 const DEFAULT_PRODUCT_WIDTH_CM = 210;
 const DEFAULT_PRODUCT_HEIGHT_CM = 150;
 const DEFAULT_OVERLAY_WIDTH_PX = 540;
@@ -103,9 +113,11 @@ export function ProductModelWorkspace({
   selectedProductName,
   initialSnapshotDataUrl: _initialSnapshotDataUrl,
   initialConfiguration,
+  placedOverlays = [],
   onConfigurationChange,
   onVariationSnapshotsChange,
   onSnapshotChange,
+  onPlacedOverlaysChange,
   onProductSelect,
   onBack,
 }: ProductModelWorkspaceProps) {
@@ -119,8 +131,9 @@ export function ProductModelWorkspace({
     initialConfiguration ? structuralDefinition?.template.templateId ?? null : null,
   );
   const dragControls = useDragControls();
+  const prefersReducedMotion = useReducedMotion();
   const [zoomLevel, setZoomLevel] = useState(
-    initialConfiguration?.zoomLevel ?? 10,
+    initialConfiguration?.zoomLevel ?? DEFAULT_SCENE_ZOOM,
   );
   const [openAccordions, setOpenAccordions] = useState<string[]>([]);
 
@@ -174,6 +187,14 @@ export function ProductModelWorkspace({
   );
 
   const [selectedProduct, setSelectedProduct] = useState(true);
+  const [productInstanceRevision, setProductInstanceRevision] = useState(0);
+  const [activeOverlayId, setActiveOverlayId] = useState(
+    `active-${currentProductId ?? "product"}`,
+  );
+  const [overlayPosition, setOverlayPosition] = useState({
+    x: initialConfiguration?.positionX ?? 0,
+    y: initialConfiguration?.positionY ?? 0,
+  });
   const [rotateAngle, setRotateAngle] = useState(
     initialConfiguration?.rotateAngle ?? 0,
   );
@@ -182,6 +203,7 @@ export function ProductModelWorkspace({
   );
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isLayersPanelOpen, setIsLayersPanelOpen] = useState(false);
   const [modalTitle, setModalTitle] = useState("Add Product");
   const [productBuildError, setProductBuildError] = useState<string | null>(null);
   const initialOverlaySize = useMemo(() => {
@@ -192,7 +214,7 @@ export function ProductModelWorkspace({
       ? String(initialConfiguration.heightCm)
       : String(DEFAULT_PRODUCT_HEIGHT_CM);
     const baseSize = getOverlaySizeFromDimensions(wStr, hStr);
-    const zoom = initialConfiguration?.zoomLevel ?? 10;
+    const zoom = initialConfiguration?.zoomLevel ?? DEFAULT_SCENE_ZOOM;
     const scale = 1 + zoom / 100;
     return {
       width: Math.round(baseSize.width * scale),
@@ -421,7 +443,7 @@ export function ProductModelWorkspace({
     if (!isOutlineMeasurementPaused) {
       setProjectedModelBounds(getVisibleModelBounds(mvpCanvasRef.current));
     }
-  }, [yaw, pitch, structuralDefinition, widthCm, heightCm, includeSill, glassAppearance, alumFinish, effectiveLighting, modelRevision, renderFrameSize, isOutlineMeasurementPaused]);
+  }, [yaw, pitch, structuralDefinition, widthCm, heightCm, includeSill, glassAppearance, alumFinish, effectiveLighting, modelRevision, renderFrameSize, isOutlineMeasurementPaused, selectedProduct]);
 
   const outlineControlsStyle = useMemo(
     () => getOutlineControlsStyle(structuralDefinition ? projectedModelBounds : null),
@@ -456,16 +478,12 @@ export function ProductModelWorkspace({
     appliedTemplateDefaultsRef.current = templateId;
   }, [structuralDefinition]);
 
-  useEffect(() => {
-    if (!structuralDefinition || !onConfigurationChange) {
-      return;
-    }
-
+  const currentConfiguration = useMemo<ProductConfigurationSnapshot>(() => {
     const width = Number(widthCm) || DEFAULT_PRODUCT_WIDTH_CM;
     const height = Number(heightCm) || DEFAULT_PRODUCT_HEIGHT_CM;
     const thickness = Number(thicknessMm) || 3;
 
-    onConfigurationChange({
+    return {
       widthCm: width,
       heightCm: height,
       thicknessMm: thickness,
@@ -484,6 +502,8 @@ export function ProductModelWorkspace({
       ambientLight,
       autoShadow,
       autoRealism,
+      positionX: overlayPosition.x,
+      positionY: overlayPosition.y,
       visualParameterValues: {
         width: width * 10,
         height: height * 10,
@@ -492,7 +512,7 @@ export function ProductModelWorkspace({
         includeSill,
         include_sill: includeSill,
       },
-    });
+    };
   }, [
     activeOcclusionIds,
     alumFinish,
@@ -503,18 +523,26 @@ export function ProductModelWorkspace({
     heightCm,
     includeSill,
     isFlipped,
-    onConfigurationChange,
+    overlayPosition.x,
+    overlayPosition.y,
     panelCount,
     pitch,
     quantity,
     rotateAngle,
-    structuralDefinition,
     structuralWaiver,
     thicknessMm,
     widthCm,
     yaw,
     zoomLevel,
   ]);
+
+  useEffect(() => {
+    if (!structuralDefinition || !onConfigurationChange) {
+      return;
+    }
+
+    onConfigurationChange(currentConfiguration);
+  }, [currentConfiguration, onConfigurationChange, structuralDefinition]);
 
   const handleRotate = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -526,12 +554,77 @@ export function ProductModelWorkspace({
     setIsFlipped((prev) => !prev);
   };
 
-  const handleReset = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const resetProductPlacement = useCallback(() => {
+    const baseSize = getOverlaySizeFromDimensions(widthCm, heightCm);
+    const defaultScale = 1 + DEFAULT_SCENE_ZOOM / 100;
+
+    resizeSessionRef.current = null;
+    rotationSessionRef.current = null;
+    setIsUsingTransformHandle(false);
+    setIsOutlineMeasurementPaused(false);
     setRotateAngle(0);
     setIsFlipped(false);
-    setZoomLevel(10);
-    setOverlaySize(getOverlaySizeFromDimensions(widthCm, heightCm));
+    setYaw(0);
+    setPitch(0);
+    setOverlayPosition({ x: 0, y: 0 });
+    setZoomLevel(DEFAULT_SCENE_ZOOM);
+    setOverlaySize({
+      width: Math.round(baseSize.width * defaultScale),
+      height: Math.round(baseSize.height * defaultScale),
+    });
+    setProjectedModelBounds({ left: 0, top: 0, width: 1, height: 1 });
+    setProductInstanceRevision((current) => current + 1);
+  }, [heightCm, widthCm]);
+
+  const applyProductConfiguration = useCallback(
+    (configuration: ProductConfigurationSnapshot) => {
+      const nextWidth = String(configuration.widthCm);
+      const nextHeight = String(configuration.heightCm);
+      const baseSize = getOverlaySizeFromDimensions(nextWidth, nextHeight);
+      const nextZoom = configuration.zoomLevel ?? DEFAULT_SCENE_ZOOM;
+      const scale = 1 + nextZoom / 100;
+
+      setWidthCm(nextWidth);
+      setHeightCm(nextHeight);
+      setThicknessMm(String(configuration.thicknessMm));
+      setQuantity(configuration.quantity);
+      setPanelCount(configuration.panelCount ?? 2);
+      setStructuralWaiver(configuration.structuralWaiver ?? false);
+      setAlumFinish(
+        configuration.aluminumFinish === "black" ||
+          configuration.aluminumFinish === "silver"
+          ? configuration.aluminumFinish
+          : "white",
+      );
+      setGlassAppearance(configuration.glassAppearance);
+      setIncludeSill(configuration.includeSill);
+      setYaw(configuration.yaw);
+      setPitch(configuration.pitch);
+      setRotateAngle(configuration.rotateAngle);
+      setIsFlipped(configuration.isFlipped);
+      setZoomLevel(nextZoom);
+      setActiveOcclusionIds(configuration.activeOcclusionIds ?? []);
+      setAmbientLight(configuration.ambientLight ?? true);
+      setAutoShadow(configuration.autoShadow ?? true);
+      setAutoRealism(configuration.autoRealism ?? true);
+      setOverlayPosition({
+        x: configuration.positionX ?? 0,
+        y: configuration.positionY ?? 0,
+      });
+      setOverlaySize({
+        width: Math.round(baseSize.width * scale),
+        height: Math.round(baseSize.height * scale),
+      });
+      setSelectedProduct(true);
+      setIsSnapshotApplied(false);
+      setProductInstanceRevision((current) => current + 1);
+    },
+    [],
+  );
+
+  const handleReset = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    resetProductPlacement();
   };
 
   const handleRemove = (e: React.MouseEvent) => {
@@ -545,17 +638,35 @@ export function ProductModelWorkspace({
   };
 
   const handleSelectProduct = async (product: CatalogProduct) => {
-    if (!onProductSelect || product.id === currentProductId) {
+    const mode = modalTitle === "Add Product" ? "add" : "change";
+
+    if (product.id === currentProductId && !selectedProduct) {
+      resetProductPlacement();
+      setSelectedProduct(true);
+      setIsSnapshotApplied(false);
       return;
     }
 
-    const mode = modalTitle === "Add Product" ? "add" : "change";
-    const flattenedBackgroundDataUrl =
-      mode === "add" ? await captureCurrentSnapshot() : undefined;
+    if (
+      !onProductSelect ||
+      (product.id === currentProductId && mode === "change")
+    ) {
+      return;
+    }
+
+    if (mode === "add" && selectedProduct) {
+      const placedOverlay = await createPlacedOverlay();
+      onPlacedOverlaysChange?.([...placedOverlays, placedOverlay]);
+    }
+
+    if (product.id === currentProductId) {
+      setActiveOverlayId(crypto.randomUUID());
+      resetProductPlacement();
+    }
 
     setSelectedProduct(true);
     setIsSnapshotApplied(false);
-    onProductSelect(product.id, mode, flattenedBackgroundDataUrl);
+    onProductSelect(product.id, mode);
   };
 
   const captureCurrentSnapshot = useCallback(async () => {
@@ -578,6 +689,9 @@ export function ProductModelWorkspace({
       includeSill,
       widthCm: Number(widthCm),
       heightCm: Number(heightCm),
+      placedLayerImageUrls: placedOverlays.map(
+        (overlay) => overlay.flattenedImageDataUrl,
+      ),
     });
 
     onSnapshotChange?.(snapshot);
@@ -588,6 +702,7 @@ export function ProductModelWorkspace({
     exportModelFilter,
     isFlipped,
     onSnapshotChange,
+    placedOverlays,
     productOverlayImage,
     rotateAngle,
     structuralDefinition,
@@ -599,6 +714,98 @@ export function ProductModelWorkspace({
     widthCm,
     heightCm,
   ]);
+
+  const captureCurrentProductLayer = useCallback(
+    () =>
+      captureWorkspaceSnapshot({
+        canvasElement: canvasRef.current,
+        overlayElement: overlayBoxRef.current,
+        backgroundImageUrl: null,
+        fallbackProductImageUrl: productOverlayImage,
+        hasGeneratedProduct: Boolean(structuralDefinition),
+        activeOcclusionObjects: [],
+        rotateAngle,
+        isFlipped,
+        modelFilter: exportModelFilter,
+        structuralDefinition: structuralDefinition ?? null,
+        yaw,
+        pitch,
+        lighting: effectiveLighting ?? null,
+        glassAppearance,
+        includeSill,
+        widthCm: Number(widthCm),
+        heightCm: Number(heightCm),
+      }),
+    [
+      effectiveLighting,
+      exportModelFilter,
+      glassAppearance,
+      heightCm,
+      includeSill,
+      isFlipped,
+      pitch,
+      productOverlayImage,
+      rotateAngle,
+      structuralDefinition,
+      widthCm,
+      yaw,
+    ],
+  );
+
+  const createPlacedOverlay = useCallback(async (): Promise<PlacedOverlay> => ({
+    overlayId: activeOverlayId,
+    productId: currentProductId ?? structuralDefinition?.product.productId ?? "",
+    productName: overlayName,
+    templateId: structuralDefinition?.template.templateId ?? "catalog-image",
+    configuration: currentConfiguration,
+    flattenedImageDataUrl: await captureCurrentProductLayer(),
+  }), [
+    activeOverlayId,
+    captureCurrentProductLayer,
+    currentConfiguration,
+    currentProductId,
+    overlayName,
+    structuralDefinition,
+  ]);
+
+  const handleEditPlacedOverlay = useCallback(async (overlay: PlacedOverlay) => {
+    const remainingOverlays = placedOverlays.filter(
+      (placedOverlay) => placedOverlay.overlayId !== overlay.overlayId,
+    );
+
+    if (selectedProduct) {
+      remainingOverlays.push(await createPlacedOverlay());
+    }
+
+    onPlacedOverlaysChange?.(remainingOverlays);
+    setActiveOverlayId(overlay.overlayId);
+
+    if (overlay.productId === currentProductId) {
+      applyProductConfiguration(overlay.configuration);
+      return;
+    }
+
+    onProductSelect?.(
+      overlay.productId,
+      "edit",
+      undefined,
+      overlay.configuration,
+    );
+  }, [
+    applyProductConfiguration,
+    createPlacedOverlay,
+    currentProductId,
+    onPlacedOverlaysChange,
+    onProductSelect,
+    placedOverlays,
+    selectedProduct,
+  ]);
+
+  const handleDeletePlacedOverlay = useCallback((overlayId: string) => {
+    onPlacedOverlaysChange?.(
+      placedOverlays.filter((overlay) => overlay.overlayId !== overlayId),
+    );
+  }, [onPlacedOverlaysChange, placedOverlays]);
 
   const applyVisualizationSnapshot = useCallback(async () => {
     setIsCapturingSnapshot(true);
@@ -714,6 +921,9 @@ export function ProductModelWorkspace({
           includeSill,
           widthCm: width,
           heightCm: height,
+          placedLayerImageUrls: placedOverlays.map(
+            (overlay) => overlay.flattenedImageDataUrl,
+          ),
         });
 
         snapshots.push({
@@ -740,6 +950,7 @@ export function ProductModelWorkspace({
     includeSill,
     isFlipped,
     onVariationSnapshotsChange,
+    placedOverlays,
     panelCount,
     pitch,
     productOverlayImage,
@@ -1145,11 +1356,104 @@ export function ProductModelWorkspace({
             onClose={() => setIsAddModalOpen(false)}
             onSelectProduct={handleSelectProduct}
             products={catalogProducts}
-            currentProductId={currentProductId}
+            currentProductId={selectedProduct ? currentProductId : undefined}
+            allowCurrentProduct={modalTitle === "Add Product"}
             title={modalTitle}
           />
         </div>
       </div>
+
+      {placedOverlays.length > 0 && (
+        <motion.section
+          layout={!prefersReducedMotion}
+          transition={{
+            layout: {
+              duration: 0.2,
+              ease: [0.77, 0, 0.175, 1],
+            },
+          }}
+          aria-label="Product layers"
+          className="mb-6 rounded-[16px] border border-[#c3c3c3]/60 bg-white shadow-xs"
+        >
+          <button
+            type="button"
+            onClick={() => setIsLayersPanelOpen((current) => !current)}
+            aria-expanded={isLayersPanelOpen}
+            className="flex w-full items-center justify-between gap-4 p-4 text-left cursor-pointer"
+          >
+            <div className="flex items-center gap-3">
+              <span className="text-base font-medium text-[#0f1422]">
+                Layers ({placedOverlays.length + (selectedProduct ? 1 : 0)})
+              </span>
+              <span className="hidden text-xs text-neutral-500 sm:inline">
+                Select products when they overlap
+              </span>
+            </div>
+            <ChevronDown
+              className="size-5 shrink-0 text-[#0f1422]"
+              style={{
+                transform: isLayersPanelOpen ? "rotate(180deg)" : "rotate(0deg)",
+                transition: prefersReducedMotion
+                  ? undefined
+                  : "transform 200ms cubic-bezier(0.23, 1, 0.32, 1)",
+              }}
+            />
+          </button>
+
+          <AnimatePresence initial={false}>
+            {isLayersPanelOpen && (
+              <motion.div
+                key="layers-content"
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{
+                  height: {
+                    duration: prefersReducedMotion ? 0 : 0.2,
+                    ease: [0.23, 1, 0.32, 1],
+                  },
+                  opacity: {
+                    duration: prefersReducedMotion ? 0.12 : 0.2,
+                    ease: [0.23, 1, 0.32, 1],
+                  },
+                }}
+                className="overflow-hidden"
+              >
+                <div className="flex flex-wrap gap-2 border-t border-neutral-100 px-4 pb-4 pt-3">
+                  {selectedProduct && (
+                    <div className="flex items-center gap-2 rounded-full border border-[#07b6d3] bg-[#e9f9fb] px-3 py-1.5 text-sm text-[#0f1422]">
+                      <span>{overlayName}</span>
+                      <span className="text-xs font-medium text-[#078da4]">Active</span>
+                    </div>
+                  )}
+                  {placedOverlays.map((overlay, index) => (
+                    <div
+                      key={overlay.overlayId}
+                      className="flex items-center overflow-hidden rounded-full border border-neutral-200 bg-neutral-50"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => void handleEditPlacedOverlay(overlay)}
+                        className="px-3 py-1.5 text-sm text-[#0f1422] hover:bg-[#e9f9fb] cursor-pointer"
+                      >
+                        Edit {overlay.productName} {index + 1}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeletePlacedOverlay(overlay.overlayId)}
+                        aria-label={`Remove ${overlay.productName} ${index + 1}`}
+                        className="border-l border-neutral-200 px-2 py-1.5 text-neutral-500 hover:bg-red-50 hover:text-red-700 cursor-pointer"
+                      >
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </motion.section>
+      )}
 
       {/* ── Main Interactive Layout (Canvas + Sidebar) ── */}
       <div className="w-full flex flex-col lg:flex-row gap-8 lg:gap-10 items-start">
@@ -1175,15 +1479,57 @@ export function ProductModelWorkspace({
                 className="w-full h-full object-cover select-none"
               />
 
+              {placedOverlays.map((overlay) => {
+                const placedBaseSize = getOverlaySizeFromDimensions(
+                  String(overlay.configuration.widthCm),
+                  String(overlay.configuration.heightCm),
+                );
+                const placedScale =
+                  1 +
+                  (overlay.configuration.zoomLevel ?? DEFAULT_SCENE_ZOOM) / 100;
+
+                return (
+                  <React.Fragment key={overlay.overlayId}>
+                    <img
+                      src={overlay.flattenedImageDataUrl}
+                      alt={`Placed ${overlay.productName}`}
+                      draggable={false}
+                      className="absolute inset-0 z-10 h-full w-full pointer-events-none select-none"
+                    />
+                    <div className="absolute inset-0 z-[15] flex items-center justify-center pointer-events-none">
+                      <button
+                        type="button"
+                        onClick={() => void handleEditPlacedOverlay(overlay)}
+                        aria-label={`Edit placed ${overlay.productName}`}
+                        title={`Edit ${overlay.productName}`}
+                        className="pointer-events-auto rounded-sm border border-transparent bg-transparent cursor-pointer transition-colors hover:border-[#07b6d3] focus-visible:border-[#07b6d3] focus-visible:outline-none"
+                        style={{
+                          width: Math.round(placedBaseSize.width * placedScale),
+                          height: Math.round(placedBaseSize.height * placedScale),
+                          transform: `translate(${overlay.configuration.positionX ?? 0}px, ${overlay.configuration.positionY ?? 0}px) rotate(${overlay.configuration.rotateAngle}deg)`,
+                        }}
+                      />
+                    </div>
+                  </React.Fragment>
+                );
+              })}
+
               {/* Product Overlay Element on Canvas with Adjustment Tool (Figma 605:4867) */}
               {selectedProduct && (
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
                   <motion.div
+                    key={productInstanceRevision}
                     drag={isEditingProduct && !isUsingTransformHandle}
                     dragControls={dragControls}
                     dragListener={false}
                     dragElastic={0}
                     dragMomentum={false}
+                    onDragEnd={(_, info) => {
+                      setOverlayPosition((current) => ({
+                        x: current.x + info.offset.x,
+                        y: current.y + info.offset.y,
+                      }));
+                    }}
                     className={[
                       "pointer-events-auto relative",
                       !isEditingProduct || isUsingTransformHandle
@@ -1193,6 +1539,8 @@ export function ProductModelWorkspace({
                     style={{
                       width: overlaySize.width,
                       height: overlaySize.height,
+                      x: overlayPosition.x,
+                      y: overlayPosition.y,
                     }}
                   >
                     <div
@@ -1982,10 +2330,11 @@ async function captureWorkspaceSnapshot({
   includeSill,
   widthCm,
   heightCm,
+  placedLayerImageUrls = [],
 }: {
   canvasElement: HTMLDivElement | null;
   overlayElement: HTMLDivElement | null;
-  backgroundImageUrl: string;
+  backgroundImageUrl: string | null;
   fallbackProductImageUrl: string;
   hasGeneratedProduct: boolean;
   activeOcclusionObjects: SnapshotOcclusionObject[];
@@ -2001,6 +2350,7 @@ async function captureWorkspaceSnapshot({
   includeSill: boolean;
   widthCm: number;
   heightCm: number;
+  placedLayerImageUrls?: string[];
 }) {
   if (!canvasElement) {
     throw new Error("Visualization canvas is not ready yet.");
@@ -2044,20 +2394,28 @@ async function captureWorkspaceSnapshot({
   context.scale(pixelRatio, pixelRatio);
   context.imageSmoothingEnabled = true;
   context.imageSmoothingQuality = "high";
-  context.fillStyle = "#f5f5f5";
-  context.fillRect(0, 0, canvasBounds.width, canvasBounds.height);
+  let backgroundImage: HTMLImageElement | null = null;
+  if (backgroundImageUrl) {
+    context.fillStyle = "#f5f5f5";
+    context.fillRect(0, 0, canvasBounds.width, canvasBounds.height);
 
-  // Draw background using object-contain math to perfectly match the DOM <img>
-  // rendering, even if the container aspect ratio doesn't perfectly match the image.
-  const backgroundImage = await loadSnapshotImage(backgroundImageUrl);
-  drawObjectContainImage(
-    context,
-    backgroundImage,
-    0,
-    0,
-    canvasBounds.width,
-    canvasBounds.height,
-  );
+    // Draw background using object-contain math to perfectly match the DOM <img>
+    // rendering, even if the container aspect ratio doesn't perfectly match the image.
+    backgroundImage = await loadSnapshotImage(backgroundImageUrl);
+    drawObjectContainImage(
+      context,
+      backgroundImage,
+      0,
+      0,
+      canvasBounds.width,
+      canvasBounds.height,
+    );
+  }
+
+  for (const layerImageUrl of placedLayerImageUrls) {
+    const layerImage = await loadSnapshotImage(layerImageUrl);
+    context.drawImage(layerImage, 0, 0, canvasBounds.width, canvasBounds.height);
+  }
 
   if (overlayCapture) {
     await drawSnapshotOverlay({
@@ -2079,17 +2437,21 @@ async function captureWorkspaceSnapshot({
     });
   }
 
-  for (const object of activeOcclusionObjects) {
-    await drawMaskedBackgroundLayer({
-      outputWidth: canvasBounds.width,
-      outputHeight: canvasBounds.height,
-      context,
-      backgroundImage,
-      maskUrl: object.mask_url,
-    });
+  if (backgroundImage) {
+    for (const object of activeOcclusionObjects) {
+      await drawMaskedBackgroundLayer({
+        outputWidth: canvasBounds.width,
+        outputHeight: canvasBounds.height,
+        context,
+        backgroundImage,
+        maskUrl: object.mask_url,
+      });
+    }
   }
 
-  return output.toDataURL("image/jpeg", 0.92);
+  return backgroundImageUrl
+    ? output.toDataURL("image/jpeg", 0.92)
+    : output.toDataURL("image/png");
 }
 
 async function drawSnapshotOverlay({

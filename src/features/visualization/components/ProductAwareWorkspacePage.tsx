@@ -22,10 +22,12 @@ export function ProductAwareWorkspacePage({
     spaceImageSession,
     workspaceBackgroundDataUrl,
     productConfiguration,
+    placedOverlays,
     finalSnapshotDataUrl,
     setStructuralDefinition,
     setProductConfiguration,
     setVariationSnapshots,
+    setPlacedOverlays,
     setFinalSnapshotDataUrl,
     selectWorkspaceProduct,
     resetVisualizationSession,
@@ -62,7 +64,7 @@ export function ProductAwareWorkspacePage({
   return (
     <main className="flex min-h-screen flex-col gap-14 px-6 py-28 md:px-12 lg:px-24.25">
       <ProductModelWorkspace
-        key={structuralDefinition.template.templateId}
+        key={productId}
         uploadedImage={workspaceBackgroundDataUrl ?? spaceImageSession.workspaceImage.url}
         spaceImageSession={spaceImageSession}
         structuralDefinition={structuralDefinition}
@@ -71,15 +73,25 @@ export function ProductAwareWorkspacePage({
         selectedProductName={structuralDefinition.product.productName}
         initialSnapshotDataUrl={finalSnapshotDataUrl}
         initialConfiguration={productConfiguration}
+        placedOverlays={placedOverlays}
         onConfigurationChange={setProductConfiguration}
         onVariationSnapshotsChange={setVariationSnapshots}
         onSnapshotChange={setFinalSnapshotDataUrl}
-        onProductSelect={(nextProductId, mode, flattenedBackgroundDataUrl) => {
+        onPlacedOverlaysChange={setPlacedOverlays}
+        onProductSelect={(
+          nextProductId,
+          mode,
+          flattenedBackgroundDataUrl,
+          configuration,
+        ) => {
           selectWorkspaceProduct(
             nextProductId,
             mode === "add" ? flattenedBackgroundDataUrl : undefined,
+            configuration,
           );
-          router.push(`/visualize/${nextProductId}/workspace`);
+          if (nextProductId !== productId) {
+            router.push(`/visualize/${nextProductId}/workspace`);
+          }
         }}
         onBack={() => {
           resetVisualizationSession();

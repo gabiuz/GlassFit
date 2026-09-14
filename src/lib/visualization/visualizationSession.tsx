@@ -23,6 +23,7 @@ type VisualizationSessionContextValue = VisualizationSessionState & {
   selectWorkspaceProduct: (
     productId: string,
     workspaceBackgroundDataUrl?: string,
+    productConfiguration?: ProductConfigurationSnapshot,
   ) => void;
   setStructuralDefinition: (definition: ProductStructuralDefinition | null) => void;
   setProductConfiguration: (configuration: ProductConfigurationSnapshot | null) => void;
@@ -80,15 +81,22 @@ export function VisualizationSessionProvider({
   );
 
   const selectWorkspaceProduct = useCallback(
-    (productId: string, workspaceBackgroundDataUrl?: string) => {
+    (
+      productId: string,
+      workspaceBackgroundDataUrl?: string,
+      productConfiguration?: ProductConfigurationSnapshot,
+    ) => {
       setState((current) => {
+        const isCurrentProduct = current.selectedProductId === productId;
         const nextState: VisualizationSessionState = {
           ...current,
           selectedProductId: productId,
           workspaceBackgroundDataUrl:
             workspaceBackgroundDataUrl ?? current.workspaceBackgroundDataUrl,
-          structuralDefinition: null,
-          productConfiguration: null,
+          structuralDefinition: isCurrentProduct
+            ? current.structuralDefinition
+            : null,
+          productConfiguration: productConfiguration ?? null,
           variationSnapshots: [],
           activeOverlay: null,
           finalSnapshotDataUrl: null,

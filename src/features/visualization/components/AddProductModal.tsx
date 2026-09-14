@@ -11,6 +11,7 @@ interface AddProductModalProps {
   onSelectProduct: (product: CatalogProduct) => Promise<void> | void;
   products: CatalogProduct[];
   currentProductId?: string;
+  allowCurrentProduct?: boolean;
   title?: string;
 }
 
@@ -20,6 +21,7 @@ export function AddProductModal({
   onSelectProduct,
   products,
   currentProductId,
+  allowCurrentProduct = false,
   title = "Add Product",
 }: AddProductModalProps) {
   const [searchQuery, setSearchQuery] = useState("");
@@ -200,11 +202,18 @@ export function AddProductModal({
                     <button
                       type="button"
                       onClick={() => void handleSelect(product)}
-                      disabled={isCurrent || selectingProductId !== null}
+                      disabled={
+                        (isCurrent && !allowCurrentProduct) ||
+                        selectingProductId !== null
+                      }
                       className="w-full py-1.5 sm:py-2 bg-black text-white text-xs sm:text-sm font-medium rounded-full hover:bg-neutral-800 transition-colors cursor-pointer disabled:cursor-not-allowed disabled:bg-neutral-300"
                     >
                       {isCurrent
-                        ? "Current Product"
+                        ? allowCurrentProduct
+                          ? isSelecting
+                            ? "Adding..."
+                            : "Add Another"
+                          : "Current Product"
                         : isSelecting
                           ? "Loading..."
                           : "Select Product"}
