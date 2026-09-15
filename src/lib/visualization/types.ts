@@ -168,6 +168,13 @@ export type ProductVariationSnapshot = {
   imageDataUrl: string;
 };
 
+export type Point2D = {
+  x: number;
+  y: number;
+};
+
+export type QuadrilateralCorners = [Point2D, Point2D, Point2D, Point2D];
+
 export type ProductConfigurationSnapshot = {
   widthCm: number;
   heightCm: number;
@@ -184,6 +191,8 @@ export type ProductConfigurationSnapshot = {
   isFlipped: boolean;
   zoomLevel?: number;
   activeOcclusionIds?: string[];
+  manualOcclusionMaskDataUrl?: string | null;
+  perspectiveFitCorners?: QuadrilateralCorners | null;
   ambientLight?: boolean;
   autoShadow?: boolean;
   autoRealism?: boolean;
@@ -191,3 +200,4 @@ export type ProductConfigurationSnapshot = {
   positionY?: number;
   visualParameterValues: Record<string, unknown>;
 };
+
