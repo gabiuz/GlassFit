@@ -7,6 +7,7 @@ import {
   motion,
   AnimatePresence,
   useDragControls,
+  useMotionValue,
   useReducedMotion,
 } from "motion/react";
 import { ChevronDown, RotateCw, FlipHorizontal, RotateCcw, Trash2, Paintbrush, Maximize, Move } from "lucide-react";
@@ -226,6 +227,8 @@ export function ProductModelWorkspace({
     x: initialConfiguration?.positionX ?? 0,
     y: initialConfiguration?.positionY ?? 0,
   });
+  const overlayX = useMotionValue(overlayPosition.x);
+  const overlayY = useMotionValue(overlayPosition.y);
   const [rotateAngle, setRotateAngle] = useState(
     initialConfiguration?.rotateAngle ?? 0,
   );
@@ -273,6 +276,11 @@ export function ProductModelWorkspace({
   const [isOutlineMeasurementPaused, setIsOutlineMeasurementPaused] = useState(false);
   const [isSnapshotApplied, setIsSnapshotApplied] = useState(false);
   const [isCapturingSnapshot, setIsCapturingSnapshot] = useState(false);
+
+  useEffect(() => {
+    overlayX.set(overlayPosition.x);
+    overlayY.set(overlayPosition.y);
+  }, [overlayPosition.x, overlayPosition.y, overlayX, overlayY]);
 
   const bgImage = uploadedImage || "/comparison_assets/room_without_furniture.png";
   const productOverlayImage =
@@ -1781,74 +1789,12 @@ export function ProductModelWorkspace({
 
               {/* Product Overlay Element on Canvas with Adjustment Tool */}
               {selectedProduct && (
-                <div className="absolute inset-0 pointer-events-none z-20">
+                <div
+                  data-visualization-layer="active-product"
+                  className="absolute inset-0 pointer-events-none z-20"
+                >
                   {perspectiveCorners ? (
                     <>
-                      {/* Floating Toolbar for Perspective Fitting Mode */}
-                      {isEditingProduct && perspectiveToolbarPosition && (
-                        <div
-                          className="absolute flex items-center gap-2.5 z-30 select-none animate-in fade-in slide-in-from-bottom-2 duration-200 pointer-events-auto"
-                          style={{
-                            left: perspectiveToolbarPosition.left,
-                            top: perspectiveToolbarPosition.top,
-                            transform: "translateX(-50%)",
-                          }}
-                        >
-                          {/* Edit Corners Button */}
-                          <button
-                            type="button"
-                            onClick={() => setShowPerspectivePicker(true)}
-                            className="bg-[#0f1422] hover:bg-black text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
-                          >
-                            <Maximize className="w-4 h-4 text-white" />
-                            <span className="text-[13px] font-normal tracking-[-0.266px]">Edit Corners</span>
-                          </button>
-
-                          {/* Free Place Button */}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setPerspectiveCorners(null);
-                              setModelRevision((prev) => prev + 1);
-                            }}
-                            className="bg-[#0f1422] hover:bg-black text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
-                          >
-                            <Move className="w-4 h-4 text-white" />
-                            <span className="text-[13px] font-normal tracking-[-0.266px]">Free Place</span>
-                          </button>
-
-                          {/* Flip Button */}
-                          <button
-                            type="button"
-                            onClick={handleFlip}
-                            className="bg-[#0f1422] hover:bg-black text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
-                          >
-                            <FlipHorizontal className="w-4 h-4 text-white" />
-                            <span className="text-[13px] font-normal tracking-[-0.266px]">Flip</span>
-                          </button>
-
-                          {/* Reset Button */}
-                          <button
-                            type="button"
-                            onClick={handleReset}
-                            className="bg-[#0f1422] hover:bg-black text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
-                          >
-                            <RotateCcw className="w-4 h-4 text-white" />
-                            <span className="text-[13px] font-normal tracking-[-0.266px]">Reset</span>
-                          </button>
-
-                          {/* Remove Button */}
-                          <button
-                            type="button"
-                            onClick={handleRemove}
-                            className="bg-[#c50000] hover:bg-[#a30000] text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
-                          >
-                            <Trash2 className="w-4 h-4 text-white" />
-                            <span className="text-[13px] font-normal tracking-[-0.266px]">Remove</span>
-                          </button>
-                        </div>
-                      )}
-
                       {/* Perspective-fitted overlay: uses matrix3d to warp into quadrilateral */}
                       <div
                         ref={overlayBoxRef}
@@ -1915,11 +1861,11 @@ export function ProductModelWorkspace({
                         dragListener={false}
                         dragElastic={0}
                         dragMomentum={false}
-                        onDragEnd={(_, info) => {
-                          setOverlayPosition((current) => ({
-                            x: current.x + info.offset.x,
-                            y: current.y + info.offset.y,
-                          }));
+                        onDragEnd={() => {
+                          setOverlayPosition({
+                            x: overlayX.get(),
+                            y: overlayY.get(),
+                          });
                         }}
                         className={[
                           "pointer-events-auto relative",
@@ -1930,70 +1876,10 @@ export function ProductModelWorkspace({
                         style={{
                           width: overlaySize.width,
                           height: overlaySize.height,
-                          x: overlayPosition.x,
-                          y: overlayPosition.y,
+                          x: overlayX,
+                          y: overlayY,
                         }}
                       >
-                        <div
-                          className={[
-                            "absolute flex items-center gap-2.5 z-30 select-none animate-in fade-in slide-in-from-bottom-2 duration-200",
-                            isEditingProduct ? "" : "invisible pointer-events-none",
-                          ].join(" ")}
-                          style={toolbarControlsStyle}
-                        >
-                          {/* Fit to Opening Button (MS-02) */}
-                          {isWindowProduct && !perspectiveCorners && (
-                            <button
-                              type="button"
-                              onClick={() => setShowPerspectivePicker(true)}
-                              className="bg-[#07b6d3] hover:bg-[#069bb5] text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
-                            >
-                              <Maximize className="w-4 h-4 text-white" />
-                              <span className="text-[13px] font-normal tracking-[-0.266px]">Fit to Opening</span>
-                            </button>
-                          )}
-
-                          {/* Rotate Button */}
-                          <button
-                            type="button"
-                            onClick={handleRotate}
-                            className="bg-[#0f1422] hover:bg-black text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
-                          >
-                            <RotateCw className="w-4 h-4 text-white" />
-                            <span className="text-[13px] font-normal tracking-[-0.266px]">Rotate</span>
-                          </button>
-
-                          {/* Flip Button */}
-                          <button
-                            type="button"
-                            onClick={handleFlip}
-                            className="bg-[#0f1422] hover:bg-black text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
-                          >
-                            <FlipHorizontal className="w-4 h-4 text-white" />
-                            <span className="text-[13px] font-normal tracking-[-0.266px]">Flip</span>
-                          </button>
-
-                          {/* Reset Button */}
-                          <button
-                            type="button"
-                            onClick={handleReset}
-                            className="bg-[#0f1422] hover:bg-black text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
-                          >
-                            <RotateCcw className="w-4 h-4 text-white" />
-                            <span className="text-[13px] font-normal tracking-[-0.266px]">Reset</span>
-                          </button>
-
-                          {/* Remove Button */}
-                          <button
-                            type="button"
-                            onClick={handleRemove}
-                            className="bg-[#c50000] hover:bg-[#a30000] text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
-                          >
-                            <Trash2 className="w-4 h-4 text-white" />
-                            <span className="text-[13px] font-normal tracking-[-0.266px]">Remove</span>
-                          </button>
-                        </div>
-
                         {/* Model render frame; controls sit on the measured model outline. */}
                         <div
                           ref={overlayBoxRef}
@@ -2042,72 +1928,18 @@ export function ProductModelWorkspace({
                             )}
                           </div>
 
-                          {isEditingProduct && (
-                            <div
-                              ref={outlineControlsRef}
-                              className="absolute pointer-events-none"
-                              style={outlineControlsStyle}
-                            >
-                              {/* Rotation handles attached to the outlined model layer. */}
-                              <button
-                                type="button"
-                                aria-label="Rotate from top left"
-                                onPointerDown={startRotation}
-                                className="absolute -top-10 -left-10 z-30 flex size-7 items-center justify-center rounded-full border border-[#07b6d3] bg-white text-[#0f1422] shadow-md hover:bg-[#e9f9fb] cursor-grab active:cursor-grabbing pointer-events-auto"
-                              >
-                                <RotateCw className="size-4" />
-                              </button>
-                              <button
-                                type="button"
-                                aria-label="Rotate from top right"
-                                onPointerDown={startRotation}
-                                className="absolute -top-10 -right-10 z-30 flex size-7 items-center justify-center rounded-full border border-[#07b6d3] bg-white text-[#0f1422] shadow-md hover:bg-[#e9f9fb] cursor-grab active:cursor-grabbing pointer-events-auto"
-                              >
-                                <RotateCw className="size-4" />
-                              </button>
-                              <button
-                                type="button"
-                                aria-label="Rotate from bottom left"
-                                onPointerDown={startRotation}
-                                className="absolute -bottom-10 -left-10 z-30 flex size-7 items-center justify-center rounded-full border border-[#07b6d3] bg-white text-[#0f1422] shadow-md hover:bg-[#e9f9fb] cursor-grab active:cursor-grabbing pointer-events-auto"
-                              >
-                                <RotateCw className="size-4" />
-                              </button>
-                              <button
-                                type="button"
-                                aria-label="Rotate from bottom right"
-                                onPointerDown={startRotation}
-                                className="absolute -bottom-10 -right-10 z-30 flex size-7 items-center justify-center rounded-full border border-[#07b6d3] bg-white text-[#0f1422] shadow-md hover:bg-[#e9f9fb] cursor-grab active:cursor-grabbing pointer-events-auto"
-                              >
-                                <RotateCw className="size-4" />
-                              </button>
-
-                              {/* Corner handles scale the scene, matching the MVP scene-size control. */}
-                              <div onPointerDown={(event) => startResize(event, "scale", -1, -1)} className="absolute top-0 left-0 -translate-x-1/2 -translate-y-1/2 size-4 rounded-[2px] bg-white border border-[#06e5ff] shadow-md z-40 cursor-nwse-resize pointer-events-auto" />
-                              <div onPointerDown={(event) => startResize(event, "scale", 1, -1)} className="absolute top-0 right-0 translate-x-1/2 -translate-y-1/2 size-4 rounded-[2px] bg-white border border-[#06e5ff] shadow-md z-40 cursor-nesw-resize pointer-events-auto" />
-                              <div onPointerDown={(event) => startResize(event, "scale", -1, 1)} className="absolute bottom-0 left-0 -translate-x-1/2 translate-y-1/2 size-4 rounded-[2px] bg-white border border-[#06e5ff] shadow-md z-40 cursor-nesw-resize pointer-events-auto" />
-                              <div onPointerDown={(event) => startResize(event, "scale", 1, 1)} className="absolute bottom-0 right-0 translate-x-1/2 translate-y-1/2 size-4 rounded-[2px] bg-white border border-[#06e5ff] shadow-md z-40 cursor-nwse-resize pointer-events-auto" />
-
-                              {/* Edge handles adjust structural width/height. */}
-                              <div onPointerDown={(event) => startResize(event, "height", 0, -1)} className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 size-3 bg-[#07b6d3] rounded-full shadow-md z-20 cursor-ns-resize pointer-events-auto" />
-                              <div onPointerDown={(event) => startResize(event, "height", 0, 1)} className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 size-3 bg-[#07b6d3] rounded-full shadow-md z-20 cursor-ns-resize pointer-events-auto" />
-                              <div onPointerDown={(event) => startResize(event, "width", -1, 0)} className="absolute left-0 top-1/2 -translate-x-1/2 -translate-y-1/2 size-3 bg-[#07b6d3] rounded-full shadow-md z-20 cursor-ew-resize pointer-events-auto" />
-                              <div onPointerDown={(event) => startResize(event, "width", 1, 0)} className="absolute right-0 top-1/2 translate-x-1/2 -translate-y-1/2 size-3 bg-[#07b6d3] rounded-full shadow-md z-20 cursor-ew-resize pointer-events-auto" />
-
-                              {/* Center Movement Handle Badge */}
-                              <div onPointerDown={startOverlayDrag} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 size-6 rounded-full bg-[#07b6d3] flex items-center justify-center shadow-md cursor-grab active:cursor-grabbing z-20 pointer-events-auto">
-                                <div className="size-2 bg-white rounded-full" />
-                              </div>
-                            </div>
-                          )}
                         </div>
                       </motion.div>
                     </div>
                   )}
                 </div>
               )}
-              {selectedProduct && activeOcclusionObjects.length > 0 && (
-                <div className="absolute inset-0 pointer-events-none z-30">
+              {selectedProduct &&
+                (activeOcclusionObjects.length > 0 || manualMaskDataUrl) && (
+                <div
+                  data-visualization-layer="foreground-occlusion"
+                  className="absolute inset-0 pointer-events-none z-30"
+                >
                   {activeOcclusionObjects.map((object) => (
                     <img
                       key={object.id}
@@ -2127,26 +1959,182 @@ export function ProductModelWorkspace({
                       }}
                     />
                   ))}
+                  {manualMaskDataUrl && (
+                    <img
+                      src={bgImage}
+                      alt=""
+                      aria-hidden="true"
+                      className="absolute inset-0 h-full w-full object-contain select-none"
+                      style={{
+                        WebkitMaskImage: `url(${manualMaskDataUrl})`,
+                        maskImage: `url(${manualMaskDataUrl})`,
+                        WebkitMaskPosition: "center",
+                        maskPosition: "center",
+                        WebkitMaskRepeat: "no-repeat",
+                        maskRepeat: "no-repeat",
+                        WebkitMaskSize: "100% 100%",
+                        maskSize: "100% 100%",
+                      }}
+                    />
+                  )}
                 </div>
               )}
-              {selectedProduct && manualMaskDataUrl && (
-                <div className="absolute inset-0 pointer-events-none z-30">
-                  <img
-                    src={bgImage}
-                    alt=""
-                    aria-hidden="true"
-                    className="absolute inset-0 h-full w-full object-contain select-none"
-                    style={{
-                      WebkitMaskImage: `url(${manualMaskDataUrl})`,
-                      maskImage: `url(${manualMaskDataUrl})`,
-                      WebkitMaskPosition: "center",
-                      maskPosition: "center",
-                      WebkitMaskRepeat: "no-repeat",
-                      maskRepeat: "no-repeat",
-                      WebkitMaskSize: "100% 100%",
-                      maskSize: "100% 100%",
-                    }}
-                  />
+              {selectedProduct && isEditingProduct && (
+                <div
+                  data-visualization-layer="product-controls"
+                  className="absolute inset-0 z-40 pointer-events-none"
+                >
+                  {perspectiveCorners ? (
+                    perspectiveToolbarPosition && (
+                      <div
+                        className="absolute flex items-center gap-2.5 select-none animate-in fade-in slide-in-from-bottom-2 duration-200 pointer-events-auto"
+                        style={{
+                          left: perspectiveToolbarPosition.left,
+                          top: perspectiveToolbarPosition.top,
+                          transform: "translateX(-50%)",
+                        }}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => setShowPerspectivePicker(true)}
+                          className="bg-[#0f1422] hover:bg-black text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
+                        >
+                          <Maximize className="w-4 h-4 text-white" />
+                          <span className="text-[13px] font-normal tracking-[-0.266px]">Edit Corners</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPerspectiveCorners(null);
+                            setModelRevision((prev) => prev + 1);
+                          }}
+                          className="bg-[#0f1422] hover:bg-black text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
+                        >
+                          <Move className="w-4 h-4 text-white" />
+                          <span className="text-[13px] font-normal tracking-[-0.266px]">Free Place</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleFlip}
+                          className="bg-[#0f1422] hover:bg-black text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
+                        >
+                          <FlipHorizontal className="w-4 h-4 text-white" />
+                          <span className="text-[13px] font-normal tracking-[-0.266px]">Flip</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleReset}
+                          className="bg-[#0f1422] hover:bg-black text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
+                        >
+                          <RotateCcw className="w-4 h-4 text-white" />
+                          <span className="text-[13px] font-normal tracking-[-0.266px]">Reset</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleRemove}
+                          className="bg-[#c50000] hover:bg-[#a30000] text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
+                        >
+                          <Trash2 className="w-4 h-4 text-white" />
+                          <span className="text-[13px] font-normal tracking-[-0.266px]">Remove</span>
+                        </button>
+                      </div>
+                    )
+                  ) : (
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                      <motion.div
+                        style={{
+                          width: overlaySize.width,
+                          height: overlaySize.height,
+                          x: overlayX,
+                          y: overlayY,
+                        }}
+                        className="relative pointer-events-none"
+                      >
+                        <div
+                          className="absolute flex items-center gap-2.5 select-none animate-in fade-in slide-in-from-bottom-2 duration-200 pointer-events-auto"
+                          style={toolbarControlsStyle}
+                        >
+                          {isWindowProduct && (
+                            <button
+                              type="button"
+                              onClick={() => setShowPerspectivePicker(true)}
+                              className="bg-[#07b6d3] hover:bg-[#069bb5] text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
+                            >
+                              <Maximize className="w-4 h-4 text-white" />
+                              <span className="text-[13px] font-normal tracking-[-0.266px]">Fit to Opening</span>
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={handleRotate}
+                            className="bg-[#0f1422] hover:bg-black text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
+                          >
+                            <RotateCw className="w-4 h-4 text-white" />
+                            <span className="text-[13px] font-normal tracking-[-0.266px]">Rotate</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleFlip}
+                            className="bg-[#0f1422] hover:bg-black text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
+                          >
+                            <FlipHorizontal className="w-4 h-4 text-white" />
+                            <span className="text-[13px] font-normal tracking-[-0.266px]">Flip</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleReset}
+                            className="bg-[#0f1422] hover:bg-black text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
+                          >
+                            <RotateCcw className="w-4 h-4 text-white" />
+                            <span className="text-[13px] font-normal tracking-[-0.266px]">Reset</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleRemove}
+                            className="bg-[#c50000] hover:bg-[#a30000] text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
+                          >
+                            <Trash2 className="w-4 h-4 text-white" />
+                            <span className="text-[13px] font-normal tracking-[-0.266px]">Remove</span>
+                          </button>
+                        </div>
+
+                        <div
+                          className="relative pointer-events-none"
+                          style={{
+                            width: overlaySize.width,
+                            height: overlaySize.height,
+                            transform: `rotate(${rotateAngle}deg)`,
+                            transformOrigin: "center center",
+                          }}
+                        >
+                          <div
+                            ref={outlineControlsRef}
+                            className="absolute pointer-events-none"
+                            style={outlineControlsStyle}
+                          >
+                            <button type="button" aria-label="Rotate from top left" onPointerDown={startRotation} className="absolute -top-10 -left-10 z-30 flex size-7 items-center justify-center rounded-full border border-[#07b6d3] bg-white text-[#0f1422] shadow-md hover:bg-[#e9f9fb] cursor-grab active:cursor-grabbing pointer-events-auto"><RotateCw className="size-4" /></button>
+                            <button type="button" aria-label="Rotate from top right" onPointerDown={startRotation} className="absolute -top-10 -right-10 z-30 flex size-7 items-center justify-center rounded-full border border-[#07b6d3] bg-white text-[#0f1422] shadow-md hover:bg-[#e9f9fb] cursor-grab active:cursor-grabbing pointer-events-auto"><RotateCw className="size-4" /></button>
+                            <button type="button" aria-label="Rotate from bottom left" onPointerDown={startRotation} className="absolute -bottom-10 -left-10 z-30 flex size-7 items-center justify-center rounded-full border border-[#07b6d3] bg-white text-[#0f1422] shadow-md hover:bg-[#e9f9fb] cursor-grab active:cursor-grabbing pointer-events-auto"><RotateCw className="size-4" /></button>
+                            <button type="button" aria-label="Rotate from bottom right" onPointerDown={startRotation} className="absolute -bottom-10 -right-10 z-30 flex size-7 items-center justify-center rounded-full border border-[#07b6d3] bg-white text-[#0f1422] shadow-md hover:bg-[#e9f9fb] cursor-grab active:cursor-grabbing pointer-events-auto"><RotateCw className="size-4" /></button>
+
+                            <div onPointerDown={(event) => startResize(event, "scale", -1, -1)} className="absolute top-0 left-0 -translate-x-1/2 -translate-y-1/2 size-4 rounded-[2px] bg-white border border-[#06e5ff] shadow-md z-40 cursor-nwse-resize pointer-events-auto" />
+                            <div onPointerDown={(event) => startResize(event, "scale", 1, -1)} className="absolute top-0 right-0 translate-x-1/2 -translate-y-1/2 size-4 rounded-[2px] bg-white border border-[#06e5ff] shadow-md z-40 cursor-nesw-resize pointer-events-auto" />
+                            <div onPointerDown={(event) => startResize(event, "scale", -1, 1)} className="absolute bottom-0 left-0 -translate-x-1/2 translate-y-1/2 size-4 rounded-[2px] bg-white border border-[#06e5ff] shadow-md z-40 cursor-nesw-resize pointer-events-auto" />
+                            <div onPointerDown={(event) => startResize(event, "scale", 1, 1)} className="absolute bottom-0 right-0 translate-x-1/2 translate-y-1/2 size-4 rounded-[2px] bg-white border border-[#06e5ff] shadow-md z-40 cursor-nwse-resize pointer-events-auto" />
+
+                            <div onPointerDown={(event) => startResize(event, "height", 0, -1)} className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 size-3 bg-[#07b6d3] rounded-full shadow-md z-20 cursor-ns-resize pointer-events-auto" />
+                            <div onPointerDown={(event) => startResize(event, "height", 0, 1)} className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 size-3 bg-[#07b6d3] rounded-full shadow-md z-20 cursor-ns-resize pointer-events-auto" />
+                            <div onPointerDown={(event) => startResize(event, "width", -1, 0)} className="absolute left-0 top-1/2 -translate-x-1/2 -translate-y-1/2 size-3 bg-[#07b6d3] rounded-full shadow-md z-20 cursor-ew-resize pointer-events-auto" />
+                            <div onPointerDown={(event) => startResize(event, "width", 1, 0)} className="absolute right-0 top-1/2 translate-x-1/2 -translate-y-1/2 size-3 bg-[#07b6d3] rounded-full shadow-md z-20 cursor-ew-resize pointer-events-auto" />
+
+                            <div onPointerDown={startOverlayDrag} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 size-6 rounded-full bg-[#07b6d3] flex items-center justify-center shadow-md cursor-grab active:cursor-grabbing z-20 pointer-events-auto">
+                              <div className="size-2 bg-white rounded-full" />
+                            </div>
+                          </div>
+                        </div>
+                      </motion.div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

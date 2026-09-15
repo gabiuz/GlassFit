@@ -128,7 +128,7 @@ export function DirectVisualizationPage({
         onCancel={handleCancelModal}
         onPlaceProduct={handlePlaceProduct}
         description="Continue to the workspace, then choose a product from the active catalog."
-        actionLabel="Continue to Workspace"
+        actionLabel="Continue" 
       />
 
       <ImageErrorModal
