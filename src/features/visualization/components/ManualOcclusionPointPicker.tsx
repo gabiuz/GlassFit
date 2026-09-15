@@ -37,6 +37,8 @@ interface ManualOcclusionPointPickerProps {
 type DragTarget = {
   polygonIndex: number | "active";
   pointIndex: number;
+  offsetX: number;
+  offsetY: number;
 };
 
 type EditorSnapshot = {
@@ -198,14 +200,27 @@ export function ManualOcclusionPointPicker({
   };
 
   const handlePointPointerDown = (
-    target: DragTarget,
+    target: Pick<DragTarget, "polygonIndex" | "pointIndex">,
     event: React.PointerEvent<SVGGElement>,
   ) => {
     event.preventDefault();
     event.stopPropagation();
+    const pointer = getCanvasCoordinates(event.clientX, event.clientY);
+    const point =
+      target.polygonIndex === "active"
+        ? activePoints[target.pointIndex]
+        : completedPolygons[target.polygonIndex]?.[target.pointIndex];
+    if (!pointer || !point) {
+      return;
+    }
+
     recordUndoState();
     event.currentTarget.setPointerCapture(event.pointerId);
-    dragTargetRef.current = target;
+    dragTargetRef.current = {
+      ...target,
+      offsetX: point.x - pointer.x,
+      offsetY: point.y - pointer.y,
+    };
     if (target.polygonIndex !== "active") {
       setSelectedPolygonIndex(target.polygonIndex);
     }
@@ -217,10 +232,14 @@ export function ManualOcclusionPointPicker({
       return;
     }
 
-    const point = getCanvasCoordinates(event.clientX, event.clientY);
-    if (!point) {
+    const pointer = getCanvasCoordinates(event.clientX, event.clientY);
+    if (!pointer) {
       return;
     }
+    const point = {
+      x: Math.min(canvasWidth, Math.max(0, pointer.x + target.offsetX)),
+      y: Math.min(canvasHeight, Math.max(0, pointer.y + target.offsetY)),
+    };
 
     if (target.polygonIndex === "active") {
       setActivePoints((current) =>
@@ -344,7 +363,7 @@ export function ManualOcclusionPointPicker({
   };
 
   const activeValidation = validateOcclusionPolygon(activePoints);
-  const canFinishRegion = activeValidation.valid;
+  const canAttemptFinishRegion = activePoints.length >= 3;
   const canApply = completedPolygons.length > 0 && activePoints.length === 0;
   const showLegacyPreview = hasLegacyMask && !isReplacingLegacyMask;
 
@@ -589,9 +608,9 @@ export function ManualOcclusionPointPicker({
             <button
               type="button"
               onClick={handleFinishRegion}
-              disabled={!canFinishRegion}
+              disabled={!canAttemptFinishRegion}
               className={`flex items-center gap-2 rounded-[20px] px-4 py-2.5 text-xs sm:text-sm font-semibold active:scale-[0.98] ${
-                canFinishRegion
+                canAttemptFinishRegion
                   ? "bg-white text-[#0f1422] hover:bg-neutral-100"
                   : "bg-white/10 text-neutral-500 cursor-not-allowed"
               }`}
