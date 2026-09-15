@@ -92,16 +92,28 @@ export function homographyToCssMatrix3d(
   corners: QuadrilateralCorners,
   elementWidth: number,
   elementHeight: number,
+  srcBounds?: { left: number; top: number; width: number; height: number } | null,
 ): string {
   if (elementWidth <= 0 || elementHeight <= 0) {
     return "none";
   }
 
+  const left = srcBounds && Number.isFinite(srcBounds.left) ? srcBounds.left * elementWidth : 0;
+  const top = srcBounds && Number.isFinite(srcBounds.top) ? srcBounds.top * elementHeight : 0;
+  const width =
+    srcBounds && Number.isFinite(srcBounds.width) && srcBounds.width > 0
+      ? srcBounds.width * elementWidth
+      : elementWidth;
+  const height =
+    srcBounds && Number.isFinite(srcBounds.height) && srcBounds.height > 0
+      ? srcBounds.height * elementHeight
+      : elementHeight;
+
   const srcCorners: QuadrilateralCorners = [
-    { x: 0, y: 0 },
-    { x: elementWidth, y: 0 },
-    { x: elementWidth, y: elementHeight },
-    { x: 0, y: elementHeight },
+    { x: left, y: top },
+    { x: left + width, y: top },
+    { x: left + width, y: top + height },
+    { x: left, y: top + height },
   ];
 
   const H = computeHomographyMatrix(srcCorners, corners);
@@ -269,6 +281,7 @@ export function drawPerspectiveWarpedImage(
   source: CanvasImageSource,
   targetCorners: QuadrilateralCorners,
   subdivisions: number = 8,
+  srcBounds?: { left: number; top: number; width: number; height: number } | null,
 ): void {
   const sourceWidth =
     source instanceof HTMLCanvasElement
@@ -287,11 +300,22 @@ export function drawPerspectiveWarpedImage(
     return;
   }
 
+  const left = srcBounds && Number.isFinite(srcBounds.left) ? srcBounds.left * sourceWidth : 0;
+  const top = srcBounds && Number.isFinite(srcBounds.top) ? srcBounds.top * sourceHeight : 0;
+  const width =
+    srcBounds && Number.isFinite(srcBounds.width) && srcBounds.width > 0
+      ? srcBounds.width * sourceWidth
+      : sourceWidth;
+  const height =
+    srcBounds && Number.isFinite(srcBounds.height) && srcBounds.height > 0
+      ? srcBounds.height * sourceHeight
+      : sourceHeight;
+
   const srcCorners: QuadrilateralCorners = [
-    { x: 0, y: 0 },
-    { x: sourceWidth, y: 0 },
-    { x: sourceWidth, y: sourceHeight },
-    { x: 0, y: sourceHeight },
+    { x: left, y: top },
+    { x: left + width, y: top },
+    { x: left + width, y: top + height },
+    { x: left, y: top + height },
   ];
 
   const H = computeHomographyMatrix(srcCorners, targetCorners);
@@ -305,10 +329,10 @@ export function drawPerspectiveWarpedImage(
 
   for (let row = 0; row <= steps; row++) {
     const rowVertices: GridVertex[] = [];
-    const v = (row / steps) * sourceHeight;
+    const v = top + (row / steps) * height;
 
     for (let col = 0; col <= steps; col++) {
-      const u = (col / steps) * sourceWidth;
+      const u = left + (col / steps) * width;
 
       // Project (u, v) using homography matrix H
       const w = H[6] * u + H[7] * v + H[8];

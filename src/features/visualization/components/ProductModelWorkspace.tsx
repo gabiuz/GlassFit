@@ -29,6 +29,7 @@ import {
   homographyToCssMatrix3d,
   denormalizeCorners,
   drawPerspectiveWarpedImage,
+  estimateDimensionsFromCorners,
 } from "@/lib/visualization/perspectiveTransform";
 import {
   ALUMINUM_COLOR_VARIATIONS,
@@ -302,16 +303,18 @@ export function ProductModelWorkspace({
 
   const perspectiveToolbarPosition = useMemo(() => {
     if (!perspectiveCorners) return null;
+    const currentWidth = canvasDisplaySize.width;
+    const currentHeight = canvasDisplaySize.height;
     const pxCorners = denormalizeCorners(
       perspectiveCorners,
-      canvasDisplaySize.width,
-      canvasDisplaySize.height,
+      currentWidth,
+      currentHeight,
     );
     const minX = Math.min(...pxCorners.map((p) => p.x));
     const maxX = Math.max(...pxCorners.map((p) => p.x));
     const minY = Math.min(...pxCorners.map((p) => p.y));
     return {
-      left: Math.max(160, Math.min(canvasDisplaySize.width - 160, (minX + maxX) / 2)),
+      left: Math.max(160, Math.min(currentWidth - 160, (minX + maxX) / 2)),
       top: Math.max(12, minY - 48),
     };
   }, [perspectiveCorners, canvasDisplaySize.width, canvasDisplaySize.height]);
@@ -481,12 +484,42 @@ export function ProductModelWorkspace({
     mvpRendererRef.current.applyLighting(effectiveLighting ?? null);
   }, [effectiveLighting]);
 
+  const handleCanvasMount = useCallback(
+    (canvas: HTMLCanvasElement | null) => {
+      (mvpCanvasRef as React.MutableRefObject<HTMLCanvasElement | null>).current = canvas;
+      if (canvas && mvpRendererRef.current && structuralDefinition) {
+        const isPlanar = Boolean(perspectiveCorners);
+        const sourceCanvas = mvpRendererRef.current.render(yaw, pitch, isPlanar);
+        if (sourceCanvas) {
+          const ctx = canvas.getContext("2d");
+          if (ctx) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(
+              sourceCanvas,
+              0,
+              0,
+              sourceCanvas.width,
+              sourceCanvas.height,
+              0,
+              0,
+              canvas.width,
+              canvas.height,
+            );
+            // Model rendered into canvas
+          }
+        }
+      }
+    },
+    [yaw, pitch, structuralDefinition, perspectiveCorners],
+  );
+
   useLayoutEffect(() => {
     if (!mvpRendererRef.current || !mvpCanvasRef.current || !structuralDefinition) return;
 
     mvpRendererRef.current.setSize(renderFrameSize.width, renderFrameSize.height);
 
-    const sourceCanvas = mvpRendererRef.current.render(yaw, pitch);
+    const isPlanar = Boolean(perspectiveCorners);
+    const sourceCanvas = mvpRendererRef.current.render(yaw, pitch, isPlanar);
     if (!sourceCanvas) return;
 
     const ctx = mvpCanvasRef.current.getContext("2d");
@@ -505,10 +538,25 @@ export function ProductModelWorkspace({
       mvpCanvasRef.current.height
     );
 
-    if (!isOutlineMeasurementPaused) {
+    if (!isOutlineMeasurementPaused && !isPlanar) {
       setProjectedModelBounds(getVisibleModelBounds(mvpCanvasRef.current));
     }
-  }, [yaw, pitch, structuralDefinition, widthCm, heightCm, includeSill, glassAppearance, alumFinish, effectiveLighting, modelRevision, renderFrameSize, isOutlineMeasurementPaused, selectedProduct]);
+  }, [
+    yaw,
+    pitch,
+    structuralDefinition,
+    widthCm,
+    heightCm,
+    includeSill,
+    glassAppearance,
+    alumFinish,
+    effectiveLighting,
+    modelRevision,
+    renderFrameSize,
+    isOutlineMeasurementPaused,
+    selectedProduct,
+    perspectiveCorners,
+  ]);
 
   const outlineControlsStyle = useMemo(
     () => getOutlineControlsStyle(structuralDefinition ? projectedModelBounds : null),
@@ -1759,7 +1807,10 @@ export function ProductModelWorkspace({
                           {/* Free Place Button */}
                           <button
                             type="button"
-                            onClick={() => setPerspectiveCorners(null)}
+                            onClick={() => {
+                              setPerspectiveCorners(null);
+                              setModelRevision((prev) => prev + 1);
+                            }}
                             className="bg-[#0f1422] hover:bg-black text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
                           >
                             <Move className="w-4 h-4 text-white" />
@@ -1817,6 +1868,10 @@ export function ProductModelWorkspace({
                             overlaySize.width,
                             overlaySize.height,
                           ),
+                          transformStyle: "preserve-3d",
+                          WebkitTransformStyle: "preserve-3d",
+                          backfaceVisibility: "visible",
+                          WebkitBackfaceVisibility: "visible",
                         }}
                       >
                         {/* Inner Product Image */}
@@ -1830,7 +1885,7 @@ export function ProductModelWorkspace({
                               }}
                             >
                               <canvas
-                                ref={mvpCanvasRef}
+                                ref={handleCanvasMount}
                                 className="w-full h-full object-fill"
                                 width={renderFrameSize.width}
                                 height={renderFrameSize.height}
@@ -1967,7 +2022,7 @@ export function ProductModelWorkspace({
                                 }}
                               >
                                 <canvas
-                                  ref={mvpCanvasRef}
+                                  ref={handleCanvasMount}
                                   className="w-full h-full object-fill"
                                   width={renderFrameSize.width}
                                   height={renderFrameSize.height}
@@ -2724,7 +2779,30 @@ export function ProductModelWorkspace({
           canvasHeight={aspectHeight}
           initialCorners={perspectiveCorners}
           onConfirm={(corners) => {
+            const currentDisplayWidth = canvasRef.current?.clientWidth || canvasDisplaySize.width;
+            const currentDisplayHeight = canvasRef.current?.clientHeight || canvasDisplaySize.height;
+            const pxCorners = denormalizeCorners(corners, currentDisplayWidth, currentDisplayHeight);
+            const { widthRatio, heightRatio } = estimateDimensionsFromCorners(pxCorners);
+            if (heightRatio > 0 && widthRatio > 0) {
+              const openingAspect = widthRatio / heightRatio;
+              const currentH = Number(heightCm) || 120;
+              const currentW = Number(widthCm) || 120;
+              let nextW = currentW;
+              let nextH = currentH;
+              if (openingAspect >= 1) {
+                nextW = Math.round(clampNumber(currentH * openingAspect, 50, 400));
+              } else {
+                nextH = Math.round(clampNumber(currentW / openingAspect, 50, 400));
+              }
+              setWidthCm(String(nextW));
+              setHeightCm(String(nextH));
+              setOverlaySize(getOverlaySizeFromDimensions(String(nextW), String(nextH)));
+            }
             setPerspectiveCorners(corners);
+            setYaw(0);
+            setPitch(0);
+            setRotateAngle(0);
+            setModelRevision((prev) => prev + 1);
             setShowPerspectivePicker(false);
           }}
           onCancel={() => setShowPerspectivePicker(false)}
@@ -3009,7 +3087,7 @@ async function drawSnapshotOverlay({
       offCtx.restore();
 
       context.save();
-      drawPerspectiveWarpedImage(context, offscreen, pixelCorners);
+      drawPerspectiveWarpedImage(context, offscreen, pixelCorners, 8);
       context.restore();
       return;
     }

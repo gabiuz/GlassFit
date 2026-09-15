@@ -67,6 +67,7 @@ export class ProductModelRenderer {
   private renderer: THREE.WebGLRenderer;
   private scene: THREE.Scene;
   private camera: THREE.PerspectiveCamera;
+  private orthoCamera: THREE.OrthographicCamera;
   private canvas: HTMLCanvasElement;
   private modelGroup: THREE.Group;
   private modelLoadVersion = 0;
@@ -105,6 +106,8 @@ export class ProductModelRenderer {
     );
     this.camera.position.copy(CAMERA_DIRECTION).multiplyScalar(CAMERA_BASE_DISTANCE);
     this.camera.lookAt(0, 0, 0);
+
+    this.orthoCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 100);
 
     this.modelGroup = new THREE.Group();
     this.scene.add(this.modelGroup);
@@ -273,11 +276,44 @@ export class ProductModelRenderer {
     this.fillLight.position.set(-direction.x * 3.5 || -3, 2.4, -3.4);
   }
 
-  render(yaw: number, pitch: number) {
+  render(yaw: number, pitch: number, isPlanarFit = false) {
     if (this.modelGroup.children.length === 0) {
       return null;
     }
 
+    if (isPlanarFit) {
+      this.modelGroup.rotation.set(0, 0, 0);
+      this.modelGroup.updateMatrixWorld(true);
+
+      const bounds = new THREE.Box3().setFromObject(this.modelGroup);
+      const size = new THREE.Vector3();
+      const center = new THREE.Vector3();
+      bounds.getSize(size);
+      bounds.getCenter(center);
+
+      if (size.x > 0 && size.y > 0) {
+        this.orthoCamera.left = -size.x / 2;
+        this.orthoCamera.right = size.x / 2;
+        this.orthoCamera.top = size.y / 2;
+        this.orthoCamera.bottom = -size.y / 2;
+        this.orthoCamera.position.set(center.x, center.y, 10);
+        this.orthoCamera.lookAt(center.x, center.y, 0);
+        this.orthoCamera.updateProjectionMatrix();
+        this.orthoCamera.updateMatrixWorld(true);
+
+        this.renderer.render(this.scene, this.orthoCamera);
+        return this.canvas;
+      }
+
+      this.camera.position.set(0, 0, CAMERA_BASE_DISTANCE);
+      this.camera.lookAt(0, 0, 0);
+      this.camera.updateMatrixWorld(true);
+      this.renderer.render(this.scene, this.camera);
+      return this.canvas;
+    }
+
+    this.camera.position.copy(CAMERA_DIRECTION).multiplyScalar(CAMERA_BASE_DISTANCE);
+    this.camera.lookAt(0, 0, 0);
     this.modelGroup.rotation.set(
       THREE.MathUtils.degToRad(pitch),
       THREE.MathUtils.degToRad(yaw),

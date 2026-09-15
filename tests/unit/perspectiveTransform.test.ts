@@ -103,6 +103,15 @@ describe("MS-02: 4-Point Perspective Plane Fitting for Window Products", () => {
       assert.equal(homographyToCssMatrix3d(trapezoidCorners, 0, 100), "none");
       assert.equal(homographyToCssMatrix3d(trapezoidCorners, 100, -5), "none");
     });
+
+    it("maps tight sub-rectangle model bounds to destination corners when srcBounds is provided", () => {
+      const srcBounds = { left: 0.25, top: 0.25, width: 0.5, height: 0.5 };
+      const css = homographyToCssMatrix3d(trapezoidCorners, 200, 200, srcBounds);
+      assert.ok(css.startsWith("matrix3d("), "Must generate matrix3d string");
+
+      const params = css.slice(9, -1).split(",").map((s) => Number(s.trim()));
+      assert.equal(params.length, 16);
+    });
   });
 
   describe("Quadrilateral Convexity Validation", () => {
