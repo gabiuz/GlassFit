@@ -30,6 +30,8 @@ import {
 import {
   createDuplicateConfiguration,
   getPlacedLayerImageUrls,
+  getOverlaySizeFromConfiguration,
+  preserveActivePlacedLayer,
 } from "@/lib/visualization/multiProductPresentation";
 import {
   validateEngineeringGuardrails,
@@ -58,6 +60,7 @@ interface ProductModelWorkspaceProps {
   onVariationSnapshotsChange?: (snapshots: ProductVariationSnapshot[]) => void;
   onSnapshotChange?: (dataUrl: string) => void;
   onPlacedOverlaysChange?: (overlays: PlacedOverlay[]) => void;
+  onComparisonOverlaysChange?: (overlays: PlacedOverlay[]) => void;
   onProductSelect?: (
     productId: string,
     mode: "add" | "change" | "edit",
@@ -126,6 +129,7 @@ export function ProductModelWorkspace({
   onVariationSnapshotsChange,
   onSnapshotChange,
   onPlacedOverlaysChange,
+  onComparisonOverlaysChange,
   onProductSelect,
   onBack,
 }: ProductModelWorkspaceProps) {
@@ -194,7 +198,9 @@ export function ProductModelWorkspace({
     initialConfiguration?.activeOcclusionIds ?? [],
   );
 
-  const [selectedProduct, setSelectedProduct] = useState(true);
+  const [selectedProduct, setSelectedProduct] = useState(
+    Boolean(currentProductId || structuralDefinition),
+  );
   const [productInstanceRevision, setProductInstanceRevision] = useState(0);
   const [activeOverlayId, setActiveOverlayId] = useState(
     `active-${currentProductId ?? "product"}`,
@@ -781,6 +787,10 @@ export function ProductModelWorkspace({
       );
 
       try {
+        const cameraFraming = mvpRendererRef.current?.getCameraFraming();
+        if (cameraFraming !== null && cameraFraming !== undefined) {
+          renderer.setCameraFraming(cameraFraming);
+        }
         renderer.setSize(renderFrameSize.width, renderFrameSize.height);
         renderer.applyLighting(effectiveLighting ?? null);
         await renderer.loadModel(
@@ -847,12 +857,25 @@ export function ProductModelWorkspace({
   ]);
 
   const createPlacedOverlay = useCallback(async (): Promise<PlacedOverlay> => {
+    const overlayElement = overlayBoxRef.current;
+    const overlayBounds = overlayElement?.getBoundingClientRect();
+    const sourceOverlayWidth =
+      overlayElement?.offsetWidth || overlayBounds?.width || overlaySize.width;
+    const sourceOverlayHeight =
+      overlayElement?.offsetHeight || overlayBounds?.height || overlaySize.height;
+    const visibleModelBounds = projectedModelBounds
+      ? { ...projectedModelBounds }
+      : undefined;
+    const activeImageDataUrl = await captureCurrentProductLayer();
     const variationImageDataUrls = await captureCurrentProductVariationLayers();
     const currentFinish = normalizeAluminumFinish(
       currentConfiguration.aluminumFinish,
     );
-    const flattenedImageDataUrl =
-      variationImageDataUrls[currentFinish] ?? await captureCurrentProductLayer();
+    const placedLayer = preserveActivePlacedLayer({
+      activeImageDataUrl,
+      currentFinish,
+      variationImageDataUrls,
+    });
 
     return {
       overlayId: activeOverlayId,
@@ -860,8 +883,12 @@ export function ProductModelWorkspace({
       productName: overlayName,
       templateId: structuralDefinition?.template.templateId ?? "catalog-image",
       configuration: currentConfiguration,
-      flattenedImageDataUrl,
-      variationImageDataUrls,
+      ...placedLayer,
+      sourceCanvasWidth: canvasRef.current?.getBoundingClientRect().width,
+      sourceCanvasHeight: canvasRef.current?.getBoundingClientRect().height,
+      sourceOverlayWidth,
+      sourceOverlayHeight,
+      visibleModelBounds,
     };
   }, [
     activeOverlayId,
@@ -870,6 +897,9 @@ export function ProductModelWorkspace({
     currentConfiguration,
     currentProductId,
     overlayName,
+    overlaySize.height,
+    overlaySize.width,
+    projectedModelBounds,
     structuralDefinition,
   ]);
 
@@ -985,6 +1015,10 @@ export function ProductModelWorkspace({
       );
 
       try {
+        const cameraFraming = mvpRendererRef.current?.getCameraFraming();
+        if (cameraFraming !== null && cameraFraming !== undefined) {
+          renderer.setCameraFraming(cameraFraming);
+        }
         renderer.setSize(renderFrameSize.width, renderFrameSize.height);
         renderer.applyLighting(effectiveLighting ?? null);
         await renderer.loadModel(
@@ -1074,6 +1108,13 @@ export function ProductModelWorkspace({
       await captureCurrentSnapshot();
       setIsSnapshotApplied(true);
       await generateVariationSnapshots();
+      const comparisonOverlays = selectedProduct
+        ? [
+            ...placedOverlays,
+            { ...(await createPlacedOverlay()), isActive: true },
+          ]
+        : placedOverlays;
+      onComparisonOverlaysChange?.(comparisonOverlays);
       router.push("/comparison");
     } catch (error) {
       const message =
@@ -1086,8 +1127,12 @@ export function ProductModelWorkspace({
     }
   }, [
     captureCurrentSnapshot,
+    createPlacedOverlay,
     generateVariationSnapshots,
+    onComparisonOverlaysChange,
+    placedOverlays,
     router,
+    selectedProduct,
   ]);
 
   const applySceneZoom = useCallback((nextZoomLevel: number) => {
@@ -1586,13 +1631,9 @@ export function ProductModelWorkspace({
               />
 
               {placedOverlays.map((overlay) => {
-                const placedBaseSize = getOverlaySizeFromDimensions(
-                  String(overlay.configuration.widthCm),
-                  String(overlay.configuration.heightCm),
+                const placedSize = getOverlaySizeFromConfiguration(
+                  overlay.configuration,
                 );
-                const placedScale =
-                  1 +
-                  (overlay.configuration.zoomLevel ?? DEFAULT_SCENE_ZOOM) / 100;
 
                 return (
                   <React.Fragment key={overlay.overlayId}>
@@ -1610,8 +1651,8 @@ export function ProductModelWorkspace({
                         title={`Edit ${overlay.productName}`}
                         className="pointer-events-auto rounded-sm border border-transparent bg-transparent cursor-pointer transition-colors hover:border-[#07b6d3] focus-visible:border-[#07b6d3] focus-visible:outline-none"
                         style={{
-                          width: Math.round(placedBaseSize.width * placedScale),
-                          height: Math.round(placedBaseSize.height * placedScale),
+                          width: placedSize.width,
+                          height: placedSize.height,
                           transform: `translate(${overlay.configuration.positionX ?? 0}px, ${overlay.configuration.positionY ?? 0}px) rotate(${overlay.configuration.rotateAngle}deg)`,
                         }}
                       />
@@ -1835,13 +1876,19 @@ export function ProductModelWorkspace({
 
           {/* Action Instructions Bar */}
           <div className="bg-[#f5f5f5] rounded-[20px] px-5 py-3 flex flex-wrap justify-center items-center gap-2 sm:gap-3 text-sm sm:text-base md:text-lg text-[#0f1422] font-normal tracking-[-0.38px] text-center select-none">
-            <span>Click the Product</span>
-            <span className="text-[#c3c3c3]">/</span>
-            <span>Drag to Move</span>
-            <span className="text-[#c3c3c3]">/</span>
-            <span>Corner Handles the Resize</span>
-            <span className="text-[#c3c3c3]">/</span>
-            <span>Tap Circle Rotate</span>
+            {selectedProduct ? (
+              <>
+                <span>Click the Product</span>
+                <span className="text-[#c3c3c3]">/</span>
+                <span>Drag to Move</span>
+                <span className="text-[#c3c3c3]">/</span>
+                <span>Corner Handles the Resize</span>
+                <span className="text-[#c3c3c3]">/</span>
+                <span>Tap Circle Rotate</span>
+              </>
+            ) : (
+              <span>Choose Add Product or Change Product to place a model.</span>
+            )}
           </div>
 
           {/* Footnote text */}
@@ -1854,7 +1901,9 @@ export function ProductModelWorkspace({
         <div className="w-full lg:w-[422px] shrink-0 flex flex-col gap-6 items-end">
           {/* Status Badge */}
           <div className="bg-white rounded-[20px] px-4 py-2 text-black text-sm font-normal tracking-[-0.266px] shadow-xs border border-neutral-100">
-            {structuralDefinition ? structuralDefinition.product.productName : "1 product on Canvas"}
+            {selectedProduct
+              ? structuralDefinition?.product.productName ?? "1 product on Canvas"
+              : "No product selected"}
           </div>
           {productBuildError && (
             <p className="w-full rounded-[10px] border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
@@ -1862,6 +1911,8 @@ export function ProductModelWorkspace({
             </p>
           )}
 
+          {selectedProduct ? (
+            <>
           {/* Price Card */}
           <div className="bg-grad-light rounded-[20px] p-6 sm:p-7 flex flex-col gap-2.5 w-full text-white shadow-md">
             <div className="flex items-center justify-between">
@@ -2324,6 +2375,15 @@ export function ProductModelWorkspace({
                 ? "Edit"
                 : "Apply Changes"}
           </button>
+            </>
+          ) : (
+            <div className="w-full rounded-[20px] border border-[#c3c3c3]/60 bg-white p-6 text-center shadow-xs">
+              <p className="text-lg font-medium text-[#0f1422]">Your space is ready</p>
+              <p className="mt-2 text-sm leading-6 text-black/65">
+                Select Add Product or Change Product above to choose from the GlassFit catalog.
+              </p>
+            </div>
+          )}
         </div>
       </div>
 
@@ -2342,7 +2402,7 @@ export function ProductModelWorkspace({
         <div className="w-full sm:w-auto flex flex-col sm:flex-row items-center gap-3 sm:gap-5">
           <button
             type="button"
-            disabled={isCapturingSnapshot}
+            disabled={isCapturingSnapshot || !selectedProduct}
             onClick={handleSaveSnapshot}
             className="w-full sm:w-auto bg-transparent border border-[#0f1422] hover:bg-neutral-100 text-[#0f1422] font-normal text-base sm:text-[20px] tracking-[-0.38px] leading-[1.4] px-6 py-3.5 rounded-[25px] transition-colors cursor-pointer text-center"
           >
@@ -2350,7 +2410,7 @@ export function ProductModelWorkspace({
           </button>
           <Button
             type="button"
-            disabled={isCapturingSnapshot}
+            disabled={isCapturingSnapshot || !selectedProduct}
             onClick={handleContinueToComparison}
             variant="lightGradWhiteText"
             value="Continue to Comparison"

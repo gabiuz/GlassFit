@@ -134,6 +134,17 @@ export type PlacedOverlay = {
   configuration: ProductConfigurationSnapshot;
   flattenedImageDataUrl: string;
   variationImageDataUrls?: Partial<Record<AluminumFinishKey, string>>;
+  sourceCanvasWidth?: number;
+  sourceCanvasHeight?: number;
+  sourceOverlayWidth?: number;
+  sourceOverlayHeight?: number;
+  visibleModelBounds?: {
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+  };
+  isActive?: boolean;
 };
 
 export type VisualizationSessionState = {
@@ -145,6 +156,7 @@ export type VisualizationSessionState = {
   variationSnapshots: ProductVariationSnapshot[];
   activeOverlay: ActiveOverlay | null;
   placedOverlays: PlacedOverlay[];
+  comparisonOverlays: PlacedOverlay[];
   finalSnapshotDataUrl: string | null;
 };
 

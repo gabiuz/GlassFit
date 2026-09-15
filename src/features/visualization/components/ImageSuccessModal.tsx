@@ -8,12 +8,16 @@ interface ImageSuccessModalProps {
   isOpen: boolean;
   onCancel: () => void;
   onPlaceProduct: () => void;
+  description?: string;
+  actionLabel?: string;
 }
 
 export function ImageSuccessModal({
   isOpen,
   onCancel,
   onPlaceProduct,
+  description = "You may now place your selected product.",
+  actionLabel = "Place Product",
 }: ImageSuccessModalProps) {
   const shouldReduceMotion = useReducedMotion();
 
@@ -61,7 +65,7 @@ export function ImageSuccessModal({
             Image analysis is complete.
           </h2>
           <p className="text-[#0f1422] text-base sm:text-xl font-normal tracking-[-0.38px]">
-            You may now place your selected product.
+            {description}
           </p>
         </div>
 
@@ -82,7 +86,7 @@ export function ImageSuccessModal({
             onClick={onPlaceProduct}
             className="bg-green hover:bg-[#06a3bd] text-white font-normal text-base sm:text-xl px-6 py-3.5 rounded-[25px] transition-colors cursor-pointer shadow-sm"
           >
-            Place Product
+            {actionLabel}
           </button>
         </div>
       </div>

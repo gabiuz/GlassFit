@@ -30,6 +30,7 @@ type VisualizationSessionContextValue = VisualizationSessionState & {
   setVariationSnapshots: (snapshots: ProductVariationSnapshot[]) => void;
   setActiveOverlay: (overlay: ActiveOverlay | null) => void;
   setPlacedOverlays: (overlays: PlacedOverlay[]) => void;
+  setComparisonOverlays: (overlays: PlacedOverlay[]) => void;
   setFinalSnapshotDataUrl: (dataUrl: string | null) => void;
   resetVisualizationSession: () => void;
 };
@@ -46,6 +47,7 @@ const initialState: VisualizationSessionState = {
   variationSnapshots: [],
   activeOverlay: null,
   placedOverlays: [],
+  comparisonOverlays: [],
   finalSnapshotDataUrl: null,
 };
 
@@ -71,6 +73,7 @@ export function VisualizationSessionProvider({
         variationSnapshots: [],
         activeOverlay: null,
         placedOverlays: [],
+        comparisonOverlays: [],
         finalSnapshotDataUrl: null,
       };
 
@@ -99,6 +102,7 @@ export function VisualizationSessionProvider({
           productConfiguration: productConfiguration ?? null,
           variationSnapshots: [],
           activeOverlay: null,
+          comparisonOverlays: [],
           finalSnapshotDataUrl: null,
         };
 
@@ -162,6 +166,13 @@ export function VisualizationSessionProvider({
     }));
   }, []);
 
+  const setComparisonOverlays = useCallback((overlays: PlacedOverlay[]) => {
+    setState((current) => ({
+      ...current,
+      comparisonOverlays: overlays,
+    }));
+  }, []);
+
   const setFinalSnapshotDataUrl = useCallback((dataUrl: string | null) => {
     setState((current) => {
       const nextState = {
@@ -188,6 +199,7 @@ export function VisualizationSessionProvider({
       setVariationSnapshots,
       setActiveOverlay,
       setPlacedOverlays,
+      setComparisonOverlays,
       setFinalSnapshotDataUrl,
       resetVisualizationSession,
     }),
@@ -200,6 +212,7 @@ export function VisualizationSessionProvider({
       setVariationSnapshots,
       setActiveOverlay,
       setPlacedOverlays,
+      setComparisonOverlays,
       setFinalSnapshotDataUrl,
       resetVisualizationSession,
     ],
@@ -250,6 +263,7 @@ function readStoredVisualizationSession(): VisualizationSessionState {
         : [],
       activeOverlay: null,
       placedOverlays: [],
+      comparisonOverlays: [],
       finalSnapshotDataUrl:
         typeof parsed.finalSnapshotDataUrl === "string"
           ? parsed.finalSnapshotDataUrl

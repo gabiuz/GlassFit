@@ -3,6 +3,10 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { ProductStructuralDefinition } from "@/lib/visualization/types";
 import type { LightingAnalysis } from "@/lib/imageApi";
 import type { GlassAppearanceMode } from "./types";
+import {
+  getHorizontalFovRadians,
+  getVerticalFovDegrees,
+} from "./cameraFraming";
 
 import { buildParametricProduct } from "@/lib/visualization/parametricProductBuilder";
 import { resolveProductStructure } from "@/lib/visualization/structuralResolver";
@@ -132,21 +136,28 @@ export class ProductModelRenderer {
 
     const aspect = Math.max(width / Math.max(height, 1), 0.01);
     if (this.lockedHorizontalFovRadians === null) {
-      this.lockedHorizontalFovRadians =
-        2 *
-        Math.atan(
-          Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2) * aspect,
-        );
+      this.lockedHorizontalFovRadians = getHorizontalFovRadians(
+        this.camera.fov,
+        aspect,
+      );
     }
 
     this.camera.aspect = aspect;
-    this.camera.fov = THREE.MathUtils.radToDeg(
-      2 *
-        Math.atan(
-          Math.tan(this.lockedHorizontalFovRadians / 2) / aspect,
-        ),
+    this.camera.fov = getVerticalFovDegrees(
+      this.lockedHorizontalFovRadians,
+      aspect,
     );
     this.camera.updateProjectionMatrix();
+  }
+
+  getCameraFraming() {
+    return this.lockedHorizontalFovRadians;
+  }
+
+  setCameraFraming(horizontalFovRadians: number) {
+    if (Number.isFinite(horizontalFovRadians) && horizontalFovRadians > 0) {
+      this.lockedHorizontalFovRadians = horizontalFovRadians;
+    }
   }
 
   async loadModel(

@@ -2,9 +2,16 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   createDuplicateConfiguration,
+  getComparisonOverlayFrame,
+  getComparisonLayerImageUrls,
   getPlacedLayerImageUrls,
+  preserveActivePlacedLayer,
   getVisualizationHeaderDetails,
 } from "../../src/lib/visualization/multiProductPresentation";
+import {
+  getHorizontalFovRadians,
+  getVerticalFovDegrees,
+} from "../../src/lib/visualization/cameraFraming";
 import type {
   PlacedOverlay,
   ProductConfigurationSnapshot,
@@ -39,7 +46,7 @@ function placedOverlay(overlayId: string): PlacedOverlay {
   };
 }
 
-describe("QAD-TC6: multi-product quotation presentation", () => {
+describe("PRD-F15/PRD-F16: multi-product visualization and comparison", () => {
   it("preserves a duplicated product's visual size and orientation while centering it", () => {
     const duplicate = createDuplicateConfiguration(sourceConfiguration);
 
@@ -81,5 +88,108 @@ describe("QAD-TC6: multi-product quotation presentation", () => {
       "data:image/png;base64,first-black",
       "data:image/png;base64,second-black",
     ]);
+  });
+
+  it("keeps the exact active render when a product leaves edit mode", () => {
+    const presentation = preserveActivePlacedLayer({
+      activeImageDataUrl: "data:image/png;base64,exact-active-size",
+      currentFinish: "white",
+      variationImageDataUrls: {
+        white: "data:image/png;base64,regenerated-larger-size",
+        black: "data:image/png;base64,black-variation",
+      },
+    });
+
+    assert.equal(
+      presentation.flattenedImageDataUrl,
+      "data:image/png;base64,exact-active-size",
+    );
+    assert.equal(
+      presentation.variationImageDataUrls.white,
+      "data:image/png;base64,exact-active-size",
+    );
+    assert.equal(
+      presentation.variationImageDataUrls.black,
+      "data:image/png;base64,black-variation",
+    );
+  });
+
+  it("keeps alternate comparison variants on the editor camera framing", () => {
+    const editorHorizontalFov = getHorizontalFovRadians(38, 540 / 385);
+    const resizedEditorVerticalFov = getVerticalFovDegrees(
+      editorHorizontalFov,
+      320 / 520,
+    );
+    const comparisonVerticalFov = getVerticalFovDegrees(
+      editorHorizontalFov,
+      320 / 520,
+    );
+
+    assert.notEqual(resizedEditorVerticalFov, 38);
+    assert.equal(comparisonVerticalFov, resizedEditorVerticalFov);
+  });
+
+  it("uses the captured visible model bounds for comparison selection", () => {
+    const overlay = placedOverlay("selected");
+    overlay.configuration = {
+      ...sourceConfiguration,
+      positionX: 100,
+      positionY: -40,
+      rotateAngle: 0,
+    };
+    overlay.sourceCanvasWidth = 1000;
+    overlay.sourceCanvasHeight = 800;
+    overlay.sourceOverlayWidth = 400;
+    overlay.sourceOverlayHeight = 300;
+    overlay.visibleModelBounds = {
+      left: 0.25,
+      top: 0.1,
+      width: 0.5,
+      height: 0.6,
+    };
+
+    assert.deepEqual(
+      getComparisonOverlayFrame({
+        overlay,
+        renderedWidth: 500,
+        renderedHeight: 400,
+        offsetX: 0,
+        offsetY: 0,
+      }),
+      {
+        centerX: 300,
+        centerY: 165,
+        width: 100,
+        height: 90,
+        rotation: 0,
+      },
+    );
+  });
+
+  it("changes only the selected product when comparing a finish", () => {
+    const selected = placedOverlay("selected");
+    const unchanged = placedOverlay("unchanged");
+    selected.configuration = { ...sourceConfiguration, aluminumFinish: "white" };
+    unchanged.configuration = { ...sourceConfiguration, aluminumFinish: "silver" };
+    selected.variationImageDataUrls = {
+      white: "data:image/png;base64,selected-white",
+      black: "data:image/png;base64,selected-black",
+    };
+    unchanged.variationImageDataUrls = {
+      silver: "data:image/png;base64,unchanged-silver",
+      black: "data:image/png;base64,unchanged-black",
+    };
+
+    assert.deepEqual(
+      getComparisonLayerImageUrls(
+        [selected, unchanged],
+        "selected",
+        "black",
+      ),
+      [
+        "data:image/png;base64,selected-black",
+        "data:image/png;base64,unchanged-silver",
+      ],
+    );
   });
 });

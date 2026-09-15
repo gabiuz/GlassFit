@@ -28,6 +28,7 @@ export function ProductAwareWorkspacePage({
     setProductConfiguration,
     setVariationSnapshots,
     setPlacedOverlays,
+    setComparisonOverlays,
     setFinalSnapshotDataUrl,
     selectWorkspaceProduct,
     resetVisualizationSession,
@@ -78,6 +79,7 @@ export function ProductAwareWorkspacePage({
         onVariationSnapshotsChange={setVariationSnapshots}
         onSnapshotChange={setFinalSnapshotDataUrl}
         onPlacedOverlaysChange={setPlacedOverlays}
+        onComparisonOverlaysChange={setComparisonOverlays}
         onProductSelect={(
           nextProductId,
           mode,
