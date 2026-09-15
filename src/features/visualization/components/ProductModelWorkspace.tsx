@@ -10,10 +10,10 @@ import {
   useMotionValue,
   useReducedMotion,
 } from "motion/react";
-import { ChevronDown, RotateCw, FlipHorizontal, RotateCcw, Trash2, Paintbrush, Maximize, Move } from "lucide-react";
+import { ChevronDown, RotateCw, FlipHorizontal, RotateCcw, Trash2, MousePointer2, Maximize, Move } from "lucide-react";
 import Button from "@/components/shared/Button";
 import { AddProductModal } from "./AddProductModal";
-import { ManualMaskPainter } from "./ManualMaskPainter";
+import { ManualOcclusionPointPicker } from "./ManualOcclusionPointPicker";
 import { PerspectivePlanePicker } from "./PerspectivePlanePicker";
 import type { CatalogProduct } from "@/lib/products/types";
 import type { SpaceImageSession, LightingAnalysis } from "@/lib/imageApi";
@@ -25,6 +25,7 @@ import {
   ProductVariationSnapshot,
   PlacedOverlay,
   QuadrilateralCorners,
+  ManualOcclusionPolygon,
 } from "@/lib/visualization/types";
 import {
   homographyToCssMatrix3d,
@@ -210,7 +211,10 @@ export function ProductModelWorkspace({
   const [manualMaskDataUrl, setManualMaskDataUrl] = useState<string | null>(
     initialConfiguration?.manualOcclusionMaskDataUrl ?? null,
   );
-  const [showMaskPainter, setShowMaskPainter] = useState(false);
+  const [manualOcclusionPolygons, setManualOcclusionPolygons] = useState<
+    ManualOcclusionPolygon[]
+  >(initialConfiguration?.manualOcclusionPolygons ?? []);
+  const [showOcclusionPointPicker, setShowOcclusionPointPicker] = useState(false);
   const [perspectiveCorners, setPerspectiveCorners] = useState<QuadrilateralCorners | null>(
     initialConfiguration?.perspectiveFitCorners ?? null,
   );
@@ -621,6 +625,7 @@ export function ProductModelWorkspace({
       zoomLevel,
       activeOcclusionIds,
       manualOcclusionMaskDataUrl: manualMaskDataUrl,
+      manualOcclusionPolygons,
       perspectiveFitCorners: perspectiveCorners,
       ambientLight,
       autoShadow,
@@ -639,6 +644,7 @@ export function ProductModelWorkspace({
   }, [
     activeOcclusionIds,
     manualMaskDataUrl,
+    manualOcclusionPolygons,
     perspectiveCorners,
     alumFinish,
     ambientLight,
@@ -731,6 +737,7 @@ export function ProductModelWorkspace({
       setZoomLevel(nextZoom);
       setActiveOcclusionIds(configuration.activeOcclusionIds ?? []);
       setManualMaskDataUrl(configuration.manualOcclusionMaskDataUrl ?? null);
+      setManualOcclusionPolygons(configuration.manualOcclusionPolygons ?? []);
       setPerspectiveCorners(configuration.perspectiveFitCorners ?? null);
       setAmbientLight(configuration.ambientLight ?? true);
       setAutoShadow(configuration.autoShadow ?? true);
@@ -2640,6 +2647,7 @@ export function ProductModelWorkspace({
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setManualMaskDataUrl(null);
+                                setManualOcclusionPolygons([]);
                               }}
                               className="text-xs font-medium text-red-500 hover:text-red-700 transition-colors cursor-pointer"
                             >
@@ -2648,18 +2656,24 @@ export function ProductModelWorkspace({
                           )}
                         </div>
                         <p className="text-xs text-neutral-500 leading-relaxed">
-                          Paint over protruding wall columns, piers, or beams that should appear in front of the product.
+                          Outline protruding wall columns, piers, or beams that should appear in front of the product.
                         </p>
                         <button
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            setShowMaskPainter(true);
+                            setShowOcclusionPointPicker(true);
                           }}
                           className="w-full flex items-center justify-center gap-2 bg-[#0f1422] hover:bg-black text-white text-sm font-medium py-3 px-4 rounded-[20px] transition-colors cursor-pointer shadow-xs"
                         >
-                          <Paintbrush className="size-4 text-[#07b6d3]" />
-                          <span>{manualMaskDataUrl ? "Edit Manual Mask" : "Paint Occlusion Mask"}</span>
+                          <MousePointer2 className="size-4 text-[#07b6d3]" />
+                          <span>
+                            {manualMaskDataUrl
+                              ? manualOcclusionPolygons.length > 0
+                                ? "Edit Occlusion Areas"
+                                : "Replace Legacy Mask"
+                              : "Select Occlusion Areas"}
+                          </span>
                         </button>
                       </div>
                     </div>
@@ -2744,18 +2758,20 @@ export function ProductModelWorkspace({
         onClose={() => setIsGuardrailModalOpen(false)}
       />
 
-      {/* ── Manual Mask Painter Modal (MS-01) ── */}
-      {showMaskPainter && (
-        <ManualMaskPainter
+      {/* Point-based Manual Occlusion Modal (MS-03) */}
+      {showOcclusionPointPicker && (
+        <ManualOcclusionPointPicker
           backgroundImageUrl={bgImage}
           canvasWidth={aspectWidth}
           canvasHeight={aspectHeight}
-          initialMaskDataUrl={manualMaskDataUrl}
-          onSave={(dataUrl) => {
-            setManualMaskDataUrl(dataUrl || null);
-            setShowMaskPainter(false);
+          initialPolygons={manualOcclusionPolygons}
+          legacyMaskDataUrl={manualMaskDataUrl}
+          onSave={({ polygons, maskDataUrl }) => {
+            setManualOcclusionPolygons(polygons);
+            setManualMaskDataUrl(maskDataUrl);
+            setShowOcclusionPointPicker(false);
           }}
-          onCancel={() => setShowMaskPainter(false)}
+          onCancel={() => setShowOcclusionPointPicker(false)}
         />
       )}
 

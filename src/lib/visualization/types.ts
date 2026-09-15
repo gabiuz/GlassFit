@@ -175,6 +175,13 @@ export type Point2D = {
 
 export type QuadrilateralCorners = [Point2D, Point2D, Point2D, Point2D];
 
+export type ManualOcclusionPolygon = Point2D[];
+
+export type ManualOcclusionMaskResult = {
+  polygons: ManualOcclusionPolygon[];
+  maskDataUrl: string | null;
+};
+
 export type ProductConfigurationSnapshot = {
   widthCm: number;
   heightCm: number;
@@ -192,6 +199,7 @@ export type ProductConfigurationSnapshot = {
   zoomLevel?: number;
   activeOcclusionIds?: string[];
   manualOcclusionMaskDataUrl?: string | null;
+  manualOcclusionPolygons?: ManualOcclusionPolygon[];
   perspectiveFitCorners?: QuadrilateralCorners | null;
   ambientLight?: boolean;
   autoShadow?: boolean;
