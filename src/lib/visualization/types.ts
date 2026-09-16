@@ -1,5 +1,5 @@
 import type { SpaceImageSession } from "@/lib/imageApi";
-import type { RawMaterial } from "@/lib/pricing/types";
+import type { RawMaterial, CalculatedBOMResult } from "@/lib/pricing/types";
 import type { AluminumFinishKey } from "./colorVariations";
 
 export type JsonObject = Record<string, unknown>;
@@ -145,6 +145,9 @@ export type PlacedOverlay = {
     height: number;
   };
   isActive?: boolean;
+  bomResult?: CalculatedBOMResult;
+  unitPrice?: number;
+  totalPrice?: number;
 };
 
 export type VisualizationSessionState = {

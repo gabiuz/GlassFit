@@ -7,6 +7,7 @@ import {
   estimateDimensionsFromCorners,
   normalizeCorners,
   denormalizeCorners,
+  scaleCornersAlongAxis,
 } from "../../src/lib/visualization/perspectiveTransform";
 import type { QuadrilateralCorners } from "../../src/lib/visualization/types";
 
@@ -208,6 +209,138 @@ describe("MS-02: 4-Point Perspective Plane Fitting for Window Products", () => {
       const dimensions = estimateDimensionsFromCorners(rect);
       assert.equal(dimensions.widthRatio, 200, "Width ratio should equal rectangle width");
       assert.equal(dimensions.heightRatio, 150, "Height ratio should equal rectangle height");
+    });
+  });
+
+  describe("Perspective Quadrilateral Axis Scaling", () => {
+    it("scales uniformly from center when axis is scale", () => {
+      const scaled = scaleCornersAlongAxis(unitSquare, 1.5, "scale");
+      // Center is (50, 50). Distance from center was 50, now 75
+      assert.ok(Math.abs(scaled[0].x - (-25)) < 1e-4);
+      assert.ok(Math.abs(scaled[0].y - (-25)) < 1e-4);
+      assert.ok(Math.abs(scaled[2].x - 125) < 1e-4);
+      assert.ok(Math.abs(scaled[2].y - 125) < 1e-4);
+    });
+
+    it("scales horizontally when axis is width", () => {
+      const scaled = scaleCornersAlongAxis(unitSquare, 1.5, "width");
+      // Width expands from 100 to 150, Y stays 0 and 100
+      assert.ok(Math.abs(scaled[0].x - (-25)) < 1e-4);
+      assert.ok(Math.abs(scaled[0].y - 0) < 1e-4);
+      assert.ok(Math.abs(scaled[1].x - 125) < 1e-4);
+      assert.ok(Math.abs(scaled[1].y - 0) < 1e-4);
+      assert.ok(Math.abs(scaled[2].x - 125) < 1e-4);
+      assert.ok(Math.abs(scaled[2].y - 100) < 1e-4);
+    });
+
+    it("scales vertically when axis is height", () => {
+      const scaled = scaleCornersAlongAxis(unitSquare, 1.5, "height");
+      // Height expands from 100 to 150, X stays 0 and 100
+      assert.ok(Math.abs(scaled[0].x - 0) < 1e-4);
+      assert.ok(Math.abs(scaled[0].y - (-25)) < 1e-4);
+      assert.ok(Math.abs(scaled[2].x - 100) < 1e-4);
+      assert.ok(Math.abs(scaled[2].y - 125) < 1e-4);
+    });
+  });
+
+  describe("9-Point Perspective Quadrilateral Transform Handles (fix-MS-04)", () => {
+    it("computes exact 4 corner coordinates, 4 edge midpoints, and centroid", () => {
+      const pxCorners = trapezoidCorners;
+      const [p0, p1, p2, p3] = pxCorners;
+
+      const corners = [
+        { id: "tl", x: p0.x, y: p0.y, cursor: "cursor-nwse-resize", signX: -1, signY: -1 },
+        { id: "tr", x: p1.x, y: p1.y, cursor: "cursor-nesw-resize", signX: 1, signY: -1 },
+        { id: "br", x: p2.x, y: p2.y, cursor: "cursor-nwse-resize", signX: 1, signY: 1 },
+        { id: "bl", x: p3.x, y: p3.y, cursor: "cursor-nesw-resize", signX: -1, signY: 1 },
+      ];
+
+      const edges = [
+        { id: "top", x: (p0.x + p1.x) / 2, y: (p0.y + p1.y) / 2, mode: "height", signX: 0, signY: -1, cursor: "cursor-ns-resize" },
+        { id: "bottom", x: (p3.x + p2.x) / 2, y: (p3.y + p2.y) / 2, mode: "height", signX: 0, signY: 1, cursor: "cursor-ns-resize" },
+        { id: "left", x: (p0.x + p3.x) / 2, y: (p0.y + p3.y) / 2, mode: "width", signX: -1, signY: 0, cursor: "cursor-ew-resize" },
+        { id: "right", x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2, mode: "width", signX: 1, signY: 0, cursor: "cursor-ew-resize" },
+      ];
+
+      const center = {
+        x: (p0.x + p1.x + p2.x + p3.x) / 4,
+        y: (p0.y + p1.y + p2.y + p3.y) / 4,
+      };
+
+      assert.equal(corners.length, 4);
+      assert.equal(edges.length, 4);
+      assert.deepEqual(corners[0], { id: "tl", x: 50, y: 20, cursor: "cursor-nwse-resize", signX: -1, signY: -1 });
+      assert.deepEqual(corners[1], { id: "tr", x: 250, y: 40, cursor: "cursor-nesw-resize", signX: 1, signY: -1 });
+      assert.deepEqual(corners[2], { id: "br", x: 230, y: 280, cursor: "cursor-nwse-resize", signX: 1, signY: 1 });
+      assert.deepEqual(corners[3], { id: "bl", x: 70, y: 260, cursor: "cursor-nesw-resize", signX: -1, signY: 1 });
+
+      // Midpoints
+      assert.deepEqual(edges[0], { id: "top", x: 150, y: 30, mode: "height", signX: 0, signY: -1, cursor: "cursor-ns-resize" });
+      assert.deepEqual(edges[1], { id: "bottom", x: 150, y: 270, mode: "height", signX: 0, signY: 1, cursor: "cursor-ns-resize" });
+      assert.deepEqual(edges[2], { id: "left", x: 60, y: 140, mode: "width", signX: -1, signY: 0, cursor: "cursor-ew-resize" });
+      assert.deepEqual(edges[3], { id: "right", x: 240, y: 160, mode: "width", signX: 1, signY: 0, cursor: "cursor-ew-resize" });
+
+      // Centroid
+      assert.deepEqual(center, { x: 150, y: 150 });
+    });
+  });
+
+  describe("Initial 3D Orientation Estimation from Quadrilateral Foreshortening (fix-MS-04)", () => {
+    it("estimates positive yaw when left edge is taller than right edge", () => {
+      // Left edge height: 240, Right edge height: 200
+      const pxCorners: QuadrilateralCorners = [
+        { x: 50, y: 30 },
+        { x: 250, y: 50 },
+        { x: 250, y: 250 },
+        { x: 50, y: 270 },
+      ];
+      const [p0, p1, p2, p3] = pxCorners;
+      const leftH = Math.hypot(p3.x - p0.x, p3.y - p0.y);
+      const rightH = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+      const maxH = Math.max(leftH, rightH, 1);
+      const deltaH = (leftH - rightH) / maxH;
+      const initialYaw = Math.round(Math.min(Math.max(deltaH * 35, -25), 25));
+
+      assert.ok(initialYaw > 0, "Yaw should be positive when left height exceeds right height");
+      assert.equal(initialYaw, 6);
+    });
+
+    it("estimates positive pitch when bottom edge is wider than top edge", () => {
+      // Top width: 160, Bottom width: 220
+      const pxCorners: QuadrilateralCorners = [
+        { x: 70, y: 50 },
+        { x: 230, y: 50 },
+        { x: 260, y: 250 },
+        { x: 40, y: 250 },
+      ];
+      const [p0, p1, p2, p3] = pxCorners;
+      const topW = Math.hypot(p1.x - p0.x, p1.y - p0.y);
+      const bottomW = Math.hypot(p2.x - p3.x, p2.y - p3.y);
+      const maxW = Math.max(topW, bottomW, 1);
+      const deltaW = (bottomW - topW) / maxW;
+      const initialPitch = Math.round(Math.min(Math.max(deltaW * 25, -20), 20));
+
+      assert.ok(initialPitch > 0, "Pitch should be positive when viewed from below/angled");
+      assert.equal(initialPitch, 7);
+    });
+
+    it("returns zero yaw and pitch for symmetrical rectangle", () => {
+      const [p0, p1, p2, p3] = unitSquare;
+      const leftH = Math.hypot(p3.x - p0.x, p3.y - p0.y);
+      const rightH = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+      const topW = Math.hypot(p1.x - p0.x, p1.y - p0.y);
+      const bottomW = Math.hypot(p2.x - p3.x, p2.y - p3.y);
+
+      const maxH = Math.max(leftH, rightH, 1);
+      const maxW = Math.max(topW, bottomW, 1);
+      const deltaH = (leftH - rightH) / maxH;
+      const deltaW = (bottomW - topW) / maxW;
+
+      const initialYaw = Math.round(Math.min(Math.max(deltaH * 35, -25), 25));
+      const initialPitch = Math.round(Math.min(Math.max(deltaW * 25, -20), 20));
+
+      assert.equal(initialYaw, 0);
+      assert.equal(initialPitch, 0);
     });
   });
 });

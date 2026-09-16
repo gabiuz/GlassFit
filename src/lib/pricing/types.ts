@@ -189,3 +189,93 @@ export const QuotationBOMSummarySchema = z.object({
   groups: z.array(QuotationBOMGroupItemSchema),
 });
 export type QuotationBOMSummary = z.infer<typeof QuotationBOMSummarySchema>;
+
+// ----------------------------------------------------------------------------
+// 5. Parametric Calculation Results & Multi-Product Aggregation
+// ----------------------------------------------------------------------------
+
+export interface CalculatedBOMResult {
+  widthM: number;
+  heightM: number;
+  panelCount: number;
+  hasSill: boolean;
+  finishType: string;
+  glassType: string;
+  leafWidthM: number;
+  aspectRatio: number;
+  isCrabbingRisk: boolean;
+  isSpanLimitExceeded: boolean;
+
+  // Linear / Surface Metrics
+  totalLinearMetersFraming: number;
+  glazingAreaSqm: number;
+
+  // Itemized Arrays
+  framingItems: BOMItemDetail[];
+  glazingItems: BOMItemDetail[];
+  hardwareItems: BOMItemDetail[];
+  consumableItems: BOMItemDetail[];
+
+  // Subtotals (Pre-scrap / Net)
+  rawFramingSubtotal: number;
+  scrapFramingSubtotal: number;
+  effectiveFramingCost: number;
+
+  rawGlazingSubtotal: number;
+  scrapGlazingSubtotal: number;
+  effectiveGlazingCost: number;
+
+  hardwareSubtotal: number;
+  consumablesSubtotal: number;
+
+  // Materials & Labor Totals
+  directMaterialsSubtotal: number;
+  fabricationLaborCost: number;
+  totalDirectCost: number;
+
+  // Contractor Margin & Final Quotation
+  contractorMargin: number;
+  finalQuotation: number;
+
+  // Snapshot structure
+  frozenDetails: FrozenPricingDetails;
+  bomSummary: QuotationBOMSummary;
+}
+
+export interface ItemizedProductQuotation {
+  itemId: string;
+  productId: string;
+  productName: string;
+  productType: string;
+  variantName: string;
+  specSummary: string;
+  dimensionsFormatted: string;
+  widthMm: number;
+  heightMm: number;
+  panelCount: number;
+  hasSill: boolean;
+  structuralWaiver: boolean;
+  finishType: string;
+  glassType: string;
+  quantity: number;
+  unitPrice: number;
+  totalPrice: number;
+  imageUrl: string;
+  bomResult: CalculatedBOMResult;
+}
+
+export interface ConsolidatedQuotationSummary {
+  items: ItemizedProductQuotation[];
+  totalQuantity: number;
+  totalFramingMeters: number;
+  totalFramingCost: number;
+  totalGlazingSqm: number;
+  totalGlazingCost: number;
+  totalHardwareCost: number;
+  totalConsumablesCost: number;
+  totalDirectMaterialsCost: number;
+  totalLaborCost: number;
+  totalDirectCost: number;
+  totalContractorMargin: number;
+  finalGrandTotal: number;
+}

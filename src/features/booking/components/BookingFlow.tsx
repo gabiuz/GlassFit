@@ -1,11 +1,17 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { ChevronLeft } from "lucide-react";
 import { useVisualizationSession } from "@/lib/visualization/visualizationSession";
-import { calculateStandardSeries798, calculateBOMFromStructuralDefinition } from "@/lib/pricing/pricingEngine";
+import {
+  calculateStandardSeries798,
+  calculateBOMFromStructuralDefinition,
+  calculateOverlayPricing,
+  aggregateMultiProductBOM,
+} from "@/lib/pricing/pricingEngine";
+import type { ItemizedProductQuotation } from "@/lib/pricing/types";
 import { generateQuotationPdfHtml } from "@/lib/pricing/quotationPdfGenerator";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { generateSignedBookingLink, recordBookingRequest } from "@/lib/booking/bookingActions";
@@ -35,8 +41,13 @@ export function BookingFlow() {
   const [generatedLink, setGeneratedLink] = useState("glassfit.ph/q/cf-2026-001");
   const [activeLinkId, setActiveLinkId] = useState<string | null>(null);
 
-  const { productConfiguration, structuralDefinition, finalSnapshotDataUrl } =
-    useVisualizationSession();
+  const {
+    productConfiguration,
+    structuralDefinition,
+    finalSnapshotDataUrl,
+    placedOverlays,
+    comparisonOverlays,
+  } = useVisualizationSession();
 
   // Load authenticated profile on mount
   useEffect(() => {
@@ -100,6 +111,106 @@ export function BookingFlow() {
         structuralWaiver,
       });
 
+  const {
+    quotationItems,
+    consolidatedSummary,
+    effectiveTotal,
+    productNameSummary,
+    hasAnyStructuralWaiver,
+    hasAnySill,
+  } = useMemo(() => {
+    const overlays =
+      placedOverlays && placedOverlays.length > 0
+        ? placedOverlays
+        : comparisonOverlays && comparisonOverlays.length > 0
+          ? comparisonOverlays
+          : [];
+
+    const quotations: ItemizedProductQuotation[] = [];
+
+    if (overlays.length > 0) {
+      overlays.forEach((overlay) => {
+        const pricing = calculateOverlayPricing(overlay);
+        const config = overlay.configuration;
+        const wMm = Math.round((Number(config.widthCm) || 120) * 10);
+        const hMm = Math.round((Number(config.heightCm) || 120) * 10);
+        const quantity = Math.max(1, config.quantity ?? 1);
+        const sill = config.includeSill ?? true;
+        const waiver = config.structuralWaiver ?? false;
+        const finish = config.aluminumFinish === "white" ? "PowderCoatedWhite" : "Analok";
+        const glass = (config.thicknessMm ?? 6) >= 6 && config.glassAppearance === "clear"
+          ? "6mm_clear"
+          : "6mm_bronze";
+        const panels = config.panelCount ?? (wMm >= 2400 ? 3 : 2);
+        const dimension = `${wMm / 10}cm × ${hMm / 10}cm`;
+
+        quotations.push({
+          itemId: overlay.overlayId,
+          productId: overlay.productId,
+          productName: overlay.productName,
+          productType: "Window & Door",
+          variantName: panels > 2 ? `${panels}-Panel Configuration` : "2-Panel Standard",
+          specSummary: `${finish} | ${dimension}`,
+          dimensionsFormatted: dimension,
+          widthMm: wMm,
+          heightMm: hMm,
+          panelCount: panels,
+          hasSill: sill,
+          structuralWaiver: waiver,
+          finishType: finish,
+          glassType: glass,
+          quantity,
+          unitPrice: pricing.unitPrice,
+          totalPrice: pricing.totalPrice,
+          imageUrl: overlay.flattenedImageDataUrl || finalSnapshotDataUrl || "",
+          bomResult: pricing.bomResult,
+        });
+      });
+    } else if (structuralDefinition) {
+      const quantity = Math.max(1, productConfiguration?.quantity ?? 1);
+      const dimension = `${widthMm / 10}cm × ${heightMm / 10}cm`;
+      quotations.push({
+        itemId: "primary-item",
+        productId: structuralDefinition.product.productId,
+        productName: structuralDefinition.product.productName,
+        productType: structuralDefinition.product.productType || "Window & Door",
+        variantName: panelCount > 2 ? `${panelCount}-Panel Configuration` : "2-Panel Standard",
+        specSummary: `${finishType} | ${dimension}`,
+        dimensionsFormatted: dimension,
+        widthMm,
+        heightMm,
+        panelCount,
+        hasSill,
+        structuralWaiver,
+        finishType,
+        glassType,
+        quantity,
+        unitPrice: bomCalc.finalQuotation,
+        totalPrice: bomCalc.finalQuotation * quantity,
+        imageUrl: finalSnapshotDataUrl || structuralDefinition.product.catalogImageUrl || "",
+        bomResult: bomCalc,
+      });
+    }
+
+    const summary = aggregateMultiProductBOM(quotations);
+    const isMulti = quotations.length > 1;
+    const effTotal = isMulti ? summary.finalGrandTotal : (quotations[0]?.totalPrice ?? bomCalc.finalQuotation);
+    const nameSummary = isMulti
+      ? `${quotations.length} Architectural Fixtures (${summary.totalQuantity} Units)`
+      : quotations[0]?.productName || (structuralDefinition?.product.productName ?? "Custom Architectural Fenestration");
+    const anyWaiver = quotations.some((q) => q.structuralWaiver);
+    const anySill = quotations.some((q) => q.hasSill);
+
+    return {
+      quotationItems: quotations,
+      consolidatedSummary: summary,
+      effectiveTotal: effTotal,
+      productNameSummary: nameSummary,
+      hasAnyStructuralWaiver: anyWaiver,
+      hasAnySill: anySill,
+    };
+  }, [placedOverlays, comparisonOverlays, structuralDefinition, productConfiguration, bomCalc, hasSill, structuralWaiver, widthMm, heightMm]);
+
   const now = new Date();
   const dateFormatted = new Intl.DateTimeFormat("en-US", {
     month: "long",
@@ -133,10 +244,12 @@ export function BookingFlow() {
       customerEmail,
       createdAtFormatted: dateFormatted,
       validUntilFormatted,
-      hasSill,
-      structuralWaiver,
+      hasSill: hasAnySill,
+      structuralWaiver: hasAnyStructuralWaiver,
       bomResult: bomCalc,
       snapshotImageUrl: finalSnapshotDataUrl,
+      items: quotationItems,
+      consolidatedSummary,
     });
     const printWindow = window.open("", "_blank");
     if (printWindow) {
@@ -154,10 +267,12 @@ export function BookingFlow() {
       customerEmail,
       createdAtFormatted: dateFormatted,
       validUntilFormatted,
-      hasSill,
-      structuralWaiver,
+      hasSill: hasAnySill,
+      structuralWaiver: hasAnyStructuralWaiver,
       bomResult: bomCalc,
       snapshotImageUrl: finalSnapshotDataUrl,
+      items: quotationItems,
+      consolidatedSummary,
     });
     const blob = new Blob([html], { type: "text/html" });
     const url = URL.createObjectURL(blob);
@@ -262,9 +377,9 @@ export function BookingFlow() {
           <Step1ViewPdf
             onPreview={handlePreviewPdf}
             onSave={handleSavePdf}
-            structuralWaiver={structuralWaiver}
-            hasSill={hasSill}
-            totalEstimatePhp={bomCalc.finalQuotation}
+            structuralWaiver={hasAnyStructuralWaiver}
+            hasSill={hasAnySill}
+            totalEstimatePhp={effectiveTotal}
             quotationNumber={quotationNumber}
             dateFormatted={dateFormatted}
             fileName="Livingroom.jpeg"
@@ -276,11 +391,11 @@ export function BookingFlow() {
             isGenerating={isGeneratingLink}
             onGenerateLink={handleGenerateLink}
             generatedLink={generatedLink}
-            totalEstimatePhp={bomCalc.finalQuotation}
-            hasStructuralWaiver={structuralWaiver}
+            totalEstimatePhp={effectiveTotal}
+            hasStructuralWaiver={hasAnyStructuralWaiver}
             customerName={customerName}
             referenceCode={referenceCode}
-            productName={structuralDefinition?.product.productName || "Series 798 Sliding Window"}
+            productName={productNameSummary}
             fileName="Livingroom.jpeg"
             dateFormatted={dateFormatted}
             expiresFormatted={expiresFormatted}
@@ -290,9 +405,9 @@ export function BookingFlow() {
           <Step3SendReference
             generatedLink={generatedLink}
             onSend={handleSend}
-            totalEstimatePhp={bomCalc.finalQuotation}
-            hasStructuralWaiver={structuralWaiver}
-            productName={structuralDefinition?.product.productName || "Series 798 Sliding Window"}
+            totalEstimatePhp={effectiveTotal}
+            hasStructuralWaiver={hasAnyStructuralWaiver}
+            productName={productNameSummary}
             quotationNumber={quotationNumber}
             customerName={customerName}
           />
@@ -314,7 +429,7 @@ export function BookingFlow() {
             <Step4Success
               sharingMethod={sharingMethod}
               onBackToHome={handleBackToHome}
-              totalEstimatePhp={bomCalc.finalQuotation}
+              totalEstimatePhp={effectiveTotal}
               referenceCode={referenceCode}
               dateFormatted={dateFormatted}
             />

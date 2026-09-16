@@ -76,6 +76,7 @@ export class ProductModelRenderer {
   private ambientLight: THREE.AmbientLight;
   private mainLight: THREE.DirectionalLight;
   private fillLight: THREE.DirectionalLight;
+  private bevelLight: THREE.DirectionalLight;
 
   constructor(width: number, height: number) {
     this.canvas = document.createElement("canvas");
@@ -117,19 +118,32 @@ export class ProductModelRenderer {
       this.scene.environment = envMap;
     });
 
-    // Initial lights
-    this.ambientLight = new THREE.AmbientLight(0xffffff, 0.85);
+    // Initial lights: calibrated to prevent white powder-coat washout while highlighting 3D bevels
+    this.ambientLight = new THREE.AmbientLight(0xffffff, 0.35);
     this.scene.add(this.ambientLight);
 
-    this.mainLight = new THREE.DirectionalLight(0xffffff, 1.0);
+    this.mainLight = new THREE.DirectionalLight(0xffffff, 1.35);
+    this.mainLight.position.set(2.5, 4.0, 3.5);
     this.mainLight.castShadow = true;
     this.mainLight.shadow.mapSize.width = 2048;
     this.mainLight.shadow.mapSize.height = 2048;
-    this.mainLight.shadow.bias = -0.001;
+    this.mainLight.shadow.bias = -0.0005;
+    this.mainLight.shadow.camera.near = 0.1;
+    this.mainLight.shadow.camera.far = 25;
+    this.mainLight.shadow.camera.left = -4;
+    this.mainLight.shadow.camera.right = 4;
+    this.mainLight.shadow.camera.top = 4;
+    this.mainLight.shadow.camera.bottom = -4;
     this.scene.add(this.mainLight);
+    this.scene.add(this.mainLight.target);
 
-    this.fillLight = new THREE.DirectionalLight(0xffffff, 0.75);
+    this.fillLight = new THREE.DirectionalLight(0xffffff, 0.40);
+    this.fillLight.position.set(-2.5, 2.0, -2.5);
     this.scene.add(this.fillLight);
+
+    this.bevelLight = new THREE.DirectionalLight(0xffffff, 0.75);
+    this.bevelLight.position.set(2.2, 3.8, 3.0);
+    this.scene.add(this.bevelLight);
   }
 
   setSize(width: number, height: number) {
@@ -251,29 +265,72 @@ export class ProductModelRenderer {
   }
 
   applyLighting(lighting: LightingAnalysis | null) {
-    const ambientRgb = lighting?.ambient_rgb ?? [255, 255, 255];
-    const meanRgb = lighting?.mean_rgb ?? [160, 160, 160];
-    const ambientColor = new THREE.Color(
+    if (!lighting) {
+      // Baseline clean studio lighting profile
+      this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      this.renderer.toneMappingExposure = 1.0;
+      this.ambientLight.color.setHex(0xffffff);
+      this.ambientLight.intensity = 0.35;
+      this.mainLight.color.setHex(0xffffff);
+      this.mainLight.intensity = 1.35;
+      this.mainLight.position.set(2.5, 4.0, 3.5);
+      this.fillLight.color.setHex(0xffffff);
+      this.fillLight.intensity = 0.40;
+      this.fillLight.position.set(-2.5, 2.0, -2.5);
+      this.bevelLight.color.setHex(0xffffff);
+      this.bevelLight.intensity = 0.75;
+      this.bevelLight.position.set(2.2, 3.8, 3.0);
+      return;
+    }
+
+    const ambientRgb = lighting.ambient_rgb ?? [255, 255, 255];
+    const meanRgb = lighting.mean_rgb ?? [160, 160, 160];
+    const meanLuminance = meanRgb.reduce((sum, value) => sum + value, 0) / 3;
+
+    // Dynamic ACESFilmic tone mapping exposure
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    const exposureBias = lighting.suggested?.exposure_bias ?? 0;
+    const baseExposure = THREE.MathUtils.clamp(
+      (meanLuminance / 128.0) * 0.95 + 0.10 + exposureBias,
+      0.75,
+      1.20,
+    );
+    this.renderer.toneMappingExposure = baseExposure;
+
+    // Environmental bounce tint with 30% neutral white floor
+    const rawAmbient = new THREE.Color(
       ambientRgb[0] / 255,
       ambientRgb[1] / 255,
-      ambientRgb[2] / 255
+      ambientRgb[2] / 255,
     );
-    const mean = meanRgb.reduce((sum, value) => sum + value, 0) / 3;
-    const exposure = THREE.MathUtils.clamp(mean / 128 + 0.04, 0.82, 1.3);
-    const direction = lighting?.light_direction ?? { x: 0.6, y: 0.4 };
+    const finalAmbient = rawAmbient.clone().multiplyScalar(0.70).add(new THREE.Color(1, 1, 1).multiplyScalar(0.30));
+    this.ambientLight.color.copy(finalAmbient);
 
-    this.ambientLight.color.copy(ambientColor);
-    this.ambientLight.intensity = THREE.MathUtils.clamp(1.05 + exposure * 0.28, 1, 1.8);
+    const ambientIntensity = lighting.suggested?.ambient_intensity ?? (0.28 + (meanLuminance / 255.0) * 0.12);
+    this.ambientLight.intensity = THREE.MathUtils.clamp(ambientIntensity, 0.28, 0.42);
 
-    const mainLightColor = ambientColor.clone().lerp(new THREE.Color(0xffffff), 0.45);
-    const mainLightIntensity = THREE.MathUtils.clamp(1.65 + (lighting?.contrast ?? 0.2) * 0.5, 1.45, 2.8);
-    this.mainLight.color.copy(mainLightColor);
-    this.mainLight.intensity = mainLightIntensity;
-    this.mainLight.position.set(direction.x * 4.5 || 2.8, 4.2 + direction.y * 1.8, 4.4);
+    // Directional key light: picks up 25% subtle scene warmth/bounce
+    const keyColor = new THREE.Color(1, 1, 1).multiplyScalar(0.75).add(rawAmbient.clone().multiplyScalar(0.25));
+    this.mainLight.color.copy(keyColor);
 
-    const fillLightColor = lighting?.warmth && lighting.warmth >= 0 ? 0xffead3 : 0xd8eeff;
+    const mainIntensity = lighting.suggested?.directional_intensity ?? (1.10 + (lighting.contrast ?? 0.2) * 0.35);
+    this.mainLight.intensity = THREE.MathUtils.clamp(mainIntensity, 0.80, 1.55);
+
+    const direction = lighting.light_direction ?? { x: 0.6, y: 0.4 };
+    this.mainLight.position.set(direction.x * 4.5 || 2.5, 4.2 + direction.y * 1.8, 3.8);
+
+    // Fill light with complementary Kelvin temperature tint
+    const fillLightColor = lighting.warmth && lighting.warmth >= 0 ? 0xffead3 : 0xd8eeff;
     this.fillLight.color.setHex(fillLightColor);
-    this.fillLight.position.set(-direction.x * 3.5 || -3, 2.4, -3.4);
+    const fillIntensity = THREE.MathUtils.clamp(0.35 + (1.0 - (lighting.contrast ?? 0.5)) * 0.15, 0.25, 0.50);
+    this.fillLight.intensity = fillIntensity;
+    this.fillLight.position.set(-direction.x * 3.5 || -2.5, 2.0, -2.5);
+
+    // Bevel light highlights extrusion edges without highlight blowout
+    this.bevelLight.color.copy(keyColor);
+    const bevelIntensity = THREE.MathUtils.clamp(0.60 + (lighting.contrast ?? 0.2) * 0.25, 0.45, 0.85);
+    this.bevelLight.intensity = bevelIntensity;
+    this.bevelLight.position.set(direction.x * 2.2 || 2.2, 3.8, 3.0);
   }
 
   render(yaw: number, pitch: number, isPlanarFit = false) {
@@ -282,36 +339,64 @@ export class ProductModelRenderer {
     }
 
     if (isPlanarFit) {
+      // 1. Establish the reference base bounds of the unrotated model at (0, 0, 0)
       this.modelGroup.rotation.set(0, 0, 0);
       this.modelGroup.updateMatrixWorld(true);
 
-      const bounds = new THREE.Box3().setFromObject(this.modelGroup);
-      const size = new THREE.Vector3();
-      const center = new THREE.Vector3();
-      bounds.getSize(size);
-      bounds.getCenter(center);
+      const baseBounds = new THREE.Box3().setFromObject(this.modelGroup);
+      const baseSize = new THREE.Vector3();
+      const baseCenter = new THREE.Vector3();
+      baseBounds.getSize(baseSize);
+      baseBounds.getCenter(baseCenter);
 
-      if (size.x > 0 && size.y > 0) {
-        this.orthoCamera.left = -size.x / 2;
-        this.orthoCamera.right = size.x / 2;
-        this.orthoCamera.top = size.y / 2;
-        this.orthoCamera.bottom = -size.y / 2;
-        this.orthoCamera.position.set(center.x, center.y, 10);
-        this.orthoCamera.lookAt(center.x, center.y, 0);
-        this.orthoCamera.updateProjectionMatrix();
-        this.orthoCamera.updateMatrixWorld(true);
+      if (baseSize.x > 0 && baseSize.y > 0) {
+        // Edge-to-edge 3D perspective camera projection:
+        // Position camera directly in front of the model at distance d so that
+        // the unrotated front of the model (baseBounds.max.z) exactly fits the canvas boundaries.
+        // Rays diverge toward the edges, rendering frame reveals, jamb thickness, and glass parallax.
+        const fovDegrees = CAMERA_BASE_VERTICAL_FOV_DEGREES;
+        const fovRad = THREE.MathUtils.degToRad(fovDegrees);
+        const distance = (baseSize.y / 2) / Math.tan(fovRad / 2);
 
-        this.renderer.render(this.scene, this.orthoCamera);
+        this.camera.fov = fovDegrees;
+        this.camera.aspect = this.canvas.width / this.canvas.height;
+        this.camera.position.set(baseCenter.x, baseCenter.y, baseBounds.max.z + distance);
+        this.camera.lookAt(baseCenter.x, baseCenter.y, baseBounds.max.z);
+
+        const near = this.camera.near;
+        const far = this.camera.far;
+        const scale = near / distance;
+        const halfWidth = (baseSize.x / 2) * scale;
+        const halfHeight = (baseSize.y / 2) * scale;
+
+        this.camera.projectionMatrix.makePerspective(
+          -halfWidth,
+          halfWidth,
+          halfHeight,
+          -halfHeight,
+          near,
+          far,
+        );
+        this.camera.projectionMatrixInverse.copy(this.camera.projectionMatrix).invert();
+        this.camera.updateMatrixWorld(true);
+
+        // 2. Apply the user's yaw and pitch rotations to the 3D model
+        this.modelGroup.rotation.set(
+          THREE.MathUtils.degToRad(pitch),
+          THREE.MathUtils.degToRad(yaw),
+          0
+        );
+        this.modelGroup.updateMatrixWorld(true);
+
+        this.renderer.render(this.scene, this.camera);
         return this.canvas;
       }
-
-      this.camera.position.set(0, 0, CAMERA_BASE_DISTANCE);
-      this.camera.lookAt(0, 0, 0);
-      this.camera.updateMatrixWorld(true);
-      this.renderer.render(this.scene, this.camera);
-      return this.canvas;
     }
 
+    // Default free-placement rendering
+    this.camera.fov = CAMERA_BASE_VERTICAL_FOV_DEGREES;
+    this.camera.aspect = this.canvas.width / this.canvas.height;
+    this.camera.updateProjectionMatrix();
     this.camera.position.copy(CAMERA_DIRECTION).multiplyScalar(CAMERA_BASE_DISTANCE);
     this.camera.lookAt(0, 0, 0);
     this.modelGroup.rotation.set(

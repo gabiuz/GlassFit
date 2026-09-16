@@ -160,17 +160,25 @@ export function VisualizationSessionProvider({
   }, []);
 
   const setPlacedOverlays = useCallback((overlays: PlacedOverlay[]) => {
-    setState((current) => ({
-      ...current,
-      placedOverlays: overlays,
-    }));
+    setState((current) => {
+      const nextState = {
+        ...current,
+        placedOverlays: overlays,
+      };
+      writeStoredVisualizationSession(nextState);
+      return nextState;
+    });
   }, []);
 
   const setComparisonOverlays = useCallback((overlays: PlacedOverlay[]) => {
-    setState((current) => ({
-      ...current,
-      comparisonOverlays: overlays,
-    }));
+    setState((current) => {
+      const nextState = {
+        ...current,
+        comparisonOverlays: overlays,
+      };
+      writeStoredVisualizationSession(nextState);
+      return nextState;
+    });
   }, []);
 
   const setFinalSnapshotDataUrl = useCallback((dataUrl: string | null) => {
@@ -262,8 +270,12 @@ function readStoredVisualizationSession(): VisualizationSessionState {
         ? parsed.variationSnapshots
         : [],
       activeOverlay: null,
-      placedOverlays: [],
-      comparisonOverlays: [],
+      placedOverlays: Array.isArray(parsed.placedOverlays)
+        ? parsed.placedOverlays
+        : [],
+      comparisonOverlays: Array.isArray(parsed.comparisonOverlays)
+        ? parsed.comparisonOverlays
+        : [],
       finalSnapshotDataUrl:
         typeof parsed.finalSnapshotDataUrl === "string"
           ? parsed.finalSnapshotDataUrl
@@ -289,11 +301,56 @@ function writeStoredVisualizationSession(state: VisualizationSessionState) {
         structuralDefinition: state.structuralDefinition,
         productConfiguration: state.productConfiguration,
         variationSnapshots: state.variationSnapshots,
+        placedOverlays: state.placedOverlays,
+        comparisonOverlays: state.comparisonOverlays,
         finalSnapshotDataUrl: state.finalSnapshotDataUrl,
       }),
     );
   } catch {
-    // Session persistence is a convenience; visualization still works in memory.
+    // If quota exceeded due to large snapshot data URLs, persist structural configurations and pricing metadata
+    try {
+      window.sessionStorage.setItem(
+        SESSION_STORAGE_KEY,
+        JSON.stringify({
+          selectedProductId: state.selectedProductId,
+          spaceImageSession: state.spaceImageSession
+            ? {
+                ...state.spaceImageSession,
+                workspaceImage: {
+                  ...state.spaceImageSession.workspaceImage,
+                  url:
+                    state.spaceImageSession.workspaceImage.url.length > 50000
+                      ? ""
+                      : state.spaceImageSession.workspaceImage.url,
+                },
+              }
+            : null,
+          workspaceBackgroundDataUrl: null,
+          structuralDefinition: state.structuralDefinition,
+          productConfiguration: state.productConfiguration,
+          variationSnapshots: [],
+          placedOverlays: state.placedOverlays.map((overlay) => ({
+            ...overlay,
+            flattenedImageDataUrl:
+              overlay.flattenedImageDataUrl.length > 50000
+                ? ""
+                : overlay.flattenedImageDataUrl,
+            variationImageDataUrls: undefined,
+          })),
+          comparisonOverlays: state.comparisonOverlays.map((overlay) => ({
+            ...overlay,
+            flattenedImageDataUrl:
+              overlay.flattenedImageDataUrl.length > 50000
+                ? ""
+                : overlay.flattenedImageDataUrl,
+            variationImageDataUrls: undefined,
+          })),
+          finalSnapshotDataUrl: null,
+        }),
+      );
+    } catch {
+      // Session persistence is a convenience; visualization still works in memory.
+    }
   }
 }
 

@@ -9,7 +9,11 @@
  */
 
 import type { CalculatedBOMResult } from "@/lib/pricing/pricingEngine";
-import type { QuotationBOMSummary } from "@/lib/pricing/types";
+import type {
+  ConsolidatedQuotationSummary,
+  ItemizedProductQuotation,
+  QuotationBOMSummary,
+} from "@/lib/pricing/types";
 
 export interface QuotationPdfMetadata {
   quotationNumber: string;
@@ -25,6 +29,8 @@ export interface QuotationPdfMetadata {
   hasSill: boolean;
   structuralWaiver: boolean;
   bomResult: CalculatedBOMResult;
+  items?: ItemizedProductQuotation[];
+  consolidatedSummary?: ConsolidatedQuotationSummary;
 }
 
 export interface GeneratedPdfDocument {
@@ -56,49 +62,55 @@ export function generateQuotationPdfHtml(metadata: QuotationPdfMetadata): string
     hasSill,
     structuralWaiver,
     bomResult,
+    items,
+    consolidatedSummary,
   } = metadata;
+
+  const isMultiProduct = Boolean(items && items.length > 1 && consolidatedSummary);
 
   const formattedTotal = new Intl.NumberFormat("en-PH", {
     style: "currency",
     currency: "PHP",
     minimumFractionDigits: 2,
-  }).format(bomResult.finalQuotation);
+  }).format(
+    isMultiProduct && consolidatedSummary
+      ? consolidatedSummary.finalGrandTotal
+      : bomResult.finalQuotation,
+  );
 
   const formattedDirectMaterials = new Intl.NumberFormat("en-PH", {
     style: "currency",
     currency: "PHP",
     minimumFractionDigits: 2,
-  }).format(bomResult.directMaterialsSubtotal);
+  }).format(
+    isMultiProduct && consolidatedSummary
+      ? consolidatedSummary.totalDirectMaterialsCost
+      : bomResult.directMaterialsSubtotal,
+  );
 
   const formattedLabor = new Intl.NumberFormat("en-PH", {
     style: "currency",
     currency: "PHP",
     minimumFractionDigits: 2,
-  }).format(bomResult.fabricationLaborCost);
+  }).format(
+    isMultiProduct && consolidatedSummary
+      ? consolidatedSummary.totalLaborCost
+      : bomResult.fabricationLaborCost,
+  );
 
   const formattedMargin = new Intl.NumberFormat("en-PH", {
     style: "currency",
     currency: "PHP",
     minimumFractionDigits: 2,
-  }).format(bomResult.contractorMargin);
+  }).format(
+    isMultiProduct && consolidatedSummary
+      ? consolidatedSummary.totalContractorMargin
+      : bomResult.contractorMargin,
+  );
 
-  const formattedFraming = new Intl.NumberFormat("en-PH", {
-    style: "currency",
-    currency: "PHP",
-    minimumFractionDigits: 2,
-  }).format(bomResult.effectiveFramingCost);
-
-  const formattedGlazing = new Intl.NumberFormat("en-PH", {
-    style: "currency",
-    currency: "PHP",
-    minimumFractionDigits: 2,
-  }).format(bomResult.effectiveGlazingCost);
-
-  const formattedHardware = new Intl.NumberFormat("en-PH", {
-    style: "currency",
-    currency: "PHP",
-    minimumFractionDigits: 2,
-  }).format(bomResult.hardwareSubtotal + bomResult.consumablesSubtotal);
+  const anyStructuralWaiver = isMultiProduct
+    ? Boolean(items?.some((it) => it.structuralWaiver))
+    : structuralWaiver;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -201,30 +213,70 @@ export function generateQuotationPdfHtml(metadata: QuotationPdfMetadata): string
       color: #1e40af;
       margin-bottom: 12px;
     }
+    .item-card {
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      margin-bottom: 18px;
+      overflow: hidden;
+      page-break-inside: avoid;
+    }
+    .item-card-header {
+      background: #0f1422;
+      color: #ffffff;
+      padding: 8px 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .item-badge {
+      background: #07b6d3;
+      color: #ffffff;
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+    .item-card-body {
+      padding: 10px 14px;
+    }
     .items-table {
       width: 100%;
       border-collapse: collapse;
-      margin-bottom: 20px;
+      margin-bottom: 12px;
     }
     .items-table th {
-      background: #0f1422;
-      color: #ffffff;
-      padding: 10px 12px;
-      font-size: 11px;
+      background: #f1f5f9;
+      color: #1e293b;
+      padding: 8px 10px;
+      font-size: 10px;
       text-transform: uppercase;
       letter-spacing: 0.5px;
       text-align: left;
+      border-bottom: 1px solid #cbd5e1;
     }
     .items-table td {
-      padding: 10px 12px;
+      padding: 8px 10px;
       border-bottom: 1px solid #e2e8f0;
-      font-size: 12px;
+      font-size: 11px;
     }
     .items-table tr:nth-child(even) {
       background: #f8fafc;
     }
+    .item-subtotal-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 12px;
+      background: #f1f5f9;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      margin-top: 6px;
+    }
     .total-table {
-      width: 320px;
+      width: 360px;
       margin-left: auto;
       border-collapse: collapse;
       margin-bottom: 24px;
@@ -313,33 +365,51 @@ export function generateQuotationPdfHtml(metadata: QuotationPdfMetadata): string
     </tr>
     <tr>
       <td>
-        <div class="info-label">Aperture Dimensions</div>
-        <div class="info-value">W: ${Math.round(bomResult.widthM * 1000)} mm × H: ${Math.round(bomResult.heightM * 1000)} mm (${(bomResult.widthM * bomResult.heightM).toFixed(2)} sqm)</div>
+        <div class="info-label">${isMultiProduct ? "Project Scope" : "Aperture Dimensions"}</div>
+        <div class="info-value">
+          ${
+            isMultiProduct && consolidatedSummary
+              ? `${items?.length ?? 1} Fixtures (${consolidatedSummary.totalQuantity} Total Units)`
+              : `W: ${Math.round(bomResult.widthM * 1000)} mm × H: ${Math.round(bomResult.heightM * 1000)} mm (${(bomResult.widthM * bomResult.heightM).toFixed(2)} sqm)`
+          }
+        </div>
       </td>
       <td>
-        <div class="info-label">Configuration & Panels</div>
-        <div class="info-value">Series 798 (${bomResult.panelCount}-Panel Sliding) · ${hasSill ? "Standard Sill" : "Sill Removed (Flush Base)"}</div>
+        <div class="info-label">${isMultiProduct ? "Total Glazing Surface" : "Configuration & Panels"}</div>
+        <div class="info-value">
+          ${
+            isMultiProduct && consolidatedSummary
+              ? `${consolidatedSummary.totalGlazingSqm.toFixed(2)} sqm surface infill`
+              : `Series 798 (${bomResult.panelCount}-Panel Sliding) · ${hasSill ? "Standard Sill" : "Sill Removed (Flush Base)"}`
+          }
+        </div>
       </td>
       <td>
-        <div class="info-label">Profile Finish & Glass</div>
-        <div class="info-value">${bomResult.frozenDetails.finish_type} · ${bomResult.frozenDetails.glass_type}</div>
+        <div class="info-label">${isMultiProduct ? "Total Aluminum Framing" : "Profile Finish & Glass"}</div>
+        <div class="info-value">
+          ${
+            isMultiProduct && consolidatedSummary
+              ? `${consolidatedSummary.totalFramingMeters.toFixed(1)} linear meters`
+              : `${bomResult.frozenDetails.finish_type} · ${bomResult.frozenDetails.glass_type}`
+          }
+        </div>
       </td>
     </tr>
   </table>
 
   ${
-    structuralWaiver
+    anyStructuralWaiver
       ? `
   <!-- Structural Waiver Banner -->
   <div class="waiver-banner">
-    <strong>⚠️ Notice: NSCP 2015 Structural Span Waiver Attached</strong>
-    This aperture width (${Math.round(bomResult.widthM * 1000)}mm) under a 2-panel configuration exceeds standard Series 798 structural leaf recommendations (W &ge; 2400mm). The customer has formally acknowledged potential operational stiffness, roller micro-pitting, and wind-load deflection risks under Philippine typhoon design pressures.
+    <strong>Notice: NSCP 2015 Structural Span Waiver Attached</strong>
+    One or more aperture configurations exceed standard Series 798 structural leaf recommendations (width &ge; 2400mm under a 2-panel configuration). The customer has formally acknowledged potential operational stiffness, roller micro-pitting, and wind-load deflection risks under Philippine typhoon design pressures.
   </div>`
       : ""
   }
 
   ${
-    !hasSill
+    !isMultiProduct && !hasSill
       ? `
   <div class="sill-badge">
     ✓ Bottom Sill Omitted: Net material reduction applied for flush flooring.
@@ -347,7 +417,77 @@ export function generateQuotationPdfHtml(metadata: QuotationPdfMetadata): string
       : ""
   }
 
-  <!-- Itemized Grouped BOM Table -->
+  ${
+    isMultiProduct && items
+      ? `
+  <!-- Itemized Breakdown for Each Fixture -->
+  <div style="margin-bottom: 20px;">
+    <h3 style="font-size: 14px; font-weight: 700; color: #0f1422; margin-bottom: 10px; border-bottom: 2px solid #0f1422; padding-bottom: 4px;">
+      ITEMIZED FIXTURE BREAKDOWN (${items.length} FIXTURES)
+    </h3>
+    ${items
+      .map(
+        (item, idx) => `
+    <div class="item-card">
+      <div class="item-card-header">
+        <span>Fixture ${idx + 1}: ${item.productName}</span>
+        <span class="item-badge">Qty: ${item.quantity}</span>
+      </div>
+      <div class="item-card-body">
+        <table style="width: 100%; font-size: 11px; margin-bottom: 8px; color: #475569;">
+          <tr>
+            <td style="width: 33%;"><strong>Dimensions:</strong> ${item.widthMm}mm × ${item.heightMm}mm (${((item.widthMm * item.heightMm) / 1000000).toFixed(2)} sqm)</td>
+            <td style="width: 33%;"><strong>Configuration:</strong> Series 798 (${item.bomResult.panelCount}-Panel) · ${item.hasSill ? "Standard Sill" : "Flush Sill Omitted"}</td>
+            <td style="width: 34%;"><strong>Finish & Glass:</strong> ${item.bomResult.frozenDetails.finish_type} · ${item.bomResult.frozenDetails.glass_type}</td>
+          </tr>
+        </table>
+        <table class="items-table">
+          <thead>
+            <tr>
+              <th style="width: 45%;">Component Group</th>
+              <th style="width: 15%; text-align: center;">Qty / Extent</th>
+              <th style="width: 20%; text-align: right;">Unit Rate</th>
+              <th style="width: 20%; text-align: right;">Subtotal (PHP)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>1. Aluminum Framing (Head, ${item.hasSill ? "Sill, " : ""}Jambs, Rails)</td>
+              <td style="text-align: center;">${item.bomResult.totalLinearMetersFraming.toFixed(2)} m</td>
+              <td style="text-align: right;">${(item.bomResult.effectiveFramingCost / (item.bomResult.totalLinearMetersFraming || 1)).toFixed(2)}</td>
+              <td style="text-align: right; font-weight: 600;">₱${item.bomResult.effectiveFramingCost.toFixed(2)}</td>
+            </tr>
+            <tr>
+              <td>2. Glazing Infill (${item.bomResult.frozenDetails.glass_type})</td>
+              <td style="text-align: center;">${item.bomResult.glazingAreaSqm.toFixed(2)} sqm</td>
+              <td style="text-align: right;">${(item.bomResult.effectiveGlazingCost / (item.bomResult.glazingAreaSqm || 1)).toFixed(2)}</td>
+              <td style="text-align: right; font-weight: 600;">₱${item.bomResult.effectiveGlazingCost.toFixed(2)}</td>
+            </tr>
+            <tr>
+              <td>3. Hardware, Fasteners & Weatherseals</td>
+              <td style="text-align: center;">1 lot</td>
+              <td style="text-align: right;">${(item.bomResult.hardwareSubtotal + item.bomResult.consumablesSubtotal).toFixed(2)}</td>
+              <td style="text-align: right; font-weight: 600;">₱${(item.bomResult.hardwareSubtotal + item.bomResult.consumablesSubtotal).toFixed(2)}</td>
+            </tr>
+            <tr>
+              <td>4. Workshop Fabrication & Labor</td>
+              <td style="text-align: center;">1 lot</td>
+              <td style="text-align: right;">${item.bomResult.fabricationLaborCost.toFixed(2)}</td>
+              <td style="text-align: right; font-weight: 600;">₱${item.bomResult.fabricationLaborCost.toFixed(2)}</td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="item-subtotal-bar">
+          <span>Unit Rate: ₱${item.unitPrice.toLocaleString("en-PH", { minimumFractionDigits: 2 })} × Qty ${item.quantity}</span>
+          <span>Fixture Subtotal: ₱${item.totalPrice.toLocaleString("en-PH", { minimumFractionDigits: 2 })}</span>
+        </div>
+      </div>
+    </div>`,
+      )
+      .join("")}
+  </div>`
+      : `
+  <!-- Single Itemized Grouped BOM Table -->
   <table class="items-table">
     <thead>
       <tr>
@@ -369,7 +509,7 @@ export function generateQuotationPdfHtml(metadata: QuotationPdfMetadata): string
         <td style="text-align: center;">${bomResult.totalLinearMetersFraming.toFixed(2)}</td>
         <td style="text-align: center;">m</td>
         <td style="text-align: right;">${(bomResult.effectiveFramingCost / (bomResult.totalLinearMetersFraming || 1)).toFixed(2)}</td>
-        <td style="text-align: right; font-weight: 600;">${formattedFraming}</td>
+        <td style="text-align: right; font-weight: 600;">${new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", minimumFractionDigits: 2 }).format(bomResult.effectiveFramingCost)}</td>
       </tr>
       <tr>
         <td>
@@ -381,7 +521,7 @@ export function generateQuotationPdfHtml(metadata: QuotationPdfMetadata): string
         <td style="text-align: center;">${bomResult.glazingAreaSqm.toFixed(2)}</td>
         <td style="text-align: center;">sqm</td>
         <td style="text-align: right;">${(bomResult.effectiveGlazingCost / (bomResult.glazingAreaSqm || 1)).toFixed(2)}</td>
-        <td style="text-align: right; font-weight: 600;">${formattedGlazing}</td>
+        <td style="text-align: right; font-weight: 600;">${new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", minimumFractionDigits: 2 }).format(bomResult.effectiveGlazingCost)}</td>
       </tr>
       <tr>
         <td>
@@ -393,7 +533,7 @@ export function generateQuotationPdfHtml(metadata: QuotationPdfMetadata): string
         <td style="text-align: center;">1</td>
         <td style="text-align: center;">lot</td>
         <td style="text-align: right;">${(bomResult.hardwareSubtotal + bomResult.consumablesSubtotal).toFixed(2)}</td>
-        <td style="text-align: right; font-weight: 600;">${formattedHardware}</td>
+        <td style="text-align: right; font-weight: 600;">${new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", minimumFractionDigits: 2 }).format(bomResult.hardwareSubtotal + bomResult.consumablesSubtotal)}</td>
       </tr>
       <tr>
         <td>
@@ -405,12 +545,13 @@ export function generateQuotationPdfHtml(metadata: QuotationPdfMetadata): string
         <td style="text-align: center;">1</td>
         <td style="text-align: center;">lot</td>
         <td style="text-align: right;">${bomResult.fabricationLaborCost.toFixed(2)}</td>
-        <td style="text-align: right; font-weight: 600;">${formattedLabor}</td>
+        <td style="text-align: right; font-weight: 600;">${new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", minimumFractionDigits: 2 }).format(bomResult.fabricationLaborCost)}</td>
       </tr>
     </tbody>
-  </table>
+  </table>`
+  }
 
-  <!-- Subtotal & Grand Total Breakdown -->
+  <!-- Consolidated Grand Total Breakdown -->
   <table class="total-table">
     <tr>
       <td style="color: #64748b;">Direct Materials Subtotal:</td>
@@ -425,8 +566,8 @@ export function generateQuotationPdfHtml(metadata: QuotationPdfMetadata): string
       <td style="text-align: right; font-weight: 600;">${formattedMargin}</td>
     </tr>
     <tr class="grand-total-row">
-      <td>Estimated Total:</td>
-      <td style="text-align: right;">${formattedTotal}</td>
+      <td>${isMultiProduct ? "Consolidated Total:" : "Estimated Total:"}</td>
+      <td style="text-align: right; font-weight: 700;">${formattedTotal}</td>
     </tr>
   </table>
 
@@ -469,6 +610,10 @@ export function createQuotationPdfDocument(metadata: QuotationPdfMetadata): Gene
   const htmlContent = generateQuotationPdfHtml(metadata);
   const fileName = `GlassFit_Quotation_${metadata.quotationNumber}.pdf`;
   const r2ObjectKey = `quotations/${metadata.quotationNumber}/${fileName}`;
+  const totalEstimatedAmount =
+    metadata.consolidatedSummary?.finalGrandTotal ?? metadata.bomResult.finalQuotation;
+  const hasStructuralWaiver =
+    metadata.items?.some((it) => it.structuralWaiver) ?? metadata.structuralWaiver;
 
   return {
     quotationNumber: metadata.quotationNumber,
@@ -477,8 +622,8 @@ export function createQuotationPdfDocument(metadata: QuotationPdfMetadata): Gene
     htmlContent,
     documentTitle: `GlassFit Quotation - ${metadata.quotationNumber}`,
     r2ObjectKey,
-    hasStructuralWaiver: metadata.structuralWaiver,
-    totalEstimatedAmount: metadata.bomResult.finalQuotation,
+    hasStructuralWaiver,
+    totalEstimatedAmount,
   };
 }
 
