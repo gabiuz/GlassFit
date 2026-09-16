@@ -1,5 +1,5 @@
 import type { SpaceImageSession } from "@/lib/imageApi";
-import type { RawMaterial } from "@/lib/pricing/types";
+import type { RawMaterial, CalculatedBOMResult } from "@/lib/pricing/types";
 import type { AluminumFinishKey } from "./colorVariations";
 
 export type JsonObject = Record<string, unknown>;
@@ -145,6 +145,9 @@ export type PlacedOverlay = {
     height: number;
   };
   isActive?: boolean;
+  bomResult?: CalculatedBOMResult;
+  unitPrice?: number;
+  totalPrice?: number;
 };
 
 export type VisualizationSessionState = {
@@ -175,6 +178,13 @@ export type Point2D = {
 
 export type QuadrilateralCorners = [Point2D, Point2D, Point2D, Point2D];
 
+export type ManualOcclusionPolygon = Point2D[];
+
+export type ManualOcclusionMaskResult = {
+  polygons: ManualOcclusionPolygon[];
+  maskDataUrl: string | null;
+};
+
 export type ProductConfigurationSnapshot = {
   widthCm: number;
   heightCm: number;
@@ -192,6 +202,7 @@ export type ProductConfigurationSnapshot = {
   zoomLevel?: number;
   activeOcclusionIds?: string[];
   manualOcclusionMaskDataUrl?: string | null;
+  manualOcclusionPolygons?: ManualOcclusionPolygon[];
   perspectiveFitCorners?: QuadrilateralCorners | null;
   ambientLight?: boolean;
   autoShadow?: boolean;

@@ -25,7 +25,7 @@ export interface LightingAnalysis {
     x: number;
     y: number;
   };
-  suggested: {
+    suggested: {
     brightness: number;
     contrast: number;
     saturation: number;
@@ -33,6 +33,10 @@ export interface LightingAnalysis {
     blur_px: number;
     grain: number;
     shadow_opacity: number;
+    exposure_bias?: number;
+    ambient_tint_hex?: string;
+    directional_intensity?: number;
+    ambient_intensity?: number;
   };
 }
 

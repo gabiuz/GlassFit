@@ -3,13 +3,20 @@
 import React, { useMemo } from "react";
 import { useVisualizationSession } from "@/lib/visualization/visualizationSession";
 import type {
+  PlacedOverlay,
   ProductConfigurationSnapshot,
   ProductStructuralDefinition,
 } from "@/lib/visualization/types";
-import { calculateBOMFromStructuralDefinition } from "@/lib/pricing/pricingEngine";
+import {
+  calculateBOMFromStructuralDefinition,
+  calculateOverlayPricing,
+  aggregateMultiProductBOM,
+} from "@/lib/pricing/pricingEngine";
+import type { ItemizedProductQuotation } from "@/lib/pricing/types";
 import { PriceCard, ProductDetailsData } from "./PriceCard";
 
 interface ProductItem {
+  itemId: string;
   productId: string;
   productName: string;
   specSummary: string;
@@ -20,30 +27,63 @@ interface ProductItem {
 }
 
 export function ProductSummary() {
-  const { finalSnapshotDataUrl, productConfiguration, structuralDefinition } =
-    useVisualizationSession();
+  const {
+    finalSnapshotDataUrl,
+    productConfiguration,
+    structuralDefinition,
+    placedOverlays,
+    comparisonOverlays,
+  } = useVisualizationSession();
 
-  const productsData = useMemo(
-    () =>
-      structuralDefinition
-        ? [
-            createProductSummaryItem(
-              structuralDefinition,
-              productConfiguration,
-              finalSnapshotDataUrl,
-            ),
-          ]
-        : [],
-    [finalSnapshotDataUrl, productConfiguration, structuralDefinition],
-  );
+  const { productsData, consolidatedSummary } = useMemo(() => {
+    const overlays =
+      placedOverlays && placedOverlays.length > 0
+        ? placedOverlays
+        : comparisonOverlays && comparisonOverlays.length > 0
+          ? comparisonOverlays
+          : [];
 
-  const total = productsData.reduce((sum, item) => sum + item.unitPrice * item.qty, 0);
+    const items: ProductItem[] = [];
+    const quotations: ItemizedProductQuotation[] = [];
+
+    if (overlays.length > 0) {
+      overlays.forEach((overlay, idx) => {
+        const { item, quotation } = createProductSummaryItemFromOverlay(
+          overlay,
+          idx,
+          finalSnapshotDataUrl,
+        );
+        items.push(item);
+        quotations.push(quotation);
+      });
+    } else if (structuralDefinition) {
+      const { item, quotation } = createProductSummaryItem(
+        structuralDefinition,
+        productConfiguration,
+        finalSnapshotDataUrl,
+      );
+      items.push(item);
+      quotations.push(quotation);
+    }
+
+    const summary = aggregateMultiProductBOM(quotations);
+
+    return { productsData: items, consolidatedSummary: summary };
+  }, [
+    finalSnapshotDataUrl,
+    placedOverlays,
+    comparisonOverlays,
+    productConfiguration,
+    structuralDefinition,
+  ]);
 
   const formattedTotal = new Intl.NumberFormat("en-PH", {
     style: "currency",
     currency: "PHP",
     maximumFractionDigits: 0,
-  }).format(total).replace("PHP", "Php");
+  })
+    .format(consolidatedSummary.finalGrandTotal)
+    .replace("PHP", "Php");
 
   return (
     <div className="bg-[#F5F5F5] flex flex-col gap-9 items-start p-6 md:p-12.5 relative rounded-[20px] w-full">
@@ -52,11 +92,15 @@ export function ProductSummary() {
           Product Summary
         </h2>
       </div>
+
+      {/* Itemized Separate Quotations for Each Product */}
       <div className="flex flex-col gap-6 w-full">
         {productsData.length > 0 ? (
-          productsData.map((prod) => (
+          productsData.map((prod, index) => (
             <PriceCard
-              key={prod.productId}
+              key={prod.itemId}
+              itemIndex={index + 1}
+              totalItems={productsData.length}
               productId={prod.productId}
               productName={prod.productName}
               specSummary={prod.specSummary}
@@ -73,27 +117,172 @@ export function ProductSummary() {
           </div>
         )}
       </div>
-      <div className="w-full bg-green text-white flex flex-col md:flex-row gap-4 items-center justify-between px-6 md:px-12 py-7.5 rounded-[20px] drop-shadow-[0px_0px_2.5px_rgba(0,0,0,0.25)] select-none">
-        <span className="text-xl font-medium leading-7">
-          Estimated Total
-        </span>
-        <span className="text-3xl md:text-5xl font-medium leading-tight md:leading-[57.60px]">
-          {formattedTotal}
-        </span>
+
+      {/* Final Consolidated Grand Quotation Card */}
+      <div className="w-full bg-green text-white flex flex-col gap-5 p-6 md:p-8 rounded-[20px] drop-shadow-[0px_0px_2.5px_rgba(0,0,0,0.25)] select-none">
+        {productsData.length > 1 && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pb-4 border-b border-white/20 text-xs sm:text-sm">
+            <div>
+              <span className="text-white/70 block">Total Fixtures</span>
+              <span className="font-semibold text-white text-base">
+                {productsData.length} Items ({consolidatedSummary.totalQuantity} Units)
+              </span>
+            </div>
+            <div>
+              <span className="text-white/70 block">Aluminum Framing</span>
+              <span className="font-semibold text-white text-base">
+                {consolidatedSummary.totalFramingMeters.toFixed(1)} linear meters
+              </span>
+            </div>
+            <div>
+              <span className="text-white/70 block">Glazing Surface</span>
+              <span className="font-semibold text-white text-base">
+                {consolidatedSummary.totalGlazingSqm.toFixed(2)} sqm
+              </span>
+            </div>
+            <div>
+              <span className="text-white/70 block">Fabrication Labor</span>
+              <span className="font-semibold text-white text-base">
+                ₱{consolidatedSummary.totalLaborCost.toLocaleString("en-PH")}
+              </span>
+            </div>
+          </div>
+        )}
+
+        <div className="flex flex-col md:flex-row gap-4 items-center justify-between w-full">
+          <div className="flex flex-col items-start">
+            <span className="text-xl sm:text-2xl font-medium leading-7">
+              {productsData.length > 1
+                ? "Final Estimated Quotation (Overall Total)"
+                : "Estimated Total"}
+            </span>
+            <span className="text-xs sm:text-sm text-white/80">
+              Includes material offcuts, hardware, workshop labor, and contractor margin
+            </span>
+          </div>
+          <span className="text-3xl md:text-5xl font-medium leading-tight md:leading-[57.60px]">
+            {formattedTotal}
+          </span>
+        </div>
       </div>
     </div>
   );
+}
+
+function createProductSummaryItemFromOverlay(
+  overlay: PlacedOverlay,
+  index: number,
+  finalSnapshotDataUrl: string | null,
+): { item: ProductItem; quotation: ItemizedProductQuotation } {
+  const config = overlay.configuration;
+  const widthCm = Number(config.widthCm) || 120;
+  const heightCm = Number(config.heightCm) || 120;
+  const depthCm = 0;
+  const thicknessMm = Number(config.thicknessMm) || 6;
+  const aluminumFinish = getAluminumFinishLabel(config.aluminumFinish);
+  const glassFinish = getGlassFinishLabel(config.glassAppearance);
+  const dimension = formatDimension(widthCm, heightCm, depthCm);
+
+  const pricing = calculateOverlayPricing(overlay);
+  const bomCalc = pricing.bomResult;
+  const unitPrice = pricing.unitPrice;
+  const qty = config.quantity ?? 1;
+  const totalPrice = pricing.totalPrice;
+
+  const hasSill = config.includeSill ?? true;
+  const structuralWaiver = config.structuralWaiver ?? false;
+  const widthMm = Math.round(widthCm * 10);
+  const heightMm = Math.round(heightCm * 10);
+  const panelCount = config.panelCount ?? (widthMm >= 2400 ? 3 : 2);
+  const finishType =
+    config.aluminumFinish === "white" ? "PowderCoatedWhite" : "Analok";
+  const glassType =
+    thicknessMm >= 6 && config.glassAppearance === "clear"
+      ? "6mm_clear"
+      : "6mm_bronze";
+
+  const itemId = overlay.overlayId || `overlay-${index}`;
+
+  const item: ProductItem = {
+    itemId,
+    productId: overlay.productId,
+    productName: overlay.productName,
+    specSummary: [
+      aluminumFinish,
+      dimension,
+      !hasSill ? "Flush Base (No Sill)" : null,
+      panelCount > 2 ? `${panelCount}-Panel` : null,
+    ]
+      .filter(Boolean)
+      .join(" | "),
+    qty,
+    unitPrice,
+    imageUrl:
+      overlay.flattenedImageDataUrl ||
+      finalSnapshotDataUrl ||
+      "/images/modular_cabinets.png",
+    details: {
+      category: "Window & Door",
+      variant:
+        panelCount > 2 ? `${panelCount}-Panel Configuration` : "2-Panel Standard",
+      material: "Aluminum/Glass",
+      aluminumFinish,
+      glassFinish,
+      glassType: glassFinish,
+      thickness: `${thicknessMm}mm`,
+      profileGrade: "Series 798",
+      dimension,
+      hasSill,
+      structuralWaiver,
+      bomGroups: {
+        framingAmount: bomCalc.effectiveFramingCost,
+        glazingAmount: bomCalc.effectiveGlazingCost,
+        hardwareAmount: bomCalc.hardwareSubtotal + bomCalc.consumablesSubtotal,
+        laborAmount: bomCalc.fabricationLaborCost,
+        directMaterialsSubtotal: bomCalc.directMaterialsSubtotal,
+        contractorMargin: bomCalc.contractorMargin,
+      },
+    },
+  };
+
+  const quotation: ItemizedProductQuotation = {
+    itemId,
+    productId: overlay.productId,
+    productName: overlay.productName,
+    productType: "Window & Door",
+    variantName:
+      panelCount > 2 ? `${panelCount}-Panel Configuration` : "2-Panel Standard",
+    specSummary: item.specSummary,
+    dimensionsFormatted: dimension,
+    widthMm,
+    heightMm,
+    panelCount,
+    hasSill,
+    structuralWaiver,
+    finishType,
+    glassType,
+    quantity: qty,
+    unitPrice,
+    totalPrice,
+    imageUrl: item.imageUrl,
+    bomResult: bomCalc,
+  };
+
+  return { item, quotation };
 }
 
 function createProductSummaryItem(
   definition: ProductStructuralDefinition,
   configuration: ProductConfigurationSnapshot | null,
   finalSnapshotDataUrl: string | null,
-): ProductItem {
-  const widthCm = configuration?.widthCm ?? getDefaultDimensionCm(definition, "width", 210);
-  const heightCm = configuration?.heightCm ?? getDefaultDimensionCm(definition, "height", 150);
+): { item: ProductItem; quotation: ItemizedProductQuotation } {
+  const widthCm =
+    configuration?.widthCm ?? getDefaultDimensionCm(definition, "width", 210);
+  const heightCm =
+    configuration?.heightCm ?? getDefaultDimensionCm(definition, "height", 150);
   const depthCm = getDefaultDimensionCm(definition, "depth", 0);
-  const thicknessMm = configuration?.thicknessMm ?? getDefaultNumber(definition, "thickness", 3);
+  const thicknessMm =
+    configuration?.thicknessMm ?? getDefaultNumber(definition, "thickness", 3);
   const aluminumFinish = getAluminumFinishLabel(configuration?.aluminumFinish);
   const glassFinish = getGlassFinishLabel(configuration?.glassAppearance);
   const dimension = formatDimension(widthCm, heightCm, depthCm);
@@ -105,13 +294,13 @@ function createProductSummaryItem(
   const structuralWaiver = configuration?.structuralWaiver ?? false;
   const panelCount = configuration?.panelCount ?? (widthMm >= 2400 ? 3 : 2);
 
-  // Map finish type to pricing engine enum
-  const finishType = configuration?.aluminumFinish === "white" ? "PowderCoatedWhite" : "Analok";
-  const glassType = thicknessMm >= 6 && configuration?.glassAppearance === "clear"
-    ? "6mm_clear"
-    : "6mm_bronze";
+  const finishType =
+    configuration?.aluminumFinish === "white" ? "PowderCoatedWhite" : "Analok";
+  const glassType =
+    thicknessMm >= 6 && configuration?.glassAppearance === "clear"
+      ? "6mm_clear"
+      : "6mm_bronze";
 
-  // Calculate accurate parametric BOM pricing prioritizing linked catalog raw materials
   const bomCalc = calculateBOMFromStructuralDefinition(definition, {
     widthMm,
     heightMm,
@@ -122,9 +311,16 @@ function createProductSummaryItem(
     structuralWaiver,
   });
 
-  const unitPrice = bomCalc.finalQuotation > 0 ? bomCalc.finalQuotation : (definition.product.basePrice ?? 0);
+  const unitPrice =
+    bomCalc.finalQuotation > 0
+      ? bomCalc.finalQuotation
+      : definition.product.basePrice ?? 0;
+  const qty = configuration?.quantity ?? 1;
+  const totalPrice = unitPrice * qty;
+  const itemId = definition.product.productId;
 
-  return {
+  const item: ProductItem = {
+    itemId,
     productId: definition.product.productId,
     productName: definition.product.productName,
     specSummary: [
@@ -133,8 +329,10 @@ function createProductSummaryItem(
       dimension,
       !hasSill ? "Flush Base (No Sill)" : null,
       panelCount > 2 ? `${panelCount}-Panel` : null,
-    ].filter(Boolean).join(" | "),
-    qty: configuration?.quantity ?? 1,
+    ]
+      .filter(Boolean)
+      .join(" | "),
+    qty,
     unitPrice,
     imageUrl:
       finalSnapshotDataUrl ??
@@ -162,6 +360,30 @@ function createProductSummaryItem(
       },
     },
   };
+
+  const quotation: ItemizedProductQuotation = {
+    itemId,
+    productId: definition.product.productId,
+    productName: definition.product.productName,
+    productType: definition.product.productType,
+    variantName: definition.template.templateName,
+    specSummary: item.specSummary,
+    dimensionsFormatted: dimension,
+    widthMm,
+    heightMm,
+    panelCount,
+    hasSill,
+    structuralWaiver,
+    finishType,
+    glassType,
+    quantity: qty,
+    unitPrice,
+    totalPrice,
+    imageUrl: item.imageUrl,
+    bomResult: bomCalc,
+  };
+
+  return { item, quotation };
 }
 
 function getDefaultDimensionCm(

@@ -89,6 +89,49 @@ body {
   transform: translateY(1px);
 }
 
+/* PRD-F1 / DSD-UI1: restrained feedback for homepage product cards. */
+.explore-product-card {
+  position: relative;
+  isolation: isolate;
+  transition: transform 160ms ease;
+}
+
+.explore-product-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  box-shadow:
+    0 0 0 1px rgba(6, 229, 255, 0.5),
+    0 0 24px rgba(7, 182, 211, 0.38);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .explore-product-card:hover {
+    transform: scale(1.012);
+  }
+
+  .explore-product-card:hover::after {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .explore-product-card,
+  .explore-product-card:hover {
+    transform: none;
+    transition: none;
+  }
+
+  .explore-product-card::after {
+    transition-duration: 100ms;
+  }
+}
+
 /* ── HowItWorks scroll-reveal stagger ─────────────────────────── */
 @keyframes howItWorksStepIn {
   from {

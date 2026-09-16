@@ -191,7 +191,7 @@ function buildWindowLikeProduct(
       createPart(`Glass_${index + 1}`, glassPanel, cache, {
         xMm,
         yMm: 0,
-        zMm: profile.glassDepthMm * 0.6,
+        zMm: -profile.glassDepthMm * 0.8,
         targetWidthMm: glassTargetWidthMm,
         targetHeightMm: glassTargetHeightMm,
         targetDepthMm: profile.glassDepthMm,
@@ -228,7 +228,7 @@ function buildWindowLikeProduct(
       createPart("Window_Sill", sill, cache, {
         xMm: 0,
         yMm: -heightMm / 2 - profile.sillHeightMm / 2,
-        zMm: -profile.glassDepthMm * 4,
+        zMm: profile.glassDepthMm * 1.5,
         targetWidthMm: widthMm,
       }),
     );
@@ -386,15 +386,58 @@ function applyGeneratedMaterials(
 ) {
   const isBlack = alumFinish === "black";
   const isWhite = alumFinish === "white";
+  const isSilver = alumFinish === "silver";
+  const isBronze = alumFinish === "bronze";
   
-  const frameColor = isBlack ? 0x151719 : isWhite ? 0xf4f1ea : 0x9aa3a5;
-  const frameMetalness = isWhite ? 0.22 : 0.7;
-  const frameRoughness = isBlack ? 0.34 : 0.28;
+  // Real architectural finishes with specular sheen to highlight 3D chamfers and bevels
+  const frameColor = isBlack
+    ? 0x232527 // Dark anodized architectural charcoal
+    : isWhite
+      ? 0xeceae4 // Architectural powder-coated white, prevents chalky blowout
+      : isSilver
+        ? 0xc8cbce // Natural anodized silver
+        : isBronze
+          ? 0x3e332b // Architectural bronze
+          : 0x232527;
 
-  const frameMaterial = new THREE.MeshStandardMaterial({
+  const frameMetalness = isWhite
+    ? 0.08
+    : isSilver
+      ? 0.85
+      : isBronze
+        ? 0.55
+        : 0.45;
+
+  const frameRoughness = isBlack
+    ? 0.28
+    : isWhite
+      ? 0.32
+      : isSilver
+        ? 0.22
+        : 0.26;
+
+  const frameClearcoat = isWhite
+    ? 0.35
+    : isSilver
+      ? 0.60
+      : isBronze
+        ? 0.45
+        : 0.40;
+
+  const frameClearcoatRoughness = isWhite
+    ? 0.25
+    : isSilver
+      ? 0.15
+      : isBronze
+        ? 0.20
+        : 0.20;
+
+  const frameMaterial = new THREE.MeshPhysicalMaterial({
     color: frameColor,
     metalness: frameMetalness,
     roughness: frameRoughness,
+    clearcoat: frameClearcoat,
+    clearcoatRoughness: frameClearcoatRoughness,
   });
   const glassMaterial = createWindowGlassMaterial(glassAppearance);
 
@@ -402,6 +445,9 @@ function applyGeneratedMaterials(
     if (!(object instanceof THREE.Mesh)) {
       return;
     }
+
+    object.castShadow = true;
+    object.receiveShadow = true;
 
     const text = [object.name, object.parent?.name].join(" ").toLowerCase();
     object.material = text.includes("glass")
@@ -434,101 +480,71 @@ function createWindowGlassMaterial(mode: GlassAppearanceMode) {
   switch (mode) {
     case "clear":
       return new THREE.MeshPhysicalMaterial({
-        color: 0xdceff6,
+        color: new THREE.Color(0xf0f5f7),
         transparent: true,
-        opacity: 0.36,
-        roughness: 0.16,
-        metalness: 0,
-        transmission: 0.24,
-        thickness: 0.035,
-        clearcoat: 0.72,
-        clearcoatRoughness: 0.08,
+        opacity: 0.18,          // Low opacity allows the room background to show through naturally
+        transmission: 0.88,     // High transmission for true clear glass behavior
+        roughness: 0.03,        // Razor-smooth float glass surface
+        metalness: 0.02,
+        ior: 1.52,              // Standard architectural soda-lime glass
+        reflectivity: 0.50,
+        clearcoat: 1.0,         // High specular reflections on outer face
+        clearcoatRoughness: 0.04,
         side: THREE.DoubleSide,
-        depthWrite: false,
+        depthWrite: false,      // Prevents occlusion sorting artifacts with background image
       });
-    case "outdoor":
-      return new THREE.MeshStandardMaterial({
-        map: getOutdoorTexture(),
-        transparent: false,
-        opacity: 1,
-        roughness: 0.45,
-        metalness: 0,
+    case "reflective":
+      return new THREE.MeshPhysicalMaterial({
+        color: new THREE.Color(0x9eb1bc),
+        transparent: true,
+        opacity: 0.65,
+        transmission: 0.35,
+        roughness: 0.08,
+        metalness: 0.45,
+        ior: 1.65,
+        clearcoat: 1.0,
+        clearcoatRoughness: 0.06,
         side: THREE.DoubleSide,
         depthWrite: true,
       });
     case "opaque":
       return new THREE.MeshStandardMaterial({
-        color: 0xe6ecef,
+        color: new THREE.Color(0xe6ecef),
         transparent: false,
-        opacity: 1,
-        roughness: 0.58,
+        opacity: 1.0,
+        roughness: 0.52,
         metalness: 0.02,
         side: THREE.DoubleSide,
         depthWrite: true,
       });
-    case "reflective":
-      return new THREE.MeshPhysicalMaterial({
-        color: 0xb9c9d1,
-        map: createReflectiveGlassTexture(),
+    case "outdoor":
+      return new THREE.MeshStandardMaterial({
+        map: getOutdoorTexture(),
         transparent: false,
-        opacity: 1,
-        roughness: 0.2,
-        metalness: 0.16,
-        clearcoat: 0.86,
-        clearcoatRoughness: 0.14,
+        opacity: 1.0,
+        roughness: 0.40,
+        metalness: 0.0,
         side: THREE.DoubleSide,
         depthWrite: true,
       });
     case "frosted":
     default:
       return new THREE.MeshPhysicalMaterial({
-        color: 0xe9eef0,
+        color: new THREE.Color(0xe4ebed),
         transparent: true,
-        opacity: 0.86,
-        roughness: 0.88,
-        metalness: 0,
-        transmission: 0.08,
-        thickness: 0.06,
-        clearcoat: 0.25,
-        clearcoatRoughness: 0.6,
+        opacity: 0.82,
+        transmission: 0.15,
+        roughness: 0.82,
+        metalness: 0.0,
+        ior: 1.45,
+        clearcoat: 0.20,
+        clearcoatRoughness: 0.60,
         side: THREE.DoubleSide,
         depthWrite: true,
       });
   }
 }
 
-function createReflectiveGlassTexture() {
-  const canvas = document.createElement("canvas");
-  canvas.width = 512;
-  canvas.height = 512;
-
-  const context = canvas.getContext("2d");
-  if (!context) {
-    return new THREE.CanvasTexture(canvas);
-  }
-
-  const base = context.createLinearGradient(0, 0, canvas.width, canvas.height);
-  base.addColorStop(0, "#e8f0f4");
-  base.addColorStop(0.42, "#aebfc8");
-  base.addColorStop(1, "#70858f");
-  context.fillStyle = base;
-  context.fillRect(0, 0, canvas.width, canvas.height);
-
-  const highlight = context.createLinearGradient(0, 0, canvas.width, 0);
-  highlight.addColorStop(0, "rgba(255,255,255,0)");
-  highlight.addColorStop(0.28, "rgba(255,255,255,0.54)");
-  highlight.addColorStop(0.42, "rgba(255,255,255,0.12)");
-  highlight.addColorStop(1, "rgba(255,255,255,0)");
-  context.translate(canvas.width * 0.18, canvas.height * 0.52);
-  context.rotate(-0.42);
-  context.fillStyle = highlight;
-  context.fillRect(-canvas.width * 0.2, -canvas.height, canvas.width * 0.42, canvas.height * 2);
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.needsUpdate = true;
-  return texture;
-}
 
 function recenterChildAtOrigin(object: THREE.Object3D) {
   object.updateMatrixWorld(true);
