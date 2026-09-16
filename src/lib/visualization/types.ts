@@ -1,5 +1,5 @@
 import type { SpaceImageSession } from "@/lib/imageApi";
-import type { RawMaterial } from "@/lib/pricing/types";
+import type { RawMaterial, CalculatedBOMResult } from "@/lib/pricing/types";
 import type { AluminumFinishKey } from "./colorVariations";
 
 export type JsonObject = Record<string, unknown>;
@@ -126,18 +126,40 @@ export type ActiveOverlay = {
   occlusionObjectIds: string[];
 };
 
-export type PlacedOverlay = ActiveOverlay & {
+export type PlacedOverlay = {
+  overlayId: string;
+  productId: string;
+  productName: string;
+  templateId: string;
+  configuration: ProductConfigurationSnapshot;
   flattenedImageDataUrl: string;
+  variationImageDataUrls?: Partial<Record<AluminumFinishKey, string>>;
+  sourceCanvasWidth?: number;
+  sourceCanvasHeight?: number;
+  sourceOverlayWidth?: number;
+  sourceOverlayHeight?: number;
+  visibleModelBounds?: {
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+  };
+  isActive?: boolean;
+  bomResult?: CalculatedBOMResult;
+  unitPrice?: number;
+  totalPrice?: number;
 };
 
 export type VisualizationSessionState = {
   selectedProductId: string | null;
   spaceImageSession: SpaceImageSession | null;
+  workspaceBackgroundDataUrl: string | null;
   structuralDefinition: ProductStructuralDefinition | null;
   productConfiguration: ProductConfigurationSnapshot | null;
   variationSnapshots: ProductVariationSnapshot[];
   activeOverlay: ActiveOverlay | null;
   placedOverlays: PlacedOverlay[];
+  comparisonOverlays: PlacedOverlay[];
   finalSnapshotDataUrl: string | null;
 };
 
@@ -147,6 +169,20 @@ export type ProductVariationSnapshot = {
   label: string;
   swatchClassName: string;
   imageDataUrl: string;
+};
+
+export type Point2D = {
+  x: number;
+  y: number;
+};
+
+export type QuadrilateralCorners = [Point2D, Point2D, Point2D, Point2D];
+
+export type ManualOcclusionPolygon = Point2D[];
+
+export type ManualOcclusionMaskResult = {
+  polygons: ManualOcclusionPolygon[];
+  maskDataUrl: string | null;
 };
 
 export type ProductConfigurationSnapshot = {
@@ -165,8 +201,14 @@ export type ProductConfigurationSnapshot = {
   isFlipped: boolean;
   zoomLevel?: number;
   activeOcclusionIds?: string[];
+  manualOcclusionMaskDataUrl?: string | null;
+  manualOcclusionPolygons?: ManualOcclusionPolygon[];
+  perspectiveFitCorners?: QuadrilateralCorners | null;
   ambientLight?: boolean;
   autoShadow?: boolean;
   autoRealism?: boolean;
+  positionX?: number;
+  positionY?: number;
   visualParameterValues: Record<string, unknown>;
 };
+

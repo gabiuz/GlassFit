@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { ProductAwareWorkspacePage } from "@/features/visualization";
 import { getProductStructuralDefinition } from "@/lib/visualization/structuralData";
+import { getActiveProducts } from "@/lib/products/getActiveProducts";
+import { mapDatabaseProductToCatalog } from "@/lib/products/productRendererAdapter";
 
 export const dynamic = "force-dynamic";
 
@@ -12,13 +14,17 @@ export default async function ProductWorkspacePage({
   params,
 }: ProductWorkspacePageProps) {
   const { productId } = await params;
-  const structuralDefinitionResult = await loadStructuralDefinition(productId);
+  const [structuralDefinitionResult, catalogProducts] = await Promise.all([
+    loadStructuralDefinition(productId),
+    getActiveProducts().then((products) => products.map(mapDatabaseProductToCatalog)),
+  ]);
 
   if (structuralDefinitionResult.ok) {
     return (
       <ProductAwareWorkspacePage
         productId={productId}
         structuralDefinition={structuralDefinitionResult.definition}
+        catalogProducts={catalogProducts}
       />
     );
   }

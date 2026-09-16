@@ -9,6 +9,7 @@ export { AddProductModal } from "./components/AddProductModal";
 export { ProductAwareUploadPage } from "./components/ProductAwareUploadPage";
 export { ProductAwareWorkspacePage } from "./components/ProductAwareWorkspacePage";
 export { StructuralGuardrailModal } from "./components/StructuralGuardrailModal";
+export { DirectVisualizationPage } from "./components/DirectVisualizationPage";
 
 
 

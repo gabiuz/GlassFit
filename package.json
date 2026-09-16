@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "npx tsx --test tests/unit/milestone1.test.ts tests/unit/milestone2.test.ts tests/unit/milestone3.test.ts tests/unit/milestone4.test.ts tests/unit/milestone5.test.ts tests/unit/milestone6.test.ts tests/unit/milestone7.test.ts tests/unit/milestone8.test.ts tests/unit/milestone9.test.ts",
+    "test": "npx tsx --test tests/unit/milestone1.test.ts tests/unit/milestone2.test.ts tests/unit/milestone3.test.ts tests/unit/milestone4.test.ts tests/unit/milestone5.test.ts tests/unit/milestone6.test.ts tests/unit/milestone7.test.ts tests/unit/milestone8.test.ts tests/unit/milestone9.test.ts tests/unit/multiProductVisualization.test.ts tests/unit/directVisualizationWorkspace.test.ts tests/unit/perspectiveTransform.test.ts tests/unit/visualizationControlsOcclusion.test.ts tests/unit/occlusionPolygon.test.ts tests/unit/manualOcclusionIntegration.test.ts tests/unit/sceneAdaptivePhotorealism.test.ts",
     "test:milestone8": "npx tsx --test tests/unit/milestone8.test.ts",
     "test:milestone9": "npx tsx --test tests/unit/milestone9.test.ts"
   },

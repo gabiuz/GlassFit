@@ -3,10 +3,19 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { motion, AnimatePresence, useDragControls } from "motion/react";
-import { RotateCw, FlipHorizontal, RotateCcw, Trash2 } from "lucide-react";
+import {
+  motion,
+  AnimatePresence,
+  useDragControls,
+  useMotionValue,
+  useReducedMotion,
+} from "motion/react";
+import { ChevronDown, RotateCw, FlipHorizontal, RotateCcw, Trash2, MousePointer2, Maximize, Move } from "lucide-react";
 import Button from "@/components/shared/Button";
-import { AddProductModal, type Product } from "./AddProductModal";
+import { AddProductModal } from "./AddProductModal";
+import { ManualOcclusionPointPicker } from "./ManualOcclusionPointPicker";
+import { PerspectivePlanePicker } from "./PerspectivePlanePicker";
+import type { CatalogProduct } from "@/lib/products/types";
 import type { SpaceImageSession, LightingAnalysis } from "@/lib/imageApi";
 import { ProductModelRenderer } from "@/lib/visualization/modelRenderer";
 import {
@@ -14,13 +23,41 @@ import {
   ProductConfigurationSnapshot,
   ProductStructuralDefinition,
   ProductVariationSnapshot,
+  PlacedOverlay,
+  QuadrilateralCorners,
+  ManualOcclusionPolygon,
 } from "@/lib/visualization/types";
-import { ALUMINUM_COLOR_VARIATIONS } from "@/lib/visualization/colorVariations";
+import {
+  homographyToCssMatrix3d,
+  denormalizeCorners,
+  drawPerspectiveWarpedImage,
+  estimateDimensionsFromCorners,
+  scaleCornersAlongAxis,
+} from "@/lib/visualization/perspectiveTransform";
+import {
+  applyNoiseToCanvas,
+  GRAIN_FILTER_SVG_ID,
+} from "@/lib/visualization/noiseGenerator";
+import { applyContactOcclusionAndReveals } from "@/lib/visualization/contactShadow";
+import {
+  ALUMINUM_COLOR_VARIATIONS,
+  normalizeAluminumFinish,
+  type AluminumFinishKey,
+} from "@/lib/visualization/colorVariations";
+import {
+  createDuplicateConfiguration,
+  getPlacedLayerImageUrls,
+  getOverlaySizeFromConfiguration,
+  preserveActivePlacedLayer,
+} from "@/lib/visualization/multiProductPresentation";
 import {
   validateEngineeringGuardrails,
   type EngineeringValidationResult,
 } from "@/lib/visualization/guardrailEngine";
-import { calculateBOMFromStructuralDefinition } from "@/lib/pricing/pricingEngine";
+import {
+  calculateBOMFromStructuralDefinition,
+  calculateOverlayPricing,
+} from "@/lib/pricing/pricingEngine";
 import { StructuralGuardrailModal } from "./StructuralGuardrailModal";
 export type ProjectedModelBounds = {
   left: number;
@@ -33,12 +70,23 @@ interface ProductModelWorkspaceProps {
   uploadedImage: string | null;
   spaceImageSession?: SpaceImageSession | null;
   structuralDefinition?: ProductStructuralDefinition | null;
+  catalogProducts?: CatalogProduct[];
+  currentProductId?: string;
   selectedProductName?: string;
   initialSnapshotDataUrl?: string | null;
   initialConfiguration?: ProductConfigurationSnapshot | null;
+  placedOverlays?: PlacedOverlay[];
   onConfigurationChange?: (configuration: ProductConfigurationSnapshot) => void;
   onVariationSnapshotsChange?: (snapshots: ProductVariationSnapshot[]) => void;
   onSnapshotChange?: (dataUrl: string) => void;
+  onPlacedOverlaysChange?: (overlays: PlacedOverlay[]) => void;
+  onComparisonOverlaysChange?: (overlays: PlacedOverlay[]) => void;
+  onProductSelect?: (
+    productId: string,
+    mode: "add" | "change" | "edit",
+    flattenedBackgroundDataUrl?: string,
+    configuration?: ProductConfigurationSnapshot,
+  ) => void;
   onBack: () => void;
 }
 
@@ -78,6 +126,7 @@ const MAX_OVERLAY_WIDTH = 1800;
 const MAX_OVERLAY_HEIGHT = 1400;
 const MIN_SCENE_ZOOM = -55;
 const MAX_SCENE_ZOOM = 150;
+const DEFAULT_SCENE_ZOOM = 10;
 const DEFAULT_PRODUCT_WIDTH_CM = 210;
 const DEFAULT_PRODUCT_HEIGHT_CM = 150;
 const DEFAULT_OVERLAY_WIDTH_PX = 540;
@@ -90,12 +139,18 @@ export function ProductModelWorkspace({
   uploadedImage,
   spaceImageSession,
   structuralDefinition,
+  catalogProducts = [],
+  currentProductId,
   selectedProductName,
   initialSnapshotDataUrl: _initialSnapshotDataUrl,
   initialConfiguration,
+  placedOverlays = [],
   onConfigurationChange,
   onVariationSnapshotsChange,
   onSnapshotChange,
+  onPlacedOverlaysChange,
+  onComparisonOverlaysChange,
+  onProductSelect,
   onBack,
 }: ProductModelWorkspaceProps) {
   const router = useRouter();
@@ -108,8 +163,9 @@ export function ProductModelWorkspace({
     initialConfiguration ? structuralDefinition?.template.templateId ?? null : null,
   );
   const dragControls = useDragControls();
+  const prefersReducedMotion = useReducedMotion();
   const [zoomLevel, setZoomLevel] = useState(
-    initialConfiguration?.zoomLevel ?? 10,
+    initialConfiguration?.zoomLevel ?? DEFAULT_SCENE_ZOOM,
   );
   const [openAccordions, setOpenAccordions] = useState<string[]>([]);
 
@@ -161,8 +217,31 @@ export function ProductModelWorkspace({
   const [activeOcclusionIds, setActiveOcclusionIds] = useState<string[]>(
     initialConfiguration?.activeOcclusionIds ?? [],
   );
+  const [manualMaskDataUrl, setManualMaskDataUrl] = useState<string | null>(
+    initialConfiguration?.manualOcclusionMaskDataUrl ?? null,
+  );
+  const [manualOcclusionPolygons, setManualOcclusionPolygons] = useState<
+    ManualOcclusionPolygon[]
+  >(initialConfiguration?.manualOcclusionPolygons ?? []);
+  const [showOcclusionPointPicker, setShowOcclusionPointPicker] = useState(false);
+  const [perspectiveCorners, setPerspectiveCorners] = useState<QuadrilateralCorners | null>(
+    initialConfiguration?.perspectiveFitCorners ?? null,
+  );
+  const [showPerspectivePicker, setShowPerspectivePicker] = useState(false);
 
-  const [selectedProduct, setSelectedProduct] = useState(true);
+  const [selectedProduct, setSelectedProduct] = useState(
+    Boolean(currentProductId || structuralDefinition),
+  );
+  const [productInstanceRevision, setProductInstanceRevision] = useState(0);
+  const [activeOverlayId, setActiveOverlayId] = useState(
+    `active-${currentProductId ?? "product"}`,
+  );
+  const [overlayPosition, setOverlayPosition] = useState({
+    x: initialConfiguration?.positionX ?? 0,
+    y: initialConfiguration?.positionY ?? 0,
+  });
+  const overlayX = useMotionValue(overlayPosition.x);
+  const overlayY = useMotionValue(overlayPosition.y);
   const [rotateAngle, setRotateAngle] = useState(
     initialConfiguration?.rotateAngle ?? 0,
   );
@@ -171,8 +250,8 @@ export function ProductModelWorkspace({
   );
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isLayersPanelOpen, setIsLayersPanelOpen] = useState(false);
   const [modalTitle, setModalTitle] = useState("Add Product");
-  const [activeProduct, setActiveProduct] = useState<Product | null>(null);
   const [productBuildError, setProductBuildError] = useState<string | null>(null);
   const initialOverlaySize = useMemo(() => {
     const wStr = initialConfiguration?.widthCm
@@ -182,7 +261,7 @@ export function ProductModelWorkspace({
       ? String(initialConfiguration.heightCm)
       : String(DEFAULT_PRODUCT_HEIGHT_CM);
     const baseSize = getOverlaySizeFromDimensions(wStr, hStr);
-    const zoom = initialConfiguration?.zoomLevel ?? 10;
+    const zoom = initialConfiguration?.zoomLevel ?? DEFAULT_SCENE_ZOOM;
     const scale = 1 + zoom / 100;
     return {
       width: Math.round(baseSize.width * scale),
@@ -211,13 +290,86 @@ export function ProductModelWorkspace({
   const [isSnapshotApplied, setIsSnapshotApplied] = useState(false);
   const [isCapturingSnapshot, setIsCapturingSnapshot] = useState(false);
 
+  useEffect(() => {
+    overlayX.set(overlayPosition.x);
+    overlayY.set(overlayPosition.y);
+  }, [overlayPosition.x, overlayPosition.y, overlayX, overlayY]);
+
   const bgImage = uploadedImage || "/comparison_assets/room_without_furniture.png";
-  const productOverlayImage = activeProduct?.image || "/images/modular_cabinets.png";
-  const overlayName = selectedProductName ?? activeProduct?.name ?? "Selected Product";
+  const productOverlayImage =
+    structuralDefinition?.product.catalogImageUrl || "/images/modular_cabinets.png";
+  const overlayName = selectedProductName ?? "Selected Product";
   const aspectWidth = spaceImageSession?.workspaceImage?.width ?? 636;
   const aspectHeight = spaceImageSession?.workspaceImage?.height ?? 579;
   const workspaceAspectRatio = `${aspectWidth} / ${aspectHeight}`;
-  const effectiveLighting = ambientLight ? spaceImageSession?.lighting : null;
+  const [canvasDisplaySize, setCanvasDisplaySize] = useState({
+    width: aspectWidth,
+    height: aspectHeight,
+  });
+
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (!el) return;
+    const updateSize = () => {
+      const rect = el.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        setCanvasDisplaySize({ width: rect.width, height: rect.height });
+      }
+    };
+    updateSize();
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [aspectWidth, aspectHeight]);
+
+  const perspectiveToolbarPosition = useMemo(() => {
+    if (!perspectiveCorners) return null;
+    const currentWidth = canvasDisplaySize.width;
+    const currentHeight = canvasDisplaySize.height;
+    const pxCorners = denormalizeCorners(
+      perspectiveCorners,
+      currentWidth,
+      currentHeight,
+    );
+    const minX = Math.min(...pxCorners.map((p) => p.x));
+    const maxX = Math.max(...pxCorners.map((p) => p.x));
+    const minY = Math.min(...pxCorners.map((p) => p.y));
+    return {
+      left: Math.max(160, Math.min(currentWidth - 160, (minX + maxX) / 2)),
+      top: Math.max(12, minY - 48),
+    };
+  }, [perspectiveCorners, canvasDisplaySize.width, canvasDisplaySize.height]);
+
+  const perspectiveHandlePoints = useMemo(() => {
+    if (!perspectiveCorners) return null;
+    const currentW = canvasDisplaySize.width;
+    const currentH = canvasDisplaySize.height;
+    if (currentW <= 0 || currentH <= 0) return null;
+
+    const pxCorners = denormalizeCorners(perspectiveCorners, currentW, currentH);
+    const [p0, p1, p2, p3] = pxCorners;
+
+    return {
+      corners: [
+        { id: "tl", x: p0.x, y: p0.y, cursor: "cursor-nwse-resize", signX: -1, signY: -1 },
+        { id: "tr", x: p1.x, y: p1.y, cursor: "cursor-nesw-resize", signX: 1, signY: -1 },
+        { id: "br", x: p2.x, y: p2.y, cursor: "cursor-nwse-resize", signX: 1, signY: 1 },
+        { id: "bl", x: p3.x, y: p3.y, cursor: "cursor-nesw-resize", signX: -1, signY: 1 },
+      ],
+      edges: [
+        { id: "top", x: (p0.x + p1.x) / 2, y: (p0.y + p1.y) / 2, mode: "height" as const, signX: 0, signY: -1, cursor: "cursor-ns-resize" },
+        { id: "bottom", x: (p3.x + p2.x) / 2, y: (p3.y + p2.y) / 2, mode: "height" as const, signX: 0, signY: 1, cursor: "cursor-ns-resize" },
+        { id: "left", x: (p0.x + p3.x) / 2, y: (p0.y + p3.y) / 2, mode: "width" as const, signX: -1, signY: 0, cursor: "cursor-ew-resize" },
+        { id: "right", x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2, mode: "width" as const, signX: 1, signY: 0, cursor: "cursor-ew-resize" },
+      ],
+      center: {
+        x: (p0.x + p1.x + p2.x + p3.x) / 4,
+        y: (p0.y + p1.y + p2.y + p3.y) / 4,
+      },
+    };
+  }, [perspectiveCorners, canvasDisplaySize.width, canvasDisplaySize.height]);
+
+  const effectiveLighting = (autoRealism && ambientLight) ? spaceImageSession?.lighting : null;
   const isWindowProduct =
     structuralDefinition?.product.productType === "Window" ||
     Boolean(
@@ -235,7 +387,7 @@ export function ProductModelWorkspace({
   );
 
   // The cyan selection-guide drop-shadows are UI-only and must NOT appear in
-  // the exported snapshot — same as the MVP's "output" renderMode skipping the
+  // the exported snapshot: same as the MVP's "output" renderMode skipping the
   // guide layer. We strip them by rebuilding the filter without the guide shadows.
   const exportModelFilter = useMemo(
     () => getExportModelFilter({
@@ -338,6 +490,78 @@ export function ProductModelWorkspace({
       .replace("PHP", "Php");
   }, [realtimePricing.unitPrice]);
 
+  // Filter out any overlay that matches the activeOverlayId to avoid double-counting active product
+  const nonActivePlacedOverlays = useMemo(() => {
+    return placedOverlays.filter((overlay) => overlay.overlayId !== activeOverlayId);
+  }, [placedOverlays, activeOverlayId]);
+
+  // Total price of all placed overlays currently on the canvas
+  const placedOverlaysTotalPrice = useMemo(() => {
+    return nonActivePlacedOverlays.reduce((sum, overlay) => {
+      if (overlay.totalPrice !== undefined && !Number.isNaN(overlay.totalPrice)) {
+        return sum + overlay.totalPrice;
+      }
+      return sum + calculateOverlayPricing(overlay).totalPrice;
+    }, 0);
+  }, [nonActivePlacedOverlays]);
+
+  // Combined total price across all products present in the space
+  const totalScenePrice = useMemo(() => {
+    const activePrice = selectedProduct ? realtimePricing.totalPrice : 0;
+    return placedOverlaysTotalPrice + activePrice;
+  }, [placedOverlaysTotalPrice, selectedProduct, realtimePricing.totalPrice]);
+
+  const totalSceneProductCount = useMemo(() => {
+    return nonActivePlacedOverlays.length + (selectedProduct ? 1 : 0);
+  }, [nonActivePlacedOverlays.length, selectedProduct]);
+
+  // Dynamic price card presentation: single product while editing, sum of all products when applied
+  const displayPriceData = useMemo(() => {
+    const isApplied = isSnapshotApplied;
+    const isMultiProduct = totalSceneProductCount > 1;
+
+    if (isApplied) {
+      const formattedTotal = new Intl.NumberFormat("en-PH", {
+        style: "currency",
+        currency: "PHP",
+        maximumFractionDigits: 0,
+      })
+        .format(totalScenePrice)
+        .replace("PHP", "Php");
+
+      return {
+        title: isMultiProduct
+          ? `Total Price (${totalSceneProductCount} products):`
+          : "Total Price:",
+        formattedPrice: formattedTotal,
+        badgeText: isMultiProduct
+          ? `${totalSceneProductCount} Products on Canvas`
+          : quantity > 1
+            ? `Qty: ${quantity}`
+            : null,
+        subtext: isMultiProduct
+          ? "Combined sum of all products present on canvas"
+          : "Applied to canvas. Click 'Edit' to adjust.",
+        isOverall: true,
+      };
+    }
+
+    return {
+      title: "Price:",
+      formattedPrice: formattedPrice,
+      badgeText: quantity > 1 ? `Qty: ${quantity}` : null,
+      subtext: quantity > 1 ? `${formattedUnitPrice} each` : "excl. install, final after consultation, etc",
+      isOverall: false,
+    };
+  }, [
+    isSnapshotApplied,
+    totalSceneProductCount,
+    totalScenePrice,
+    formattedPrice,
+    formattedUnitPrice,
+    quantity,
+  ]);
+
   // Removed unused structuralProductModels variable
   useEffect(() => {
     mvpRendererRef.current = new ProductModelRenderer(2048, 2048);
@@ -383,18 +607,66 @@ export function ProductModelWorkspace({
     mvpRendererRef.current.applyLighting(effectiveLighting ?? null);
   }, [effectiveLighting]);
 
+  const handleCanvasMount = useCallback(
+    (canvas: HTMLCanvasElement | null) => {
+      (mvpCanvasRef as React.MutableRefObject<HTMLCanvasElement | null>).current = canvas;
+      if (canvas && mvpRendererRef.current && structuralDefinition) {
+        const isPlanar = Boolean(perspectiveCorners);
+        const sourceCanvas = mvpRendererRef.current.render(yaw, pitch, isPlanar);
+        if (sourceCanvas) {
+          const ctx = canvas.getContext("2d");
+          if (ctx) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(
+              sourceCanvas,
+              0,
+              0,
+              sourceCanvas.width,
+              sourceCanvas.height,
+              0,
+              0,
+              canvas.width,
+              canvas.height,
+            );
+
+            // Measure visible bounds directly from clean 2D canvas before noise/shadows
+            if (!isOutlineMeasurementPaused && !perspectiveCorners) {
+              const computedBounds = getVisibleModelBounds(canvas);
+              if (computedBounds) {
+                setProjectedModelBounds(computedBounds);
+              }
+            }
+
+            if (isPlanar && autoRealism && autoShadow && effectiveLighting) {
+              applyContactOcclusionAndReveals(ctx, canvas.width, canvas.height, {
+                lightDirection: effectiveLighting.light_direction,
+                shadowOpacity: effectiveLighting.suggested?.shadow_opacity ?? 0.28,
+              });
+            }
+            if (autoRealism && effectiveLighting?.suggested?.grain) {
+              applyNoiseToCanvas(ctx, canvas.width, canvas.height, effectiveLighting.suggested.grain);
+            }
+          }
+        }
+      }
+    },
+    [yaw, pitch, structuralDefinition, perspectiveCorners, autoRealism, autoShadow, effectiveLighting, isOutlineMeasurementPaused],
+  );
+
   useLayoutEffect(() => {
     if (!mvpRendererRef.current || !mvpCanvasRef.current || !structuralDefinition) return;
 
     mvpRendererRef.current.setSize(renderFrameSize.width, renderFrameSize.height);
 
-    const sourceCanvas = mvpRendererRef.current.render(yaw, pitch);
+    const isPlanar = Boolean(perspectiveCorners);
+    const sourceCanvas = mvpRendererRef.current.render(yaw, pitch, isPlanar);
     if (!sourceCanvas) return;
 
-    const ctx = mvpCanvasRef.current.getContext("2d");
+    const targetCanvas = mvpCanvasRef.current;
+    const ctx = targetCanvas.getContext("2d");
     if (!ctx) return;
 
-    ctx.clearRect(0, 0, mvpCanvasRef.current.width, mvpCanvasRef.current.height);
+    ctx.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
     ctx.drawImage(
       sourceCanvas,
       0,
@@ -403,14 +675,46 @@ export function ProductModelWorkspace({
       sourceCanvas.height,
       0,
       0,
-      mvpCanvasRef.current.width,
-      mvpCanvasRef.current.height
+      targetCanvas.width,
+      targetCanvas.height
     );
 
-    if (!isOutlineMeasurementPaused) {
-      setProjectedModelBounds(getVisibleModelBounds(mvpCanvasRef.current));
+    // Measure visible bounds directly from clean 2D canvas before noise/shadows
+    if (!isOutlineMeasurementPaused && !perspectiveCorners) {
+      const computedBounds = getVisibleModelBounds(targetCanvas);
+      if (computedBounds) {
+        setProjectedModelBounds(computedBounds);
+      }
     }
-  }, [yaw, pitch, structuralDefinition, widthCm, heightCm, includeSill, glassAppearance, alumFinish, effectiveLighting, modelRevision, renderFrameSize, isOutlineMeasurementPaused]);
+
+    if (isPlanar && autoRealism && autoShadow && effectiveLighting) {
+      applyContactOcclusionAndReveals(ctx, targetCanvas.width, targetCanvas.height, {
+        lightDirection: effectiveLighting.light_direction,
+        shadowOpacity: effectiveLighting.suggested?.shadow_opacity ?? 0.28,
+      });
+    }
+
+    if (autoRealism && effectiveLighting?.suggested?.grain) {
+      applyNoiseToCanvas(ctx, targetCanvas.width, targetCanvas.height, effectiveLighting.suggested.grain);
+    }
+  }, [
+    yaw,
+    pitch,
+    structuralDefinition,
+    widthCm,
+    heightCm,
+    includeSill,
+    glassAppearance,
+    alumFinish,
+    effectiveLighting,
+    autoRealism,
+    autoShadow,
+    modelRevision,
+    renderFrameSize,
+    isOutlineMeasurementPaused,
+    selectedProduct,
+    perspectiveCorners,
+  ]);
 
   const outlineControlsStyle = useMemo(
     () => getOutlineControlsStyle(structuralDefinition ? projectedModelBounds : null),
@@ -445,16 +749,12 @@ export function ProductModelWorkspace({
     appliedTemplateDefaultsRef.current = templateId;
   }, [structuralDefinition]);
 
-  useEffect(() => {
-    if (!structuralDefinition || !onConfigurationChange) {
-      return;
-    }
-
+  const currentConfiguration = useMemo<ProductConfigurationSnapshot>(() => {
     const width = Number(widthCm) || DEFAULT_PRODUCT_WIDTH_CM;
     const height = Number(heightCm) || DEFAULT_PRODUCT_HEIGHT_CM;
     const thickness = Number(thicknessMm) || 3;
 
-    onConfigurationChange({
+    return {
       widthCm: width,
       heightCm: height,
       thicknessMm: thickness,
@@ -470,9 +770,14 @@ export function ProductModelWorkspace({
       isFlipped,
       zoomLevel,
       activeOcclusionIds,
+      manualOcclusionMaskDataUrl: manualMaskDataUrl,
+      manualOcclusionPolygons,
+      perspectiveFitCorners: perspectiveCorners,
       ambientLight,
       autoShadow,
       autoRealism,
+      positionX: overlayPosition.x,
+      positionY: overlayPosition.y,
       visualParameterValues: {
         width: width * 10,
         height: height * 10,
@@ -481,9 +786,12 @@ export function ProductModelWorkspace({
         includeSill,
         include_sill: includeSill,
       },
-    });
+    };
   }, [
     activeOcclusionIds,
+    manualMaskDataUrl,
+    manualOcclusionPolygons,
+    perspectiveCorners,
     alumFinish,
     ambientLight,
     autoRealism,
@@ -492,18 +800,26 @@ export function ProductModelWorkspace({
     heightCm,
     includeSill,
     isFlipped,
-    onConfigurationChange,
+    overlayPosition.x,
+    overlayPosition.y,
     panelCount,
     pitch,
     quantity,
     rotateAngle,
-    structuralDefinition,
     structuralWaiver,
     thicknessMm,
     widthCm,
     yaw,
     zoomLevel,
   ]);
+
+  useEffect(() => {
+    if (!structuralDefinition || !onConfigurationChange) {
+      return;
+    }
+
+    onConfigurationChange(currentConfiguration);
+  }, [currentConfiguration, onConfigurationChange, structuralDefinition]);
 
   const handleRotate = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -515,12 +831,81 @@ export function ProductModelWorkspace({
     setIsFlipped((prev) => !prev);
   };
 
-  const handleReset = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const resetProductPlacement = useCallback(() => {
+    const baseSize = getOverlaySizeFromDimensions(widthCm, heightCm);
+    const defaultScale = 1 + DEFAULT_SCENE_ZOOM / 100;
+
+    resizeSessionRef.current = null;
+    rotationSessionRef.current = null;
+    setIsUsingTransformHandle(false);
+    setIsOutlineMeasurementPaused(false);
     setRotateAngle(0);
     setIsFlipped(false);
-    setZoomLevel(10);
-    setOverlaySize(getOverlaySizeFromDimensions(widthCm, heightCm));
+    setYaw(0);
+    setPitch(0);
+    setOverlayPosition({ x: 0, y: 0 });
+    setPerspectiveCorners(null);
+    setZoomLevel(DEFAULT_SCENE_ZOOM);
+    setOverlaySize({
+      width: Math.round(baseSize.width * defaultScale),
+      height: Math.round(baseSize.height * defaultScale),
+    });
+    setProjectedModelBounds({ left: 0, top: 0, width: 1, height: 1 });
+    setProductInstanceRevision((current) => current + 1);
+  }, [heightCm, widthCm]);
+
+  const applyProductConfiguration = useCallback(
+    (configuration: ProductConfigurationSnapshot) => {
+      const nextWidth = String(configuration.widthCm);
+      const nextHeight = String(configuration.heightCm);
+      const baseSize = getOverlaySizeFromDimensions(nextWidth, nextHeight);
+      const nextZoom = configuration.zoomLevel ?? DEFAULT_SCENE_ZOOM;
+      const scale = 1 + nextZoom / 100;
+
+      setWidthCm(nextWidth);
+      setHeightCm(nextHeight);
+      setThicknessMm(String(configuration.thicknessMm));
+      setQuantity(configuration.quantity);
+      setPanelCount(configuration.panelCount ?? 2);
+      setStructuralWaiver(configuration.structuralWaiver ?? false);
+      setAlumFinish(
+        configuration.aluminumFinish === "black" ||
+          configuration.aluminumFinish === "silver"
+          ? configuration.aluminumFinish
+          : "white",
+      );
+      setGlassAppearance(configuration.glassAppearance);
+      setIncludeSill(configuration.includeSill);
+      setYaw(configuration.yaw);
+      setPitch(configuration.pitch);
+      setRotateAngle(configuration.rotateAngle);
+      setIsFlipped(configuration.isFlipped);
+      setZoomLevel(nextZoom);
+      setActiveOcclusionIds(configuration.activeOcclusionIds ?? []);
+      setManualMaskDataUrl(configuration.manualOcclusionMaskDataUrl ?? null);
+      setManualOcclusionPolygons(configuration.manualOcclusionPolygons ?? []);
+      setPerspectiveCorners(configuration.perspectiveFitCorners ?? null);
+      setAmbientLight(configuration.ambientLight ?? true);
+      setAutoShadow(configuration.autoShadow ?? true);
+      setAutoRealism(configuration.autoRealism ?? true);
+      setOverlayPosition({
+        x: configuration.positionX ?? 0,
+        y: configuration.positionY ?? 0,
+      });
+      setOverlaySize({
+        width: Math.round(baseSize.width * scale),
+        height: Math.round(baseSize.height * scale),
+      });
+      setSelectedProduct(true);
+      setIsSnapshotApplied(false);
+      setProductInstanceRevision((current) => current + 1);
+    },
+    [],
+  );
+
+  const handleReset = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    resetProductPlacement();
   };
 
   const handleRemove = (e: React.MouseEvent) => {
@@ -533,10 +918,42 @@ export function ProductModelWorkspace({
     setIsAddModalOpen(true);
   };
 
-  const handleSelectProduct = (product: Product) => {
-    setActiveProduct(product);
+  const handleSelectProduct = async (product: CatalogProduct) => {
+    const mode = modalTitle === "Add Product" ? "add" : "change";
+
+    if (product.id === currentProductId && !selectedProduct) {
+      resetProductPlacement();
+      setSelectedProduct(true);
+      setIsSnapshotApplied(false);
+      return;
+    }
+
+    if (
+      !onProductSelect ||
+      (product.id === currentProductId && mode === "change")
+    ) {
+      return;
+    }
+
+    if (mode === "add" && selectedProduct) {
+      try {
+        const placedOverlay = await createPlacedOverlay();
+        onPlacedOverlaysChange?.([...placedOverlays, placedOverlay]);
+      } catch (err) {
+        console.error("Failed to place active product before adding:", err);
+      }
+    }
+
+    const nextActiveOverlayId = `active-${product.id}-${crypto.randomUUID()}`;
+    setActiveOverlayId(nextActiveOverlayId);
+
+    if (product.id === currentProductId) {
+      applyProductConfiguration(createDuplicateConfiguration(currentConfiguration));
+    }
+
     setSelectedProduct(true);
     setIsSnapshotApplied(false);
+    onProductSelect(product.id, mode);
   };
 
   const captureCurrentSnapshot = useCallback(async () => {
@@ -547,9 +964,11 @@ export function ProductModelWorkspace({
       fallbackProductImageUrl: productOverlayImage,
       hasGeneratedProduct: Boolean(structuralDefinition),
       activeOcclusionObjects,
+      manualMaskDataUrl,
+      perspectiveCorners,
       rotateAngle,
       isFlipped,
-      // Use the export filter — stripped of selection-guide outlines.
+      // Use the export filter - stripped of selection-guide outlines.
       modelFilter: exportModelFilter,
       structuralDefinition: structuralDefinition ?? null,
       yaw,
@@ -559,16 +978,22 @@ export function ProductModelWorkspace({
       includeSill,
       widthCm: Number(widthCm),
       heightCm: Number(heightCm),
+      placedLayerImageUrls: placedOverlays.map(
+        (overlay) => overlay.flattenedImageDataUrl,
+      ),
     });
 
     onSnapshotChange?.(snapshot);
     return snapshot;
   }, [
     activeOcclusionObjects,
+    manualMaskDataUrl,
+    perspectiveCorners,
     bgImage,
     exportModelFilter,
     isFlipped,
     onSnapshotChange,
+    placedOverlays,
     productOverlayImage,
     rotateAngle,
     structuralDefinition,
@@ -581,12 +1006,248 @@ export function ProductModelWorkspace({
     heightCm,
   ]);
 
+  const captureCurrentProductLayer = useCallback(
+    () =>
+      captureWorkspaceSnapshot({
+        canvasElement: canvasRef.current,
+        overlayElement: overlayBoxRef.current,
+        backgroundImageUrl: null,
+        fallbackProductImageUrl: productOverlayImage,
+        hasGeneratedProduct: Boolean(structuralDefinition),
+        activeOcclusionObjects: [],
+        perspectiveCorners,
+        rotateAngle,
+        isFlipped,
+        modelFilter: exportModelFilter,
+        structuralDefinition: structuralDefinition ?? null,
+        yaw,
+        pitch,
+        lighting: effectiveLighting ?? null,
+        glassAppearance,
+        includeSill,
+        widthCm: Number(widthCm),
+        heightCm: Number(heightCm),
+      }),
+    [
+      effectiveLighting,
+      exportModelFilter,
+      glassAppearance,
+      heightCm,
+      includeSill,
+      isFlipped,
+      perspectiveCorners,
+      pitch,
+      productOverlayImage,
+      rotateAngle,
+      structuralDefinition,
+      widthCm,
+      yaw,
+    ],
+  );
+
+  const captureCurrentProductVariationLayers = useCallback(async () => {
+    const variationImageDataUrls: Partial<Record<AluminumFinishKey, string>> = {};
+
+    if (!structuralDefinition) {
+      const fallbackLayer = await captureCurrentProductLayer();
+      for (const variation of ALUMINUM_COLOR_VARIATIONS) {
+        variationImageDataUrls[variation.key] = fallbackLayer;
+      }
+      return variationImageDataUrls;
+    }
+
+    const width = Number(widthCm) || DEFAULT_PRODUCT_WIDTH_CM;
+    const height = Number(heightCm) || DEFAULT_PRODUCT_HEIGHT_CM;
+
+    for (const variation of ALUMINUM_COLOR_VARIATIONS) {
+      const renderer = new ProductModelRenderer(
+        renderFrameSize.width,
+        renderFrameSize.height,
+      );
+
+      try {
+        const cameraFraming = mvpRendererRef.current?.getCameraFraming();
+        if (cameraFraming !== null && cameraFraming !== undefined) {
+          renderer.setCameraFraming(cameraFraming);
+        }
+        renderer.setSize(renderFrameSize.width, renderFrameSize.height);
+        renderer.applyLighting(effectiveLighting ?? null);
+        await renderer.loadModel(
+          structuralDefinition,
+          {
+            width: width * 10,
+            height: height * 10,
+            pane_count: panelCount,
+            includeSill,
+            include_sill: includeSill,
+          },
+          glassAppearance,
+          includeSill,
+          variation.key,
+        );
+
+        const isPlanar = Boolean(perspectiveCorners);
+        const renderedCanvas = renderer.render(yaw, pitch, isPlanar);
+        if (!renderedCanvas) {
+          continue;
+        }
+
+        variationImageDataUrls[variation.key] = await captureWorkspaceSnapshot({
+          canvasElement: canvasRef.current,
+          overlayElement: overlayBoxRef.current,
+          backgroundImageUrl: null,
+          fallbackProductImageUrl: productOverlayImage,
+          hasGeneratedProduct: true,
+          activeOcclusionObjects: [],
+          perspectiveCorners,
+          rotateAngle,
+          isFlipped,
+          modelFilter: exportModelFilter,
+          generatedCanvasOverride: cloneCanvas(renderedCanvas, {
+            autoRealism,
+            autoShadow,
+            lighting: effectiveLighting,
+          }),
+          structuralDefinition,
+          yaw,
+          pitch,
+          lighting: effectiveLighting ?? null,
+          glassAppearance,
+          includeSill,
+          widthCm: width,
+          heightCm: height,
+        });
+      } finally {
+        renderer.dispose();
+      }
+    }
+
+    return variationImageDataUrls;
+  }, [
+    autoRealism,
+    autoShadow,
+    captureCurrentProductLayer,
+    effectiveLighting,
+    exportModelFilter,
+    glassAppearance,
+    heightCm,
+    includeSill,
+    isFlipped,
+    panelCount,
+    perspectiveCorners,
+    pitch,
+    productOverlayImage,
+    renderFrameSize,
+    rotateAngle,
+    structuralDefinition,
+    widthCm,
+    yaw,
+  ]);
+
+  const createPlacedOverlay = useCallback(async (): Promise<PlacedOverlay> => {
+    const overlayElement = overlayBoxRef.current;
+    const overlayBounds = overlayElement?.getBoundingClientRect();
+    const sourceOverlayWidth =
+      overlayElement?.offsetWidth || overlayBounds?.width || overlaySize.width;
+    const sourceOverlayHeight =
+      overlayElement?.offsetHeight || overlayBounds?.height || overlaySize.height;
+    const visibleModelBounds = projectedModelBounds
+      ? { ...projectedModelBounds }
+      : undefined;
+    const activeImageDataUrl = await captureCurrentProductLayer();
+    const currentFinish = normalizeAluminumFinish(
+      currentConfiguration.aluminumFinish,
+    );
+    const variationImageDataUrls: Partial<Record<AluminumFinishKey, string>> = {
+      [currentFinish]: activeImageDataUrl,
+    };
+    const placedLayer = preserveActivePlacedLayer({
+      activeImageDataUrl,
+      currentFinish,
+      variationImageDataUrls,
+    });
+
+    const uniqueOverlayId = crypto.randomUUID();
+
+    return {
+      overlayId: uniqueOverlayId,
+      productId: currentProductId ?? structuralDefinition?.product.productId ?? "",
+      productName: overlayName,
+      templateId: structuralDefinition?.template.templateId ?? "catalog-image",
+      configuration: currentConfiguration,
+      ...placedLayer,
+      sourceCanvasWidth: canvasRef.current?.getBoundingClientRect().width,
+      sourceCanvasHeight: canvasRef.current?.getBoundingClientRect().height,
+      sourceOverlayWidth,
+      sourceOverlayHeight,
+      visibleModelBounds,
+      bomResult: realtimePricing.bomCalc ?? undefined,
+      unitPrice: realtimePricing.unitPrice,
+      totalPrice: realtimePricing.totalPrice,
+    };
+  }, [
+    captureCurrentProductLayer,
+    currentConfiguration,
+    currentProductId,
+    overlayName,
+    overlaySize.height,
+    overlaySize.width,
+    projectedModelBounds,
+    realtimePricing,
+    structuralDefinition,
+  ]);
+
+  const handleEditPlacedOverlay = useCallback(async (overlay: PlacedOverlay) => {
+    const remainingOverlays = placedOverlays.filter(
+      (placedOverlay) => placedOverlay.overlayId !== overlay.overlayId,
+    );
+
+    if (selectedProduct) {
+      try {
+        const newlyPlaced = await createPlacedOverlay();
+        remainingOverlays.push(newlyPlaced);
+      } catch (err) {
+        console.error("Failed to place active product before editing layer:", err);
+      }
+    }
+
+    onPlacedOverlaysChange?.(remainingOverlays);
+    setActiveOverlayId(overlay.overlayId);
+    setIsSnapshotApplied(false);
+
+    if (overlay.productId === currentProductId) {
+      applyProductConfiguration(overlay.configuration);
+      return;
+    }
+
+    onProductSelect?.(
+      overlay.productId,
+      "edit",
+      undefined,
+      overlay.configuration,
+    );
+  }, [
+    applyProductConfiguration,
+    createPlacedOverlay,
+    currentProductId,
+    onPlacedOverlaysChange,
+    onProductSelect,
+    placedOverlays,
+    selectedProduct,
+  ]);
+
+  const handleDeletePlacedOverlay = useCallback((overlayId: string) => {
+    onPlacedOverlaysChange?.(
+      placedOverlays.filter((overlay) => overlay.overlayId !== overlayId),
+    );
+  }, [onPlacedOverlaysChange, placedOverlays]);
+
   const applyVisualizationSnapshot = useCallback(async () => {
     setIsCapturingSnapshot(true);
+    setIsSnapshotApplied(true);
 
     try {
       await captureCurrentSnapshot();
-      setIsSnapshotApplied(true);
       setProductBuildError(null);
       return true;
     } catch (error) {
@@ -654,6 +1315,10 @@ export function ProductModelWorkspace({
       );
 
       try {
+        const cameraFraming = mvpRendererRef.current?.getCameraFraming();
+        if (cameraFraming !== null && cameraFraming !== undefined) {
+          renderer.setCameraFraming(cameraFraming);
+        }
         renderer.setSize(renderFrameSize.width, renderFrameSize.height);
         renderer.applyLighting(effectiveLighting ?? null);
         await renderer.loadModel(
@@ -670,12 +1335,17 @@ export function ProductModelWorkspace({
           variation.key,
         );
 
-        const renderedCanvas = renderer.render(yaw, pitch);
+        const isPlanar = Boolean(perspectiveCorners);
+        const renderedCanvas = renderer.render(yaw, pitch, isPlanar);
         if (!renderedCanvas) {
           continue;
         }
 
-        const generatedCanvasOverride = cloneCanvas(renderedCanvas);
+        const generatedCanvasOverride = cloneCanvas(renderedCanvas, {
+          autoRealism,
+          autoShadow,
+          lighting: effectiveLighting,
+        });
         const imageDataUrl = await captureWorkspaceSnapshot({
           canvasElement: canvasRef.current,
           overlayElement: overlayBoxRef.current,
@@ -683,6 +1353,8 @@ export function ProductModelWorkspace({
           fallbackProductImageUrl: productOverlayImage,
           hasGeneratedProduct: true,
           activeOcclusionObjects,
+          manualMaskDataUrl,
+          perspectiveCorners,
           rotateAngle,
           isFlipped,
           modelFilter: exportModelFilter,
@@ -695,6 +1367,10 @@ export function ProductModelWorkspace({
           includeSill,
           widthCm: width,
           heightCm: height,
+          placedLayerImageUrls: getPlacedLayerImageUrls(
+            placedOverlays,
+            variation.key,
+          ),
         });
 
         snapshots.push({
@@ -713,6 +1389,10 @@ export function ProductModelWorkspace({
     return snapshots;
   }, [
     activeOcclusionObjects,
+    autoRealism,
+    autoShadow,
+    manualMaskDataUrl,
+    perspectiveCorners,
     bgImage,
     effectiveLighting,
     exportModelFilter,
@@ -721,6 +1401,7 @@ export function ProductModelWorkspace({
     includeSill,
     isFlipped,
     onVariationSnapshotsChange,
+    placedOverlays,
     panelCount,
     pitch,
     productOverlayImage,
@@ -738,6 +1419,14 @@ export function ProductModelWorkspace({
       await captureCurrentSnapshot();
       setIsSnapshotApplied(true);
       await generateVariationSnapshots();
+      const comparisonOverlays = selectedProduct
+        ? [
+            ...placedOverlays,
+            { ...(await createPlacedOverlay()), isActive: true },
+          ]
+        : placedOverlays;
+      onPlacedOverlaysChange?.(comparisonOverlays);
+      onComparisonOverlaysChange?.(comparisonOverlays);
       router.push("/comparison");
     } catch (error) {
       const message =
@@ -750,8 +1439,12 @@ export function ProductModelWorkspace({
     }
   }, [
     captureCurrentSnapshot,
+    createPlacedOverlay,
     generateVariationSnapshots,
+    onComparisonOverlaysChange,
+    placedOverlays,
     router,
+    selectedProduct,
   ]);
 
   const applySceneZoom = useCallback((nextZoomLevel: number) => {
@@ -804,6 +1497,7 @@ export function ProductModelWorkspace({
   );
 
   const handleWidthCmChange = (value: string) => {
+    const prevW = Number(widthCm) || 120;
     setWidthCm(value);
     setOverlaySize(getOverlaySizeFromDimensions(value, heightCm));
 
@@ -812,9 +1506,17 @@ export function ProductModelWorkspace({
     if (!Number.isNaN(numericWidth) && numericWidth > 0) {
       checkAndTriggerGuardrails(numericWidth, numericHeight || DEFAULT_PRODUCT_HEIGHT_CM, panelCount);
     }
+
+    if (perspectiveCorners && prevW > 0 && numericWidth > 0) {
+      const ratio = numericWidth / prevW;
+      setPerspectiveCorners((current) =>
+        current ? scaleCornersAlongAxis(current, ratio, "width") : null
+      );
+    }
   };
 
   const handleHeightCmChange = (value: string) => {
+    const prevH = Number(heightCm) || 120;
     setHeightCm(value);
     setOverlaySize(getOverlaySizeFromDimensions(widthCm, value));
 
@@ -822,6 +1524,13 @@ export function ProductModelWorkspace({
     const numericHeight = Number(value);
     if (!Number.isNaN(numericHeight) && numericHeight > 0) {
       checkAndTriggerGuardrails(numericWidth || DEFAULT_PRODUCT_WIDTH_CM, numericHeight, panelCount);
+    }
+
+    if (perspectiveCorners && prevH > 0 && numericHeight > 0) {
+      const ratio = numericHeight / prevH;
+      setPerspectiveCorners((current) =>
+        current ? scaleCornersAlongAxis(current, ratio, "height") : null
+      );
     }
   };
 
@@ -1032,6 +1741,129 @@ export function ProductModelWorkspace({
     [rotateAngle],
   );
 
+  const startPerspectiveResize = useCallback(
+    (
+      event: React.PointerEvent,
+      mode: "scale" | "width" | "height",
+      signX: number,
+      signY: number,
+    ) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!perspectiveCorners) return;
+
+      const session = {
+        mode,
+        startX: event.clientX,
+        startY: event.clientY,
+        startCorners: [...perspectiveCorners] as QuadrilateralCorners,
+        startWidthCm: Number(widthCm) || 120,
+        startHeightCm: Number(heightCm) || 120,
+        signX,
+        signY,
+      };
+      setIsUsingTransformHandle(true);
+
+      const currentW = canvasRef.current?.clientWidth || canvasDisplaySize.width || 800;
+      const currentH = canvasRef.current?.clientHeight || canvasDisplaySize.height || 600;
+
+      const handleMove = (moveEvent: PointerEvent) => {
+        const dx = (moveEvent.clientX - session.startX) * session.signX;
+        const dy = (moveEvent.clientY - session.startY) * session.signY;
+
+        if (session.mode === "scale") {
+          const dominantDelta = Math.abs(dx) > Math.abs(dy) ? dx : dy;
+          const initialSpan = currentW * 0.35;
+          const scaleRatio = Math.max(0.15, 1 + dominantDelta / initialSpan);
+          const nextCorners = scaleCornersAlongAxis(session.startCorners, scaleRatio, "scale");
+          setPerspectiveCorners(nextCorners);
+          const nextW = Math.max(20, Math.round(session.startWidthCm * scaleRatio));
+          const nextH = Math.max(20, Math.round(session.startHeightCm * scaleRatio));
+          setWidthCm(String(nextW));
+          setHeightCm(String(nextH));
+          setOverlaySize(getOverlaySizeFromDimensions(String(nextW), String(nextH)));
+          return;
+        }
+
+        if (session.mode === "width") {
+          const initialSpan = currentW * 0.30;
+          const widthRatio = Math.max(0.15, 1 + dx / initialSpan);
+          const nextCorners = scaleCornersAlongAxis(session.startCorners, widthRatio, "width");
+          setPerspectiveCorners(nextCorners);
+          const nextW = Math.max(20, Math.round(session.startWidthCm * widthRatio));
+          setWidthCm(String(nextW));
+          setOverlaySize(getOverlaySizeFromDimensions(String(nextW), heightCm));
+          return;
+        }
+
+        if (session.mode === "height") {
+          const initialSpan = currentH * 0.30;
+          const heightRatio = Math.max(0.15, 1 + dy / initialSpan);
+          const nextCorners = scaleCornersAlongAxis(session.startCorners, heightRatio, "height");
+          setPerspectiveCorners(nextCorners);
+          const nextH = Math.max(20, Math.round(session.startHeightCm * heightRatio));
+          setHeightCm(String(nextH));
+          setOverlaySize(getOverlaySizeFromDimensions(widthCm, String(nextH)));
+          return;
+        }
+      };
+
+      const handleEnd = () => {
+        setIsUsingTransformHandle(false);
+        window.removeEventListener("pointermove", handleMove);
+        window.removeEventListener("pointerup", handleEnd);
+        window.removeEventListener("pointercancel", handleEnd);
+      };
+
+      window.addEventListener("pointermove", handleMove);
+      window.addEventListener("pointerup", handleEnd);
+      window.addEventListener("pointercancel", handleEnd);
+    },
+    [perspectiveCorners, widthCm, heightCm, canvasDisplaySize.width, canvasDisplaySize.height],
+  );
+
+  const startPerspectiveMove = useCallback(
+    (event: React.PointerEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!perspectiveCorners || isUsingTransformHandle) return;
+
+      const session = {
+        startX: event.clientX,
+        startY: event.clientY,
+        startCorners: [...perspectiveCorners] as QuadrilateralCorners,
+      };
+      setIsUsingTransformHandle(true);
+
+      const currentW = canvasRef.current?.clientWidth || canvasDisplaySize.width || 800;
+      const currentH = canvasRef.current?.clientHeight || canvasDisplaySize.height || 600;
+
+      const handleMove = (moveEvent: PointerEvent) => {
+        const normDx = (moveEvent.clientX - session.startX) / Math.max(currentW, 1);
+        const normDy = (moveEvent.clientY - session.startY) / Math.max(currentH, 1);
+
+        const nextCorners = session.startCorners.map((p) => ({
+          x: clampNumber(p.x + normDx, -0.2, 1.2),
+          y: clampNumber(p.y + normDy, -0.2, 1.2),
+        })) as QuadrilateralCorners;
+
+        setPerspectiveCorners(nextCorners);
+      };
+
+      const handleEnd = () => {
+        setIsUsingTransformHandle(false);
+        window.removeEventListener("pointermove", handleMove);
+        window.removeEventListener("pointerup", handleEnd);
+        window.removeEventListener("pointercancel", handleEnd);
+      };
+
+      window.addEventListener("pointermove", handleMove);
+      window.addEventListener("pointerup", handleEnd);
+      window.addEventListener("pointercancel", handleEnd);
+    },
+    [perspectiveCorners, isUsingTransformHandle, canvasDisplaySize.width, canvasDisplaySize.height],
+  );
+
   return (
     <div className="w-full max-w-367 mx-auto px-4 sm:px-6">
       {/* ── Section Header ── */}
@@ -1125,10 +1957,105 @@ export function ProductModelWorkspace({
             isOpen={isAddModalOpen}
             onClose={() => setIsAddModalOpen(false)}
             onSelectProduct={handleSelectProduct}
+            products={catalogProducts}
+            currentProductId={selectedProduct ? currentProductId : undefined}
+            allowCurrentProduct={modalTitle === "Add Product"}
             title={modalTitle}
           />
         </div>
       </div>
+
+      {placedOverlays.length > 0 && (
+        <motion.section
+          layout={!prefersReducedMotion}
+          transition={{
+            layout: {
+              duration: 0.2,
+              ease: [0.77, 0, 0.175, 1],
+            },
+          }}
+          aria-label="Product layers"
+          className="mb-6 rounded-[16px] border border-[#c3c3c3]/60 bg-white shadow-xs"
+        >
+          <button
+            type="button"
+            onClick={() => setIsLayersPanelOpen((current) => !current)}
+            aria-expanded={isLayersPanelOpen}
+            className="flex w-full items-center justify-between gap-4 p-4 text-left cursor-pointer"
+          >
+            <div className="flex items-center gap-3">
+              <span className="text-base font-medium text-[#0f1422]">
+                Layers ({placedOverlays.length + (selectedProduct ? 1 : 0)})
+              </span>
+              <span className="hidden text-xs text-neutral-500 sm:inline">
+                Select products when they overlap
+              </span>
+            </div>
+            <ChevronDown
+              className="size-5 shrink-0 text-[#0f1422]"
+              style={{
+                transform: isLayersPanelOpen ? "rotate(180deg)" : "rotate(0deg)",
+                transition: prefersReducedMotion
+                  ? undefined
+                  : "transform 200ms cubic-bezier(0.23, 1, 0.32, 1)",
+              }}
+            />
+          </button>
+
+          <AnimatePresence initial={false}>
+            {isLayersPanelOpen && (
+              <motion.div
+                key="layers-content"
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{
+                  height: {
+                    duration: prefersReducedMotion ? 0 : 0.2,
+                    ease: [0.23, 1, 0.32, 1],
+                  },
+                  opacity: {
+                    duration: prefersReducedMotion ? 0.12 : 0.2,
+                    ease: [0.23, 1, 0.32, 1],
+                  },
+                }}
+                className="overflow-hidden"
+              >
+                <div className="flex flex-wrap gap-2 border-t border-neutral-100 px-4 pb-4 pt-3">
+                  {selectedProduct && (
+                    <div className="flex items-center gap-2 rounded-full border border-[#07b6d3] bg-[#e9f9fb] px-3 py-1.5 text-sm text-[#0f1422]">
+                      <span>{overlayName}</span>
+                      <span className="text-xs font-medium text-[#078da4]">Active</span>
+                    </div>
+                  )}
+                  {placedOverlays.map((overlay, index) => (
+                    <div
+                      key={overlay.overlayId}
+                      className="flex items-center overflow-hidden rounded-full border border-neutral-200 bg-neutral-50"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => void handleEditPlacedOverlay(overlay)}
+                        className="px-3 py-1.5 text-sm text-[#0f1422] hover:bg-[#e9f9fb] cursor-pointer"
+                      >
+                        Edit {overlay.productName} {index + 1}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeletePlacedOverlay(overlay.overlayId)}
+                        aria-label={`Remove ${overlay.productName} ${index + 1}`}
+                        className="border-l border-neutral-200 px-2 py-1.5 text-neutral-500 hover:bg-red-50 hover:text-red-700 cursor-pointer"
+                      >
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </motion.section>
+      )}
 
       {/* ── Main Interactive Layout (Canvas + Sidebar) ── */}
       <div className="w-full flex flex-col lg:flex-row gap-8 lg:gap-10 items-start">
@@ -1154,186 +2081,208 @@ export function ProductModelWorkspace({
                 className="w-full h-full object-cover select-none"
               />
 
-              {/* Product Overlay Element on Canvas with Adjustment Tool (Figma 605:4867) */}
+              {placedOverlays.map((overlay) => {
+                const placedSize = getOverlaySizeFromConfiguration(
+                  overlay.configuration,
+                );
+
+                return (
+                  <React.Fragment key={overlay.overlayId}>
+                    <img
+                      src={overlay.flattenedImageDataUrl}
+                      alt={`Placed ${overlay.productName}`}
+                      draggable={false}
+                      className="absolute inset-0 z-10 h-full w-full pointer-events-none select-none"
+                    />
+                    <div className="absolute inset-0 z-[15] flex items-center justify-center pointer-events-none">
+                      <button
+                        type="button"
+                        onClick={() => void handleEditPlacedOverlay(overlay)}
+                        aria-label={`Edit placed ${overlay.productName}`}
+                        title={`Edit ${overlay.productName}`}
+                        className="pointer-events-auto rounded-sm border border-transparent bg-transparent cursor-pointer transition-colors hover:border-[#07b6d3] focus-visible:border-[#07b6d3] focus-visible:outline-none"
+                        style={{
+                          width: placedSize.width,
+                          height: placedSize.height,
+                          transform: `translate(${overlay.configuration.positionX ?? 0}px, ${overlay.configuration.positionY ?? 0}px) rotate(${overlay.configuration.rotateAngle}deg)`,
+                        }}
+                      />
+                    </div>
+                  </React.Fragment>
+                );
+              })}
+
+              {/* SVG Grain Filter Definition for Live DOM Viewport */}
+              <svg className="absolute w-0 h-0 overflow-hidden pointer-events-none" aria-hidden="true">
+                <defs>
+                  <filter id={GRAIN_FILTER_SVG_ID} x="0%" y="0%" width="100%" height="100%">
+                    <feTurbulence type="fractalNoise" baseFrequency="0.75" numOctaves="3" result="noise" />
+                    <feColorMatrix
+                      type="matrix"
+                      values={`0.33 0.33 0.33 0 0 0.33 0.33 0.33 0 0 0.33 0.33 0.33 0 0 0 0 0 ${((effectiveLighting?.suggested?.grain ?? 0.05) * 1.5).toFixed(3)} 0`}
+                      result="monoNoise"
+                    />
+                    <feBlend in="SourceGraphic" in2="monoNoise" mode="overlay" />
+                  </filter>
+                </defs>
+              </svg>
+
+              {/* Product Overlay Element on Canvas with Adjustment Tool */}
               {selectedProduct && (
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
-                  <motion.div
-                    drag={isEditingProduct && !isUsingTransformHandle}
-                    dragControls={dragControls}
-                    dragListener={false}
-                    dragElastic={0}
-                    dragMomentum={false}
-                    className={[
-                      "pointer-events-auto relative",
-                      !isEditingProduct || isUsingTransformHandle
-                        ? "cursor-default"
-                        : "cursor-grab active:cursor-grabbing",
-                    ].join(" ")}
-                    style={{
-                      width: overlaySize.width,
-                      height: overlaySize.height,
-                    }}
-                  >
-                    <div
-                      className={[
-                        "absolute flex items-center gap-2.5 z-30 select-none animate-in fade-in slide-in-from-bottom-2 duration-200",
-                        isEditingProduct ? "" : "invisible pointer-events-none",
-                      ].join(" ")}
-                      style={toolbarControlsStyle}
-                    >
-                      {/* Rotate Button */}
-                      <button
-                        type="button"
-                        onClick={handleRotate}
-                        className="bg-[#0f1422] hover:bg-black text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
+                <div
+                  data-visualization-layer="active-product"
+                  className="absolute inset-0 pointer-events-none z-20"
+                >
+                  {perspectiveCorners ? (
+                    <>
+                      {/* Perspective-fitted overlay: uses matrix3d to warp into quadrilateral */}
+                      <div
+                        ref={overlayBoxRef}
+                        onPointerDown={isEditingProduct ? startPerspectiveMove : undefined}
+                        className={`absolute pointer-events-auto select-none ${
+                          isEditingProduct ? "cursor-grab active:cursor-grabbing" : "cursor-default"
+                        }`}
+                        style={{
+                          left: 0,
+                          top: 0,
+                          width: overlaySize.width,
+                          height: overlaySize.height,
+                          transformOrigin: "0 0",
+                          transform: homographyToCssMatrix3d(
+                            denormalizeCorners(
+                              perspectiveCorners,
+                              canvasDisplaySize.width,
+                              canvasDisplaySize.height,
+                            ),
+                            overlaySize.width,
+                            overlaySize.height,
+                          ),
+                          transformStyle: "preserve-3d",
+                          WebkitTransformStyle: "preserve-3d",
+                          backfaceVisibility: "visible",
+                          WebkitBackfaceVisibility: "visible",
+                        }}
                       >
-                        <RotateCw className="w-4 h-4 text-white" />
-                        <span className="text-[13px] font-normal tracking-[-0.266px]">Rotate</span>
-                      </button>
-
-                      {/* Flip Button */}
-                      <button
-                        type="button"
-                        onClick={handleFlip}
-                        className="bg-[#0f1422] hover:bg-black text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
-                      >
-                        <FlipHorizontal className="w-4 h-4 text-white" />
-                        <span className="text-[13px] font-normal tracking-[-0.266px]">Flip</span>
-                      </button>
-
-                      {/* Reset Button */}
-                      <button
-                        type="button"
-                        onClick={handleReset}
-                        className="bg-[#0f1422] hover:bg-black text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
-                      >
-                        <RotateCcw className="w-4 h-4 text-white" />
-                        <span className="text-[13px] font-normal tracking-[-0.266px]">Reset</span>
-                      </button>
-
-                      {/* Remove Button */}
-                      <button
-                        type="button"
-                        onClick={handleRemove}
-                        className="bg-[#c50000] hover:bg-[#a30000] text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
-                      >
-                        <Trash2 className="w-4 h-4 text-white" />
-                        <span className="text-[13px] font-normal tracking-[-0.266px]">Remove</span>
-                      </button>
-                    </div>
-
-                    {/* Model render frame; controls sit on the measured model outline. */}
-                    <div
-                      ref={overlayBoxRef}
-                      onPointerDown={isEditingProduct ? startOverlayDrag : undefined}
-                      className={[
-                        "relative group select-none",
-                        isEditingProduct
-                          ? "cursor-grab active:cursor-grabbing"
-                          : "cursor-default",
-                      ].join(" ")}
-                      style={{
-                        width: overlaySize.width,
-                        height: overlaySize.height,
-                        transform: `rotate(${rotateAngle}deg)`,
-                        transformOrigin: "center center",
-                      }}
-                    >
-                      {/* Inner Product Image */}
-                      <div className="w-full h-full overflow-visible select-none pointer-events-none">
-                        {structuralDefinition ? (
-                          <div
-                            className="h-full w-full transition-transform duration-300"
-                            style={{
-                              transform: isFlipped ? "scaleX(-1)" : undefined,
-                              ...modelEffectStyle,
-                            }}
-                          >
-                            <canvas
-                              ref={mvpCanvasRef}
-                              className="w-full h-full object-fill"
-                              width={renderFrameSize.width}
-                              height={renderFrameSize.height}
+                        {/* Inner Product Image */}
+                        <div className="w-full h-full overflow-visible select-none pointer-events-none">
+                          {structuralDefinition ? (
+                            <div
+                              className="h-full w-full transition-transform duration-300"
+                              style={{
+                                transform: isFlipped ? "scaleX(-1)" : undefined,
+                                ...modelEffectStyle,
+                              }}
+                            >
+                              <canvas
+                                ref={handleCanvasMount}
+                                className="w-full h-full object-fill"
+                                width={renderFrameSize.width}
+                                height={renderFrameSize.height}
+                              />
+                            </div>
+                          ) : (
+                            <img
+                              src={productOverlayImage}
+                              alt="Selected Product Overlay"
+                              draggable={false}
+                              className="w-full h-full object-cover transition-transform duration-300 select-none pointer-events-none"
+                              style={{
+                                transform: isFlipped ? "scaleX(-1)" : undefined,
+                                ...modelEffectStyle,
+                              }}
                             />
-                          </div>
-                        ) : (
-                          <img
-                            src={productOverlayImage}
-                            alt="Selected Product Overlay"
-                            draggable={false}
-                            className="w-full h-full object-cover transition-transform duration-300 select-none pointer-events-none"
-                            style={{
-                              transform: isFlipped ? "scaleX(-1)" : undefined,
-                              ...modelEffectStyle,
-                            }}
-                          />
-                        )}
-                      </div>
-
-                      {isEditingProduct && (
-                        <div
-                          ref={outlineControlsRef}
-                          className="absolute pointer-events-none"
-                          style={outlineControlsStyle}
-                        >
-                          {/* Rotation handles attached to the outlined model layer. */}
-                          <button
-                            type="button"
-                            aria-label="Rotate from top left"
-                            onPointerDown={startRotation}
-                            className="absolute -top-10 -left-10 z-30 flex size-7 items-center justify-center rounded-full border border-[#07b6d3] bg-white text-[#0f1422] shadow-md hover:bg-[#e9f9fb] cursor-grab active:cursor-grabbing pointer-events-auto"
-                          >
-                            <RotateCw className="size-4" />
-                          </button>
-                          <button
-                            type="button"
-                            aria-label="Rotate from top right"
-                            onPointerDown={startRotation}
-                            className="absolute -top-10 -right-10 z-30 flex size-7 items-center justify-center rounded-full border border-[#07b6d3] bg-white text-[#0f1422] shadow-md hover:bg-[#e9f9fb] cursor-grab active:cursor-grabbing pointer-events-auto"
-                          >
-                            <RotateCw className="size-4" />
-                          </button>
-                          <button
-                            type="button"
-                            aria-label="Rotate from bottom left"
-                            onPointerDown={startRotation}
-                            className="absolute -bottom-10 -left-10 z-30 flex size-7 items-center justify-center rounded-full border border-[#07b6d3] bg-white text-[#0f1422] shadow-md hover:bg-[#e9f9fb] cursor-grab active:cursor-grabbing pointer-events-auto"
-                          >
-                            <RotateCw className="size-4" />
-                          </button>
-                          <button
-                            type="button"
-                            aria-label="Rotate from bottom right"
-                            onPointerDown={startRotation}
-                            className="absolute -bottom-10 -right-10 z-30 flex size-7 items-center justify-center rounded-full border border-[#07b6d3] bg-white text-[#0f1422] shadow-md hover:bg-[#e9f9fb] cursor-grab active:cursor-grabbing pointer-events-auto"
-                          >
-                            <RotateCw className="size-4" />
-                          </button>
-
-                          {/* Corner handles scale the scene, matching the MVP scene-size control. */}
-                          <div onPointerDown={(event) => startResize(event, "scale", -1, -1)} className="absolute top-0 left-0 -translate-x-1/2 -translate-y-1/2 size-4 rounded-[2px] bg-white border border-[#06e5ff] shadow-md z-40 cursor-nwse-resize pointer-events-auto" />
-                          <div onPointerDown={(event) => startResize(event, "scale", 1, -1)} className="absolute top-0 right-0 translate-x-1/2 -translate-y-1/2 size-4 rounded-[2px] bg-white border border-[#06e5ff] shadow-md z-40 cursor-nesw-resize pointer-events-auto" />
-                          <div onPointerDown={(event) => startResize(event, "scale", -1, 1)} className="absolute bottom-0 left-0 -translate-x-1/2 translate-y-1/2 size-4 rounded-[2px] bg-white border border-[#06e5ff] shadow-md z-40 cursor-nesw-resize pointer-events-auto" />
-                          <div onPointerDown={(event) => startResize(event, "scale", 1, 1)} className="absolute bottom-0 right-0 translate-x-1/2 translate-y-1/2 size-4 rounded-[2px] bg-white border border-[#06e5ff] shadow-md z-40 cursor-nwse-resize pointer-events-auto" />
-
-                          {/* Edge handles adjust structural width/height. */}
-                          <div onPointerDown={(event) => startResize(event, "height", 0, -1)} className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 size-3 bg-[#07b6d3] rounded-full shadow-md z-20 cursor-ns-resize pointer-events-auto" />
-                          <div onPointerDown={(event) => startResize(event, "height", 0, 1)} className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 size-3 bg-[#07b6d3] rounded-full shadow-md z-20 cursor-ns-resize pointer-events-auto" />
-                          <div onPointerDown={(event) => startResize(event, "width", -1, 0)} className="absolute left-0 top-1/2 -translate-x-1/2 -translate-y-1/2 size-3 bg-[#07b6d3] rounded-full shadow-md z-20 cursor-ew-resize pointer-events-auto" />
-                          <div onPointerDown={(event) => startResize(event, "width", 1, 0)} className="absolute right-0 top-1/2 translate-x-1/2 -translate-y-1/2 size-3 bg-[#07b6d3] rounded-full shadow-md z-20 cursor-ew-resize pointer-events-auto" />
-
-                          {/* Center Movement Handle Badge */}
-                          <div onPointerDown={startOverlayDrag} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 size-6 rounded-full bg-[#07b6d3] flex items-center justify-center shadow-md cursor-grab active:cursor-grabbing z-20 pointer-events-auto">
-                            <div className="size-2 bg-white rounded-full" />
-                          </div>
+                          )}
                         </div>
-                      )}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                      <motion.div
+                        key={productInstanceRevision}
+                        drag={isEditingProduct && !isUsingTransformHandle}
+                        dragControls={dragControls}
+                        dragListener={false}
+                        dragElastic={0}
+                        dragMomentum={false}
+                        onDragEnd={() => {
+                          setOverlayPosition({
+                            x: overlayX.get(),
+                            y: overlayY.get(),
+                          });
+                        }}
+                        className={[
+                          "pointer-events-auto relative",
+                          !isEditingProduct || isUsingTransformHandle
+                            ? "cursor-default"
+                            : "cursor-grab active:cursor-grabbing",
+                        ].join(" ")}
+                        style={{
+                          width: overlaySize.width,
+                          height: overlaySize.height,
+                          x: overlayX,
+                          y: overlayY,
+                        }}
+                      >
+                        {/* Model render frame; controls sit on the measured model outline. */}
+                        <div
+                          ref={overlayBoxRef}
+                          onPointerDown={isEditingProduct ? startOverlayDrag : undefined}
+                          className={[
+                            "relative group select-none",
+                            isEditingProduct
+                              ? "cursor-grab active:cursor-grabbing"
+                              : "cursor-default",
+                          ].join(" ")}
+                          style={{
+                            width: overlaySize.width,
+                            height: overlaySize.height,
+                            transform: `rotate(${rotateAngle}deg)`,
+                            transformOrigin: "center center",
+                          }}
+                        >
+                          {/* Inner Product Image */}
+                          <div className="w-full h-full overflow-visible select-none pointer-events-none">
+                            {structuralDefinition ? (
+                              <div
+                                className="h-full w-full transition-transform duration-300"
+                                style={{
+                                  transform: isFlipped ? "scaleX(-1)" : undefined,
+                                  ...modelEffectStyle,
+                                }}
+                              >
+                                <canvas
+                                  ref={handleCanvasMount}
+                                  className="w-full h-full object-fill"
+                                  width={renderFrameSize.width}
+                                  height={renderFrameSize.height}
+                                />
+                              </div>
+                            ) : (
+                              <img
+                                src={productOverlayImage}
+                                alt="Selected Product Overlay"
+                                draggable={false}
+                                className="w-full h-full object-cover transition-transform duration-300 select-none pointer-events-none"
+                                style={{
+                                  transform: isFlipped ? "scaleX(-1)" : undefined,
+                                  ...modelEffectStyle,
+                                }}
+                              />
+                            )}
+                          </div>
+
+                        </div>
+                      </motion.div>
                     </div>
-                  </motion.div>
+                  )}
                 </div>
               )}
-              {selectedProduct && activeOcclusionObjects.length > 0 && (
-                <div className="absolute inset-0 pointer-events-none z-30">
+              {selectedProduct &&
+                (activeOcclusionObjects.length > 0 || manualMaskDataUrl) && (
+                <div
+                  data-visualization-layer="foreground-occlusion"
+                  className="absolute inset-0 pointer-events-none z-30"
+                >
                   {activeOcclusionObjects.map((object) => (
                     <img
                       key={object.id}
@@ -1353,6 +2302,233 @@ export function ProductModelWorkspace({
                       }}
                     />
                   ))}
+                  {manualMaskDataUrl && (
+                    <img
+                      src={bgImage}
+                      alt=""
+                      aria-hidden="true"
+                      className="absolute inset-0 h-full w-full object-contain select-none"
+                      style={{
+                        WebkitMaskImage: `url(${manualMaskDataUrl})`,
+                        maskImage: `url(${manualMaskDataUrl})`,
+                        WebkitMaskPosition: "center",
+                        maskPosition: "center",
+                        WebkitMaskRepeat: "no-repeat",
+                        maskRepeat: "no-repeat",
+                        WebkitMaskSize: "100% 100%",
+                        maskSize: "100% 100%",
+                      }}
+                    />
+                  )}
+                </div>
+              )}
+              {selectedProduct && isEditingProduct && (
+                <div
+                  data-visualization-layer="product-controls"
+                  className="absolute inset-0 z-40 pointer-events-none"
+                >
+                  {perspectiveCorners ? (
+                    <>
+                      {perspectiveToolbarPosition && (
+                        <div
+                          className="absolute flex items-center gap-2.5 select-none animate-in fade-in slide-in-from-bottom-2 duration-200 pointer-events-auto"
+                          style={{
+                            left: perspectiveToolbarPosition.left,
+                            top: perspectiveToolbarPosition.top,
+                            transform: "translateX(-50%)",
+                          }}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => setShowPerspectivePicker(true)}
+                            className="bg-[#0f1422] hover:bg-black text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
+                          >
+                            <Maximize className="w-4 h-4 text-white" />
+                            <span className="text-[13px] font-normal tracking-[-0.266px]">Edit Corners</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPerspectiveCorners(null);
+                              setModelRevision((prev) => prev + 1);
+                            }}
+                            className="bg-[#0f1422] hover:bg-black text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
+                          >
+                            <Move className="w-4 h-4 text-white" />
+                            <span className="text-[13px] font-normal tracking-[-0.266px]">Free Place</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleFlip}
+                            className="bg-[#0f1422] hover:bg-black text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
+                          >
+                            <FlipHorizontal className="w-4 h-4 text-white" />
+                            <span className="text-[13px] font-normal tracking-[-0.266px]">Flip</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleReset}
+                            className="bg-[#0f1422] hover:bg-black text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
+                          >
+                            <RotateCcw className="w-4 h-4 text-white" />
+                            <span className="text-[13px] font-normal tracking-[-0.266px]">Reset</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleRemove}
+                            className="bg-[#c50000] hover:bg-[#a30000] text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
+                          >
+                            <Trash2 className="w-4 h-4 text-white" />
+                            <span className="text-[13px] font-normal tracking-[-0.266px]">Remove</span>
+                          </button>
+                        </div>
+                      )}
+
+                      {/* 9 Perspective Quadrilateral Transform Handles (Picture 2 Parity) */}
+                      {perspectiveHandlePoints && (
+                        <>
+                          {/* 4 Corner Scale Handles */}
+                          {perspectiveHandlePoints.corners.map((c) => (
+                            <div
+                              key={c.id}
+                              onPointerDown={(e) => startPerspectiveResize(e, "scale", c.signX, c.signY)}
+                              className={`absolute size-4 rounded-[2px] bg-white border border-[#06e5ff] shadow-md z-40 ${c.cursor} pointer-events-auto`}
+                              style={{
+                                left: c.x,
+                                top: c.y,
+                                transform: "translate(-50%, -50%)",
+                              }}
+                              title="Drag corner to scale"
+                            />
+                          ))}
+
+                          {/* 4 Edge Midpoint Handles */}
+                          {perspectiveHandlePoints.edges.map((e) => (
+                            <div
+                              key={e.id}
+                              onPointerDown={(evt) => startPerspectiveResize(evt, e.mode, e.signX, e.signY)}
+                              className={`absolute size-3 bg-[#07b6d3] rounded-full shadow-md z-20 ${e.cursor} pointer-events-auto`}
+                              style={{
+                                left: e.x,
+                                top: e.y,
+                                transform: "translate(-50%, -50%)",
+                              }}
+                              title={e.mode === "width" ? "Drag to resize width" : "Drag to resize length/height"}
+                            />
+                          ))}
+
+                          {/* 1 Center Move Handle */}
+                          <div
+                            onPointerDown={startPerspectiveMove}
+                            className="absolute size-6 rounded-full bg-[#07b6d3] flex items-center justify-center shadow-md cursor-grab active:cursor-grabbing z-20 pointer-events-auto"
+                            style={{
+                              left: perspectiveHandlePoints.center.x,
+                              top: perspectiveHandlePoints.center.y,
+                              transform: "translate(-50%, -50%)",
+                            }}
+                            title="Drag to move"
+                          >
+                            <div className="size-2 bg-white rounded-full" />
+                          </div>
+                        </>
+                      )}
+                    </>
+                  ) : (
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                      <motion.div
+                        style={{
+                          width: overlaySize.width,
+                          height: overlaySize.height,
+                          x: overlayX,
+                          y: overlayY,
+                        }}
+                        className="relative pointer-events-none"
+                      >
+                        <div
+                          className="absolute flex items-center gap-2.5 select-none animate-in fade-in slide-in-from-bottom-2 duration-200 pointer-events-auto"
+                          style={toolbarControlsStyle}
+                        >
+                          {isWindowProduct && (
+                            <button
+                              type="button"
+                              onClick={() => setShowPerspectivePicker(true)}
+                              className="bg-[#07b6d3] hover:bg-[#069bb5] text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
+                            >
+                              <Maximize className="w-4 h-4 text-white" />
+                              <span className="text-[13px] font-normal tracking-[-0.266px]">Fit to Opening</span>
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={handleRotate}
+                            className="bg-[#0f1422] hover:bg-black text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
+                          >
+                            <RotateCw className="w-4 h-4 text-white" />
+                            <span className="text-[13px] font-normal tracking-[-0.266px]">Rotate</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleFlip}
+                            className="bg-[#0f1422] hover:bg-black text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
+                          >
+                            <FlipHorizontal className="w-4 h-4 text-white" />
+                            <span className="text-[13px] font-normal tracking-[-0.266px]">Flip</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleReset}
+                            className="bg-[#0f1422] hover:bg-black text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
+                          >
+                            <RotateCcw className="w-4 h-4 text-white" />
+                            <span className="text-[13px] font-normal tracking-[-0.266px]">Reset</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleRemove}
+                            className="bg-[#c50000] hover:bg-[#a30000] text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
+                          >
+                            <Trash2 className="w-4 h-4 text-white" />
+                            <span className="text-[13px] font-normal tracking-[-0.266px]">Remove</span>
+                          </button>
+                        </div>
+
+                        <div
+                          className="relative pointer-events-none"
+                          style={{
+                            width: overlaySize.width,
+                            height: overlaySize.height,
+                            transform: `rotate(${rotateAngle}deg)`,
+                            transformOrigin: "center center",
+                          }}
+                        >
+                          <div
+                            ref={outlineControlsRef}
+                            className="absolute pointer-events-none"
+                            style={outlineControlsStyle}
+                          >
+                            <button type="button" aria-label="Rotate from top left" onPointerDown={startRotation} className="absolute -top-10 -left-10 z-30 flex size-7 items-center justify-center rounded-full border border-[#07b6d3] bg-white text-[#0f1422] shadow-md hover:bg-[#e9f9fb] cursor-grab active:cursor-grabbing pointer-events-auto"><RotateCw className="size-4" /></button>
+                            <button type="button" aria-label="Rotate from top right" onPointerDown={startRotation} className="absolute -top-10 -right-10 z-30 flex size-7 items-center justify-center rounded-full border border-[#07b6d3] bg-white text-[#0f1422] shadow-md hover:bg-[#e9f9fb] cursor-grab active:cursor-grabbing pointer-events-auto"><RotateCw className="size-4" /></button>
+                            <button type="button" aria-label="Rotate from bottom left" onPointerDown={startRotation} className="absolute -bottom-10 -left-10 z-30 flex size-7 items-center justify-center rounded-full border border-[#07b6d3] bg-white text-[#0f1422] shadow-md hover:bg-[#e9f9fb] cursor-grab active:cursor-grabbing pointer-events-auto"><RotateCw className="size-4" /></button>
+                            <button type="button" aria-label="Rotate from bottom right" onPointerDown={startRotation} className="absolute -bottom-10 -right-10 z-30 flex size-7 items-center justify-center rounded-full border border-[#07b6d3] bg-white text-[#0f1422] shadow-md hover:bg-[#e9f9fb] cursor-grab active:cursor-grabbing pointer-events-auto"><RotateCw className="size-4" /></button>
+
+                            <div onPointerDown={(event) => startResize(event, "scale", -1, -1)} className="absolute top-0 left-0 -translate-x-1/2 -translate-y-1/2 size-4 rounded-[2px] bg-white border border-[#06e5ff] shadow-md z-40 cursor-nwse-resize pointer-events-auto" />
+                            <div onPointerDown={(event) => startResize(event, "scale", 1, -1)} className="absolute top-0 right-0 translate-x-1/2 -translate-y-1/2 size-4 rounded-[2px] bg-white border border-[#06e5ff] shadow-md z-40 cursor-nesw-resize pointer-events-auto" />
+                            <div onPointerDown={(event) => startResize(event, "scale", -1, 1)} className="absolute bottom-0 left-0 -translate-x-1/2 translate-y-1/2 size-4 rounded-[2px] bg-white border border-[#06e5ff] shadow-md z-40 cursor-nesw-resize pointer-events-auto" />
+                            <div onPointerDown={(event) => startResize(event, "scale", 1, 1)} className="absolute bottom-0 right-0 translate-x-1/2 translate-y-1/2 size-4 rounded-[2px] bg-white border border-[#06e5ff] shadow-md z-40 cursor-nwse-resize pointer-events-auto" />
+
+                            <div onPointerDown={(event) => startResize(event, "height", 0, -1)} className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 size-3 bg-[#07b6d3] rounded-full shadow-md z-20 cursor-ns-resize pointer-events-auto" />
+                            <div onPointerDown={(event) => startResize(event, "height", 0, 1)} className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 size-3 bg-[#07b6d3] rounded-full shadow-md z-20 cursor-ns-resize pointer-events-auto" />
+                            <div onPointerDown={(event) => startResize(event, "width", -1, 0)} className="absolute left-0 top-1/2 -translate-x-1/2 -translate-y-1/2 size-3 bg-[#07b6d3] rounded-full shadow-md z-20 cursor-ew-resize pointer-events-auto" />
+                            <div onPointerDown={(event) => startResize(event, "width", 1, 0)} className="absolute right-0 top-1/2 translate-x-1/2 -translate-y-1/2 size-3 bg-[#07b6d3] rounded-full shadow-md z-20 cursor-ew-resize pointer-events-auto" />
+
+                            <div onPointerDown={startOverlayDrag} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 size-6 rounded-full bg-[#07b6d3] flex items-center justify-center shadow-md cursor-grab active:cursor-grabbing z-20 pointer-events-auto">
+                              <div className="size-2 bg-white rounded-full" />
+                            </div>
+                          </div>
+                        </div>
+                      </motion.div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1360,13 +2536,19 @@ export function ProductModelWorkspace({
 
           {/* Action Instructions Bar */}
           <div className="bg-[#f5f5f5] rounded-[20px] px-5 py-3 flex flex-wrap justify-center items-center gap-2 sm:gap-3 text-sm sm:text-base md:text-lg text-[#0f1422] font-normal tracking-[-0.38px] text-center select-none">
-            <span>Click the Product</span>
-            <span className="text-[#c3c3c3]">/</span>
-            <span>Drag to Move</span>
-            <span className="text-[#c3c3c3]">/</span>
-            <span>Corner Handles the Resize</span>
-            <span className="text-[#c3c3c3]">/</span>
-            <span>Tap Circle Rotate</span>
+            {selectedProduct ? (
+              <>
+                <span>Click the Product</span>
+                <span className="text-[#c3c3c3]">/</span>
+                <span>Drag to Move</span>
+                <span className="text-[#c3c3c3]">/</span>
+                <span>Corner Handles the Resize</span>
+                <span className="text-[#c3c3c3]">/</span>
+                <span>Tap Circle Rotate</span>
+              </>
+            ) : (
+              <span>Choose Add Product or Change Product to place a model.</span>
+            )}
           </div>
 
           {/* Footnote text */}
@@ -1379,7 +2561,9 @@ export function ProductModelWorkspace({
         <div className="w-full lg:w-[422px] shrink-0 flex flex-col gap-6 items-end">
           {/* Status Badge */}
           <div className="bg-white rounded-[20px] px-4 py-2 text-black text-sm font-normal tracking-[-0.266px] shadow-xs border border-neutral-100">
-            {structuralDefinition ? structuralDefinition.product.productName : "1 product on Canvas"}
+            {selectedProduct
+              ? structuralDefinition?.product.productName ?? "1 product on Canvas"
+              : "No product selected"}
           </div>
           {productBuildError && (
             <p className="w-full rounded-[10px] border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
@@ -1387,26 +2571,25 @@ export function ProductModelWorkspace({
             </p>
           )}
 
+          {selectedProduct ? (
+            <>
           {/* Price Card */}
           <div className="bg-grad-light rounded-[20px] p-6 sm:p-7 flex flex-col gap-2.5 w-full text-white shadow-md">
             <div className="flex items-center justify-between">
               <span className="text-xl sm:text-2xl font-normal text-white/90 tracking-[-0.456px]">
-                Price:
+                {displayPriceData.title}
               </span>
-              {quantity > 1 && (
+              {displayPriceData.badgeText && (
                 <span className="text-xs font-medium bg-white/20 px-2.5 py-1 rounded-full text-white">
-                  Qty: {quantity}
+                  {displayPriceData.badgeText}
                 </span>
               )}
             </div>
             <span className="text-3xl sm:text-4xl font-medium tracking-[-0.608px] text-white">
-              {formattedPrice}
+              {displayPriceData.formattedPrice}
             </span>
             <div className="flex flex-col gap-0.5 text-xs font-normal text-white/80 tracking-[-0.228px]">
-              {quantity > 1 && (
-                <span>{formattedUnitPrice} each</span>
-              )}
-              <span>excl. install, final after consultation, etc</span>
+              <span>{displayPriceData.subtext}</span>
             </div>
           </div>
 
@@ -1804,31 +2987,79 @@ export function ProductModelWorkspace({
                     className="overflow-hidden"
                   >
                     <div className="px-6 pb-6 flex flex-col gap-3">
-                      {occlusions.map((item) => (
-                        <div
-                          key={item.id}
-                          onClick={() => toggleOcclusion(item.id)}
-                          className="bg-white rounded-[20px] p-5 flex justify-between items-center shadow-xs cursor-pointer hover:border-neutral-200 border border-transparent transition-colors"
-                        >
-                          <div className="flex flex-col gap-1">
-                            <span className="text-[#0f1422] text-[18px] font-medium tracking-[-0.342px]">
-                              {item.label}
-                            </span>
-                            <span className="text-[#c3c3c3] text-xs font-normal">
-                              Confidence: {item.confidence}
-                            </span>
-                            <span className="text-[#0f1422] text-sm font-normal">
-                              Put Product Behind
-                            </span>
-                          </div>
+                      {occlusions.length > 0 ? (
+                        occlusions.map((item) => (
                           <div
-                            className={`size-3.5 rounded-[2px] border transition-colors ${item.active
-                              ? "bg-[#0f1422] border-[#0f1422]"
-                              : "bg-[#c3c3c3] border-transparent"
-                              }`}
-                          />
+                            key={item.id}
+                            onClick={() => toggleOcclusion(item.id)}
+                            className="bg-white rounded-[20px] p-5 flex justify-between items-center shadow-xs cursor-pointer hover:border-neutral-200 border border-transparent transition-colors"
+                          >
+                            <div className="flex flex-col gap-1">
+                              <span className="text-[#0f1422] text-[18px] font-medium tracking-[-0.342px]">
+                                {item.label}
+                              </span>
+                              <span className="text-[#c3c3c3] text-xs font-normal">
+                                Confidence: {item.confidence}
+                              </span>
+                              <span className="text-[#0f1422] text-sm font-normal">
+                                Put Product Behind
+                              </span>
+                            </div>
+                            <div
+                              className={`size-3.5 rounded-[2px] border transition-colors ${item.active
+                                ? "bg-[#0f1422] border-[#0f1422]"
+                                : "bg-[#c3c3c3] border-transparent"
+                                }`}
+                            />
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-xs text-neutral-500 py-1">
+                          No auto-detected foreground objects in this photo.
+                        </p>
+                      )}
+
+                      {/* Manual Occlusion Mask Subsection */}
+                      <div className="mt-2 pt-3 border-t border-neutral-200/60 flex flex-col gap-2.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-semibold uppercase tracking-wider text-neutral-500">
+                            Manual Occlusion Mask
+                          </span>
+                          {manualMaskDataUrl && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setManualMaskDataUrl(null);
+                                setManualOcclusionPolygons([]);
+                              }}
+                              className="text-xs font-medium text-red-500 hover:text-red-700 transition-colors cursor-pointer"
+                            >
+                              Remove Mask
+                            </button>
+                          )}
                         </div>
-                      ))}
+                        <p className="text-xs text-neutral-500 leading-relaxed">
+                          Outline protruding wall columns, piers, or beams that should appear in front of the product.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setShowOcclusionPointPicker(true);
+                          }}
+                          className="w-full flex items-center justify-center gap-2 bg-[#0f1422] hover:bg-black text-white text-sm font-medium py-3 px-4 rounded-[20px] transition-colors cursor-pointer shadow-xs"
+                        >
+                          <MousePointer2 className="size-4 text-[#07b6d3]" />
+                          <span>
+                            {manualMaskDataUrl
+                              ? manualOcclusionPolygons.length > 0
+                                ? "Edit Occlusion Areas"
+                                : "Replace Legacy Mask"
+                              : "Select Occlusion Areas"}
+                          </span>
+                        </button>
+                      </div>
                     </div>
                   </motion.div>
                 )}
@@ -1849,6 +3080,15 @@ export function ProductModelWorkspace({
                 ? "Edit"
                 : "Apply Changes"}
           </button>
+            </>
+          ) : (
+            <div className="w-full rounded-[20px] border border-[#c3c3c3]/60 bg-white p-6 text-center shadow-xs">
+              <p className="text-lg font-medium text-[#0f1422]">Your space is ready</p>
+              <p className="mt-2 text-sm leading-6 text-black/65">
+                Select Add Product or Change Product above to choose from the GlassFit catalog.
+              </p>
+            </div>
+          )}
         </div>
       </div>
 
@@ -1867,7 +3107,7 @@ export function ProductModelWorkspace({
         <div className="w-full sm:w-auto flex flex-col sm:flex-row items-center gap-3 sm:gap-5">
           <button
             type="button"
-            disabled={isCapturingSnapshot}
+            disabled={isCapturingSnapshot || !selectedProduct}
             onClick={handleSaveSnapshot}
             className="w-full sm:w-auto bg-transparent border border-[#0f1422] hover:bg-neutral-100 text-[#0f1422] font-normal text-base sm:text-[20px] tracking-[-0.38px] leading-[1.4] px-6 py-3.5 rounded-[25px] transition-colors cursor-pointer text-center"
           >
@@ -1875,7 +3115,7 @@ export function ProductModelWorkspace({
           </button>
           <Button
             type="button"
-            disabled={isCapturingSnapshot}
+            disabled={isCapturingSnapshot || !selectedProduct}
             onClick={handleContinueToComparison}
             variant="lightGradWhiteText"
             value="Continue to Comparison"
@@ -1901,6 +3141,76 @@ export function ProductModelWorkspace({
         onAcknowledgeAndProceed={handleAcknowledgeAndProceed}
         onClose={() => setIsGuardrailModalOpen(false)}
       />
+
+      {/* Point-based Manual Occlusion Modal (MS-03) */}
+      {showOcclusionPointPicker && (
+        <ManualOcclusionPointPicker
+          backgroundImageUrl={bgImage}
+          canvasWidth={aspectWidth}
+          canvasHeight={aspectHeight}
+          initialPolygons={manualOcclusionPolygons}
+          legacyMaskDataUrl={manualMaskDataUrl}
+          onSave={({ polygons, maskDataUrl }) => {
+            setManualOcclusionPolygons(polygons);
+            setManualMaskDataUrl(maskDataUrl);
+            setShowOcclusionPointPicker(false);
+          }}
+          onCancel={() => setShowOcclusionPointPicker(false)}
+        />
+      )}
+
+      {/* ── Perspective Plane Picker Modal (MS-02) ── */}
+      {showPerspectivePicker && (
+        <PerspectivePlanePicker
+          backgroundImageUrl={bgImage}
+          canvasWidth={aspectWidth}
+          canvasHeight={aspectHeight}
+          initialCorners={perspectiveCorners}
+          onConfirm={(corners) => {
+            const currentDisplayWidth = canvasRef.current?.clientWidth || canvasDisplaySize.width;
+            const currentDisplayHeight = canvasRef.current?.clientHeight || canvasDisplaySize.height;
+            const pxCorners = denormalizeCorners(corners, currentDisplayWidth, currentDisplayHeight);
+            const { widthRatio, heightRatio } = estimateDimensionsFromCorners(pxCorners);
+            if (heightRatio > 0 && widthRatio > 0) {
+              const openingAspect = widthRatio / heightRatio;
+              const currentH = Number(heightCm) || 120;
+              const currentW = Number(widthCm) || 120;
+              let nextW = currentW;
+              let nextH = currentH;
+              if (openingAspect >= 1) {
+                nextW = Math.round(clampNumber(currentH * openingAspect, 50, 400));
+              } else {
+                nextH = Math.round(clampNumber(currentW / openingAspect, 50, 400));
+              }
+              setWidthCm(String(nextW));
+              setHeightCm(String(nextH));
+              setOverlaySize(getOverlaySizeFromDimensions(String(nextW), String(nextH)));
+            }
+
+            const [p0, p1, p2, p3] = pxCorners;
+            const leftH = Math.hypot(p3.x - p0.x, p3.y - p0.y);
+            const rightH = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+            const topW = Math.hypot(p1.x - p0.x, p1.y - p0.y);
+            const bottomW = Math.hypot(p2.x - p3.x, p2.y - p3.y);
+
+            const maxH = Math.max(leftH, rightH, 1);
+            const maxW = Math.max(topW, bottomW, 1);
+            const deltaH = (leftH - rightH) / maxH;
+            const deltaW = (bottomW - topW) / maxW;
+
+            const initialYaw = Math.round(clampNumber(deltaH * 35, -25, 25));
+            const initialPitch = Math.round(clampNumber(deltaW * 25, -20, 20));
+
+            setPerspectiveCorners(corners);
+            setYaw(initialYaw);
+            setPitch(initialPitch);
+            setRotateAngle(0);
+            setModelRevision((prev) => prev + 1);
+            setShowPerspectivePicker(false);
+          }}
+          onCancel={() => setShowPerspectivePicker(false)}
+        />
+      )}
     </div>
   );
 }
@@ -1918,13 +3228,29 @@ function clampNumber(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
-function cloneCanvas(source: HTMLCanvasElement) {
+function cloneCanvas(
+  source: HTMLCanvasElement,
+  options?: {
+    autoRealism?: boolean;
+    autoShadow?: boolean;
+    lighting?: SpaceImageSession["lighting"] | null;
+  },
+) {
   const canvas = document.createElement("canvas");
   canvas.width = source.width;
   canvas.height = source.height;
   const context = canvas.getContext("2d");
   if (context) {
     context.drawImage(source, 0, 0);
+    if (options?.autoRealism && options?.autoShadow && options?.lighting) {
+      applyContactOcclusionAndReveals(context, canvas.width, canvas.height, {
+        lightDirection: options.lighting.light_direction,
+        shadowOpacity: options.lighting.suggested?.shadow_opacity ?? 0.28,
+      });
+    }
+    if (options?.autoRealism && options?.lighting?.suggested?.grain) {
+      applyNoiseToCanvas(context, canvas.width, canvas.height, options.lighting.suggested.grain);
+    }
   }
 
   return canvas;
@@ -1932,8 +3258,8 @@ function cloneCanvas(source: HTMLCanvasElement) {
 
 type SnapshotOcclusionObject = SpaceImageSession["objects"][number];
 
-// Snapshot of the overlay's DOM state captured synchronously — before any async
-// operations — so both canvas and overlay positions come from the same layout frame.
+// Snapshot of the overlay's DOM state captured synchronously: before any async
+// operations: so both canvas and overlay positions come from the same layout frame.
 type OverlayCapture = {
   centerX: number;
   centerY: number;
@@ -1949,25 +3275,30 @@ async function captureWorkspaceSnapshot({
   fallbackProductImageUrl,
   hasGeneratedProduct,
   activeOcclusionObjects,
+  manualMaskDataUrl,
+  perspectiveCorners,
   rotateAngle,
   isFlipped,
   modelFilter,
   generatedCanvasOverride,
-  structuralDefinition,
-  yaw,
-  pitch,
-  lighting,
-  glassAppearance,
-  includeSill,
-  widthCm,
-  heightCm,
+  structuralDefinition: _structuralDefinition,
+  yaw: _yaw,
+  pitch: _pitch,
+  lighting: _lighting,
+  glassAppearance: _glassAppearance,
+  includeSill: _includeSill,
+  widthCm: _widthCm,
+  heightCm: _heightCm,
+  placedLayerImageUrls = [],
 }: {
   canvasElement: HTMLDivElement | null;
   overlayElement: HTMLDivElement | null;
-  backgroundImageUrl: string;
+  backgroundImageUrl: string | null;
   fallbackProductImageUrl: string;
   hasGeneratedProduct: boolean;
   activeOcclusionObjects: SnapshotOcclusionObject[];
+  manualMaskDataUrl?: string | null;
+  perspectiveCorners?: QuadrilateralCorners | null;
   rotateAngle: number;
   isFlipped: boolean;
   modelFilter: React.CSSProperties["filter"];
@@ -1980,21 +3311,22 @@ async function captureWorkspaceSnapshot({
   includeSill: boolean;
   widthCm: number;
   heightCm: number;
+  placedLayerImageUrls?: string[];
 }) {
   if (!canvasElement) {
     throw new Error("Visualization canvas is not ready yet.");
   }
 
-  // ── Read ALL DOM positions synchronously before the first await ──────────
-  // This mirrors the MVP's canvas.toDataURL() approach where the position is
-  // captured at a single instant in time with no async gaps between measurements.
+  // Read ALL DOM positions synchronously before the first await
+  // This mirrors the canvas snapshot approach where position is
+  // captured at a single instant with no async gaps between measurements.
   const canvasBounds = canvasElement.getBoundingClientRect();
 
   let overlayCapture: OverlayCapture | null = null;
   if (overlayElement) {
     const overlayBounds = overlayElement.getBoundingClientRect();
-    // offsetWidth/offsetHeight give the unrotated layout dimensions.
-    // getBoundingClientRect().width/height give the rotated AABB — its center
+    // offsetWidth/offsetHeight give unrotated layout dimensions.
+    // getBoundingClientRect().width/height give the rotated AABB - its center
     // is still the geometric center of the element for any rotation angle.
     const width = overlayElement.offsetWidth || overlayBounds.width;
     const height = overlayElement.offsetHeight || overlayBounds.height;
@@ -2003,12 +3335,12 @@ async function captureWorkspaceSnapshot({
       centerY: overlayBounds.top - canvasBounds.top + overlayBounds.height / 2,
       width,
       height,
-      // querySelector is synchronous — grab the Three.js WebGL canvas now.
+      // querySelector is synchronous - grab the Three.js WebGL canvas now.
       generatedCanvas:
         generatedCanvasOverride ?? overlayElement.querySelector("canvas"),
     };
   }
-  // ── End synchronous DOM capture ──────────────────────────────────────────
+  // End synchronous DOM capture
 
   const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
   const output = document.createElement("canvas");
@@ -2023,20 +3355,33 @@ async function captureWorkspaceSnapshot({
   context.scale(pixelRatio, pixelRatio);
   context.imageSmoothingEnabled = true;
   context.imageSmoothingQuality = "high";
-  context.fillStyle = "#f5f5f5";
-  context.fillRect(0, 0, canvasBounds.width, canvasBounds.height);
+  let backgroundImage: HTMLImageElement | null = null;
+  if (backgroundImageUrl) {
+    context.fillStyle = "#f5f5f5";
+    context.fillRect(0, 0, canvasBounds.width, canvasBounds.height);
 
-  // Draw background using object-contain math to perfectly match the DOM <img>
-  // rendering, even if the container aspect ratio doesn't perfectly match the image.
-  const backgroundImage = await loadSnapshotImage(backgroundImageUrl);
-  drawObjectContainImage(
-    context,
-    backgroundImage,
-    0,
-    0,
-    canvasBounds.width,
-    canvasBounds.height,
-  );
+    // Draw background using object-contain math to perfectly match the DOM <img>
+    // rendering, even if the container aspect ratio doesn't perfectly match the image.
+    backgroundImage = await loadSnapshotImage(backgroundImageUrl);
+    drawObjectContainImage(
+      context,
+      backgroundImage,
+      0,
+      0,
+      canvasBounds.width,
+      canvasBounds.height,
+    );
+  }
+
+  for (const layerImageUrl of placedLayerImageUrls) {
+    if (!layerImageUrl) continue;
+    try {
+      const layerImage = await loadSnapshotImage(layerImageUrl);
+      context.drawImage(layerImage, 0, 0, canvasBounds.width, canvasBounds.height);
+    } catch {
+      // Gracefully continue if an individual layer image is not ready
+    }
+  }
 
   if (overlayCapture) {
     await drawSnapshotOverlay({
@@ -2044,31 +3389,39 @@ async function captureWorkspaceSnapshot({
       overlayCapture,
       fallbackProductImageUrl,
       hasGeneratedProduct,
+      perspectiveCorners,
+      canvasBounds,
       rotateAngle,
       isFlipped,
       modelFilter,
-      structuralDefinition,
-      yaw,
-      pitch,
-      lighting,
-      glassAppearance,
-      includeSill,
-      widthCm,
-      heightCm,
     });
   }
 
-  for (const object of activeOcclusionObjects) {
-    await drawMaskedBackgroundLayer({
-      outputWidth: canvasBounds.width,
-      outputHeight: canvasBounds.height,
-      context,
-      backgroundImage,
-      maskUrl: object.mask_url,
-    });
+  if (backgroundImage) {
+    for (const object of activeOcclusionObjects) {
+      await drawMaskedBackgroundLayer({
+        outputWidth: canvasBounds.width,
+        outputHeight: canvasBounds.height,
+        context,
+        backgroundImage,
+        maskUrl: object.mask_url,
+      });
+    }
+
+    if (manualMaskDataUrl) {
+      await drawMaskedBackgroundLayer({
+        outputWidth: canvasBounds.width,
+        outputHeight: canvasBounds.height,
+        context,
+        backgroundImage,
+        maskUrl: manualMaskDataUrl,
+      });
+    }
   }
 
-  return output.toDataURL("image/jpeg", 0.92);
+  return backgroundImageUrl
+    ? output.toDataURL("image/jpeg", 0.92)
+    : output.toDataURL("image/png");
 }
 
 async function drawSnapshotOverlay({
@@ -2076,42 +3429,72 @@ async function drawSnapshotOverlay({
   overlayCapture,
   fallbackProductImageUrl,
   hasGeneratedProduct,
+  perspectiveCorners,
+  canvasBounds,
   rotateAngle,
   isFlipped,
   modelFilter,
-  structuralDefinition,
-  yaw,
-  pitch,
-  lighting,
-  glassAppearance,
-  includeSill,
-  widthCm,
-  heightCm,
 }: {
   context: CanvasRenderingContext2D;
   // All position data was captured synchronously in captureWorkspaceSnapshot
-  // before any awaits — no new DOM reads happen here.
+  // before any awaits - no new DOM reads happen here.
   overlayCapture: OverlayCapture;
   fallbackProductImageUrl: string;
   hasGeneratedProduct: boolean;
+  perspectiveCorners?: QuadrilateralCorners | null;
+  canvasBounds?: { width: number; height: number };
   rotateAngle: number;
   isFlipped: boolean;
   modelFilter: React.CSSProperties["filter"];
-  structuralDefinition: ProductStructuralDefinition | null;
-  yaw: number;
-  pitch: number;
-  lighting: LightingAnalysis | null;
-  glassAppearance: GlassAppearanceMode;
-  includeSill: boolean;
-  widthCm: number;
-  heightCm: number;
 }) {
   const { centerX, centerY, width, height, generatedCanvas } = overlayCapture;
 
+  if (perspectiveCorners && canvasBounds) {
+    const pixelCorners = denormalizeCorners(
+      perspectiveCorners,
+      canvasBounds.width,
+      canvasBounds.height,
+    );
+
+    const offscreen = document.createElement("canvas");
+    offscreen.width = Math.max(1, Math.round(width));
+    offscreen.height = Math.max(1, Math.round(height));
+    const offCtx = offscreen.getContext("2d");
+
+    if (offCtx) {
+      offCtx.save();
+      if (isFlipped) {
+        offCtx.translate(offscreen.width, 0);
+        offCtx.scale(-1, 1);
+      }
+      if (typeof modelFilter === "string" && modelFilter.length > 0) {
+        offCtx.filter = modelFilter;
+      }
+
+      if (hasGeneratedProduct && generatedCanvas) {
+        offCtx.drawImage(generatedCanvas, 0, 0, offscreen.width, offscreen.height);
+      } else {
+        const fallbackProductImage = await loadSnapshotImage(fallbackProductImageUrl);
+        drawObjectCoverImage(
+          offCtx,
+          fallbackProductImage,
+          0,
+          0,
+          offscreen.width,
+          offscreen.height,
+        );
+      }
+      offCtx.restore();
+
+      context.save();
+      drawPerspectiveWarpedImage(context, offscreen, pixelCorners);
+      context.restore();
+      return;
+    }
+  }
+
   context.save();
   // Translate to the model's center (canvas-local CSS pixels), then rotate.
-  // This matches the MVP: context.translate(transform.x, transform.y) +
-  // context.rotate(rotation) + drawImage centered at origin.
   context.translate(centerX, centerY);
   context.rotate((rotateAngle * Math.PI) / 180);
 
@@ -2124,7 +3507,7 @@ async function drawSnapshotOverlay({
   }
 
   if (hasGeneratedProduct && generatedCanvas) {
-    // Draw the high-resolution canvas that was generated by the MVP renderer
+    // Draw the high-resolution canvas that was generated by the renderer
     context.drawImage(
       generatedCanvas,
       -width / 2,
@@ -2481,8 +3864,8 @@ function getModelEffectStyle({
       `saturate(${clampNumber(lighting.suggested.saturation, 0.82, 1.18)})`,
     );
 
-    if (lighting.suggested.blur_px > 0) {
-      filters.push(`blur(${clampNumber(lighting.suggested.blur_px, 0, 0.45)}px)`);
+    if (lighting.sharpness < 0.40 && lighting.suggested.blur_px > 0) {
+      filters.push(`blur(${clampNumber(lighting.suggested.blur_px, 0.15, 0.35)}px)`);
     }
   }
 
@@ -2520,8 +3903,8 @@ function getExportModelFilter({
       `saturate(${clampNumber(lighting.suggested.saturation, 0.82, 1.18)})`,
     );
 
-    if (lighting.suggested.blur_px > 0) {
-      filters.push(`blur(${clampNumber(lighting.suggested.blur_px, 0, 0.45)}px)`);
+    if (lighting.sharpness < 0.40 && lighting.suggested.blur_px > 0) {
+      filters.push(`blur(${clampNumber(lighting.suggested.blur_px, 0.15, 0.35)}px)`);
     }
   }
 

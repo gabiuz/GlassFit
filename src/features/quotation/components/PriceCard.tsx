@@ -35,6 +35,8 @@ export type PriceCardProps = {
   imageUrl?: string;
   details?: ProductDetailsData;
   initiallyExpanded?: boolean;
+  itemIndex?: number;
+  totalItems?: number;
 };
 
 const defaultDetails: ProductDetailsData = {
@@ -60,6 +62,8 @@ export function PriceCard({
   imageUrl = "/images/modular_cabinets.png",
   details = defaultDetails,
   initiallyExpanded = false,
+  itemIndex,
+  totalItems,
 }: PriceCardProps) {
   const [isExpanded, setIsExpanded] = useState(initiallyExpanded);
 
@@ -117,9 +121,16 @@ export function PriceCard({
             />
           </div>
           <div className="flex flex-col gap-2 items-start min-w-0">
-            <span className="text-[#c3c3c3] text-sm font-normal tracking-[-0.266px] leading-[1.4] whitespace-nowrap">
-              {productId}
-            </span>
+            <div className="flex items-center gap-2">
+              {itemIndex !== undefined && totalItems !== undefined && totalItems > 1 && (
+                <span className="bg-[#07b6d3]/15 text-[#078da4] text-xs font-semibold px-2.5 py-0.5 rounded-full border border-[#07b6d3]/30">
+                  Item {itemIndex} of {totalItems}
+                </span>
+              )}
+              <span className="text-[#c3c3c3] text-sm font-normal tracking-[-0.266px] leading-[1.4] whitespace-nowrap">
+                {productId}
+              </span>
+            </div>
             <h2 className="text-green text-2xl md:text-3.5xl font-medium tracking-[-0.608px] leading-[1.2] truncate max-w-full">
               {productName}
             </h2>

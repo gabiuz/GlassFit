@@ -7,12 +7,21 @@
 
 import type {
   BOMItemDetail,
+  CalculatedBOMResult,
+  ConsolidatedQuotationSummary,
   FrozenPricingDetails,
+  ItemizedProductQuotation,
   QuotationBOMGroupItem,
   QuotationBOMSummary,
   RawMaterial,
 } from "./types";
-import type { ProductStructuralDefinition } from "@/lib/visualization/types";
+import type { PlacedOverlay, ProductStructuralDefinition } from "@/lib/visualization/types";
+
+export type {
+  CalculatedBOMResult,
+  ConsolidatedQuotationSummary,
+  ItemizedProductQuotation,
+};
 
 export interface ComponentPricingInput {
   componentKey: string;
@@ -37,53 +46,6 @@ export interface CalculateBOMOptions {
   laborRate?: number; // default 0.25 (25%)
   contractorMarginRate?: number; // default 0.25 (25%)
   structuralWaiver?: boolean;
-}
-
-export interface CalculatedBOMResult {
-  // Dimensions
-  widthM: number;
-  heightM: number;
-  panelCount: number;
-  hasSill: boolean;
-  leafWidthM: number;
-  aspectRatio: number; // Height / Leaf Width
-  isCrabbingRisk: boolean; // Ratio > 1.2:1
-  isSpanLimitExceeded: boolean; // 2-panel >= 2400mm
-
-  // Linear / Area Quantities
-  totalLinearMetersFraming: number;
-  glazingAreaSqm: number;
-
-  // Breakdown line items
-  framingItems: BOMItemDetail[];
-  glazingItems: BOMItemDetail[];
-  hardwareItems: BOMItemDetail[];
-  consumableItems: BOMItemDetail[];
-
-  // Subtotals (Pre-scrap / Net)
-  rawFramingSubtotal: number;
-  scrapFramingSubtotal: number;
-  effectiveFramingCost: number;
-
-  rawGlazingSubtotal: number;
-  scrapGlazingSubtotal: number;
-  effectiveGlazingCost: number;
-
-  hardwareSubtotal: number;
-  consumablesSubtotal: number;
-
-  // Materials & Labor Totals
-  directMaterialsSubtotal: number;
-  fabricationLaborCost: number;
-  totalDirectCost: number;
-
-  // Contractor Margin & Final Quotation
-  contractorMargin: number;
-  finalQuotation: number;
-
-  // Snapshot structure
-  frozenDetails: FrozenPricingDetails;
-  bomSummary: QuotationBOMSummary;
 }
 
 export const DEFAULT_AL_SCRAP = 0.12;
@@ -308,6 +270,8 @@ export function calculateParametricBOM(
     heightM: round4(heightM),
     panelCount,
     hasSill,
+    finishType,
+    glassType: glassDesc,
     leafWidthM: round4(leafWidthM),
     aspectRatio: round2(aspectRatio),
     isCrabbingRisk,
@@ -810,4 +774,108 @@ function round2(val: number): number {
 
 function round4(val: number): number {
   return Math.round((val + Number.EPSILON) * 10000) / 10000;
+}
+
+/**
+ * Aggregates multiple product BOM calculations into a unified project summary.
+ * Used by workspace totals, quotation summaries, and consultation PDF documents.
+ */
+export function aggregateMultiProductBOM(
+  items: ItemizedProductQuotation[]
+): ConsolidatedQuotationSummary {
+  let totalQuantity = 0;
+  let totalFramingMeters = 0;
+  let totalFramingCost = 0;
+  let totalGlazingSqm = 0;
+  let totalGlazingCost = 0;
+  let totalHardwareCost = 0;
+  let totalConsumablesCost = 0;
+  let totalDirectMaterialsCost = 0;
+  let totalLaborCost = 0;
+  let totalDirectCost = 0;
+  let totalContractorMargin = 0;
+  let finalGrandTotal = 0;
+
+  for (const item of items) {
+    const qty = Math.max(1, item.quantity);
+    const bom = item.bomResult;
+
+    totalQuantity += qty;
+    totalFramingMeters += bom.totalLinearMetersFraming * qty;
+    totalFramingCost += bom.effectiveFramingCost * qty;
+    totalGlazingSqm += bom.glazingAreaSqm * qty;
+    totalGlazingCost += bom.effectiveGlazingCost * qty;
+    totalHardwareCost += bom.hardwareSubtotal * qty;
+    totalConsumablesCost += bom.consumablesSubtotal * qty;
+    totalDirectMaterialsCost += bom.directMaterialsSubtotal * qty;
+    totalLaborCost += bom.fabricationLaborCost * qty;
+    totalDirectCost += bom.totalDirectCost * qty;
+    totalContractorMargin += bom.contractorMargin * qty;
+    finalGrandTotal += item.totalPrice;
+  }
+
+  return {
+    items,
+    totalQuantity,
+    totalFramingMeters: round2(totalFramingMeters),
+    totalFramingCost: round2(totalFramingCost),
+    totalGlazingSqm: round2(totalGlazingSqm),
+    totalGlazingCost: round2(totalGlazingCost),
+    totalHardwareCost: round2(totalHardwareCost),
+    totalConsumablesCost: round2(totalConsumablesCost),
+    totalDirectMaterialsCost: round2(totalDirectMaterialsCost),
+    totalLaborCost: round2(totalLaborCost),
+    totalDirectCost: round2(totalDirectCost),
+    totalContractorMargin: round2(totalContractorMargin),
+    finalGrandTotal: round2(finalGrandTotal),
+  };
+}
+
+/**
+ * Computes or resolves the pricing metrics for a placed overlay.
+ * Falls back to Series 798 parametric rates if cached values are not present.
+ */
+export function calculateOverlayPricing(overlay: PlacedOverlay): {
+  bomResult: CalculatedBOMResult;
+  unitPrice: number;
+  totalPrice: number;
+} {
+  const quantity = Math.max(1, overlay.configuration.quantity ?? 1);
+
+  if (overlay.bomResult && overlay.unitPrice !== undefined && overlay.totalPrice !== undefined) {
+    return {
+      bomResult: overlay.bomResult,
+      unitPrice: overlay.unitPrice,
+      totalPrice: overlay.totalPrice,
+    };
+  }
+
+  const widthMm = Math.round((Number(overlay.configuration.widthCm) || 120) * 10);
+  const heightMm = Math.round((Number(overlay.configuration.heightCm) || 120) * 10);
+  const panelCount = overlay.configuration.panelCount ?? (widthMm >= 2400 ? 3 : 2);
+  const hasSill = overlay.configuration.includeSill ?? true;
+  const finishType = overlay.configuration.aluminumFinish === "white" ? "PowderCoatedWhite" : "Analok";
+  const glassType = (overlay.configuration.thicknessMm ?? 6) >= 6 && overlay.configuration.glassAppearance === "clear"
+    ? "6mm_clear"
+    : "6mm_bronze";
+  const structuralWaiver = overlay.configuration.structuralWaiver ?? false;
+
+  const bomResult = calculateStandardSeries798({
+    widthMm,
+    heightMm,
+    panelCount,
+    hasSill,
+    finishType,
+    glassType,
+    structuralWaiver,
+  });
+
+  const unitPrice = bomResult.finalQuotation;
+  const totalPrice = unitPrice * quantity;
+
+  return {
+    bomResult,
+    unitPrice,
+    totalPrice,
+  };
 }

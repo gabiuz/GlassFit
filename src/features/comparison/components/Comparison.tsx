@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight, Check } from "lucide-react";
 import Link from "next/link";
@@ -14,9 +14,22 @@ import {
   normalizeAluminumFinish,
   type AluminumFinishKey,
 } from "@/lib/visualization/colorVariations";
+import {
+  getComparisonOverlayFrame,
+  getComparisonLayerImageUrls,
+} from "@/lib/visualization/multiProductPresentation";
+import type {
+  PlacedOverlay,
+  ProductVariationSnapshot,
+} from "@/lib/visualization/types";
 
 const BEFORE_IMAGE = "/comparison_assets/room_without_furniture.png";
 const AFTER_IMAGE = "/comparison_assets/room_with_furniture.png";
+
+type ProductVariantSelection = {
+  left: AluminumFinishKey;
+  right: AluminumFinishKey;
+};
 
 type ToggleSwitchProps = {
   value: "left" | "right";
@@ -96,6 +109,113 @@ function AfterState({ src }: { src: string }) {
   );
 }
 
+function ProductVariantScene({
+  backgroundImage,
+  finish,
+  overlays,
+  selectedOverlayId,
+  onSelectOverlay,
+  interactive = true,
+}: {
+  backgroundImage: string;
+  finish: AluminumFinishKey;
+  overlays: PlacedOverlay[];
+  selectedOverlayId: string;
+  onSelectOverlay: (overlayId: string) => void;
+  interactive?: boolean;
+}) {
+  const sceneRef = useRef<HTMLDivElement>(null);
+  const [sceneSize, setSceneSize] = useState({ width: 0, height: 0 });
+  const layerImageUrls = getComparisonLayerImageUrls(
+    overlays,
+    selectedOverlayId,
+    finish,
+  );
+  const sourceWidth = overlays[0]?.sourceCanvasWidth ?? 1;
+  const sourceHeight = overlays[0]?.sourceCanvasHeight ?? 1;
+
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+
+    const updateSize = () => {
+      const bounds = scene.getBoundingClientRect();
+      setSceneSize({ width: bounds.width, height: bounds.height });
+    };
+    updateSize();
+
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(scene);
+    return () => observer.disconnect();
+  }, []);
+
+  const sourceAspectRatio = sourceWidth / sourceHeight;
+  const sceneAspectRatio = sceneSize.width / Math.max(sceneSize.height, 1);
+  const renderedWidth = sceneAspectRatio > sourceAspectRatio
+    ? sceneSize.height * sourceAspectRatio
+    : sceneSize.width;
+  const renderedHeight = sceneAspectRatio > sourceAspectRatio
+    ? sceneSize.height
+    : sceneSize.width / sourceAspectRatio;
+  const offsetX = (sceneSize.width - renderedWidth) / 2;
+  const offsetY = (sceneSize.height - renderedHeight) / 2;
+
+  return (
+    <div ref={sceneRef} className="absolute inset-0 rounded-[15px] bg-neutral-100">
+      <ComparisonImage
+        alt="Uploaded room"
+        className="absolute inset-0 h-full w-full rounded-[15px] object-contain"
+        src={backgroundImage}
+      />
+      {layerImageUrls.map((imageUrl, index) => (
+        <ComparisonImage
+          key={`${overlays[index]?.overlayId}-${finish}`}
+          alt=""
+          className="absolute inset-0 h-full w-full rounded-[15px] object-contain pointer-events-none"
+          src={imageUrl}
+        />
+      ))}
+      {interactive && overlays.map((overlay, index) => {
+        const frame = getComparisonOverlayFrame({
+          overlay,
+          renderedWidth,
+          renderedHeight,
+          offsetX,
+          offsetY,
+        });
+        const isSelected = overlay.overlayId === selectedOverlayId;
+
+        return (
+          <button
+            key={overlay.overlayId}
+            type="button"
+            aria-label={`Compare ${overlay.productName} ${index + 1}`}
+            aria-pressed={isSelected}
+            onClick={() => onSelectOverlay(overlay.overlayId)}
+            className={`absolute z-20 rounded-sm border-2 bg-transparent cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#07b6d3] focus-visible:ring-offset-2 ${isSelected
+              ? "border-[#07b6d3] shadow-[0_0_0_2px_rgba(255,255,255,0.85)]"
+              : "border-transparent hover:border-[#07b6d3]/70"
+              }`}
+            style={{
+              left: frame.centerX,
+              top: frame.centerY,
+              width: frame.width,
+              height: frame.height,
+              transform: `translate(-50%, -50%) rotate(${frame.rotation}deg)`,
+            }}
+          >
+            {isSelected && (
+              <span className="absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-[#0f1422] px-2.5 py-1 text-xs font-medium text-white shadow-md">
+                Editing {overlay.productName}
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 const getVariantLabel = (variant: AluminumFinishKey) => {
   return getAluminumVariationTitle(variant);
 };
@@ -104,6 +224,7 @@ type ComparisonPanelCardProps = {
   title: string;
   label: string;
   imageSrc: string;
+  preview?: ReactNode;
   swatchClassName: string;
   isSelected: boolean;
   isDisabled: boolean;
@@ -114,6 +235,7 @@ function ComparisonPanelCard({
   title,
   label,
   imageSrc,
+  preview,
   swatchClassName,
   isSelected,
   isDisabled,
@@ -131,7 +253,7 @@ function ComparisonPanelCard({
           : "border border-neutral-200/60 shadow-sm hover:scale-[1.02] hover:shadow-md"
           }`}
       >
-        <AfterState src={imageSrc} />
+        {preview ?? <AfterState src={imageSrc} />}
         <div className={`absolute bottom-2 left-2 h-7 w-7 rounded-full shadow-md ${swatchClassName}`} />
 
         {isSelected && (
@@ -172,13 +294,18 @@ export function Comparison() {
   const router = useRouter();
   const {
     finalSnapshotDataUrl,
+    comparisonOverlays,
     placedOverlays,
     productConfiguration,
     selectedProductId,
     spaceImageSession,
     variationSnapshots,
     setFinalSnapshotDataUrl,
+    setComparisonOverlays,
+    setPlacedOverlays,
     setProductConfiguration,
+    setVariationSnapshots,
+    selectWorkspaceProduct,
   } =
     useVisualizationSession();
   const [viewAs, setViewAs] = useState<"left" | "right">("left"); // left = Side-by-Side, right = Slider
@@ -190,13 +317,128 @@ export function Comparison() {
   const [rightVariant, setRightVariant] = useState<AluminumFinishKey>(
     getAlternateAluminumFinish(configuredFinish),
   );
+  const [productVariantSelections, setProductVariantSelections] = useState<
+    Record<string, ProductVariantSelection>
+  >(() => Object.fromEntries(
+    comparisonOverlays.map((overlay) => {
+      const finish = normalizeAluminumFinish(overlay.configuration.aluminumFinish);
+      return [
+        overlay.overlayId,
+        { left: finish, right: getAlternateAluminumFinish(finish) },
+      ];
+    }),
+  ));
+  const [selectedComparisonOverlayId, setSelectedComparisonOverlayId] = useState(
+    comparisonOverlays.at(-1)?.overlayId ?? "",
+  );
+  const [isPreparingQuotation, setIsPreparingQuotation] = useState(false);
+  const [comparisonError, setComparisonError] = useState<string | null>(null);
+  const selectedComparisonOverlay = comparisonOverlays.find(
+    (overlay) => overlay.overlayId === selectedComparisonOverlayId,
+  );
+
+  const saveSelectedProductFinish = (finish: AluminumFinishKey) => {
+    if (!selectedComparisonOverlayId) return;
+    setComparisonOverlays(
+      comparisonOverlays.map((overlay) =>
+        overlay.overlayId === selectedComparisonOverlayId
+          ? {
+              ...overlay,
+              configuration: {
+                ...overlay.configuration,
+                aluminumFinish: finish,
+              },
+            }
+          : overlay,
+      ),
+    );
+    if (selectedComparisonOverlay?.isActive && productConfiguration) {
+      setProductConfiguration({
+        ...productConfiguration,
+        aluminumFinish: finish,
+      });
+    }
+  };
+
+  const handleSelectComparisonOverlay = (overlayId: string) => {
+    const overlay = comparisonOverlays.find((item) => item.overlayId === overlayId);
+    setSelectedComparisonOverlayId(overlayId);
+    if (!overlay) return;
+    const savedSelection = productVariantSelections[overlayId];
+    if (savedSelection) {
+      setLeftVariant(savedSelection.left);
+      setRightVariant(savedSelection.right);
+      return;
+    }
+    const finish = normalizeAluminumFinish(overlay.configuration.aluminumFinish);
+    setLeftVariant(finish);
+    setRightVariant(getAlternateAluminumFinish(finish));
+    setProductVariantSelections((current) => ({
+      ...current,
+      [overlayId]: {
+        left: finish,
+        right: getAlternateAluminumFinish(finish),
+      },
+    }));
+  };
 
   const handleSwap = () => {
-    setLeftVariant(rightVariant);
-    setRightVariant(leftVariant);
+    const nextLeftVariant = rightVariant;
+    const nextRightVariant = leftVariant;
+    setLeftVariant(nextLeftVariant);
+    setRightVariant(nextRightVariant);
+    saveSelectedProductFinish(nextLeftVariant);
+    if (selectedComparisonOverlayId) {
+      setProductVariantSelections((current) => ({
+        ...current,
+        [selectedComparisonOverlayId]: {
+          left: nextLeftVariant,
+          right: nextRightVariant,
+        },
+      }));
+    }
+  };
+
+  const handleLeftVariantChange = (variant: AluminumFinishKey) => {
+    setLeftVariant(variant);
+    saveSelectedProductFinish(variant);
+    if (!selectedComparisonOverlayId) return;
+    setProductVariantSelections((current) => ({
+      ...current,
+      [selectedComparisonOverlayId]: {
+        left: variant,
+        right: current[selectedComparisonOverlayId]?.right ?? rightVariant,
+      },
+    }));
+  };
+
+  const handleRightVariantChange = (variant: AluminumFinishKey) => {
+    setRightVariant(variant);
+    if (!selectedComparisonOverlayId) return;
+    setProductVariantSelections((current) => ({
+      ...current,
+      [selectedComparisonOverlayId]: {
+        left: current[selectedComparisonOverlayId]?.left ?? leftVariant,
+        right: variant,
+      },
+    }));
   };
 
   const handleEditPlacement = () => {
+    if (selectedComparisonOverlay) {
+      setPlacedOverlays(
+        comparisonOverlays
+          .filter((overlay) => overlay.overlayId !== selectedComparisonOverlay.overlayId)
+          .map((overlay) => ({ ...overlay, isActive: false })),
+      );
+      selectWorkspaceProduct(
+        selectedComparisonOverlay.productId,
+        undefined,
+        selectedComparisonOverlay.configuration,
+      );
+      return;
+    }
+
     if (!isBeforeAfter && productConfiguration && productConfiguration.aluminumFinish !== leftVariant) {
       setProductConfiguration({
         ...productConfiguration,
@@ -207,8 +449,9 @@ export function Comparison() {
 
   const isSideBySide = viewAs === "left";
   const isBeforeAfter = compareMode === "left";
-  const editPlacementHref = selectedProductId
-    ? `/visualize/${selectedProductId}/workspace`
+  const editProductId = selectedComparisonOverlay?.productId ?? selectedProductId;
+  const editPlacementHref = editProductId
+    ? `/visualize/${editProductId}/workspace`
     : "/visualization";
   const latestPlacedOverlay = placedOverlays[placedOverlays.length - 1];
   const beforeImage = spaceImageSession?.workspaceImage.url ?? BEFORE_IMAGE;
@@ -286,20 +529,71 @@ export function Comparison() {
     };
   }, [isDragging]);
 
-  const handleProceedToQuotation = () => {
-    if (!isBeforeAfter) {
-      const chosenFinish = leftVariant;
-      const chosenImage = imageForFinish(chosenFinish);
-      if (chosenImage) {
-        setFinalSnapshotDataUrl(chosenImage);
+  const handleProceedToQuotation = async () => {
+    setComparisonError(null);
+
+    if (!isBeforeAfter && selectedComparisonOverlay && comparisonOverlays.length > 0) {
+      setIsPreparingQuotation(true);
+      try {
+        const targetAwareSnapshots = await Promise.all(
+          ALUMINUM_COLOR_VARIATIONS.map(async (variation) => ({
+            ...variation,
+            imageDataUrl: await composeComparisonSnapshot(
+              beforeImage,
+              getComparisonLayerImageUrls(
+                comparisonOverlays,
+                selectedComparisonOverlay.overlayId,
+                variation.key,
+              ),
+            ),
+          } satisfies ProductVariationSnapshot)),
+        );
+        const chosenImage = targetAwareSnapshots.find(
+          (snapshot) => snapshot.key === leftVariant,
+        )?.imageDataUrl;
+        if (chosenImage) setFinalSnapshotDataUrl(chosenImage);
+        setVariationSnapshots(targetAwareSnapshots);
+
+        const updatedOverlays = comparisonOverlays.map((overlay) =>
+          overlay.overlayId === selectedComparisonOverlay.overlayId
+            ? {
+                ...overlay,
+                configuration: {
+                  ...overlay.configuration,
+                  aluminumFinish: leftVariant,
+                },
+              }
+            : overlay,
+        );
+        setComparisonOverlays(updatedOverlays);
+
+        if (selectedComparisonOverlay.isActive && productConfiguration) {
+          setProductConfiguration({
+            ...productConfiguration,
+            aluminumFinish: leftVariant,
+          });
+        }
+      } catch (error) {
+        setComparisonError(
+          error instanceof Error
+            ? error.message
+            : "Unable to prepare the selected product comparison.",
+        );
+        setIsPreparingQuotation(false);
+        return;
       }
+      setIsPreparingQuotation(false);
+    } else if (!isBeforeAfter) {
+      const chosenImage = imageForFinish(leftVariant);
+      setFinalSnapshotDataUrl(chosenImage);
       if (productConfiguration) {
         setProductConfiguration({
           ...productConfiguration,
-          aluminumFinish: chosenFinish,
+          aluminumFinish: leftVariant,
         });
       }
     }
+
     router.push("/quotation");
   };
 
@@ -352,6 +646,38 @@ export function Comparison() {
         </div>
       </div>
 
+      {!isBeforeAfter && comparisonOverlays.length > 0 && (
+        <div className="w-full rounded-[20px] border border-neutral-200 bg-[#f5f5f5] p-4 shadow-sm">
+          <div className="mb-3 flex flex-col gap-1">
+            <p className="text-base font-medium text-[#0f1422]">
+              Choose a product to compare
+            </p>
+            <p className="text-sm text-black/60">
+              Click a model in the preview or choose it below. Only that product changes finish.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2" role="group" aria-label="Products to compare">
+            {comparisonOverlays.map((overlay, index) => {
+              const isSelected = overlay.overlayId === selectedComparisonOverlayId;
+              return (
+                <button
+                  key={overlay.overlayId}
+                  type="button"
+                  aria-pressed={isSelected}
+                  onClick={() => handleSelectComparisonOverlay(overlay.overlayId)}
+                  className={`min-h-11 rounded-full border px-4 py-2 text-sm font-medium transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#07b6d3] focus-visible:ring-offset-2 ${isSelected
+                    ? "border-[#07b6d3] bg-[#07b6d3] text-white"
+                    : "border-neutral-300 bg-white text-[#0f1422] hover:border-[#07b6d3] hover:bg-[#e9f9fb]"
+                    }`}
+                >
+                  {overlay.productName} {index + 1}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Main Compare Views Area */}
       <div className="w-full flex items-center justify-center min-h-64 sm:min-h-96 lg:min-h-144.75">
         {isSideBySide ? (
@@ -372,7 +698,17 @@ export function Comparison() {
               ) : (
                 /* Variant: Selected Left Finish */
                 <>
-                  <AfterState src={leftVariantImage} />
+                  {comparisonOverlays.length > 0 ? (
+                    <ProductVariantScene
+                      backgroundImage={beforeImage}
+                      finish={leftVariant}
+                      overlays={comparisonOverlays}
+                      selectedOverlayId={selectedComparisonOverlayId}
+                      onSelectOverlay={handleSelectComparisonOverlay}
+                    />
+                  ) : (
+                    <AfterState src={leftVariantImage} />
+                  )}
                   <div className="absolute top-6 left-6 bg-black border border-[#c3c3c3] px-3.5 py-1.5 rounded-[20px] z-10 shadow-md">
                     <p className="text-base text-white font-normal tracking-wide">
                       {getVariantLabel(leftVariant)}
@@ -397,7 +733,17 @@ export function Comparison() {
               ) : (
                 /* Variant: Selected Right Finish */
                 <>
-                  <AfterState src={rightVariantImage} />
+                  {comparisonOverlays.length > 0 ? (
+                    <ProductVariantScene
+                      backgroundImage={beforeImage}
+                      finish={rightVariant}
+                      overlays={comparisonOverlays}
+                      selectedOverlayId={selectedComparisonOverlayId}
+                      onSelectOverlay={handleSelectComparisonOverlay}
+                    />
+                  ) : (
+                    <AfterState src={rightVariantImage} />
+                  )}
                   <div className="absolute top-6 left-6 bg-black border border-[#c3c3c3] px-3.5 py-1.5 rounded-[20px] z-10 shadow-md">
                     <p className="text-base text-white font-normal tracking-wide">
                       {getVariantLabel(rightVariant)}
@@ -415,7 +761,17 @@ export function Comparison() {
           >
             {/* Underlay / Bottom state (Visible on the right side of the slider) */}
             <div className="absolute inset-0 w-full h-full">
-              <AfterState src={isBeforeAfter ? afterImage : rightVariantImage} />
+              {isBeforeAfter || comparisonOverlays.length === 0 ? (
+                <AfterState src={isBeforeAfter ? afterImage : rightVariantImage} />
+              ) : (
+                <ProductVariantScene
+                  backgroundImage={beforeImage}
+                  finish={rightVariant}
+                  overlays={comparisonOverlays}
+                  selectedOverlayId={selectedComparisonOverlayId}
+                  onSelectOverlay={handleSelectComparisonOverlay}
+                />
+              )}
             </div>
 
             {/* Overlay / Top state (Clipped, visible on the left side of the slider) */}
@@ -426,13 +782,24 @@ export function Comparison() {
               {isBeforeAfter ? (
                 <BeforeState src={beforeImage} />
               ) : (
-                <AfterState src={leftVariantImage} />
+                comparisonOverlays.length > 0 ? (
+                  <ProductVariantScene
+                    backgroundImage={beforeImage}
+                    finish={leftVariant}
+                    overlays={comparisonOverlays}
+                    selectedOverlayId={selectedComparisonOverlayId}
+                    onSelectOverlay={handleSelectComparisonOverlay}
+                    interactive={false}
+                  />
+                ) : (
+                  <AfterState src={leftVariantImage} />
+                )
               )}
             </div>
 
             {/* Interactive Vertical Slider Line / Handle */}
             <div
-              className="absolute top-0 bottom-0 w-2.5 bg-white cursor-ew-resize z-10 flex items-center justify-center transition-opacity"
+              className="absolute top-0 bottom-0 w-2.5 bg-white cursor-ew-resize z-40 flex items-center justify-center transition-opacity"
               style={{ left: `${sliderPosition}%`, transform: "translateX(-50%)" }}
               onMouseDown={handleMouseDown}
               onTouchStart={handleTouchStart}
@@ -474,10 +841,20 @@ export function Comparison() {
                   title={variation.title}
                   label={variation.label}
                   imageSrc={imageForFinish(variation.key)}
+                  preview={comparisonOverlays.length > 0 ? (
+                    <ProductVariantScene
+                      backgroundImage={beforeImage}
+                      finish={variation.key}
+                      overlays={comparisonOverlays}
+                      selectedOverlayId={selectedComparisonOverlayId}
+                      onSelectOverlay={handleSelectComparisonOverlay}
+                      interactive={false}
+                    />
+                  ) : undefined}
                   swatchClassName={variation.swatchClassName}
                   isSelected={leftVariant === variation.key}
                   isDisabled={rightVariant === variation.key}
-                  onClick={() => setLeftVariant(variation.key)}
+                  onClick={() => handleLeftVariantChange(variation.key)}
                 />
               ))}
             </div>
@@ -512,10 +889,20 @@ export function Comparison() {
                   title={variation.title}
                   label={variation.label}
                   imageSrc={imageForFinish(variation.key)}
+                  preview={comparisonOverlays.length > 0 ? (
+                    <ProductVariantScene
+                      backgroundImage={beforeImage}
+                      finish={variation.key}
+                      overlays={comparisonOverlays}
+                      selectedOverlayId={selectedComparisonOverlayId}
+                      onSelectOverlay={handleSelectComparisonOverlay}
+                      interactive={false}
+                    />
+                  ) : undefined}
                   swatchClassName={variation.swatchClassName}
                   isSelected={rightVariant === variation.key}
                   isDisabled={leftVariant === variation.key}
-                  onClick={() => setRightVariant(variation.key)}
+                  onClick={() => handleRightVariantChange(variation.key)}
                 />
               ))}
             </div>
@@ -523,6 +910,11 @@ export function Comparison() {
         </div>
       )}
       {/* Bottom Footer Actions Box */}
+      {comparisonError && (
+        <p role="alert" className="w-full rounded-[15px] bg-red-50 px-4 py-3 text-sm text-red-700">
+          {comparisonError}
+        </p>
+      )}
       <div className="bg-[#f5f5f5] w-full flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 p-5 rounded-[20px] shadow-sm select-none">
         <Link
           href={editPlacementHref}
@@ -546,7 +938,6 @@ export function Comparison() {
 
         <Button
           variant="lightGradWhiteText"
-          value="Proceed to Estimate Price"
           leftIcon={null}
           rightIcon={<ChevronRight className="w-5 h-5 shrink-0 text-white" />}
           className="w-full sm:w-auto font-medium justify-center cursor-pointer py-3.5 rounded-[25px] flex items-center hover:opacity-95 [--btn-width:100%] sm:[--btn-width:fit-content] [--btn-padding:12px_16px] sm:[--btn-padding:15px_20px] [--btn-font-size:16px] sm:[--btn-font-size:20px] [--btn-gap:10px] sm:[--btn-gap:15px] whitespace-nowrap"
@@ -557,8 +948,72 @@ export function Comparison() {
             gap: "var(--btn-gap, 15px)",
           }}
           onClick={handleProceedToQuotation}
+          disabled={isPreparingQuotation}
+          value={isPreparingQuotation ? "Preparing comparison..." : "Proceed to Estimate Price"}
         />
       </div>
     </div>
+  );
+}
+
+async function composeComparisonSnapshot(
+  backgroundImageUrl: string,
+  layerImageUrls: string[],
+) {
+  if (layerImageUrls.length === 0) {
+    throw new Error("No product layers are available for comparison.");
+  }
+
+  const [backgroundImage, ...layerImages] = await Promise.all([
+    loadComparisonImage(backgroundImageUrl),
+    ...layerImageUrls.map(loadComparisonImage),
+  ]);
+  const referenceLayer = layerImages[0];
+  const canvas = document.createElement("canvas");
+  canvas.width = referenceLayer.naturalWidth;
+  canvas.height = referenceLayer.naturalHeight;
+  const context = canvas.getContext("2d");
+  if (!context) {
+    throw new Error("Snapshot rendering is unavailable in this browser.");
+  }
+
+  context.fillStyle = "#f5f5f5";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  drawContainedImage(context, backgroundImage, canvas.width, canvas.height);
+  for (const layerImage of layerImages) {
+    context.drawImage(layerImage, 0, 0, canvas.width, canvas.height);
+  }
+
+  return canvas.toDataURL("image/jpeg", 0.92);
+}
+
+function loadComparisonImage(source: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new window.Image();
+    if (/^https?:\/\//i.test(source)) image.crossOrigin = "anonymous";
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("Unable to load a comparison image."));
+    image.src = source;
+  });
+}
+
+function drawContainedImage(
+  context: CanvasRenderingContext2D,
+  image: HTMLImageElement,
+  targetWidth: number,
+  targetHeight: number,
+) {
+  const scale = Math.min(
+    targetWidth / image.naturalWidth,
+    targetHeight / image.naturalHeight,
+  );
+  const width = image.naturalWidth * scale;
+  const height = image.naturalHeight * scale;
+  context.drawImage(
+    image,
+    (targetWidth - width) / 2,
+    (targetHeight - height) / 2,
+    width,
+    height,
   );
 }

@@ -20,11 +20,17 @@ import type {
 
 type VisualizationSessionContextValue = VisualizationSessionState & {
   setPreparedSpaceImage: (productId: string, session: SpaceImageSession) => void;
+  selectWorkspaceProduct: (
+    productId: string,
+    workspaceBackgroundDataUrl?: string,
+    productConfiguration?: ProductConfigurationSnapshot,
+  ) => void;
   setStructuralDefinition: (definition: ProductStructuralDefinition | null) => void;
   setProductConfiguration: (configuration: ProductConfigurationSnapshot | null) => void;
   setVariationSnapshots: (snapshots: ProductVariationSnapshot[]) => void;
   setActiveOverlay: (overlay: ActiveOverlay | null) => void;
   setPlacedOverlays: (overlays: PlacedOverlay[]) => void;
+  setComparisonOverlays: (overlays: PlacedOverlay[]) => void;
   setFinalSnapshotDataUrl: (dataUrl: string | null) => void;
   resetVisualizationSession: () => void;
 };
@@ -35,11 +41,13 @@ const VisualizationSessionContext =
 const initialState: VisualizationSessionState = {
   selectedProductId: null,
   spaceImageSession: null,
+  workspaceBackgroundDataUrl: null,
   structuralDefinition: null,
   productConfiguration: null,
   variationSnapshots: [],
   activeOverlay: null,
   placedOverlays: [],
+  comparisonOverlays: [],
   finalSnapshotDataUrl: null,
 };
 
@@ -59,16 +67,48 @@ export function VisualizationSessionProvider({
       const nextState: VisualizationSessionState = {
         selectedProductId: productId,
         spaceImageSession: session,
+        workspaceBackgroundDataUrl: null,
         structuralDefinition: null,
         productConfiguration: null,
         variationSnapshots: [],
         activeOverlay: null,
         placedOverlays: [],
+        comparisonOverlays: [],
         finalSnapshotDataUrl: null,
       };
 
       writeStoredVisualizationSession(nextState);
       setState(nextState);
+    },
+    [],
+  );
+
+  const selectWorkspaceProduct = useCallback(
+    (
+      productId: string,
+      workspaceBackgroundDataUrl?: string,
+      productConfiguration?: ProductConfigurationSnapshot,
+    ) => {
+      setState((current) => {
+        const isCurrentProduct = current.selectedProductId === productId;
+        const nextState: VisualizationSessionState = {
+          ...current,
+          selectedProductId: productId,
+          workspaceBackgroundDataUrl:
+            workspaceBackgroundDataUrl ?? current.workspaceBackgroundDataUrl,
+          structuralDefinition: isCurrentProduct
+            ? current.structuralDefinition
+            : null,
+          productConfiguration: productConfiguration ?? null,
+          variationSnapshots: [],
+          activeOverlay: null,
+          comparisonOverlays: [],
+          finalSnapshotDataUrl: null,
+        };
+
+        writeStoredVisualizationSession(nextState);
+        return nextState;
+      });
     },
     [],
   );
@@ -120,10 +160,25 @@ export function VisualizationSessionProvider({
   }, []);
 
   const setPlacedOverlays = useCallback((overlays: PlacedOverlay[]) => {
-    setState((current) => ({
-      ...current,
-      placedOverlays: overlays,
-    }));
+    setState((current) => {
+      const nextState = {
+        ...current,
+        placedOverlays: overlays,
+      };
+      writeStoredVisualizationSession(nextState);
+      return nextState;
+    });
+  }, []);
+
+  const setComparisonOverlays = useCallback((overlays: PlacedOverlay[]) => {
+    setState((current) => {
+      const nextState = {
+        ...current,
+        comparisonOverlays: overlays,
+      };
+      writeStoredVisualizationSession(nextState);
+      return nextState;
+    });
   }, []);
 
   const setFinalSnapshotDataUrl = useCallback((dataUrl: string | null) => {
@@ -146,22 +201,26 @@ export function VisualizationSessionProvider({
     () => ({
       ...state,
       setPreparedSpaceImage,
+      selectWorkspaceProduct,
       setStructuralDefinition,
       setProductConfiguration,
       setVariationSnapshots,
       setActiveOverlay,
       setPlacedOverlays,
+      setComparisonOverlays,
       setFinalSnapshotDataUrl,
       resetVisualizationSession,
     }),
     [
       state,
       setPreparedSpaceImage,
+      selectWorkspaceProduct,
       setStructuralDefinition,
       setProductConfiguration,
       setVariationSnapshots,
       setActiveOverlay,
       setPlacedOverlays,
+      setComparisonOverlays,
       setFinalSnapshotDataUrl,
       resetVisualizationSession,
     ],
@@ -193,6 +252,10 @@ function readStoredVisualizationSession(): VisualizationSessionState {
     return {
       selectedProductId: parsed.selectedProductId,
       spaceImageSession: parsed.spaceImageSession,
+      workspaceBackgroundDataUrl:
+        typeof parsed.workspaceBackgroundDataUrl === "string"
+          ? parsed.workspaceBackgroundDataUrl
+          : null,
       structuralDefinition:
         parsed.structuralDefinition &&
         typeof parsed.structuralDefinition === "object"
@@ -207,7 +270,12 @@ function readStoredVisualizationSession(): VisualizationSessionState {
         ? parsed.variationSnapshots
         : [],
       activeOverlay: null,
-      placedOverlays: [],
+      placedOverlays: Array.isArray(parsed.placedOverlays)
+        ? parsed.placedOverlays
+        : [],
+      comparisonOverlays: Array.isArray(parsed.comparisonOverlays)
+        ? parsed.comparisonOverlays
+        : [],
       finalSnapshotDataUrl:
         typeof parsed.finalSnapshotDataUrl === "string"
           ? parsed.finalSnapshotDataUrl
@@ -229,14 +297,60 @@ function writeStoredVisualizationSession(state: VisualizationSessionState) {
       JSON.stringify({
         selectedProductId: state.selectedProductId,
         spaceImageSession: state.spaceImageSession,
+        workspaceBackgroundDataUrl: state.workspaceBackgroundDataUrl,
         structuralDefinition: state.structuralDefinition,
         productConfiguration: state.productConfiguration,
         variationSnapshots: state.variationSnapshots,
+        placedOverlays: state.placedOverlays,
+        comparisonOverlays: state.comparisonOverlays,
         finalSnapshotDataUrl: state.finalSnapshotDataUrl,
       }),
     );
   } catch {
-    // Session persistence is a convenience; visualization still works in memory.
+    // If quota exceeded due to large snapshot data URLs, persist structural configurations and pricing metadata
+    try {
+      window.sessionStorage.setItem(
+        SESSION_STORAGE_KEY,
+        JSON.stringify({
+          selectedProductId: state.selectedProductId,
+          spaceImageSession: state.spaceImageSession
+            ? {
+                ...state.spaceImageSession,
+                workspaceImage: {
+                  ...state.spaceImageSession.workspaceImage,
+                  url:
+                    state.spaceImageSession.workspaceImage.url.length > 50000
+                      ? ""
+                      : state.spaceImageSession.workspaceImage.url,
+                },
+              }
+            : null,
+          workspaceBackgroundDataUrl: null,
+          structuralDefinition: state.structuralDefinition,
+          productConfiguration: state.productConfiguration,
+          variationSnapshots: [],
+          placedOverlays: state.placedOverlays.map((overlay) => ({
+            ...overlay,
+            flattenedImageDataUrl:
+              overlay.flattenedImageDataUrl.length > 50000
+                ? ""
+                : overlay.flattenedImageDataUrl,
+            variationImageDataUrls: undefined,
+          })),
+          comparisonOverlays: state.comparisonOverlays.map((overlay) => ({
+            ...overlay,
+            flattenedImageDataUrl:
+              overlay.flattenedImageDataUrl.length > 50000
+                ? ""
+                : overlay.flattenedImageDataUrl,
+            variationImageDataUrls: undefined,
+          })),
+          finalSnapshotDataUrl: null,
+        }),
+      );
+    } catch {
+      // Session persistence is a convenience; visualization still works in memory.
+    }
   }
 }
 

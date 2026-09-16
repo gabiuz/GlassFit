@@ -4,7 +4,7 @@ import Button from "@/components/shared/Button";
 
 function CardDoors() {
   return (
-    <div className="flex flex-col items-start w-full xl:h-full gap-2 sm:gap-3.75 rounded-2xl sm:rounded-3xl bg-white/5 pl-4 pt-4 sm:pl-7.5 sm:pt-7.5 text-white">
+    <div className="explore-product-card flex flex-col items-start w-full xl:h-full gap-2 sm:gap-3.75 rounded-2xl sm:rounded-3xl bg-white/5 pl-4 pt-4 sm:pl-7.5 sm:pt-7.5 text-white">
       <div className="flex w-full items-center justify-between gap-2 pr-4 sm:pr-7.5">
         <p className="text-base sm:text-2xl xl:text-3xl font-medium leading-tight xl:leading-10">Doors</p>
         <div className="rounded-full bg-grad-light px-2.5 py-0.5 sm:px-4 sm:py-1.5 xl:px-6.25 xl:py-2.5 shrink-0 flex items-center justify-center">
@@ -32,7 +32,7 @@ function CardDoors() {
 
 function CardWindows() {
   return (
-    <div className="flex flex-col xl:h-full gap-3 sm:gap-6.25 rounded-2xl sm:rounded-3xl bg-white pl-4 pr-4 pt-4 sm:pl-7.5 sm:pr-7.5 sm:pt-7.5 xl:pr-0 text-black">
+    <div className="explore-product-card flex flex-col xl:h-full gap-3 sm:gap-6.25 rounded-2xl sm:rounded-3xl bg-white pl-4 pr-4 pt-4 sm:pl-7.5 sm:pr-7.5 sm:pt-7.5 xl:pr-0 text-black">
       <div className="flex w-full items-center justify-between gap-2 xl:pr-7.5">
         <p className="text-base sm:text-2xl xl:text-3xl font-medium leading-tight xl:leading-10">Windows</p>
         <div className="rounded-full bg-black px-2.5 py-0.5 sm:px-4 sm:py-1.5 xl:px-6.25 xl:py-2.5 shrink-0 flex items-center justify-center">
@@ -61,7 +61,7 @@ function CardWindows() {
 
 function CardPartitions() {
   return (
-    <div className="flex w-full flex-col justify-between items-center gap-1.5 rounded-2xl sm:rounded-3xl bg-black pt-4 sm:pt-7.5 text-white xl:h-full">
+    <div className="explore-product-card flex w-full flex-col justify-between items-center gap-1.5 rounded-2xl sm:rounded-3xl bg-black pt-4 sm:pt-7.5 text-white xl:h-full">
       <div className="flex flex-col items-start gap-2 sm:gap-3.75 px-4 sm:px-7.5 w-full">
         <div className="flex w-full items-center justify-between gap-2">
           <p className="text-base sm:text-2xl xl:text-3xl font-medium leading-tight xl:leading-10">
@@ -93,7 +93,7 @@ function CardPartitions() {
 
 function CardModularCabinets() {
   return (
-    <div className="flex w-full flex-col xl:h-full gap-2 sm:gap-3.75 rounded-2xl sm:rounded-3xl bg-white/10 pl-4 pt-4 sm:pl-7.5 sm:pt-7.5 text-white">
+    <div className="explore-product-card flex w-full flex-col xl:h-full gap-2 sm:gap-3.75 rounded-2xl sm:rounded-3xl bg-white/10 pl-4 pt-4 sm:pl-7.5 sm:pt-7.5 text-white">
       <div className="flex w-full items-center justify-between gap-2 pr-4 sm:pr-7.5">
         <p className="text-base sm:text-2xl xl:text-3xl font-medium leading-tight xl:leading-[1.2] tracking-[-0.608px]">
           Modular Cabinets
@@ -123,7 +123,7 @@ function CardModularCabinets() {
 
 function CardShowerEnclosures() {
   return (
-    <div className="flex w-full flex-col xl:h-full gap-2 sm:gap-3.75 rounded-2xl sm:rounded-3xl bg-white/10 pl-4 pt-4 sm:pl-7.5 sm:pt-7.5 text-white">
+    <div className="explore-product-card flex w-full flex-col xl:h-full gap-2 sm:gap-3.75 rounded-2xl sm:rounded-3xl bg-white/10 pl-4 pt-4 sm:pl-7.5 sm:pt-7.5 text-white">
       <div className="flex w-full items-center justify-between gap-2 pr-4 sm:pr-7.5">
         <p className="text-base sm:text-2xl xl:text-3xl font-medium leading-tight xl:leading-10 ">
           Shower Enclosures
@@ -153,7 +153,7 @@ function CardShowerEnclosures() {
 
 function CardExteriorInstallation() {
   return (
-    <div className="flex w-full flex-col justify-between items-center gap-1.5 rounded-2xl sm:rounded-3xl bg-[#279DB2] pt-4 sm:pt-7.5 text-white h-full">
+    <div className="explore-product-card flex w-full flex-col justify-between items-center gap-1.5 rounded-2xl sm:rounded-3xl bg-[#279DB2] pt-4 sm:pt-7.5 text-white h-full">
       <div className="flex flex-col items-start gap-2 sm:gap-3.75 px-4 sm:px-7.5 w-full">
         <div className="flex w-full items-center justify-between gap-2">
           <p className="text-base sm:text-2xl xl:text-3xl font-medium leading-tight xl:leading-10 ">

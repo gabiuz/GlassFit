@@ -5,24 +5,32 @@ import { useRouter } from "next/navigation";
 import { ProductModelWorkspace } from "@/features/visualization";
 import { useVisualizationSession } from "@/lib/visualization/visualizationSession";
 import type { ProductStructuralDefinition } from "@/lib/visualization/types";
+import type { CatalogProduct } from "@/lib/products/types";
 
 export function ProductAwareWorkspacePage({
   productId,
   structuralDefinition,
+  catalogProducts,
 }: {
   productId: string;
   structuralDefinition: ProductStructuralDefinition;
+  catalogProducts: CatalogProduct[];
 }) {
   const router = useRouter();
   const {
     selectedProductId,
     spaceImageSession,
+    workspaceBackgroundDataUrl,
     productConfiguration,
+    placedOverlays,
     finalSnapshotDataUrl,
     setStructuralDefinition,
     setProductConfiguration,
     setVariationSnapshots,
+    setPlacedOverlays,
+    setComparisonOverlays,
     setFinalSnapshotDataUrl,
+    selectWorkspaceProduct,
     resetVisualizationSession,
   } = useVisualizationSession();
 
@@ -57,15 +65,36 @@ export function ProductAwareWorkspacePage({
   return (
     <main className="flex min-h-screen flex-col gap-14 px-6 py-28 md:px-12 lg:px-24.25">
       <ProductModelWorkspace
-        uploadedImage={spaceImageSession.workspaceImage.url}
+        key={productId}
+        uploadedImage={workspaceBackgroundDataUrl ?? spaceImageSession.workspaceImage.url}
         spaceImageSession={spaceImageSession}
         structuralDefinition={structuralDefinition}
+        catalogProducts={catalogProducts}
+        currentProductId={productId}
         selectedProductName={structuralDefinition.product.productName}
         initialSnapshotDataUrl={finalSnapshotDataUrl}
         initialConfiguration={productConfiguration}
+        placedOverlays={placedOverlays}
         onConfigurationChange={setProductConfiguration}
         onVariationSnapshotsChange={setVariationSnapshots}
         onSnapshotChange={setFinalSnapshotDataUrl}
+        onPlacedOverlaysChange={setPlacedOverlays}
+        onComparisonOverlaysChange={setComparisonOverlays}
+        onProductSelect={(
+          nextProductId,
+          mode,
+          flattenedBackgroundDataUrl,
+          configuration,
+        ) => {
+          selectWorkspaceProduct(
+            nextProductId,
+            mode === "add" ? flattenedBackgroundDataUrl : undefined,
+            configuration,
+          );
+          if (nextProductId !== productId) {
+            router.push(`/visualize/${nextProductId}/workspace`);
+          }
+        }}
         onBack={() => {
           resetVisualizationSession();
           router.push(`/visualize/${productId}/upload`);

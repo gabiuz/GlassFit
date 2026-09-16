@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState } from "react";
-import { Eye, EyeOff } from "lucide-react";
 import type { UserProfileData } from "../types";
 import { ChangePasswordModal } from "./ChangePasswordModal";
 
@@ -10,7 +9,6 @@ interface AccountSecurityCardProps {
 }
 
 export function AccountSecurityCard({ profile }: AccountSecurityCardProps) {
-  const [showMaskedPassword, setShowMaskedPassword] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   const formatMemberSince = (isoDateString: string) => {
@@ -40,33 +38,9 @@ export function AccountSecurityCard({ profile }: AccountSecurityCardProps) {
         </p>
       </div>
 
-      {/* 2x2 Security Grid */}
+      {/* Security Details Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-y-5 gap-x-8 lg:gap-x-14 w-full">
-        {/* Row 1, Col 1: Password */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-4 w-full">
-          <label className="text-[#0f1422] text-sm sm:text-[15px] font-medium tracking-tight sm:w-[150px] shrink-0">
-            Password
-          </label>
-          <div className="border border-[#c3c3c3] rounded-[8px] px-3.5 py-2 flex items-center justify-between flex-1 bg-white">
-            <span className="text-sm font-mono tracking-widest text-[#0f1422] select-none">
-              {showMaskedPassword ? "••••••••••••" : "••••••••"}
-            </span>
-            <button
-              type="button"
-              onClick={() => setShowMaskedPassword(!showMaskedPassword)}
-              className="text-[#0f1422] hover:text-[#07b6d3] transition-colors p-1 cursor-pointer focus:outline-none"
-              aria-label={showMaskedPassword ? "Hide password" : "Show password"}
-            >
-              {showMaskedPassword ? (
-                <EyeOff className="size-4.5" />
-              ) : (
-                <Eye className="size-4.5" />
-              )}
-            </button>
-          </div>
-        </div>
-
-        {/* Row 1, Col 2: Email Verification */}
+        {/* Email Verification */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between sm:justify-start gap-1.5 sm:gap-6 w-full">
           <span className="text-[#0f1422] text-sm sm:text-[15px] font-medium tracking-tight sm:w-[150px] shrink-0">
             Email Verification
@@ -78,7 +52,7 @@ export function AccountSecurityCard({ profile }: AccountSecurityCardProps) {
           </div>
         </div>
 
-        {/* Row 2, Col 1: Last Password Change */}
+        {/* Last Password Change */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-4 w-full">
           <span className="text-[#0f1422] text-sm sm:text-[15px] font-medium tracking-tight sm:w-[150px] shrink-0">
             Last Password Change
@@ -90,7 +64,7 @@ export function AccountSecurityCard({ profile }: AccountSecurityCardProps) {
           </div>
         </div>
 
-        {/* Row 2, Col 2: Active Status */}
+        {/* Active Status */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between sm:justify-start gap-1.5 sm:gap-6 w-full">
           <span className="text-[#0f1422] text-sm sm:text-[15px] font-medium tracking-tight sm:w-[150px] shrink-0">
             Active Status

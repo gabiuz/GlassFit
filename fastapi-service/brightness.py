@@ -26,6 +26,10 @@ class SuggestedModelAdjustments(TypedDict):
     blur_px: float
     grain: float
     shadow_opacity: float
+    exposure_bias: float
+    ambient_tint_hex: str
+    directional_intensity: float
+    ambient_intensity: float
 
 
 class LightingAnalysis(TypedDict):
@@ -66,40 +70,66 @@ def analyze_lighting(image_path: Path) -> LightingAnalysis:
     grayscale = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
 
-    mean_intensity = float(grayscale.mean())
-    contrast = float(np.std(grayscale) / 64)
-    saturation = float(np.mean(hsv[:, :, 1]) / 255)
+    lightness = lab[:, :, 0].astype(np.float32) * (100.0 / 255.0)
+    median_lightness = float(np.median(lightness))
+    mean_lightness = float(np.mean(lightness))
+
+    # Normalized scene exposure: E_scene in [0.65, 1.35]
+    scene_exposure = float(
+        np.clip(
+            (median_lightness / 50.0) * 0.90 + (mean_lightness / 50.0) * 0.10,
+            0.65,
+            1.35,
+        )
+    )
+    exposure_bias = float(np.clip(scene_exposure - 1.0, -0.30, 0.30))
+
+    contrast = float(np.std(grayscale) / 64.0)
+    saturation = float(np.mean(hsv[:, :, 1]) / 255.0)
     mean_rgb_array = np.mean(rgb.reshape(-1, 3), axis=0)
     mean_rgb = [int(round(value)) for value in mean_rgb_array]
-    ambient_rgb = _compute_ambient_rgb(rgb, grayscale)
+
+    ambient_rgb, ambient_hex = _compute_ambient_rgb(rgb, lightness)
 
     red, green, blue = mean_rgb_array
-    warmth = float(np.clip((red - blue) / 90, -1, 1))
-    tint = float(np.clip((green - ((red + blue) / 2)) / 90, -1, 1))
-    sharpness = float(np.clip(cv2.Laplacian(grayscale, cv2.CV_64F).var() / 850, 0, 1.5))
+    warmth = float(np.clip((red - blue) / 90.0, -1.0, 1.0))
+    tint = float(np.clip((green - ((red + blue) / 2.0)) / 90.0, -1.0, 1.0))
+
+    laplacian_var = float(cv2.Laplacian(grayscale, cv2.CV_64F).var())
+    sharpness = float(np.clip(laplacian_var / 850.0, 0.0, 1.50))
     noise = _estimate_noise(grayscale)
     light_direction = _estimate_light_direction(grayscale)
+
+    # Directional confidence based on luminance difference and contrast
+    dir_mag = np.sqrt(light_direction["x"] ** 2 + light_direction["y"] ** 2)
+    directional_confidence = float(np.clip(dir_mag * min(contrast, 1.2), 0.0, 1.0))
+
+    suggested = _suggest_model_adjustments(
+        scene_exposure=scene_exposure,
+        exposure_bias=exposure_bias,
+        contrast=contrast,
+        saturation=saturation,
+        sharpness=sharpness,
+        noise=noise,
+        ambient_hex=ambient_hex,
+        directional_confidence=directional_confidence,
+    )
 
     return {
         "mean_rgb": mean_rgb,
         "ambient_rgb": ambient_rgb,
-        "ambient_hex": _rgb_to_hex(ambient_rgb),
-        "contrast": round(float(np.clip(contrast, 0, 2)), 3),
-        "saturation": round(float(np.clip(saturation, 0, 1)), 3),
+        "ambient_hex": ambient_hex,
+        "contrast": round(float(np.clip(contrast, 0.0, 2.0)), 3),
+        "saturation": round(float(np.clip(saturation, 0.0, 1.0)), 3),
         "warmth": round(warmth, 3),
         "tint": round(tint, 3),
         "temperature": _classify_temperature(warmth),
         "sharpness": round(sharpness, 3),
         "noise": round(noise, 3),
         "light_direction": light_direction,
-        "suggested": _suggest_model_adjustments(
-            mean_intensity=mean_intensity,
-            contrast=contrast,
-            saturation=saturation,
-            sharpness=sharpness,
-            noise=noise,
-        ),
+        "suggested": suggested,
     }
 
 
@@ -125,20 +155,31 @@ def _downscale_for_analysis(image: np.ndarray) -> np.ndarray:
     )
 
 
-def _compute_ambient_rgb(rgb: np.ndarray, grayscale: np.ndarray) -> list[int]:
-    lower = np.percentile(grayscale, 25)
-    upper = np.percentile(grayscale, 92)
-    mask = (grayscale >= lower) & (grayscale <= upper)
+def _compute_ambient_rgb(rgb: np.ndarray, lightness: np.ndarray) -> tuple[list[int], str]:
+    lower = np.percentile(lightness, 20)
+    upper = np.percentile(lightness, 80)
+    mask = (lightness >= lower) & (lightness <= upper)
     sampled = rgb[mask] if np.any(mask) else rgb.reshape(-1, 3)
     ambient = np.mean(sampled, axis=0)
-    neutralized = ambient * 0.72 + np.array([128, 128, 128]) * 0.28
-    return [int(round(value)) for value in np.clip(neutralized, 0, 255)]
+    neutralized = ambient * 0.70 + np.array([128, 128, 128]) * 0.30
+    rgb_list = [int(round(value)) for value in np.clip(neutralized, 0, 255)]
+    hex_code = "#{:02x}{:02x}{:02x}".format(*rgb_list)
+    return rgb_list, hex_code
 
 
 def _estimate_noise(grayscale: np.ndarray) -> float:
+    # Filter out architectural edges using Sobel magnitude to isolate flat texture noise
+    sobel_x = cv2.Sobel(grayscale, cv2.CV_64F, 1, 0, ksize=3)
+    sobel_y = cv2.Sobel(grayscale, cv2.CV_64F, 0, 1, ksize=3)
+    grad_mag = np.sqrt(sobel_x**2 + sobel_y**2)
+    edge_threshold = float(np.percentile(grad_mag, 65))
+    flat_mask = grad_mag < edge_threshold
+
     blurred = cv2.GaussianBlur(grayscale, (3, 3), 0)
     residual = grayscale.astype(np.float32) - blurred.astype(np.float32)
-    return float(np.clip(np.std(residual) / 18, 0, 1))
+    flat_residuals = residual[flat_mask] if np.any(flat_mask) else residual.ravel()
+    noise_std = float(np.std(flat_residuals))
+    return float(np.clip(noise_std / 16.0, 0.0, 1.0))
 
 
 def _estimate_light_direction(grayscale: np.ndarray) -> LightDirection:
@@ -149,31 +190,65 @@ def _estimate_light_direction(grayscale: np.ndarray) -> LightDirection:
     bottom = float(grayscale[max(0, height - height // 3) :, :].mean())
 
     return {
-        "x": round(float(np.clip((right - left) / 70, -1, 1)), 3),
-        "y": round(float(np.clip((top - bottom) / 70, -1, 1)), 3),
+        "x": round(float(np.clip((right - left) / 70.0, -1.0, 1.0)), 3),
+        "y": round(float(np.clip((top - bottom) / 70.0, -1.0, 1.0)), 3),
     }
 
 
 def _suggest_model_adjustments(
-    mean_intensity: float,
+    scene_exposure: float,
+    exposure_bias: float,
     contrast: float,
     saturation: float,
     sharpness: float,
     noise: float,
+    ambient_hex: str,
+    directional_confidence: float,
 ) -> SuggestedModelAdjustments:
-    brightness = float(np.clip(mean_intensity / 132, 0.68, 1.22))
-    contrast_adjustment = float(np.clip(0.78 + contrast * 0.2, 0.72, 1.18))
-    saturation_adjustment = float(np.clip(0.82 + saturation * 0.55, 0.72, 1.16))
-    blur_px = float(np.clip((0.85 - sharpness) * 1.1, 0, 1.15))
+    brightness = float(np.clip(scene_exposure * 0.95 + 0.05, 0.70, 1.25))
+    contrast_adjustment = float(np.clip(0.80 + contrast * 0.22, 0.80, 1.20))
+    saturation_adjustment = float(np.clip(0.82 + saturation * 0.45, 0.75, 1.15))
+    color_mix = float(np.clip(0.10 + saturation * 0.18, 0.05, 0.30))
+
+    # Adaptive blur roll-off: if optical sharpness < 0.40, apply subtle blur; if >= 0.70, zero blur
+    blur_px = float(np.clip((0.40 - sharpness) * 1.5, 0.0, 0.60)) if sharpness < 0.40 else 0.0
+
+    # Sensor grain in [0.00, 0.18]
+    grain = float(np.clip(noise * 0.18, 0.0, 0.18))
+
+    # Shadow opacity in [0.10, 0.45]
+    shadow_opacity = float(
+        np.clip(
+            0.24 + directional_confidence * 0.12 - (scene_exposure - 1.0) * 0.08,
+            0.10,
+            0.45,
+        )
+    )
+
+    # Directional intensity in [0.80, 1.80]
+    directional_intensity = float(np.clip(0.95 + directional_confidence * 0.60, 0.80, 1.80))
+
+    # Ambient intensity in [0.28, 0.55]
+    ambient_intensity = float(
+        np.clip(
+            0.32 + (1.0 - directional_confidence * 0.35) * 0.10 + (scene_exposure - 1.0) * 0.08,
+            0.28,
+            0.55,
+        )
+    )
 
     return {
         "brightness": round(brightness, 3),
         "contrast": round(contrast_adjustment, 3),
         "saturation": round(saturation_adjustment, 3),
-        "color_mix": round(float(np.clip(0.12 + saturation * 0.18, 0.1, 0.28)), 3),
+        "color_mix": round(color_mix, 3),
         "blur_px": round(blur_px, 3),
-        "grain": round(float(np.clip(noise * 0.55, 0.015, 0.18)), 3),
-        "shadow_opacity": round(float(np.clip(0.26 - (mean_intensity - 128) / 600, 0.12, 0.36)), 3),
+        "grain": round(grain, 3),
+        "shadow_opacity": round(shadow_opacity, 3),
+        "exposure_bias": round(exposure_bias, 3),
+        "ambient_tint_hex": ambient_hex,
+        "directional_intensity": round(directional_intensity, 3),
+        "ambient_intensity": round(ambient_intensity, 3),
     }
 
 
@@ -184,6 +259,3 @@ def _classify_temperature(warmth: float) -> TemperatureCategory:
         return "warm"
     return "neutral"
 
-
-def _rgb_to_hex(rgb: list[int]) -> str:
-    return "#{:02x}{:02x}{:02x}".format(*rgb)

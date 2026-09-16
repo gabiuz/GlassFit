@@ -105,7 +105,7 @@ def estimate_depth(
             "available": True,
             "mode": "depth_anything_v2",
             "error": None,
-            # Internal key — NOT forwarded to the API response.
+            # Internal key: NOT forwarded to the API response.
             # Used by detect_scene_regions for the depth-plane fitting fallback.
             "_depth_array_normalized": depth_array / depth_array.max()
                 if depth_array.max() > 0 else depth_array,
