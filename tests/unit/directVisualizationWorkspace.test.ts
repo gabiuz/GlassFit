@@ -24,4 +24,24 @@ describe("PRD-F3/PRD-F6: direct visualization workspace entry", () => {
       /useState\(\s*Boolean\(currentProductId \|\| structuralDefinition\),?\s*\)/,
     );
   });
+
+  it("preserves the measured model outline while dimensions rebuild", () => {
+    const modelReloadStart = workspaceSource.indexOf(
+      "mvpRendererRef.current.loadModel(",
+    );
+    const modelReloadEnd = workspaceSource.indexOf(
+      "}, [structuralDefinition, widthCm, heightCm",
+      modelReloadStart,
+    );
+    const modelReloadSource = workspaceSource.slice(
+      modelReloadStart,
+      modelReloadEnd,
+    );
+
+    assert.ok(modelReloadStart >= 0 && modelReloadEnd > modelReloadStart);
+    assert.doesNotMatch(
+      modelReloadSource,
+      /setProjectedModelBounds\(\{ left: 0, top: 0, width: 1, height: 1 \}\)/,
+    );
+  });
 });

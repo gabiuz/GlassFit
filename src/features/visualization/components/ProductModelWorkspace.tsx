@@ -15,6 +15,7 @@ import Button from "@/components/shared/Button";
 import { AddProductModal } from "./AddProductModal";
 import { ManualOcclusionPointPicker } from "./ManualOcclusionPointPicker";
 import { PerspectivePlanePicker } from "./PerspectivePlanePicker";
+import { useNavbarVisibility } from "@/components/shared/NavbarVisibilityContext";
 import type { CatalogProduct } from "@/lib/products/types";
 import type { SpaceImageSession, LightingAnalysis } from "@/lib/imageApi";
 import { ProductModelRenderer } from "@/lib/visualization/modelRenderer";
@@ -228,6 +229,12 @@ export function ProductModelWorkspace({
     initialConfiguration?.perspectiveFitCorners ?? null,
   );
   const [showPerspectivePicker, setShowPerspectivePicker] = useState(false);
+  const { setNavbarHidden } = useNavbarVisibility();
+
+  useEffect(() => {
+    setNavbarHidden(showPerspectivePicker || showOcclusionPointPicker);
+    return () => setNavbarHidden(false);
+  }, [showPerspectivePicker, showOcclusionPointPicker, setNavbarHidden]);
 
   const [selectedProduct, setSelectedProduct] = useState(
     Boolean(currentProductId || structuralDefinition),
@@ -595,8 +602,8 @@ export function ProductModelWorkspace({
       includeSill,
       alumFinish
     ).then(() => {
-      // Trigger a re-render
-      setProjectedModelBounds({ left: 0, top: 0, width: 1, height: 1 });
+      // Preserve the last measured outline while resize interactions pause measurement.
+      // The revision redraw measures the rebuilt model as soon as measurement resumes.
       setModelRevision((prev) => prev + 1);
       setProductBuildError(null);
     });
@@ -2452,10 +2459,10 @@ export function ProductModelWorkspace({
                             <button
                               type="button"
                               onClick={() => setShowPerspectivePicker(true)}
-                              className="bg-[#07b6d3] hover:bg-[#069bb5] text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
+                              className="bg-[#0f1422] hover:bg-black text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
                             >
                               <Maximize className="w-4 h-4 text-white" />
-                              <span className="text-[13px] font-normal tracking-[-0.266px]">Fit to Opening</span>
+                              <span className="text-[13px] font-normal tracking-[-0.266px]">Fit</span>
                             </button>
                           )}
                           <button

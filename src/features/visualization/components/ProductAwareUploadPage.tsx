@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   GuideLine,
+  HeroSection,
   ImageErrorModal,
   ImageLoadingModal,
   ImageSuccessModal,
@@ -80,7 +81,9 @@ export function ProductAwareUploadPage({
 
   return (
     <main className="flex min-h-screen flex-col">
-      <section className="px-6 pt-28 md:px-12 lg:px-24.25">
+      <HeroSection />
+
+      <section className="px-6 pt-8 md:px-12 md:pt-12 lg:px-24.25 lg:pt-17.75">
         <div className="mx-auto flex w-full max-w-367 flex-col gap-5 rounded-[20px] border border-[#c3c3c3]/50 bg-white px-5 py-5 shadow-[0px_0px_5px_0px_rgba(0,0,0,0.18)] md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-4">
             <div className="relative h-20 w-24 shrink-0 overflow-hidden rounded-[10px] bg-neutral-100">
