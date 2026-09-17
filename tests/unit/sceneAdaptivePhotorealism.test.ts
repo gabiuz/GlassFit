@@ -24,8 +24,8 @@ function createMockCanvasContext(): {
     globalCompositeOperation: "source-over",
     fillStyle: "#000000",
     imageSmoothingEnabled: true,
-    save() {},
-    restore() {},
+    save() { },
+    restore() { },
     fillRect(x: number, y: number, w: number, h: number) {
       rects.push({ x, y, w, h });
     },
@@ -44,7 +44,7 @@ function createMockCanvasContext(): {
       gradients.push(grad);
       return grad;
     },
-    drawImage() {},
+    drawImage() { },
   };
 
   return {
@@ -170,10 +170,9 @@ describe("MS-04: Scene-Adaptive Photorealism Harmonization", () => {
       "src/lib/visualization/modelRenderer.ts",
       "utf8",
     );
-    const productBuilderSource = readFileSync(
-      "src/lib/visualization/parametricProductBuilder.ts",
-      "utf8",
-    );
+    const productBuilderSource =
+      readFileSync("src/lib/visualization/parametricProductBuilder.ts", "utf8") +
+      readFileSync("src/lib/visualization/materialClassifier.ts", "utf8");
     const workspaceSource = readFileSync(
       "src/features/visualization/components/ProductModelWorkspace.tsx",
       "utf8",

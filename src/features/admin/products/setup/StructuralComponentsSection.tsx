@@ -1,16 +1,22 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, Suspense } from "react";
-import { UploadCloud, X, Loader2, CheckCircle, AlertCircle, Eye, CheckSquare, Square } from "lucide-react";
+import { UploadCloud, X, Loader2, CheckCircle, AlertCircle, Eye, CheckSquare, Square, Layers, Sparkles } from "lucide-react";
 import { upsertProductComponent, ComponentType } from "@/lib/admin/products/componentMutations";
 import { generatePresignedUrl, confirmAssetUpload } from "@/lib/admin/products/assetUpload";
 import { autoDetectComponentSettings } from "@/lib/admin/products/autoDetection";
+import { decomposeWholeModel, type ExtractedComponentPart } from "@/lib/admin/products/modelDecomposer";
+import { DecompositionPreviewModal } from "./DecompositionPreviewModal";
 import { PartInspectorDrawer, type PartInspectorConfig } from "./PartInspectorDrawer";
 import { getRawMaterials } from "@/lib/admin/materials/materialActions";
 import type { RawMaterial, DimensionBinding, PresentationCategory } from "@/lib/pricing/types";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, Stage } from "@react-three/drei";
 import * as THREE from "three";
+import {
+    classifySceneMesh,
+    createWindowGlassMaterial,
+} from "@/lib/visualization/materialClassifier";
 
 export type StructuralComponentsSectionProps = {
     productId: string;
@@ -18,6 +24,12 @@ export type StructuralComponentsSectionProps = {
     modelStrategy: string | null;
     productType?: string;
     initialData?: unknown;
+    wholeModelAsset?: {
+        asset_id?: string;
+        file_name?: string;
+        file_url?: string;
+        byte_size?: number;
+    } | null;
     onSave: () => void;
 };
 
@@ -41,8 +53,6 @@ type MappedFile = {
     previewMesh?: THREE.Group | null;
     sourceDimensions?: { x: number; y: number; z: number };
 };
-
-const COMPONENT_TYPES: ComponentType[] = ["Model", "Procedural", "Glass", "Frame", "Panel", "Hardware", "Other"];
 
 function formatKeyFromName(name: string) {
     return name.replace(/\.glb$/i, "").replace(/[^a-zA-Z0-9]/g, "_").toLowerCase();
@@ -73,12 +83,16 @@ function getPartScale(targetMeters: number, sourceMeters: number) {
 function PartViewer3D({
     files,
     selectedIds,
+    rawMaterials,
     productType = "Window",
+    viewMode = "assembled",
     onSelectId,
 }: {
     files: MappedFile[];
     selectedIds: Set<string>;
+    rawMaterials: RawMaterial[];
     productType?: string;
+    viewMode?: "assembled" | "exploded";
     onSelectId: (id: string, isShift: boolean) => void;
 }) {
     const group = useMemo(() => {
@@ -99,19 +113,79 @@ function PartViewer3D({
         const hasBottom = filesByKey.has("frame-bottom");
         const hasGlass = filesByKey.has("glass-panel");
 
-        const isWindow = productType.toLowerCase().includes("window") || (hasLeft && hasRight && hasTop && hasBottom);
+        // Check if models share assembly coordinates
+        let isAssemblyCoords = false;
+        files.forEach((f) => {
+            if (f.previewMesh) {
+                const box = new THREE.Box3().setFromObject(f.previewMesh);
+                const center = new THREE.Vector3();
+                box.getCenter(center);
+                if (Math.abs(center.x) > 0.05 || Math.abs(center.y) > 0.05 || Math.abs(center.z) > 0.05) {
+                    isAssemblyCoords = true;
+                }
+            }
+        });
+
+        const isParametricWindow =
+            (productType.toLowerCase().includes("window") || (hasLeft && hasRight && hasTop && hasBottom)) &&
+            !isAssemblyCoords;
+
+        const applyPreviewMaterials = (clone: THREE.Object3D, file: MappedFile) => {
+            const rawMat = rawMaterials.find((m) => m.id === file.rawMaterialId);
+            clone.userData.fileId = file.id;
+            clone.userData.componentKey = file.componentKey;
+            clone.userData.componentName = file.componentName;
+            clone.userData.componentType = file.componentType;
+            clone.userData.presentationCategory = file.presentationCategory;
+            clone.userData.rawMaterialId = file.rawMaterialId;
+            clone.userData.rawMaterialCategory = rawMat?.category ?? null;
+            clone.userData.rawMaterial = rawMat ?? null;
+
+            clone.traverse((child) => {
+                if (child instanceof THREE.Mesh) {
+                    child.userData.fileId = file.id;
+                    child.userData.componentKey = file.componentKey;
+                    child.userData.componentName = file.componentName;
+                    child.userData.componentType = file.componentType;
+                    child.userData.presentationCategory = file.presentationCategory;
+                    child.userData.rawMaterialId = file.rawMaterialId;
+                    child.userData.rawMaterialCategory = rawMat?.category ?? null;
+                    child.userData.rawMaterial = rawMat ?? null;
+
+                    const classification = classifySceneMesh(child);
+                    if (classification === "Glass") {
+                        child.material = createWindowGlassMaterial("clear");
+                    }
+                }
+            });
+        };
 
         const highlightPart = (clone: THREE.Object3D, isSelected: boolean) => {
             clone.traverse((child) => {
                 if (child instanceof THREE.Mesh) {
                     if (isSelected) {
-                        child.material = new THREE.MeshStandardMaterial({
-                            color: new THREE.Color("#07b6d3"),
-                            roughness: 0.3,
-                            metalness: 0.2,
-                            emissive: new THREE.Color("#07b6d3"),
-                            emissiveIntensity: 0.25,
-                        });
+                        const isGlass = classifySceneMesh(child) === "Glass";
+                        if (Array.isArray(child.material)) {
+                            child.material = child.material.map((mat) => {
+                                const m = mat.clone();
+                                if ("emissive" in m && m.emissive instanceof THREE.Color) {
+                                    m.emissive.set("#07b6d3");
+                                    if ("emissiveIntensity" in m) {
+                                        (m as THREE.MeshStandardMaterial).emissiveIntensity = isGlass ? 0.25 : 0.45;
+                                    }
+                                }
+                                return m;
+                            });
+                        } else if (child.material) {
+                            const m = child.material.clone();
+                            if ("emissive" in m && m.emissive instanceof THREE.Color) {
+                                m.emissive.set("#07b6d3");
+                                if ("emissiveIntensity" in m) {
+                                    (m as THREE.MeshStandardMaterial).emissiveIntensity = isGlass ? 0.25 : 0.45;
+                                }
+                            }
+                            child.material = m;
+                        }
                     }
                 }
             });
@@ -132,7 +206,7 @@ function PartViewer3D({
             wrapper.userData.fileId = file.id;
 
             const clone = file.previewMesh.clone();
-            clone.userData.fileId = file.id;
+            applyPreviewMaterials(clone, file);
             recenterGroup(clone);
             wrapper.add(clone);
 
@@ -148,8 +222,29 @@ function PartViewer3D({
             return wrapper;
         };
 
-        // If window parts are present, build assembled window
-        if (isWindow && (hasLeft || hasRight || hasTop || hasBottom || hasGlass)) {
+        if (viewMode === "exploded") {
+            // Exploded / Inspection Mode: Spread parts with clear visual separation along X
+            let offsetX = 0;
+            files.forEach((file) => {
+                if (!file.previewMesh) return;
+                const wrapper = new THREE.Group();
+                wrapper.name = file.componentKey;
+                wrapper.userData.fileId = file.id;
+
+                const clone = file.previewMesh.clone();
+                applyPreviewMaterials(clone, file);
+                recenterGroup(clone);
+                wrapper.add(clone);
+                wrapper.position.set(offsetX, 0, 0);
+
+                highlightPart(wrapper, selectedIds.has(file.id));
+                root.add(wrapper);
+
+                const size = file.sourceDimensions || { x: 0.4, y: 0.4, z: 0.4 };
+                offsetX += (size.x || 0.4) + 0.15;
+            });
+        } else if (isParametricWindow && (hasLeft || hasRight || hasTop || hasBottom || hasGlass)) {
+            // Procedural Parametric Window Assembly
             const widthM = 1.2;
             const heightM = 1.2;
 
@@ -201,7 +296,7 @@ function PartViewer3D({
                 if (part) root.add(part);
             }
 
-            // Center Mullions (Mullion count = centerQty, Panes = Mullions + 1)
+            // Center Mullions
             if (centerF && mullionCount > 0) {
                 for (let i = 0; i < mullionCount; i++) {
                     const xM = -widthM / 2 + leftWidthM + paneWidthM * (i + 1) + mullionWidthM * i + mullionWidthM / 2;
@@ -210,7 +305,7 @@ function PartViewer3D({
                 }
             }
 
-            // Glass Panels (paneCount = mullionCount + 1)
+            // Glass Panels
             if (glassF) {
                 for (let i = 0; i < paneCount; i++) {
                     const xM = -widthM / 2 + leftWidthM + paneWidthM * i + mullionWidthM * i + paneWidthM / 2;
@@ -233,7 +328,7 @@ function PartViewer3D({
                 if (part) root.add(part);
             }
 
-            // Other unplaced components (hardware, rollers, accessories)
+            // Other unplaced components
             const placedKeys = new Set(["frame-left", "frame-right", "frame-top", "frame-bottom", "frame-center", "glass-panel", "window-sill"]);
             let extraOffsetX = widthM / 2 + 0.2;
             files.forEach((f) => {
@@ -247,29 +342,24 @@ function PartViewer3D({
                     }
                 }
             });
-
         } else {
-            // General / Stacked assembly fallback
-            let offsetX = 0;
-            files.forEach((f) => {
-                if (f.previewMesh) {
-                    const part = createPreviewPart(f, offsetX, 0, 0);
-                    if (part) {
-                        root.add(part);
-                        const size = f.sourceDimensions || { x: 0.4, y: 0.4, z: 0.4 };
-                        offsetX += (size.x || 0.4) + 0.15;
-                    }
-                }
+            // Assembled (Built) View: Place each component at its modeled natural coordinates
+            files.forEach((file) => {
+                if (!file.previewMesh) return;
+                const clone = file.previewMesh.clone();
+                applyPreviewMaterials(clone, file);
+                highlightPart(clone, selectedIds.has(file.id));
+                root.add(clone);
             });
         }
 
         recenterGroup(root);
         return root;
-    }, [files, selectedIds, productType]);
+    }, [files, selectedIds, rawMaterials, productType, viewMode]);
 
     return (
-        <primitive 
-            object={group} 
+        <primitive
+            object={group}
             onClick={(e: { stopPropagation: () => void; object: THREE.Object3D; shiftKey?: boolean }) => {
                 e.stopPropagation();
                 let curr: THREE.Object3D | null = e.object;
@@ -284,8 +374,25 @@ function PartViewer3D({
     );
 }
 
-export function StructuralComponentsSection({ productId, templateId, modelStrategy, productType = "Window", initialData, onSave }: StructuralComponentsSectionProps) {
+export function StructuralComponentsSection({
+    productId,
+    templateId,
+    modelStrategy,
+    productType = "Window",
+    initialData,
+    wholeModelAsset,
+    onSave,
+}: StructuralComponentsSectionProps) {
+    const [uploadMode, setUploadMode] = useState<"individual" | "assembled">("individual");
+    const [viewMode, setViewMode] = useState<"assembled" | "exploded">("assembled");
     const [isDragging, setIsDragging] = useState(false);
+    const [isDecomposing, setIsDecomposing] = useState(false);
+    const [decompositionModalOpen, setDecompositionModalOpen] = useState(false);
+    const [extractedParts, setExtractedParts] = useState<ExtractedComponentPart[]>([]);
+    const [decompositionSourceFileName, setDecompositionSourceFileName] = useState("");
+    const [decompositionWarnings, setDecompositionWarnings] = useState<string[]>([]);
+    const [decompositionError, setDecompositionError] = useState<string | null>(null);
+
     const [rawMaterials, setRawMaterials] = useState<RawMaterial[]>([]);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
@@ -328,8 +435,9 @@ export function StructuralComponentsSection({ productId, templateId, modelStrate
         });
     });
 
-    // Synchronize state when initialData updates from server / draft refresh
-    useEffect(() => {
+    const [prevInitialData, setPrevInitialData] = useState(initialData);
+    if (initialData !== prevInitialData) {
+        setPrevInitialData(initialData);
         if (Array.isArray(initialData) && initialData.length > 0) {
             setMappedFiles((prev) => {
                 if (prev.length === 0) {
@@ -369,7 +477,7 @@ export function StructuralComponentsSection({ productId, templateId, modelStrate
                 });
             });
         }
-    }, [initialData]);
+    }
 
     // Load preview meshes for initial files that have remote glb URLs or need local loading
     useEffect(() => {
@@ -392,10 +500,10 @@ export function StructuralComponentsSection({ productId, templateId, modelStrate
                             prev.map((m) =>
                                 m.id === item.id
                                     ? {
-                                          ...m,
-                                          previewMesh: gltf.scene,
-                                          sourceDimensions: { x: size.x, y: size.y, z: size.z },
-                                      }
+                                        ...m,
+                                        previewMesh: gltf.scene,
+                                        sourceDimensions: { x: size.x, y: size.y, z: size.z },
+                                    }
                                     : m
                             )
                         );
@@ -410,36 +518,14 @@ export function StructuralComponentsSection({ productId, templateId, modelStrate
             isCancelled = true;
         };
     }, [mappedFiles]);
-    
-    const [isUploadingAll, setIsUploadingAll] = useState(false);
 
-    // If it's fixed, we skip
-    if (modelStrategy !== "Parametric") {
-        return (
-            <div className="flex flex-col items-center justify-center py-16 px-4 text-center border-2 border-dashed border-neutral-200 rounded-[16px] bg-neutral-50">
-                <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-sm mb-4">
-                    <CheckCircle className="size-8 text-[#05b64b]" />
-                </div>
-                <h3 className="text-xl font-medium text-[#0f1422] mb-2">Not Applicable for Fixed Models</h3>
-                <p className="text-neutral-500 max-w-md">
-                    This product is configured as a Fixed model. Structural components are only required for Parametric models.
-                </p>
-                <button
-                    type="button"
-                    onClick={onSave}
-                    className="mt-6 bg-[#0f1422] text-white px-6 py-2.5 rounded-[10px] hover:bg-black transition-colors font-medium"
-                >
-                    Continue to Next Step
-                </button>
-            </div>
-        );
-    }
+    const [isUploadingAll, setIsUploadingAll] = useState(false);
 
     const handleFilesAdded = async (files: FileList | null) => {
         if (!files) return;
-        
+
         const glbFiles = Array.from(files).filter(f => f.name.toLowerCase().endsWith(".glb"));
-        
+
         const newMappedPromises = glbFiles.map(async (f) => {
             const autoDetected = autoDetectComponentSettings(f.name);
             let previewMesh: THREE.Group | null = null;
@@ -485,6 +571,101 @@ export function StructuralComponentsSection({ productId, templateId, modelStrate
         if (newMapped.length > 0 && selectedIds.size === 0) {
             setSelectedIds(new Set([newMapped[0].id]));
         }
+    };
+
+    const handleAssembledFileAdded = async (files: FileList | null) => {
+        if (!files || files.length === 0) return;
+        const file = files[0];
+        if (!file.name.toLowerCase().endsWith(".glb")) {
+            setDecompositionError("Please upload a valid .glb 3D model file.");
+            return;
+        }
+
+        setIsDecomposing(true);
+        setDecompositionError(null);
+
+        try {
+            const result = await decomposeWholeModel(file);
+
+            if (!result.success) {
+                setDecompositionError(result.error || "Failed to decompose 3D model.");
+                setIsDecomposing(false);
+                return;
+            }
+
+            setExtractedParts(result.extractedParts);
+            setDecompositionSourceFileName(file.name);
+            setDecompositionWarnings(result.warnings);
+            setDecompositionModalOpen(true);
+        } catch (err: unknown) {
+            console.error("Model decomposition error:", err);
+            const msg = err instanceof Error ? err.message : "Failed to decompose model.";
+            setDecompositionError(msg);
+        } finally {
+            setIsDecomposing(false);
+        }
+    };
+
+    const handleDecomposeFromCatalogAsset = async () => {
+        if (!wholeModelAsset?.file_url) return;
+        setIsDecomposing(true);
+        setDecompositionError(null);
+
+        try {
+            const res = await fetch(wholeModelAsset.file_url);
+            if (!res.ok) throw new Error("Could not download whole 3D model asset from Step 3.");
+            const buffer = await res.arrayBuffer();
+            const result = await decomposeWholeModel(buffer, { minBoundingDimensionMeters: 0.005 });
+
+            if (!result.success) {
+                setDecompositionError(result.error || "Failed to decompose whole 3D model.");
+                setIsDecomposing(false);
+                return;
+            }
+
+            setExtractedParts(result.extractedParts);
+            setDecompositionSourceFileName(wholeModelAsset.file_name || "whole_model.glb");
+            setDecompositionWarnings(result.warnings);
+            setDecompositionModalOpen(true);
+        } catch (err: unknown) {
+            console.error("Model decomposition error:", err);
+            const msg = err instanceof Error ? err.message : "Failed to decompose whole model.";
+            setDecompositionError(msg);
+        } finally {
+            setIsDecomposing(false);
+        }
+    };
+
+    const handleApplyExtractedParts = (selectedParts: ExtractedComponentPart[]) => {
+        const newMapped: MappedFile[] = selectedParts.map((part) => ({
+            id: part.id || crypto.randomUUID(),
+            file: part.file,
+            componentKey: part.componentKey,
+            componentName: part.componentName,
+            componentType: part.componentType,
+            assemblyGroup: part.presentationCategory.toLowerCase(),
+            baseQuantity: part.baseQuantity || 1,
+            rawMaterialId: null,
+            dimensionBinding: part.dimensionBinding,
+            spanRatio: part.spanRatio,
+            isRemovable: part.isRemovable,
+            togglePropertyKey: part.togglePropertyKey,
+            presentationCategory: part.presentationCategory,
+            glbFileUrl: null,
+            status: "idle" as const,
+            previewMesh: part.previewMesh,
+            sourceDimensions: {
+                x: part.dimensionsMm.width / 1000,
+                y: part.dimensionsMm.height / 1000,
+                z: part.dimensionsMm.depth / 1000,
+            },
+        }));
+
+        setMappedFiles((prev) => [...prev, ...newMapped]);
+        if (newMapped.length > 0) {
+            setSelectedIds(new Set([newMapped[0].id]));
+        }
+        setDecompositionModalOpen(false);
     };
 
     const updateMappedFile = (id: string, updates: Partial<MappedFile>) => {
@@ -541,7 +722,7 @@ export function StructuralComponentsSection({ productId, templateId, modelStrate
             // 1. Inspect GLB dynamically to avoid SSR issues
             const THREE = await import("three");
             const { GLTFLoader } = await import("three/addons/loaders/GLTFLoader.js");
-            
+
             let dimensions = mapped.sourceDimensions || { x: 1, y: 1, z: 1 };
             if (mapped.file.size > 0) {
                 const url = URL.createObjectURL(mapped.file);
@@ -620,13 +801,13 @@ export function StructuralComponentsSection({ productId, templateId, modelStrate
     const handleUploadAll = async () => {
         setIsUploadingAll(true);
         const pending = mappedFiles.filter(m => m.status === "idle" || m.status === "error");
-        
+
         const chunkSize = 3;
         for (let i = 0; i < pending.length; i += chunkSize) {
             const chunk = pending.slice(i, i + chunkSize);
             await Promise.all(chunk.map(processSingleUpload));
         }
-        
+
         setIsUploadingAll(false);
     };
 
@@ -666,6 +847,28 @@ export function StructuralComponentsSection({ productId, templateId, modelStrate
             }));
     }, [mappedFiles, selectedIds]);
 
+    // If it is fixed, skip structural components setup
+    if (modelStrategy !== "Parametric") {
+        return (
+            <div className="flex flex-col items-center justify-center py-16 px-4 text-center border-2 border-dashed border-neutral-200 rounded-[16px] bg-neutral-50">
+                <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-sm mb-4">
+                    <CheckCircle className="size-8 text-[#05b64b]" />
+                </div>
+                <h3 className="text-xl font-medium text-[#0f1422] mb-2">Not Applicable for Fixed Models</h3>
+                <p className="text-neutral-500 max-w-md">
+                    This product is configured as a Fixed model. Structural components are only required for Parametric models.
+                </p>
+                <button
+                    type="button"
+                    onClick={onSave}
+                    className="mt-6 bg-[#0f1422] text-white px-6 py-2.5 rounded-[10px] hover:bg-black transition-colors font-medium cursor-pointer"
+                >
+                    Continue to Next Step
+                </button>
+            </div>
+        );
+    }
+
     return (
         <div className="flex flex-col gap-[24px]">
             <div className="flex flex-col gap-1 text-[#0f1422]">
@@ -677,30 +880,165 @@ export function StructuralComponentsSection({ productId, templateId, modelStrate
                 </p>
             </div>
 
-            {/* Dropzone */}
-            <label 
-                className={`w-full h-28 border-2 border-dashed rounded-[16px] flex flex-col items-center justify-center cursor-pointer transition-colors ${
-                    isDragging ? "bg-[#07b6d3]/10 border-[#07b6d3]" : "bg-[#f5f5f5]/50 border-neutral-300 hover:bg-neutral-100"
-                }`}
-                onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
-                onDragLeave={(e) => { e.preventDefault(); setIsDragging(false); }}
-                onDrop={(e) => {
-                    e.preventDefault();
-                    setIsDragging(false);
-                    handleFilesAdded(e.dataTransfer.files);
-                }}
-            >
-                <UploadCloud className="size-7 text-neutral-400 mb-1.5 pointer-events-none" />
-                <p className="text-[#0f1422] font-medium text-sm pointer-events-none">Drag & drop multiple .glb parts here</p>
-                <p className="text-[11px] text-neutral-500 pointer-events-none">Auto-detects Series 798 heads, sills, jambs, rails, glass & rollers</p>
-                <input
-                    type="file"
-                    accept=".glb,model/gltf-binary"
-                    multiple
-                    className="hidden"
-                    onChange={(e) => handleFilesAdded(e.target.files)}
-                />
-            </label>
+            {/* Step 3 Whole Model Auto-Ingestion Banner */}
+            {wholeModelAsset?.file_url && (
+                <div className="bg-gradient-to-r from-sky-50 via-cyan-50 to-blue-50 border border-[#07b6d3]/30 rounded-[16px] p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-[12px] bg-[#07b6d3] text-white flex items-center justify-center shrink-0 shadow-xs">
+                            <Sparkles className="size-5" />
+                        </div>
+                        <div>
+                            <div className="flex items-center gap-2">
+                                <h4 className="text-sm font-semibold text-[#0f1422]">Whole 3D Model Detected (from Step 3)</h4>
+                                <span className="px-2 py-0.5 rounded-full bg-white text-[#07b6d3] text-[10px] font-mono font-medium border border-[#07b6d3]/20">
+                                    {wholeModelAsset.file_name || "Whole Model GLB"}
+                                </span>
+                            </div>
+                            <p className="text-xs text-neutral-600 mt-0.5">
+                                Automatically unpack structural components directly from your catalog model with 100% geometry, texture, and coordinate parity.
+                            </p>
+                        </div>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={handleDecomposeFromCatalogAsset}
+                        disabled={isDecomposing}
+                        className="bg-[#0f1422] text-white hover:bg-black px-4 py-2 rounded-[10px] text-xs font-semibold transition-all flex items-center gap-2 shrink-0 cursor-pointer shadow-xs disabled:opacity-50"
+                    >
+                        {isDecomposing ? <Loader2 className="size-3.5 animate-spin" /> : <Layers className="size-3.5 text-[#07b6d3]" />}
+                        {isDecomposing ? "Unpacking Model..." : "Extract Components from Whole Model"}
+                    </button>
+                </div>
+            )}
+
+            {/* Ingestion Mode Segmented Toggle */}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="bg-slate-100 p-1.5 rounded-[14px] inline-flex border border-neutral-200">
+                    <button
+                        type="button"
+                        onClick={() => setUploadMode("individual")}
+                        className={`px-3.5 py-1.5 rounded-[10px] text-xs transition-all font-medium cursor-pointer ${uploadMode === "individual"
+                                ? "bg-white shadow-xs text-slate-900 font-semibold"
+                                : "text-slate-500 hover:text-slate-900"
+                            }`}
+                    >
+                        Upload Individual Parts
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setUploadMode("assembled")}
+                        className={`px-3.5 py-1.5 rounded-[10px] text-xs transition-all font-medium cursor-pointer flex items-center gap-1.5 ${uploadMode === "assembled"
+                                ? "bg-white shadow-xs text-slate-900 font-semibold"
+                                : "text-slate-500 hover:text-slate-900"
+                            }`}
+                    >
+                        <Layers className="size-3.5 text-[#07b6d3]" />
+                        Decompose Whole Model
+                    </button>
+                </div>
+                <span className="text-xs text-neutral-500 hidden sm:inline">
+                    {uploadMode === "individual"
+                        ? "Upload standalone profile and glass .glb files directly"
+                        : "Upload an assembled .glb model and unpack parts automatically"}
+                </span>
+            </div>
+
+            {/* Error Notification Banner */}
+            {decompositionError && (
+                <div className="p-4 rounded-[14px] bg-amber-50 border border-amber-200 text-amber-900 flex items-start justify-between gap-3 animate-in fade-in duration-200">
+                    <div className="flex items-start gap-3">
+                        <AlertCircle className="size-5 text-amber-600 shrink-0 mt-0.5" />
+                        <div className="text-xs space-y-1">
+                            <p className="font-semibold text-amber-950">Model Decomposition Notice</p>
+                            <p className="text-amber-800">{decompositionError}</p>
+                            <div className="pt-1.5 text-[11px] text-amber-700 space-y-0.5">
+                                <p className="font-medium">Recommended next steps:</p>
+                                <ul className="list-disc list-inside space-y-0.5 ml-1">
+                                    <li>Switch to &quot;Upload Individual Parts&quot; mode to drop individual .glb files.</li>
+                                    <li>Export the 3D model from CAD/Blender with separate named objects (do not join meshes).</li>
+                                    <li>If this product is non-parametric, configure it as a Fixed Whole Model in Step 1.</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => setDecompositionError(null)}
+                        className="text-amber-600 hover:text-amber-900 p-1 rounded-md hover:bg-amber-100 transition-colors"
+                    >
+                        <X className="size-4" />
+                    </button>
+                </div>
+            )}
+
+            {/* Dropzone - Individual Parts Mode */}
+            {uploadMode === "individual" && (
+                <label
+                    className={`w-full h-28 border-2 border-dashed rounded-[16px] flex flex-col items-center justify-center cursor-pointer transition-colors ${isDragging ? "bg-[#07b6d3]/10 border-[#07b6d3]" : "bg-[#f5f5f5]/50 border-neutral-300 hover:bg-neutral-100"
+                        }`}
+                    onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                    onDragLeave={(e) => { e.preventDefault(); setIsDragging(false); }}
+                    onDrop={(e) => {
+                        e.preventDefault();
+                        setIsDragging(false);
+                        handleFilesAdded(e.dataTransfer.files);
+                    }}
+                >
+                    <UploadCloud className="size-7 text-neutral-400 mb-1.5 pointer-events-none" />
+                    <p className="text-[#0f1422] font-medium text-sm pointer-events-none">Drag & drop multiple .glb parts here</p>
+                    <p className="text-[11px] text-neutral-500 pointer-events-none">Auto-detects Series 798 heads, sills, jambs, rails, glass & rollers</p>
+                    <input
+                        type="file"
+                        accept=".glb,model/gltf-binary"
+                        multiple
+                        className="hidden"
+                        onChange={(e) => handleFilesAdded(e.target.files)}
+                    />
+                </label>
+            )}
+
+            {/* Dropzone - Whole Model Decomposition Mode */}
+            {uploadMode === "assembled" && (
+                <label
+                    className={`w-full min-h-32 border-2 border-dashed rounded-[16px] flex flex-col items-center justify-center p-5 cursor-pointer transition-colors ${isDragging ? "bg-[#07b6d3]/10 border-[#07b6d3]" : "bg-[#f0f9ff]/40 border-[#07b6d3]/40 hover:bg-[#07b6d3]/10"
+                        }`}
+                    onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                    onDragLeave={(e) => { e.preventDefault(); setIsDragging(false); }}
+                    onDrop={(e) => {
+                        e.preventDefault();
+                        setIsDragging(false);
+                        handleAssembledFileAdded(e.dataTransfer.files);
+                    }}
+                >
+                    {isDecomposing ? (
+                        <div className="flex flex-col items-center justify-center py-2 text-center pointer-events-none">
+                            <Loader2 className="size-8 text-[#07b6d3] animate-spin mb-2" />
+                            <p className="text-sm font-semibold text-[#0f1422]">Unpacking scene graph and extracting structural parts...</p>
+                            <p className="text-xs text-neutral-500 mt-1">Isolating sub-meshes, recentering geometries, and synthesizing GLB blobs in memory</p>
+                        </div>
+                    ) : (
+                        <div className="flex flex-col items-center text-center pointer-events-none">
+                            <div className="w-10 h-10 rounded-full bg-[#07b6d3]/15 text-[#07b6d3] flex items-center justify-center mb-2">
+                                <Layers className="size-5" />
+                            </div>
+                            <p className="text-[#0f1422] font-semibold text-sm">Upload Assembled Product GLB</p>
+                            <p className="text-xs text-neutral-600 max-w-md mt-0.5">
+                                Drop a complete 3D model containing separated, named components. GlassFit will automatically unpack each structural element.
+                            </p>
+                            <span className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white text-neutral-600 text-[10px] font-mono border border-neutral-200 shadow-2xs">
+                                <Sparkles className="size-3 text-[#07b6d3]" /> Format: .GLB (glTF 2.0 Binary) with named nodes
+                            </span>
+                        </div>
+                    )}
+                    <input
+                        type="file"
+                        accept=".glb,model/gltf-binary"
+                        disabled={isDecomposing}
+                        className="hidden"
+                        onChange={(e) => handleAssembledFileAdded(e.target.files)}
+                    />
+                </label>
+            )}
 
             {/* Quick Material Mapping Summary Banner */}
             {mappedFiles.length > 0 && (
@@ -743,18 +1081,43 @@ export function StructuralComponentsSection({ productId, templateId, modelStrate
                         <div className="absolute top-3 left-3 z-10 bg-white/90 backdrop-blur-md px-3 py-1 rounded-full text-[11px] font-medium text-neutral-700 shadow-xs border border-neutral-200 flex items-center gap-1.5">
                             <Eye className="size-3.5 text-[#07b6d3]" /> Click part to inspect (Shift+Click for multi-select)
                         </div>
-                        
+
+                        <div className="absolute top-3 right-3 z-10 bg-white/90 backdrop-blur-md p-1 rounded-[10px] inline-flex border border-neutral-200 shadow-xs">
+                            <button
+                                type="button"
+                                onClick={() => setViewMode("assembled")}
+                                className={`px-2.5 py-1 rounded-[6px] text-xs transition-all font-medium cursor-pointer ${viewMode === "assembled"
+                                        ? "bg-[#0f1422] text-white shadow-2xs"
+                                        : "text-neutral-600 hover:text-neutral-900"
+                                    }`}
+                            >
+                                Assembled (Built)
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setViewMode("exploded")}
+                                className={`px-2.5 py-1 rounded-[6px] text-xs transition-all font-medium cursor-pointer ${viewMode === "exploded"
+                                        ? "bg-[#0f1422] text-white shadow-2xs"
+                                        : "text-neutral-600 hover:text-neutral-900"
+                                    }`}
+                            >
+                                Exploded (Separated)
+                            </button>
+                        </div>
+
                         <div className="w-full h-full min-h-[360px] flex-1">
                             <Canvas shadows camera={{ position: [0, 1.5, 3], fov: 45 }}>
                                 <ambientLight intensity={0.7} />
                                 <directionalLight position={[5, 8, 5]} intensity={1.2} />
                                 <Suspense fallback={null}>
                                     <Stage environment="city" adjustCamera={false}>
-                                        <PartViewer3D 
-                                            files={mappedFiles} 
-                                            selectedIds={selectedIds} 
+                                        <PartViewer3D
+                                            files={mappedFiles}
+                                            selectedIds={selectedIds}
+                                            rawMaterials={rawMaterials}
                                             productType={productType}
-                                            onSelectId={handleSelectPart} 
+                                            viewMode={viewMode}
+                                            onSelectId={handleSelectPart}
                                         />
                                     </Stage>
                                 </Suspense>
@@ -786,7 +1149,7 @@ export function StructuralComponentsSection({ productId, templateId, modelStrate
 
                     {/* Right Side: Part Inspector Drawer (40% / 5 cols) */}
                     <div className="lg:col-span-5 bg-white flex flex-col h-full min-h-[460px]">
-                        <PartInspectorDrawer 
+                        <PartInspectorDrawer
                             selectedParts={selectedPartConfigs}
                             rawMaterials={rawMaterials}
                             onUpdateParts={handleBatchUpdateSelected}
@@ -823,7 +1186,7 @@ export function StructuralComponentsSection({ productId, templateId, modelStrate
                             <thead className="bg-[#f9fafb] border-b border-neutral-200 text-neutral-500 font-medium">
                                 <tr>
                                     <th className="px-3 py-2 w-8">
-                                        <button 
+                                        <button
                                             type="button"
                                             onClick={() => {
                                                 if (selectedIds.size === mappedFiles.length) setSelectedIds(new Set());
@@ -853,12 +1216,11 @@ export function StructuralComponentsSection({ productId, templateId, modelStrate
                                     const mat = rawMaterials.find(m => m.id === mapped.rawMaterialId);
 
                                     return (
-                                        <tr 
-                                            key={mapped.id} 
+                                        <tr
+                                            key={mapped.id}
                                             onClick={() => handleSelectPart(mapped.id, false)}
-                                            className={`hover:bg-neutral-50 cursor-pointer transition-colors ${
-                                                isSelected ? "bg-[#07b6d3]/5" : ""
-                                            }`}
+                                            className={`hover:bg-neutral-50 cursor-pointer transition-colors ${isSelected ? "bg-[#07b6d3]/5" : ""
+                                                }`}
                                         >
                                             <td className="px-3 py-2" onClick={(e) => { e.stopPropagation(); handleSelectPart(mapped.id, true); }}>
                                                 {isSelected ? (
@@ -921,7 +1283,7 @@ export function StructuralComponentsSection({ productId, templateId, modelStrate
                                                 )}
                                             </td>
                                             <td className="px-3 py-2 text-right">
-                                                <button 
+                                                <button
                                                     type="button"
                                                     onClick={(e) => { e.stopPropagation(); removeMappedFile(mapped.id); }}
                                                     className="text-neutral-400 hover:text-red-500 transition-colors"
@@ -949,6 +1311,16 @@ export function StructuralComponentsSection({ productId, templateId, modelStrate
                     {isUploadingAll ? "Saving Changes..." : "Continue to Parameters & Rules"}
                 </button>
             </div>
+
+            {/* Whole-Model Decomposition Review Drawer / Modal */}
+            <DecompositionPreviewModal
+                isOpen={decompositionModalOpen}
+                sourceFileName={decompositionSourceFileName}
+                parts={extractedParts}
+                warnings={decompositionWarnings}
+                onClose={() => setDecompositionModalOpen(false)}
+                onApplyParts={handleApplyExtractedParts}
+            />
         </div>
     );
 }

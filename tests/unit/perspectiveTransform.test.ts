@@ -343,4 +343,62 @@ describe("MS-02: 4-Point Perspective Plane Fitting for Window Products", () => {
       assert.equal(initialPitch, 0);
     });
   });
+
+  describe("MS-07: 4-Point Perspective Plane Fitting Extension for Door Products", () => {
+    it("estimates realistic dimensions for a standard single swing door (aspect < 1.0)", () => {
+      // 90cm wide by 210cm tall door aperture (pixel scale 2:1)
+      const doorCorners: QuadrilateralCorners = [
+        { x: 100, y: 50 },
+        { x: 280, y: 50 },
+        { x: 280, y: 470 },
+        { x: 100, y: 470 },
+      ];
+      const { widthRatio, heightRatio } = estimateDimensionsFromCorners(doorCorners);
+      assert.ok(widthRatio > 0, "widthRatio should be positive");
+      assert.ok(heightRatio > 0, "heightRatio should be positive");
+
+      const aspect = widthRatio / heightRatio;
+      assert.ok(Math.abs(aspect - (90 / 210)) < 0.05, "Aspect ratio should approximate 90/210 (~0.428)");
+
+      // Height-anchored door dimension estimation formula (currentH = 210)
+      const currentH = 210;
+      const calculatedWidth = Math.round(currentH * aspect);
+      assert.equal(calculatedWidth, 90, "Calculated door width should match 90cm");
+    });
+
+    it("estimates realistic dimensions for a wide sliding patio door (aspect > 1.0)", () => {
+      // 300cm wide by 210cm tall patio door opening
+      const patioDoorCorners: QuadrilateralCorners = [
+        { x: 50, y: 50 },
+        { x: 650, y: 50 },
+        { x: 650, y: 470 },
+        { x: 50, y: 470 },
+      ];
+      const { widthRatio, heightRatio } = estimateDimensionsFromCorners(patioDoorCorners);
+      const aspect = widthRatio / heightRatio;
+      assert.ok(Math.abs(aspect - (300 / 210)) < 0.05, "Aspect ratio should approximate 300/210 (~1.428)");
+
+      const currentH = 210;
+      const calculatedWidth = Math.round(currentH * aspect);
+      assert.equal(calculatedWidth, 300, "Calculated patio door width should match 300cm");
+    });
+
+    it("computes non-singular homography and valid matrix3d for tall door openings", () => {
+      // Oblique single door opening with perspective convergence
+      const obliqueDoorCorners: QuadrilateralCorners = [
+        { x: 120, y: 60 },
+        { x: 270, y: 80 },
+        { x: 250, y: 460 },
+        { x: 90, y: 480 },
+      ];
+      assert.ok(isValidQuadrilateral(obliqueDoorCorners), "Door corners should form convex quadrilateral");
+
+      const H = computeHomographyMatrix(unitSquare, obliqueDoorCorners);
+      assert.ok(H !== null, "Homography should not be null for oblique door opening");
+
+      const css = homographyToCssMatrix3d(obliqueDoorCorners, 90, 210);
+      assert.ok(css.startsWith("matrix3d("), "Must generate matrix3d transform for door");
+    });
+  });
 });
+

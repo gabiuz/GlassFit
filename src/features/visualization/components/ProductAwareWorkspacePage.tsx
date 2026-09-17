@@ -30,29 +30,28 @@ export function ProductAwareWorkspacePage({
     setPlacedOverlays,
     setComparisonOverlays,
     setFinalSnapshotDataUrl,
-    selectWorkspaceProduct,
+    transitionWorkspaceProduct,
     resetVisualizationSession,
   } = useVisualizationSession();
 
-  const hasMatchingSession =
-    selectedProductId === productId && Boolean(spaceImageSession);
+  const hasValidSession = Boolean(spaceImageSession);
 
   useEffect(() => {
-    if (!hasMatchingSession) {
+    if (!hasValidSession) {
       router.replace(`/visualize/${productId}/upload`);
       return;
     }
 
     setStructuralDefinition(structuralDefinition);
   }, [
-    hasMatchingSession,
+    hasValidSession,
     productId,
     router,
     setStructuralDefinition,
     structuralDefinition,
   ]);
 
-  if (!hasMatchingSession || !spaceImageSession) {
+  if (!hasValidSession || !spaceImageSession) {
     return (
       <main className="flex min-h-screen items-center justify-center px-6 pt-24">
         <div className="rounded-[20px] bg-neutral-100 px-6 py-5 text-black">

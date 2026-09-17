@@ -15,9 +15,9 @@ export type ParametersAndRulesSectionProps = {
     modelStrategy: string | null;
     productType?: string;
     initialData?: {
-        parameters: any[];
-        rules: any[];
-        components: any[];
+        parameters?: UpsertParameterInput[];
+        rules?: UpsertRuleInput[];
+        components?: Record<string, unknown>[];
     };
     onSave: () => void;
 };
