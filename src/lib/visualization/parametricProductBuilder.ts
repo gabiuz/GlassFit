@@ -3,6 +3,13 @@
 import * as THREE from "three";
 import type { ComponentModelCache } from "./componentModelCache";
 import { normalizeComponentKey } from "./structuralResolver";
+import {
+  classifySceneMesh,
+  createMaterialPalette,
+  createWindowGlassMaterial,
+} from "./materialClassifier";
+
+export { createWindowGlassMaterial, createMaterialPalette };
 import type {
   GlassAppearanceMode,
   ProductComponentDefinition,
@@ -36,6 +43,7 @@ export function buildParametricProduct(
     ]),
   );
 
+  const isWindowProductType = (definition.product?.productType || "").toLowerCase().includes("window");
   const hasWindowKeys = [
     "frame-left",
     "frame-right",
@@ -44,7 +52,7 @@ export function buildParametricProduct(
     "glass-panel",
   ].every((key) => componentsByKey.has(key));
 
-  if (hasWindowKeys) {
+  if (isWindowProductType && hasWindowKeys) {
     return {
       group: buildWindowLikeProduct(definition, resolved, cache, componentsByKey, options),
       resolved,
@@ -52,7 +60,7 @@ export function buildParametricProduct(
   }
 
   return {
-    group: buildStackedProduct(definition, resolved, cache, options),
+    group: buildAssembledProduct(definition, resolved, cache, options),
     resolved,
   };
 }
@@ -88,27 +96,27 @@ function buildWindowLikeProduct(
   );
   const explicitMullionCount = resolved.componentQuantities["frame-center"];
   const explicitGlassCount = resolved.componentQuantities["glass-panel"];
-  
+
   let mullionCount = 0;
   let paneCount = 1;
 
   if (explicitMullionCount !== undefined && explicitGlassCount !== undefined) {
-      mullionCount = explicitMullionCount;
-      paneCount = Math.max(1, explicitGlassCount);
+    mullionCount = explicitMullionCount;
+    paneCount = Math.max(1, explicitGlassCount);
   } else if (explicitMullionCount !== undefined) {
-      mullionCount = explicitMullionCount;
-      paneCount = mullionCount + 1;
+    mullionCount = explicitMullionCount;
+    paneCount = mullionCount + 1;
   } else if (explicitGlassCount !== undefined) {
-      paneCount = Math.max(1, explicitGlassCount);
-      mullionCount = Math.max(0, paneCount - 1);
+    paneCount = Math.max(1, explicitGlassCount);
+    mullionCount = Math.max(0, paneCount - 1);
   } else {
-      paneCount = Math.max(1, Math.round(toNumber(resolved.resolvedValues.pane_count, 2)));
-      mullionCount = Math.max(0, Math.round(toNumber(resolved.resolvedValues.mullion_count, paneCount - 1)));
+    paneCount = Math.max(1, Math.round(toNumber(resolved.resolvedValues.pane_count, 2)));
+    mullionCount = Math.max(0, Math.round(toNumber(resolved.resolvedValues.mullion_count, paneCount - 1)));
   }
 
   // Ensure window structural invariant: pane count must always be at least mullion count + 1
   if (paneCount < mullionCount + 1) {
-      paneCount = mullionCount + 1;
+    paneCount = mullionCount + 1;
   }
 
   const innerWidthMm =
@@ -213,11 +221,11 @@ function buildWindowLikeProduct(
     options.includeSill !== undefined
       ? Boolean(options.includeSill)
       : (
-          readBoolean(resolved.resolvedValues.includeSill, true) &&
-          readBoolean(resolved.resolvedValues.include_sill, true) &&
-          readBoolean(resolved.resolvedValues.has_sill, true) &&
-          readBoolean(resolved.resolvedValues.hasSill, true)
-        );
+        readBoolean(resolved.resolvedValues.includeSill, true) &&
+        readBoolean(resolved.resolvedValues.include_sill, true) &&
+        readBoolean(resolved.resolvedValues.has_sill, true) &&
+        readBoolean(resolved.resolvedValues.hasSill, true)
+      );
 
   if (
     includeSill &&
@@ -242,7 +250,25 @@ function buildWindowLikeProduct(
   return group;
 }
 
-function buildStackedProduct(
+function findDimensionMm(resolved: ResolvedStructure, keys: string[]): number | null {
+  for (const key of keys) {
+    const lower = key.toLowerCase();
+    for (const [k, v] of Object.entries(resolved.numericValuesMm)) {
+      if (k.toLowerCase() === lower && typeof v === "number" && Number.isFinite(v) && v > 0) {
+        return v;
+      }
+    }
+    for (const [k, v] of Object.entries(resolved.resolvedValues)) {
+      if (k.toLowerCase() === lower) {
+        const num = toNumber(v, 0);
+        if (num > 0) return num;
+      }
+    }
+  }
+  return null;
+}
+
+function buildAssembledProduct(
   definition: ProductStructuralDefinition,
   resolved: ResolvedStructure,
   cache: ComponentModelCache,
@@ -250,18 +276,18 @@ function buildStackedProduct(
 ) {
   const group = new THREE.Group();
   group.name = "GeneratedProduct";
-  let cursorX = 0;
 
   const includeSill =
     options.includeSill !== undefined
       ? Boolean(options.includeSill)
       : (
-          readBoolean(resolved.resolvedValues.includeSill, true) &&
-          readBoolean(resolved.resolvedValues.include_sill, true) &&
-          readBoolean(resolved.resolvedValues.has_sill, true) &&
-          readBoolean(resolved.resolvedValues.hasSill, true)
-        );
+        readBoolean(resolved.resolvedValues.includeSill, true) &&
+        readBoolean(resolved.resolvedValues.include_sill, true) &&
+        readBoolean(resolved.resolvedValues.has_sill, true) &&
+        readBoolean(resolved.resolvedValues.hasSill, true)
+      );
 
+  // Natural Assembly: Place each component at its modeled origin
   for (const component of definition.components) {
     const key = normalizeComponentKey(component.componentKey);
     const isSill =
@@ -274,23 +300,58 @@ function buildStackedProduct(
     }
 
     const quantity = Math.max(0, Math.round(resolved.componentQuantities[key] ?? component.baseQuantity));
+    if (quantity <= 0) continue;
 
-    for (let index = 0; index < quantity; index += 1) {
-      const part = createPart(`${component.componentName}_${index + 1}`, component, cache, {
-        xMm: cursorX,
-        yMm: 0,
-        zMm: 0,
-      });
-      const size = cache.getSourceSizeMeters(component.componentId);
-      cursorX += size.x * 1000 + 40;
-      group.add(part);
-    }
+    const clone = cache.getClone(component.componentId);
+    clone.name = component.componentName;
+    clone.userData.componentKey = component.componentKey;
+    clone.userData.componentId = component.componentId;
+    clone.userData.componentName = component.componentName;
+    clone.userData.componentType = component.componentType;
+    clone.userData.presentationCategory = component.presentationCategory;
+    clone.userData.rawMaterialId = component.rawMaterialId ?? null;
+    clone.userData.rawMaterialCategory = component.rawMaterial?.category ?? null;
+    clone.userData.rawMaterial = component.rawMaterial ?? null;
+    group.add(clone);
   }
 
   recenterChildAtOrigin(group);
+
+  // Apply parametric scaling based on resolved width, height, and depth
+  group.updateMatrixWorld(true);
+  const naturalBounds = new THREE.Box3().setFromObject(group);
+  const naturalSize = new THREE.Vector3();
+  naturalBounds.getSize(naturalSize);
+
+  const targetWidthMm = findDimensionMm(resolved, ["width", "quotation_width", "quotationWidth", "w"]);
+  const targetHeightMm = findDimensionMm(resolved, ["height", "quotation_height", "quotationHeight", "h"]);
+  const targetDepthMm = findDimensionMm(resolved, ["depth", "quotation_depth", "quotationDepth", "d"]);
+
+  const scaleX = targetWidthMm && naturalSize.x > 0.0001
+    ? (targetWidthMm / 1000) / naturalSize.x
+    : 1;
+
+  const scaleY = targetHeightMm && naturalSize.y > 0.0001
+    ? (targetHeightMm / 1000) / naturalSize.y
+    : 1;
+
+  const scaleZ = targetDepthMm && naturalSize.z > 0.0001
+    ? (targetDepthMm / 1000) / naturalSize.z
+    : 1;
+
+  group.scale.set(scaleX, scaleY, scaleZ);
+
   applyGeneratedMaterials(group, options.glassAppearance ?? "frosted", options.alumFinish);
+
+  group.userData.productId = definition.product.productId;
+  group.userData.templateId = definition.template.templateId;
+  group.userData.resolvedStructure = resolved;
+
   return group;
 }
+
+// Retain alias for backward compatibility
+export const buildStackedProduct = buildAssembledProduct;
 
 type PartOptions = {
   xMm: number;
@@ -315,10 +376,22 @@ function createPart(
   wrapper.userData.componentKey = component.componentKey;
   wrapper.userData.componentId = component.componentId;
   wrapper.userData.componentName = component.componentName;
+  wrapper.userData.componentType = component.componentType;
+  wrapper.userData.presentationCategory = component.presentationCategory;
+  wrapper.userData.rawMaterialId = component.rawMaterialId ?? null;
+  wrapper.userData.rawMaterialCategory = component.rawMaterial?.category ?? null;
+  wrapper.userData.rawMaterial = component.rawMaterial ?? null;
+
   clone.name = `${name}_Source`;
   clone.userData.componentKey = component.componentKey;
   clone.userData.componentId = component.componentId;
   clone.userData.componentName = component.componentName;
+  clone.userData.componentType = component.componentType;
+  clone.userData.presentationCategory = component.presentationCategory;
+  clone.userData.rawMaterialId = component.rawMaterialId ?? null;
+  clone.userData.rawMaterialCategory = component.rawMaterial?.category ?? null;
+  clone.userData.rawMaterial = component.rawMaterial ?? null;
+
   recenterChildAtOrigin(clone);
   wrapper.add(clone);
   wrapper.position.set(
@@ -380,169 +453,39 @@ function resolveWindowProfile(
 }
 
 function applyGeneratedMaterials(
-  group: THREE.Group, 
+  group: THREE.Group,
   glassAppearance: GlassAppearanceMode,
   alumFinish?: string
 ) {
-  const isBlack = alumFinish === "black";
-  const isWhite = alumFinish === "white";
-  const isSilver = alumFinish === "silver";
-  const isBronze = alumFinish === "bronze";
-  
-  // Real architectural finishes with specular sheen to highlight 3D chamfers and bevels
-  const frameColor = isBlack
-    ? 0x232527 // Dark anodized architectural charcoal
-    : isWhite
-      ? 0xeceae4 // Architectural powder-coated white, prevents chalky blowout
-      : isSilver
-        ? 0xc8cbce // Natural anodized silver
-        : isBronze
-          ? 0x3e332b // Architectural bronze
-          : 0x232527;
-
-  const frameMetalness = isWhite
-    ? 0.08
-    : isSilver
-      ? 0.85
-      : isBronze
-        ? 0.55
-        : 0.45;
-
-  const frameRoughness = isBlack
-    ? 0.28
-    : isWhite
-      ? 0.32
-      : isSilver
-        ? 0.22
-        : 0.26;
-
-  const frameClearcoat = isWhite
-    ? 0.35
-    : isSilver
-      ? 0.60
-      : isBronze
-        ? 0.45
-        : 0.40;
-
-  const frameClearcoatRoughness = isWhite
-    ? 0.25
-    : isSilver
-      ? 0.15
-      : isBronze
-        ? 0.20
-        : 0.20;
-
-  const frameMaterial = new THREE.MeshPhysicalMaterial({
-    color: frameColor,
-    metalness: frameMetalness,
-    roughness: frameRoughness,
-    clearcoat: frameClearcoat,
-    clearcoatRoughness: frameClearcoatRoughness,
+  const { frameMaterial, glassMaterial, hardwareMaterial } = createMaterialPalette({
+    alumFinish,
+    glassAppearance,
   });
-  const glassMaterial = createWindowGlassMaterial(glassAppearance);
 
   group.traverse((object) => {
     if (!(object instanceof THREE.Mesh)) {
       return;
     }
 
-    object.castShadow = true;
-    object.receiveShadow = true;
-
-    const text = [object.name, object.parent?.name].join(" ").toLowerCase();
-    object.material = text.includes("glass")
-      ? glassMaterial.clone()
-      : frameMaterial.clone();
+    const classification = classifySceneMesh(object);
+    if (classification === "Glass") {
+      object.material = glassMaterial.clone();
+      object.castShadow = false; // Prevent opaque shadow casting behind transparent glass
+      object.receiveShadow = true;
+    } else if (classification === "Hardware") {
+      object.material = hardwareMaterial.clone();
+      object.castShadow = true;
+      object.receiveShadow = true;
+    } else {
+      object.material = frameMaterial.clone();
+      object.castShadow = true;
+      object.receiveShadow = true;
+    }
   });
 
   frameMaterial.dispose();
   glassMaterial.dispose();
-}
-
-let cachedOutdoorTexture: THREE.Texture | null = null;
-function getOutdoorTexture(): THREE.Texture {
-  if (cachedOutdoorTexture) {
-    return cachedOutdoorTexture;
-  }
-  
-  const loader = new THREE.TextureLoader();
-  const texture = loader.load("/textures/outdoor-view.jpg", (loadedTexture) => {
-    loadedTexture.colorSpace = THREE.SRGBColorSpace;
-    loadedTexture.wrapS = THREE.ClampToEdgeWrapping;
-    loadedTexture.wrapT = THREE.ClampToEdgeWrapping;
-  });
-  
-  cachedOutdoorTexture = texture;
-  return texture;
-}
-
-function createWindowGlassMaterial(mode: GlassAppearanceMode) {
-  switch (mode) {
-    case "clear":
-      return new THREE.MeshPhysicalMaterial({
-        color: new THREE.Color(0xf0f5f7),
-        transparent: true,
-        opacity: 0.18,          // Low opacity allows the room background to show through naturally
-        transmission: 0.88,     // High transmission for true clear glass behavior
-        roughness: 0.03,        // Razor-smooth float glass surface
-        metalness: 0.02,
-        ior: 1.52,              // Standard architectural soda-lime glass
-        reflectivity: 0.50,
-        clearcoat: 1.0,         // High specular reflections on outer face
-        clearcoatRoughness: 0.04,
-        side: THREE.DoubleSide,
-        depthWrite: false,      // Prevents occlusion sorting artifacts with background image
-      });
-    case "reflective":
-      return new THREE.MeshPhysicalMaterial({
-        color: new THREE.Color(0x9eb1bc),
-        transparent: true,
-        opacity: 0.65,
-        transmission: 0.35,
-        roughness: 0.08,
-        metalness: 0.45,
-        ior: 1.65,
-        clearcoat: 1.0,
-        clearcoatRoughness: 0.06,
-        side: THREE.DoubleSide,
-        depthWrite: true,
-      });
-    case "opaque":
-      return new THREE.MeshStandardMaterial({
-        color: new THREE.Color(0xe6ecef),
-        transparent: false,
-        opacity: 1.0,
-        roughness: 0.52,
-        metalness: 0.02,
-        side: THREE.DoubleSide,
-        depthWrite: true,
-      });
-    case "outdoor":
-      return new THREE.MeshStandardMaterial({
-        map: getOutdoorTexture(),
-        transparent: false,
-        opacity: 1.0,
-        roughness: 0.40,
-        metalness: 0.0,
-        side: THREE.DoubleSide,
-        depthWrite: true,
-      });
-    case "frosted":
-    default:
-      return new THREE.MeshPhysicalMaterial({
-        color: new THREE.Color(0xe4ebed),
-        transparent: true,
-        opacity: 0.82,
-        transmission: 0.15,
-        roughness: 0.82,
-        metalness: 0.0,
-        ior: 1.45,
-        clearcoat: 0.20,
-        clearcoatRoughness: 0.60,
-        side: THREE.DoubleSide,
-        depthWrite: true,
-      });
-  }
+  hardwareMaterial.dispose();
 }
 
 

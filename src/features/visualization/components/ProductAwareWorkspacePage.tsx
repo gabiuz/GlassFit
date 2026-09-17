@@ -30,29 +30,28 @@ export function ProductAwareWorkspacePage({
     setPlacedOverlays,
     setComparisonOverlays,
     setFinalSnapshotDataUrl,
-    selectWorkspaceProduct,
+    transitionWorkspaceProduct,
     resetVisualizationSession,
   } = useVisualizationSession();
 
-  const hasMatchingSession =
-    selectedProductId === productId && Boolean(spaceImageSession);
+  const hasValidSession = Boolean(spaceImageSession);
 
   useEffect(() => {
-    if (!hasMatchingSession) {
+    if (!hasValidSession) {
       router.replace(`/visualize/${productId}/upload`);
       return;
     }
 
     setStructuralDefinition(structuralDefinition);
   }, [
-    hasMatchingSession,
+    hasValidSession,
     productId,
     router,
     setStructuralDefinition,
     structuralDefinition,
   ]);
 
-  if (!hasMatchingSession || !spaceImageSession) {
+  if (!hasValidSession || !spaceImageSession) {
     return (
       <main className="flex min-h-screen items-center justify-center px-6 pt-24">
         <div className="rounded-[20px] bg-neutral-100 px-6 py-5 text-black">
@@ -63,6 +62,7 @@ export function ProductAwareWorkspacePage({
   }
 
   return (
+<<<<<<< Updated upstream
     <main className="flex min-h-screen flex-col">
       <HeroSection />
 
@@ -104,6 +104,48 @@ export function ProductAwareWorkspacePage({
           }}
         />
       </div>
+=======
+    <main className="flex min-h-screen flex-col gap-14 px-6 py-28 md:px-12 lg:px-24.25">
+      <ProductModelWorkspace
+        key={productId}
+        uploadedImage={workspaceBackgroundDataUrl ?? spaceImageSession.workspaceImage.url}
+        spaceImageSession={spaceImageSession}
+        structuralDefinition={structuralDefinition}
+        catalogProducts={catalogProducts}
+        currentProductId={productId}
+        selectedProductName={structuralDefinition.product.productName}
+        initialSnapshotDataUrl={finalSnapshotDataUrl}
+        initialConfiguration={productConfiguration}
+        placedOverlays={placedOverlays}
+        onConfigurationChange={setProductConfiguration}
+        onVariationSnapshotsChange={setVariationSnapshots}
+        onSnapshotChange={setFinalSnapshotDataUrl}
+        onPlacedOverlaysChange={setPlacedOverlays}
+        onComparisonOverlaysChange={setComparisonOverlays}
+        onProductSelect={(
+          nextProductId,
+          mode,
+          newPlacedOverlay,
+          configuration,
+          targetOverlayId,
+        ) => {
+          transitionWorkspaceProduct({
+            nextProductId,
+            mode,
+            newPlacedOverlay,
+            targetOverlayId,
+            nextConfiguration: configuration,
+          });
+          if (nextProductId !== productId) {
+            router.push(`/visualize/${nextProductId}/workspace`);
+          }
+        }}
+        onBack={() => {
+          resetVisualizationSession();
+          router.push(`/visualize/${productId}/upload`);
+        }}
+      />
+>>>>>>> Stashed changes
     </main>
   );
 }

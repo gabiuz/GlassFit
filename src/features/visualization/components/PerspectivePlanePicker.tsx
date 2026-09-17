@@ -8,7 +8,7 @@ import {
   Info,
   Maximize,
 } from "lucide-react";
-import type { Point2D, QuadrilateralCorners } from "@/lib/visualization/types";
+import type { Point2D, QuadrilateralCorners, PerspectiveOpeningType } from "@/lib/visualization/types";
 import {
   denormalizeCorners,
   normalizeCorners,
@@ -20,6 +20,7 @@ interface PerspectivePlanePickerProps {
   canvasHeight: number;
   backgroundImageUrl: string;
   initialCorners?: QuadrilateralCorners | null;
+  openingType?: PerspectiveOpeningType;
   onConfirm: (corners: QuadrilateralCorners) => void;
   onCancel: () => void;
 }
@@ -36,6 +37,7 @@ export function PerspectivePlanePicker({
   canvasHeight,
   backgroundImageUrl,
   initialCorners,
+  openingType = "window",
   onConfirm,
   onCancel,
 }: PerspectivePlanePickerProps) {
@@ -146,14 +148,21 @@ export function PerspectivePlanePicker({
   };
 
   // Dynamic instruction message
+  const openingLabel =
+    openingType === "door"
+      ? "door"
+      : openingType === "opening"
+      ? "wall"
+      : "window";
+
   const getInstructionText = () => {
     if (points.length < 4) {
-      return `Step ${points.length + 1} of 4: Click the ${CORNER_NAMES[points.length]} corner of the window opening.`;
+      return `Step ${points.length + 1} of 4: Click the ${CORNER_NAMES[points.length]} corner of the ${openingLabel} opening.`;
     }
     if (!isValidQuad) {
       return "The corners do not form a valid convex quadrilateral. Drag handles or click Reset.";
     }
-    return "All 4 corners placed. Drag handles to fine-tune opening boundary, then click Confirm.";
+    return `All 4 corners placed. Drag handles to fine-tune ${openingLabel} opening boundary, then click Confirm.`;
   };
 
   return (
@@ -170,7 +179,7 @@ export function PerspectivePlanePicker({
                 Fit to Opening (Perspective Plane)
               </h2>
               <p className="text-xs sm:text-sm text-neutral-500">
-                Click 4 corners of the window opening on your room photo
+                Click 4 corners of the {openingLabel} opening on your room photo
               </p>
             </div>
           </div>

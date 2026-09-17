@@ -178,6 +178,8 @@ export type Point2D = {
 
 export type QuadrilateralCorners = [Point2D, Point2D, Point2D, Point2D];
 
+export type PerspectiveOpeningType = "window" | "door" | "opening";
+
 export type ManualOcclusionPolygon = Point2D[];
 
 export type ManualOcclusionMaskResult = {

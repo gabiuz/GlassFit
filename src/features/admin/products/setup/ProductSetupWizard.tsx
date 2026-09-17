@@ -11,10 +11,44 @@ import { StructuralComponentsSection } from "./StructuralComponentsSection";
 import { ParametersAndRulesSection } from "./ParametersAndRulesSection";
 import { ValidationWorkspaceSection } from "./ValidationWorkspaceSection";
 import { ReviewAndPublishSection } from "./ReviewAndPublishSection";
+import type { UpsertParameterInput, UpsertRuleInput } from "@/lib/admin/products/parameterMutations";
+
+export interface ProductAssetSummary {
+    asset_id?: string;
+    asset_type?: string;
+    is_primary?: boolean;
+    file_url?: string;
+    storage_path?: string;
+    file_size_bytes?: number;
+    mime_type?: string;
+    [key: string]: unknown;
+}
+
+export interface ProductTemplateSummary {
+    template_id?: string;
+    model_strategy?: "PARAMETRIC_GLTF" | "PARAMETRIC_BOX_PROCEDURAL" | "HYBRID_DYNAMIC";
+    base_configuration?: Record<string, unknown>;
+    product_components?: unknown[];
+    product_parameters?: unknown[];
+    structural_rules?: unknown[];
+    [key: string]: unknown;
+}
+
+export interface ProductSetupData {
+    product_id?: string;
+    product_name?: string;
+    product_type?: string;
+    description?: string | null;
+    base_price?: number;
+    status?: string;
+    product_templates?: ProductTemplateSummary[] | ProductTemplateSummary;
+    product_assets?: ProductAssetSummary[];
+    [key: string]: unknown;
+}
 
 export type ProductSetupWizardProps = {
     productId: string;
-    initialData: any; // We'll refine this later
+    initialData: ProductSetupData | null;
 };
 
 type StepKey = 
@@ -43,7 +77,7 @@ export function ProductSetupWizard({ productId, initialData }: ProductSetupWizar
     const [draftId, setDraftId] = useState<string>(productId === "draft" ? "" : productId);
     
     // We maintain a local copy of data to share across steps
-    const [productData, setProductData] = useState<any>(initialData || {});
+    const [productData, setProductData] = useState<ProductSetupData>((initialData || {}) as ProductSetupData);
 
     const isDraft = !draftId;
 
@@ -53,7 +87,7 @@ export function ProductSetupWizard({ productId, initialData }: ProductSetupWizar
         try {
             const fresh = await getProductDraft(id);
             if (fresh) {
-                setProductData(fresh);
+                setProductData(fresh as unknown as ProductSetupData);
             }
         } catch (err) {
             console.error("Failed to revalidate product draft:", err);
@@ -67,18 +101,18 @@ export function ProductSetupWizard({ productId, initialData }: ProductSetupWizar
         }
     };
 
-    const handleProductCreated = (newId: string, data: any) => {
+    const handleProductCreated = (newId: string, data: Record<string, unknown>) => {
         setDraftId(newId);
         setProductData({ ...productData, ...data, product_id: newId });
         router.replace(`/admin/products/${newId}/setup`);
         setActiveStep("strategy");
     };
 
-    const handleStrategySaved = (data: any) => {
+    const handleStrategySaved = (data: Record<string, unknown>) => {
         const existingTemplate = Array.isArray(productData?.product_templates) 
             ? productData.product_templates[0] 
             : productData?.product_templates || {};
-        const mergedTemplate = {
+        const mergedTemplate: ProductTemplateSummary = {
             ...existingTemplate,
             ...data,
         };
@@ -157,8 +191,8 @@ export function ProductSetupWizard({ productId, initialData }: ProductSetupWizar
                     <CatalogAssetsSection
                         productId={draftId}
                         initialData={{
-                            catalogImage: productData?.product_assets?.find?.((a: any) => a.asset_type === "Catalog Image" && a.is_primary !== false),
-                            catalogPreview: productData?.product_assets?.find?.((a: any) => a.asset_type === "Catalog 3D Preview" && a.is_primary !== false)
+                            catalogImage: productData?.product_assets?.find?.((a: ProductAssetSummary) => a.asset_type === "Catalog Image" && a.is_primary !== false),
+                            catalogPreview: productData?.product_assets?.find?.((a: ProductAssetSummary) => a.asset_type === "Catalog 3D Preview" && a.is_primary !== false)
                         }}
                         onSave={() => handleStepChange("components")}
                     />
@@ -166,22 +200,23 @@ export function ProductSetupWizard({ productId, initialData }: ProductSetupWizar
                 {activeStep === "components" && (
                     <StructuralComponentsSection
                         productId={draftId}
-                        templateId={Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.template_id : productData?.product_templates?.template_id}
-                        modelStrategy={Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.model_strategy : productData?.product_templates?.model_strategy}
+                        templateId={(Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.template_id : productData?.product_templates?.template_id) || ""}
+                        modelStrategy={(Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.model_strategy : productData?.product_templates?.model_strategy) || null}
                         productType={productData?.product_type || "Window"}
                         initialData={Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.product_components : productData?.product_templates?.product_components}
+                        wholeModelAsset={productData?.product_assets?.find?.((a: ProductAssetSummary) => a.asset_type === "Catalog 3D Preview" && a.is_primary !== false) || null}
                         onSave={() => handleStepChange("parameters")}
                     />
                 )}
                 {activeStep === "parameters" && (
                     <ParametersAndRulesSection
-                        templateId={Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.template_id : productData?.product_templates?.template_id}
-                        modelStrategy={Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.model_strategy : productData?.product_templates?.model_strategy}
+                        templateId={(Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.template_id : productData?.product_templates?.template_id) || null}
+                        modelStrategy={(Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.model_strategy : productData?.product_templates?.model_strategy) || null}
                         productType={productData?.product_type || "Window"}
                         initialData={{
-                            parameters: Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.product_parameters : productData?.product_templates?.product_parameters,
-                            rules: Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.structural_rules : productData?.product_templates?.structural_rules,
-                            components: Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.product_components : productData?.product_templates?.product_components
+                            parameters: (Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.product_parameters : productData?.product_templates?.product_parameters) as UpsertParameterInput[] | undefined,
+                            rules: (Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.structural_rules : productData?.product_templates?.structural_rules) as UpsertRuleInput[] | undefined,
+                            components: ((Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.product_components : productData?.product_templates?.product_components) as Record<string, unknown>[]) || []
                         }}
                         onSave={() => handleStepChange("validation")}
                     />

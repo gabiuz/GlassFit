@@ -18,13 +18,23 @@ import type {
   VisualizationSessionState,
 } from "./types";
 
-type VisualizationSessionContextValue = VisualizationSessionState & {
+export interface TransitionWorkspaceProductOptions {
+  nextProductId: string;
+  mode: "add" | "change" | "edit";
+  newPlacedOverlay?: PlacedOverlay;
+  targetOverlayId?: string;
+  nextConfiguration?: ProductConfigurationSnapshot;
+  placedOverlays?: PlacedOverlay[];
+}
+
+export type VisualizationSessionContextValue = VisualizationSessionState & {
   setPreparedSpaceImage: (productId: string, session: SpaceImageSession) => void;
   selectWorkspaceProduct: (
     productId: string,
     workspaceBackgroundDataUrl?: string,
     productConfiguration?: ProductConfigurationSnapshot,
   ) => void;
+  transitionWorkspaceProduct: (options: TransitionWorkspaceProductOptions) => void;
   setStructuralDefinition: (definition: ProductStructuralDefinition | null) => void;
   setProductConfiguration: (configuration: ProductConfigurationSnapshot | null) => void;
   setVariationSnapshots: (snapshots: ProductVariationSnapshot[]) => void;
@@ -38,7 +48,7 @@ type VisualizationSessionContextValue = VisualizationSessionState & {
 const VisualizationSessionContext =
   createContext<VisualizationSessionContextValue | null>(null);
 
-const initialState: VisualizationSessionState = {
+export const initialState: VisualizationSessionState = {
   selectedProductId: null,
   spaceImageSession: null,
   workspaceBackgroundDataUrl: null,
@@ -51,7 +61,62 @@ const initialState: VisualizationSessionState = {
   finalSnapshotDataUrl: null,
 };
 
-const SESSION_STORAGE_KEY = "glassfit.visualization.session";
+export const SESSION_STORAGE_KEY = "glassfit.visualization.session";
+
+export function transitionSessionState(
+  current: VisualizationSessionState,
+  options: TransitionWorkspaceProductOptions,
+): VisualizationSessionState {
+  const {
+    nextProductId,
+    mode,
+    newPlacedOverlay,
+    targetOverlayId,
+    nextConfiguration,
+    placedOverlays: explicitPlacedOverlays,
+  } = options;
+
+  let updatedPlacedOverlays = current.placedOverlays;
+
+  if (explicitPlacedOverlays) {
+    updatedPlacedOverlays = explicitPlacedOverlays;
+  } else if (mode === "add" && newPlacedOverlay) {
+    // Prevent duplicate overlay insertions
+    const exists = current.placedOverlays.some(
+      (overlay) => overlay.overlayId === newPlacedOverlay.overlayId,
+    );
+    updatedPlacedOverlays = exists
+      ? current.placedOverlays
+      : [...current.placedOverlays, newPlacedOverlay];
+  } else if (mode === "edit") {
+    if (targetOverlayId) {
+      updatedPlacedOverlays = updatedPlacedOverlays.filter(
+        (overlay) => overlay.overlayId !== targetOverlayId,
+      );
+    }
+    if (newPlacedOverlay) {
+      const exists = updatedPlacedOverlays.some(
+        (overlay) => overlay.overlayId === newPlacedOverlay.overlayId,
+      );
+      if (!exists) {
+        updatedPlacedOverlays = [...updatedPlacedOverlays, newPlacedOverlay];
+      }
+    }
+  }
+
+  const isSameProduct = current.selectedProductId === nextProductId;
+  return {
+    ...current,
+    selectedProductId: nextProductId,
+    placedOverlays: updatedPlacedOverlays,
+    structuralDefinition: isSameProduct ? current.structuralDefinition : null,
+    productConfiguration: nextConfiguration ?? null,
+    variationSnapshots: [],
+    activeOverlay: null,
+    comparisonOverlays: [],
+    finalSnapshotDataUrl: null,
+  };
+}
 
 export function VisualizationSessionProvider({
   children,
@@ -106,6 +171,17 @@ export function VisualizationSessionProvider({
           finalSnapshotDataUrl: null,
         };
 
+        writeStoredVisualizationSession(nextState);
+        return nextState;
+      });
+    },
+    [],
+  );
+
+  const transitionWorkspaceProduct = useCallback(
+    (options: TransitionWorkspaceProductOptions) => {
+      setState((current) => {
+        const nextState = transitionSessionState(current, options);
         writeStoredVisualizationSession(nextState);
         return nextState;
       });
@@ -202,6 +278,7 @@ export function VisualizationSessionProvider({
       ...state,
       setPreparedSpaceImage,
       selectWorkspaceProduct,
+      transitionWorkspaceProduct,
       setStructuralDefinition,
       setProductConfiguration,
       setVariationSnapshots,
@@ -215,6 +292,7 @@ export function VisualizationSessionProvider({
       state,
       setPreparedSpaceImage,
       selectWorkspaceProduct,
+      transitionWorkspaceProduct,
       setStructuralDefinition,
       setProductConfiguration,
       setVariationSnapshots,
@@ -233,7 +311,7 @@ export function VisualizationSessionProvider({
   );
 }
 
-function readStoredVisualizationSession(): VisualizationSessionState {
+export function readStoredVisualizationSession(): VisualizationSessionState {
   if (typeof window === "undefined") {
     return initialState;
   }
@@ -286,7 +364,7 @@ function readStoredVisualizationSession(): VisualizationSessionState {
   }
 }
 
-function writeStoredVisualizationSession(state: VisualizationSessionState) {
+export function writeStoredVisualizationSession(state: VisualizationSessionState) {
   if (typeof window === "undefined") {
     return;
   }
@@ -307,46 +385,48 @@ function writeStoredVisualizationSession(state: VisualizationSessionState) {
       }),
     );
   } catch {
-    // If quota exceeded due to large snapshot data URLs, persist structural configurations and pricing metadata
+    // Quota exceeded: serialize lightweight representations
     try {
+      const lightweightState: VisualizationSessionState = {
+        ...state,
+        // Retain space image URL if reasonable, or fallback to relative URL
+        spaceImageSession: state.spaceImageSession
+          ? {
+              ...state.spaceImageSession,
+              workspaceImage: {
+                ...state.spaceImageSession.workspaceImage,
+                url:
+                  state.spaceImageSession.workspaceImage.url.length > 500000
+                    ? ""
+                    : state.spaceImageSession.workspaceImage.url,
+              },
+            }
+          : null,
+        workspaceBackgroundDataUrl: null,
+        variationSnapshots: [],
+        finalSnapshotDataUrl: null,
+        // Retain overlay transforms and pricing BOM, omitting oversized base64 data URLs in storage
+        placedOverlays: state.placedOverlays.map((overlay) => ({
+          ...overlay,
+          flattenedImageDataUrl:
+            overlay.flattenedImageDataUrl.length > 200000
+              ? ""
+              : overlay.flattenedImageDataUrl,
+          variationImageDataUrls: undefined,
+        })),
+        comparisonOverlays: state.comparisonOverlays.map((overlay) => ({
+          ...overlay,
+          flattenedImageDataUrl:
+            overlay.flattenedImageDataUrl.length > 200000
+              ? ""
+              : overlay.flattenedImageDataUrl,
+          variationImageDataUrls: undefined,
+        })),
+      };
+
       window.sessionStorage.setItem(
         SESSION_STORAGE_KEY,
-        JSON.stringify({
-          selectedProductId: state.selectedProductId,
-          spaceImageSession: state.spaceImageSession
-            ? {
-                ...state.spaceImageSession,
-                workspaceImage: {
-                  ...state.spaceImageSession.workspaceImage,
-                  url:
-                    state.spaceImageSession.workspaceImage.url.length > 50000
-                      ? ""
-                      : state.spaceImageSession.workspaceImage.url,
-                },
-              }
-            : null,
-          workspaceBackgroundDataUrl: null,
-          structuralDefinition: state.structuralDefinition,
-          productConfiguration: state.productConfiguration,
-          variationSnapshots: [],
-          placedOverlays: state.placedOverlays.map((overlay) => ({
-            ...overlay,
-            flattenedImageDataUrl:
-              overlay.flattenedImageDataUrl.length > 50000
-                ? ""
-                : overlay.flattenedImageDataUrl,
-            variationImageDataUrls: undefined,
-          })),
-          comparisonOverlays: state.comparisonOverlays.map((overlay) => ({
-            ...overlay,
-            flattenedImageDataUrl:
-              overlay.flattenedImageDataUrl.length > 50000
-                ? ""
-                : overlay.flattenedImageDataUrl,
-            variationImageDataUrls: undefined,
-          })),
-          finalSnapshotDataUrl: null,
-        }),
+        JSON.stringify(lightweightState),
       );
     } catch {
       // Session persistence is a convenience; visualization still works in memory.
@@ -354,7 +434,7 @@ function writeStoredVisualizationSession(state: VisualizationSessionState) {
   }
 }
 
-function clearStoredVisualizationSession() {
+export function clearStoredVisualizationSession() {
   if (typeof window === "undefined") {
     return;
   }

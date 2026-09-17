@@ -85,8 +85,9 @@ interface ProductModelWorkspaceProps {
   onProductSelect?: (
     productId: string,
     mode: "add" | "change" | "edit",
-    flattenedBackgroundDataUrl?: string,
+    newPlacedOverlay?: PlacedOverlay,
     configuration?: ProductConfigurationSnapshot,
+    targetOverlayId?: string,
   ) => void;
   onBack: () => void;
 }
@@ -384,6 +385,16 @@ export function ProductModelWorkspace({
         (component) => component.componentKey.replace(/_/g, "-") === "window-sill",
       ),
     );
+  const isDoorProduct =
+    structuralDefinition?.product.productType === "Door" ||
+    (structuralDefinition?.product.productType || "").toLowerCase().includes("door") ||
+    (structuralDefinition?.product.productName || "").toLowerCase().includes("door") ||
+    Boolean(
+      structuralDefinition?.components.some((component) =>
+        component.componentKey.replace(/_/g, "-").includes("door"),
+      ),
+    );
+  const supportsPerspectivePlane = isWindowProduct || isDoorProduct;
   const modelEffectStyle = useMemo(
     () => getModelEffectStyle({
       autoRealism,
@@ -942,10 +953,11 @@ export function ProductModelWorkspace({
       return;
     }
 
+    let newlyPlacedOverlay: PlacedOverlay | undefined;
     if (mode === "add" && selectedProduct) {
       try {
-        const placedOverlay = await createPlacedOverlay();
-        onPlacedOverlaysChange?.([...placedOverlays, placedOverlay]);
+        newlyPlacedOverlay = await createPlacedOverlay();
+        onPlacedOverlaysChange?.([...placedOverlays, newlyPlacedOverlay]);
       } catch (err) {
         console.error("Failed to place active product before adding:", err);
       }
@@ -960,7 +972,7 @@ export function ProductModelWorkspace({
 
     setSelectedProduct(true);
     setIsSnapshotApplied(false);
-    onProductSelect(product.id, mode);
+    onProductSelect(product.id, mode, newlyPlacedOverlay);
   };
 
   const captureCurrentSnapshot = useCallback(async () => {
@@ -1209,9 +1221,10 @@ export function ProductModelWorkspace({
       (placedOverlay) => placedOverlay.overlayId !== overlay.overlayId,
     );
 
+    let newlyPlaced: PlacedOverlay | undefined;
     if (selectedProduct) {
       try {
-        const newlyPlaced = await createPlacedOverlay();
+        newlyPlaced = await createPlacedOverlay();
         remainingOverlays.push(newlyPlaced);
       } catch (err) {
         console.error("Failed to place active product before editing layer:", err);
@@ -1230,8 +1243,9 @@ export function ProductModelWorkspace({
     onProductSelect?.(
       overlay.productId,
       "edit",
-      undefined,
+      newlyPlaced,
       overlay.configuration,
+      overlay.overlayId,
     );
   }, [
     applyProductConfiguration,
@@ -2455,7 +2469,7 @@ export function ProductModelWorkspace({
                           className="absolute flex items-center gap-2.5 select-none animate-in fade-in slide-in-from-bottom-2 duration-200 pointer-events-auto"
                           style={toolbarControlsStyle}
                         >
-                          {isWindowProduct && (
+                          {supportsPerspectivePlane && (
                             <button
                               type="button"
                               onClick={() => setShowPerspectivePicker(true)}
@@ -3173,6 +3187,7 @@ export function ProductModelWorkspace({
           canvasWidth={aspectWidth}
           canvasHeight={aspectHeight}
           initialCorners={perspectiveCorners}
+          openingType={isDoorProduct ? "door" : "window"}
           onConfirm={(corners) => {
             const currentDisplayWidth = canvasRef.current?.clientWidth || canvasDisplaySize.width;
             const currentDisplayHeight = canvasRef.current?.clientHeight || canvasDisplaySize.height;
@@ -3180,18 +3195,30 @@ export function ProductModelWorkspace({
             const { widthRatio, heightRatio } = estimateDimensionsFromCorners(pxCorners);
             if (heightRatio > 0 && widthRatio > 0) {
               const openingAspect = widthRatio / heightRatio;
-              const currentH = Number(heightCm) || 120;
-              const currentW = Number(widthCm) || 120;
-              let nextW = currentW;
-              let nextH = currentH;
-              if (openingAspect >= 1) {
-                nextW = Math.round(clampNumber(currentH * openingAspect, 50, 400));
+              if (isDoorProduct) {
+                const templateDefaultH = Number(
+                  structuralDefinition?.parameters?.find((p) => p.parameterKey === "height")?.defaultValue
+                );
+                const currentH = Number(heightCm) || (templateDefaultH > 0 ? templateDefaultH : 210);
+                const nextW = Math.round(clampNumber(currentH * openingAspect, 50, 500));
+                const nextH = currentH;
+                setWidthCm(String(nextW));
+                setHeightCm(String(nextH));
+                setOverlaySize(getOverlaySizeFromDimensions(String(nextW), String(nextH)));
               } else {
-                nextH = Math.round(clampNumber(currentW / openingAspect, 50, 400));
+                const currentH = Number(heightCm) || 120;
+                const currentW = Number(widthCm) || 120;
+                let nextW = currentW;
+                let nextH = currentH;
+                if (openingAspect >= 1) {
+                  nextW = Math.round(clampNumber(currentH * openingAspect, 50, 400));
+                } else {
+                  nextH = Math.round(clampNumber(currentW / openingAspect, 50, 400));
+                }
+                setWidthCm(String(nextW));
+                setHeightCm(String(nextH));
+                setOverlaySize(getOverlaySizeFromDimensions(String(nextW), String(nextH)));
               }
-              setWidthCm(String(nextW));
-              setHeightCm(String(nextH));
-              setOverlaySize(getOverlaySizeFromDimensions(String(nextW), String(nextH)));
             }
 
             const [p0, p1, p2, p3] = pxCorners;

@@ -52,7 +52,7 @@ function ParametricModelView({
     }, [definition, resolved, cache, hasSill, hiddenComponents]);
 
     return (
-        <primitive object={group} />
+        <primitive key={group.uuid} object={group} />
     );
 }
 
@@ -315,9 +315,9 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
                 {/* 3D Canvas (7 cols) */}
                 <div className="lg:col-span-7 flex flex-col gap-4">
                     <div className="bg-[#e9e9e9] rounded-[16px] overflow-hidden border border-neutral-200 min-h-[440px] relative">
-                        <Canvas shadows camera={{ position: [2, 2, 4], fov: 40 }}>
-                            <ambientLight intensity={0.6} />
-                            <directionalLight castShadow position={[5, 5, 5]} intensity={1.2} shadow-mapSize={[1024, 1024]} />
+                        <Canvas shadows camera={{ position: [0, 1.5, 3], fov: 45 }}>
+                            <ambientLight intensity={0.7} />
+                            <directionalLight position={[5, 8, 5]} intensity={1.2} />
                             <Suspense fallback={null}>
                                 <Stage environment="city" adjustCamera={false}>
                                     <ParametricModelView 

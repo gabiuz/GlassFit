@@ -585,6 +585,21 @@ export function generateQuotationPdfHtml(metadata: QuotationPdfMetadata): string
     </p>
   </div>
 
+  ${
+    structuralWaiver
+      ? `
+  <!-- NSCP 2015 Structural Span Waiver -->
+  <div style="margin-top: 14px; padding: 12px; border: 1.5px solid #dc2626; background-color: #fef2f2; border-radius: 6px;">
+    <h4 style="margin: 0 0 6px; font-size: 11px; color: #991b1b; text-transform: uppercase;">
+      NSCP 2015 Structural Span Waiver Attached
+    </h4>
+    <p style="margin: 0; font-size: 10px; color: #7f1d1d; line-height: 1.4;">
+      The client explicitly acknowledges that this custom 2-panel configuration exceeds standard Series 798 structural leaf recommendations (width &ge; 2400mm) without intermediate vertical mullion reinforcement. By proceeding, the client accepts potential wind-load deflection risks and certifies that this design has been reviewed for local building code compliance.
+    </p>
+  </div>`
+      : ""
+  }
+
   <!-- Signatures -->
   <table class="signature-grid">
     <tr>
