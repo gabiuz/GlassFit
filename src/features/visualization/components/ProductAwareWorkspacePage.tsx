@@ -62,7 +62,6 @@ export function ProductAwareWorkspacePage({
   }
 
   return (
-<<<<<<< Updated upstream
     <main className="flex min-h-screen flex-col">
       <HeroSection />
 
@@ -104,48 +103,6 @@ export function ProductAwareWorkspacePage({
           }}
         />
       </div>
-=======
-    <main className="flex min-h-screen flex-col gap-14 px-6 py-28 md:px-12 lg:px-24.25">
-      <ProductModelWorkspace
-        key={productId}
-        uploadedImage={workspaceBackgroundDataUrl ?? spaceImageSession.workspaceImage.url}
-        spaceImageSession={spaceImageSession}
-        structuralDefinition={structuralDefinition}
-        catalogProducts={catalogProducts}
-        currentProductId={productId}
-        selectedProductName={structuralDefinition.product.productName}
-        initialSnapshotDataUrl={finalSnapshotDataUrl}
-        initialConfiguration={productConfiguration}
-        placedOverlays={placedOverlays}
-        onConfigurationChange={setProductConfiguration}
-        onVariationSnapshotsChange={setVariationSnapshots}
-        onSnapshotChange={setFinalSnapshotDataUrl}
-        onPlacedOverlaysChange={setPlacedOverlays}
-        onComparisonOverlaysChange={setComparisonOverlays}
-        onProductSelect={(
-          nextProductId,
-          mode,
-          newPlacedOverlay,
-          configuration,
-          targetOverlayId,
-        ) => {
-          transitionWorkspaceProduct({
-            nextProductId,
-            mode,
-            newPlacedOverlay,
-            targetOverlayId,
-            nextConfiguration: configuration,
-          });
-          if (nextProductId !== productId) {
-            router.push(`/visualize/${nextProductId}/workspace`);
-          }
-        }}
-        onBack={() => {
-          resetVisualizationSession();
-          router.push(`/visualize/${productId}/upload`);
-        }}
-      />
->>>>>>> Stashed changes
     </main>
   );
 }
