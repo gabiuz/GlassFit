@@ -602,8 +602,8 @@ export function ProductModelWorkspace({
       includeSill,
       alumFinish
     ).then(() => {
-      // Trigger a re-render
-      setProjectedModelBounds({ left: 0, top: 0, width: 1, height: 1 });
+      // Preserve the last measured outline while resize interactions pause measurement.
+      // The revision redraw measures the rebuilt model as soon as measurement resumes.
       setModelRevision((prev) => prev + 1);
       setProductBuildError(null);
     });
