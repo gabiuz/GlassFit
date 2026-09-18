@@ -90,11 +90,27 @@ export function transitionSessionState(
       : [...current.placedOverlays, newPlacedOverlay];
   } else if (mode === "edit") {
     if (targetOverlayId) {
-      updatedPlacedOverlays = updatedPlacedOverlays.filter(
-        (overlay) => overlay.overlayId !== targetOverlayId,
+      const targetIdx = updatedPlacedOverlays.findIndex(
+        (overlay) => overlay.overlayId === targetOverlayId,
       );
-    }
-    if (newPlacedOverlay) {
+      if (targetIdx >= 0) {
+        if (newPlacedOverlay) {
+          updatedPlacedOverlays = [...updatedPlacedOverlays];
+          updatedPlacedOverlays[targetIdx] = newPlacedOverlay;
+        } else {
+          updatedPlacedOverlays = updatedPlacedOverlays.filter(
+            (overlay) => overlay.overlayId !== targetOverlayId,
+          );
+        }
+      } else if (newPlacedOverlay) {
+        const exists = updatedPlacedOverlays.some(
+          (overlay) => overlay.overlayId === newPlacedOverlay.overlayId,
+        );
+        if (!exists) {
+          updatedPlacedOverlays = [...updatedPlacedOverlays, newPlacedOverlay];
+        }
+      }
+    } else if (newPlacedOverlay) {
       const exists = updatedPlacedOverlays.some(
         (overlay) => overlay.overlayId === newPlacedOverlay.overlayId,
       );

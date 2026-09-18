@@ -30,6 +30,7 @@ export function ProductAwareWorkspacePage({
     setPlacedOverlays,
     setComparisonOverlays,
     setFinalSnapshotDataUrl,
+    selectWorkspaceProduct,
     transitionWorkspaceProduct,
     resetVisualizationSession,
   } = useVisualizationSession();
@@ -85,14 +86,17 @@ export function ProductAwareWorkspacePage({
           onProductSelect={(
             nextProductId,
             mode,
-            flattenedBackgroundDataUrl,
+            newPlacedOverlay,
             configuration,
+            targetOverlayId,
           ) => {
-            selectWorkspaceProduct(
+            transitionWorkspaceProduct({
               nextProductId,
-              mode === "add" ? flattenedBackgroundDataUrl : undefined,
-              configuration,
-            );
+              mode,
+              newPlacedOverlay,
+              targetOverlayId,
+              nextConfiguration: configuration,
+            });
             if (nextProductId !== productId) {
               router.push(`/visualize/${nextProductId}/workspace`);
             }

@@ -148,6 +148,7 @@ export type PlacedOverlay = {
   bomResult?: CalculatedBOMResult;
   unitPrice?: number;
   totalPrice?: number;
+  layerNumber?: number;
 };
 
 export type VisualizationSessionState = {
