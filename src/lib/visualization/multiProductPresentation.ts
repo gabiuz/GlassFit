@@ -1,7 +1,8 @@
-import type {
-  AluminumFinishKey,
+import type { AluminumFinishKey } from "./colorVariations";
+import {
+  ALUMINUM_COLOR_VARIATIONS,
+  normalizeAluminumFinish,
 } from "./colorVariations";
-import { normalizeAluminumFinish } from "./colorVariations";
 import type {
   PlacedOverlay,
   ProductConfigurationSnapshot,
@@ -16,6 +17,15 @@ const DEFAULT_PRODUCT_HEIGHT_CM = 150;
 const DEFAULT_OVERLAY_WIDTH_PX = 540;
 const DEFAULT_OVERLAY_HEIGHT_PX = 385;
 
+export type ProductVariantPanel = "left" | "right";
+
+export type ProductVariantSelection = {
+  left: AluminumFinishKey;
+  right: AluminumFinishKey;
+};
+
+export type ProductVariantSelections = Record<string, ProductVariantSelection>;
+
 export function getPlacedLayerImageUrls(
   placedOverlays: PlacedOverlay[],
   finish: AluminumFinishKey,
@@ -28,15 +38,101 @@ export function getPlacedLayerImageUrls(
 
 export function getComparisonLayerImageUrls(
   overlays: PlacedOverlay[],
-  selectedOverlayId: string,
-  selectedFinish: AluminumFinishKey,
+  selections: ProductVariantSelections,
+  panel: ProductVariantPanel,
 ) {
   return overlays.map((overlay) => {
-    const finish = overlay.overlayId === selectedOverlayId
-      ? selectedFinish
-      : normalizeAluminumFinish(overlay.configuration.aluminumFinish);
+    const finish = selections[overlay.overlayId]?.[panel]
+      ?? normalizeAluminumFinish(overlay.configuration.aluminumFinish);
+    const imageDataUrl = overlay.variationImageDataUrls?.[finish];
 
-    return overlay.variationImageDataUrls?.[finish] ?? overlay.flattenedImageDataUrl;
+    if (!imageDataUrl) {
+      throw new Error(
+        `Product variation data is incomplete for ${overlay.productName}. Return to Edit Placement to regenerate the comparison.`,
+      );
+    }
+
+    return imageDataUrl;
+  });
+}
+
+export function hasCompleteVariationLayers(overlays: PlacedOverlay[]) {
+  return overlays.every((overlay) =>
+    ALUMINUM_COLOR_VARIATIONS.every(
+      (variation) => Boolean(overlay.variationImageDataUrls?.[variation.key]),
+    ),
+  );
+}
+
+export function createProductVariantSelections(
+  overlays: PlacedOverlay[],
+): ProductVariantSelections {
+  return Object.fromEntries(
+    overlays.map((overlay) => {
+      const finish = normalizeAluminumFinish(overlay.configuration.aluminumFinish);
+      return [overlay.overlayId, { left: finish, right: finish }];
+    }),
+  );
+}
+
+export function reconcileProductVariantSelections(
+  current: ProductVariantSelections,
+  overlays: PlacedOverlay[],
+): ProductVariantSelections {
+  const initialized = createProductVariantSelections(overlays);
+  return Object.fromEntries(
+    overlays.map((overlay) => [
+      overlay.overlayId,
+      current[overlay.overlayId] ?? initialized[overlay.overlayId],
+    ]),
+  );
+}
+
+export function updateProductVariantSelection(
+  current: ProductVariantSelections,
+  overlayId: string,
+  panel: ProductVariantPanel,
+  finish: AluminumFinishKey,
+): ProductVariantSelections {
+  const existing = current[overlayId];
+  if (!existing) {
+    return current;
+  }
+
+  return {
+    ...current,
+    [overlayId]: {
+      ...existing,
+      [panel]: finish,
+    },
+  };
+}
+
+export function swapProductVariantSelections(
+  current: ProductVariantSelections,
+): ProductVariantSelections {
+  return Object.fromEntries(
+    Object.entries(current).map(([overlayId, selection]) => [
+      overlayId,
+      { left: selection.right, right: selection.left },
+    ]),
+  );
+}
+
+export function commitProductVariantSelections(
+  overlays: PlacedOverlay[],
+  selections: ProductVariantSelections,
+) {
+  return overlays.map((overlay) => {
+    const finish = selections[overlay.overlayId]?.left
+      ?? normalizeAluminumFinish(overlay.configuration.aluminumFinish);
+    return {
+      ...overlay,
+      configuration: {
+        ...overlay.configuration,
+        aluminumFinish: finish,
+      },
+    };
   });
 }
 
@@ -74,60 +170,6 @@ export function getOverlaySizeFromConfiguration(
     height: Math.round(
       Math.min(MAX_OVERLAY_HEIGHT, Math.max(MIN_OVERLAY_HEIGHT, heightPx)) * zoomScale,
     ),
-  };
-}
-
-export function getComparisonOverlayFrame({
-  overlay,
-  renderedWidth,
-  renderedHeight,
-  offsetX,
-  offsetY,
-}: {
-  overlay: PlacedOverlay;
-  renderedWidth: number;
-  renderedHeight: number;
-  offsetX: number;
-  offsetY: number;
-}) {
-  const sourceCanvasWidth = overlay.sourceCanvasWidth ?? renderedWidth;
-  const sourceCanvasHeight = overlay.sourceCanvasHeight ?? renderedHeight;
-  const xScale = renderedWidth / Math.max(sourceCanvasWidth, 1);
-  const yScale = renderedHeight / Math.max(sourceCanvasHeight, 1);
-  const fallbackSize = getOverlaySizeFromConfiguration(overlay.configuration);
-  const overlayWidth = overlay.sourceOverlayWidth ?? fallbackSize.width;
-  const overlayHeight = overlay.sourceOverlayHeight ?? fallbackSize.height;
-  const visibleBounds = overlay.visibleModelBounds ?? {
-    left: 0,
-    top: 0,
-    width: 1,
-    height: 1,
-  };
-  const rotation = overlay.configuration.rotateAngle;
-  const rotationRadians = (rotation * Math.PI) / 180;
-  const localCenterX =
-    (visibleBounds.left + visibleBounds.width / 2 - 0.5) * overlayWidth;
-  const localCenterY =
-    (visibleBounds.top + visibleBounds.height / 2 - 0.5) * overlayHeight;
-  const rotatedCenterX =
-    localCenterX * Math.cos(rotationRadians) -
-    localCenterY * Math.sin(rotationRadians);
-  const rotatedCenterY =
-    localCenterX * Math.sin(rotationRadians) +
-    localCenterY * Math.cos(rotationRadians);
-
-  return {
-    centerX:
-      offsetX +
-      renderedWidth / 2 +
-      ((overlay.configuration.positionX ?? 0) + rotatedCenterX) * xScale,
-    centerY:
-      offsetY +
-      renderedHeight / 2 +
-      ((overlay.configuration.positionY ?? 0) + rotatedCenterY) * yScale,
-    width: overlayWidth * visibleBounds.width * xScale,
-    height: overlayHeight * visibleBounds.height * yScale,
-    rotation,
   };
 }
 

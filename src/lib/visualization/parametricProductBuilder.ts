@@ -4,7 +4,7 @@ import * as THREE from "three";
 import type { ComponentModelCache } from "./componentModelCache";
 import { normalizeComponentKey } from "./structuralResolver";
 import {
-  classifySceneMesh,
+  applyPresentationMaterials,
   createMaterialPalette,
   createWindowGlassMaterial,
 } from "./materialClassifier";
@@ -242,7 +242,7 @@ function buildWindowLikeProduct(
     );
   }
 
-  applyGeneratedMaterials(group, options.glassAppearance ?? "frosted", options.alumFinish);
+  applyPresentationMaterials(group, options.glassAppearance ?? "frosted", options.alumFinish);
   group.userData.productId = definition.product.productId;
   group.userData.templateId = definition.template.templateId;
   group.userData.resolvedStructure = resolved;
@@ -341,7 +341,7 @@ function buildAssembledProduct(
 
   group.scale.set(scaleX, scaleY, scaleZ);
 
-  applyGeneratedMaterials(group, options.glassAppearance ?? "frosted", options.alumFinish);
+  applyPresentationMaterials(group, options.glassAppearance ?? "frosted", options.alumFinish);
 
   group.userData.productId = definition.product.productId;
   group.userData.templateId = definition.template.templateId;
@@ -451,43 +451,6 @@ function resolveWindowProfile(
     return Math.max(1, cache.getSourceSizeMeters(component.componentId)[axis] * 1000);
   }
 }
-
-function applyGeneratedMaterials(
-  group: THREE.Group,
-  glassAppearance: GlassAppearanceMode,
-  alumFinish?: string
-) {
-  const { frameMaterial, glassMaterial, hardwareMaterial } = createMaterialPalette({
-    alumFinish,
-    glassAppearance,
-  });
-
-  group.traverse((object) => {
-    if (!(object instanceof THREE.Mesh)) {
-      return;
-    }
-
-    const classification = classifySceneMesh(object);
-    if (classification === "Glass") {
-      object.material = glassMaterial.clone();
-      object.castShadow = false; // Prevent opaque shadow casting behind transparent glass
-      object.receiveShadow = true;
-    } else if (classification === "Hardware") {
-      object.material = hardwareMaterial.clone();
-      object.castShadow = true;
-      object.receiveShadow = true;
-    } else {
-      object.material = frameMaterial.clone();
-      object.castShadow = true;
-      object.receiveShadow = true;
-    }
-  });
-
-  frameMaterial.dispose();
-  glassMaterial.dispose();
-  hardwareMaterial.dispose();
-}
-
 
 function recenterChildAtOrigin(object: THREE.Object3D) {
   object.updateMatrixWorld(true);

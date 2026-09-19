@@ -9,14 +9,19 @@ import Button from "@/components/shared/Button";
 import { useVisualizationSession } from "@/lib/visualization/visualizationSession";
 import {
   ALUMINUM_COLOR_VARIATIONS,
-  getAlternateAluminumFinish,
   getAluminumVariationTitle,
   normalizeAluminumFinish,
   type AluminumFinishKey,
 } from "@/lib/visualization/colorVariations";
 import {
-  getComparisonOverlayFrame,
+  commitProductVariantSelections,
+  createProductVariantSelections,
   getComparisonLayerImageUrls,
+  hasCompleteVariationLayers,
+  reconcileProductVariantSelections,
+  swapProductVariantSelections,
+  updateProductVariantSelection,
+  type ProductVariantSelections,
 } from "@/lib/visualization/multiProductPresentation";
 import type {
   PlacedOverlay,
@@ -25,11 +30,6 @@ import type {
 
 const BEFORE_IMAGE = "/comparison_assets/room_without_furniture.png";
 const AFTER_IMAGE = "/comparison_assets/room_with_furniture.png";
-
-type ProductVariantSelection = {
-  left: AluminumFinishKey;
-  right: AluminumFinishKey;
-};
 
 type ToggleSwitchProps = {
   value: "left" | "right";
@@ -111,57 +111,15 @@ function AfterState({ src }: { src: string }) {
 
 function ProductVariantScene({
   backgroundImage,
-  finish,
+  layerImageUrls,
   overlays,
-  selectedOverlayId,
-  onSelectOverlay,
-  interactive = true,
 }: {
   backgroundImage: string;
-  finish: AluminumFinishKey;
+  layerImageUrls: string[];
   overlays: PlacedOverlay[];
-  selectedOverlayId: string;
-  onSelectOverlay: (overlayId: string) => void;
-  interactive?: boolean;
 }) {
-  const sceneRef = useRef<HTMLDivElement>(null);
-  const [sceneSize, setSceneSize] = useState({ width: 0, height: 0 });
-  const layerImageUrls = getComparisonLayerImageUrls(
-    overlays,
-    selectedOverlayId,
-    finish,
-  );
-  const sourceWidth = overlays[0]?.sourceCanvasWidth ?? 1;
-  const sourceHeight = overlays[0]?.sourceCanvasHeight ?? 1;
-
-  useEffect(() => {
-    const scene = sceneRef.current;
-    if (!scene) return;
-
-    const updateSize = () => {
-      const bounds = scene.getBoundingClientRect();
-      setSceneSize({ width: bounds.width, height: bounds.height });
-    };
-    updateSize();
-
-    const observer = new ResizeObserver(updateSize);
-    observer.observe(scene);
-    return () => observer.disconnect();
-  }, []);
-
-  const sourceAspectRatio = sourceWidth / sourceHeight;
-  const sceneAspectRatio = sceneSize.width / Math.max(sceneSize.height, 1);
-  const renderedWidth = sceneAspectRatio > sourceAspectRatio
-    ? sceneSize.height * sourceAspectRatio
-    : sceneSize.width;
-  const renderedHeight = sceneAspectRatio > sourceAspectRatio
-    ? sceneSize.height
-    : sceneSize.width / sourceAspectRatio;
-  const offsetX = (sceneSize.width - renderedWidth) / 2;
-  const offsetY = (sceneSize.height - renderedHeight) / 2;
-
   return (
-    <div ref={sceneRef} className="absolute inset-0 rounded-[15px] bg-neutral-100">
+    <div className="absolute inset-0 rounded-[15px] bg-neutral-100">
       <ComparisonImage
         alt="Uploaded room"
         className="absolute inset-0 h-full w-full rounded-[15px] object-contain"
@@ -169,49 +127,35 @@ function ProductVariantScene({
       />
       {layerImageUrls.map((imageUrl, index) => (
         <ComparisonImage
-          key={`${overlays[index]?.overlayId}-${finish}`}
+          key={overlays[index]?.overlayId}
           alt=""
           className="absolute inset-0 h-full w-full rounded-[15px] object-contain pointer-events-none"
           src={imageUrl}
         />
       ))}
-      {interactive && overlays.map((overlay, index) => {
-        const frame = getComparisonOverlayFrame({
-          overlay,
-          renderedWidth,
-          renderedHeight,
-          offsetX,
-          offsetY,
-        });
-        const isSelected = overlay.overlayId === selectedOverlayId;
+    </div>
+  );
+}
 
-        return (
-          <button
-            key={overlay.overlayId}
-            type="button"
-            aria-label={`Compare ${overlay.productName} ${index + 1}`}
-            aria-pressed={isSelected}
-            onClick={() => onSelectOverlay(overlay.overlayId)}
-            className={`absolute z-20 rounded-sm border-2 bg-transparent cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#07b6d3] focus-visible:ring-offset-2 ${isSelected
-              ? "border-[#07b6d3] shadow-[0_0_0_2px_rgba(255,255,255,0.85)]"
-              : "border-transparent hover:border-[#07b6d3]/70"
-              }`}
-            style={{
-              left: frame.centerX,
-              top: frame.centerY,
-              width: frame.width,
-              height: frame.height,
-              transform: `translate(-50%, -50%) rotate(${frame.rotation}deg)`,
-            }}
-          >
-            {isSelected && (
-              <span className="absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-[#0f1422] px-2.5 py-1 text-xs font-medium text-white shadow-md">
-                Editing {overlay.productName}
-              </span>
-            )}
-          </button>
-        );
-      })}
+function IncompleteVariationPrompt({
+  editPlacementHref,
+  onEditPlacement,
+}: {
+  editPlacementHref: string;
+  onEditPlacement: () => void;
+}) {
+  return (
+    <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 rounded-[15px] bg-neutral-100 px-6 text-center">
+      <p className="max-w-md text-sm text-black/70">
+        This comparison needs complete product variations before it can be previewed.
+      </p>
+      <Link
+        href={editPlacementHref}
+        onClick={onEditPlacement}
+        className="rounded-full bg-[#0f1422] px-4 py-2 text-sm font-medium text-white hover:bg-black"
+      >
+        Return to Edit Placement
+      </Link>
     </div>
   );
 }
@@ -313,21 +257,13 @@ export function Comparison() {
 
   // Variant Selections for Product Variant Comparison
   const configuredFinish = normalizeAluminumFinish(productConfiguration?.aluminumFinish);
-  const [leftVariant, setLeftVariant] = useState<AluminumFinishKey>(configuredFinish);
-  const [rightVariant, setRightVariant] = useState<AluminumFinishKey>(
-    getAlternateAluminumFinish(configuredFinish),
-  );
   const [productVariantSelections, setProductVariantSelections] = useState<
-    Record<string, ProductVariantSelection>
-  >(() => Object.fromEntries(
-    comparisonOverlays.map((overlay) => {
-      const finish = normalizeAluminumFinish(overlay.configuration.aluminumFinish);
-      return [
-        overlay.overlayId,
-        { left: finish, right: getAlternateAluminumFinish(finish) },
-      ];
-    }),
-  ));
+    ProductVariantSelections
+  >(() => createProductVariantSelections(comparisonOverlays));
+  const comparisonOverlayIds = comparisonOverlays
+    .map((overlay) => overlay.overlayId)
+    .join("\u0000");
+  const [reconciledOverlayIds, setReconciledOverlayIds] = useState(comparisonOverlayIds);
   const [selectedComparisonOverlayId, setSelectedComparisonOverlayId] = useState(
     comparisonOverlays.at(-1)?.overlayId ?? "",
   );
@@ -336,92 +272,60 @@ export function Comparison() {
   const selectedComparisonOverlay = comparisonOverlays.find(
     (overlay) => overlay.overlayId === selectedComparisonOverlayId,
   );
-
-  const saveSelectedProductFinish = (finish: AluminumFinishKey) => {
-    if (!selectedComparisonOverlayId) return;
-    setComparisonOverlays(
-      comparisonOverlays.map((overlay) =>
-        overlay.overlayId === selectedComparisonOverlayId
-          ? {
-              ...overlay,
-              configuration: {
-                ...overlay.configuration,
-                aluminumFinish: finish,
-              },
-            }
-          : overlay,
-      ),
-    );
-    if (selectedComparisonOverlay?.isActive && productConfiguration) {
-      setProductConfiguration({
-        ...productConfiguration,
-        aluminumFinish: finish,
-      });
-    }
+  const selectedOverlayInitialFinish = normalizeAluminumFinish(
+    selectedComparisonOverlay?.configuration.aluminumFinish ?? configuredFinish,
+  );
+  const selectedProductVariants = productVariantSelections[selectedComparisonOverlayId] ?? {
+    left: selectedOverlayInitialFinish,
+    right: selectedOverlayInitialFinish,
   };
+  const leftVariant = selectedProductVariants.left;
+  const rightVariant = selectedProductVariants.right;
+  const variantDataComplete = hasCompleteVariationLayers(comparisonOverlays);
+
+  if (reconciledOverlayIds !== comparisonOverlayIds) {
+    setReconciledOverlayIds(comparisonOverlayIds);
+    setProductVariantSelections((current) =>
+      reconcileProductVariantSelections(current, comparisonOverlays),
+    );
+    if (
+      comparisonOverlays.length > 0
+      && !comparisonOverlays.some((overlay) => overlay.overlayId === selectedComparisonOverlayId)
+    ) {
+      setSelectedComparisonOverlayId(comparisonOverlays.at(-1)?.overlayId ?? "");
+    }
+  }
 
   const handleSelectComparisonOverlay = (overlayId: string) => {
-    const overlay = comparisonOverlays.find((item) => item.overlayId === overlayId);
     setSelectedComparisonOverlayId(overlayId);
-    if (!overlay) return;
-    const savedSelection = productVariantSelections[overlayId];
-    if (savedSelection) {
-      setLeftVariant(savedSelection.left);
-      setRightVariant(savedSelection.right);
-      return;
-    }
-    const finish = normalizeAluminumFinish(overlay.configuration.aluminumFinish);
-    setLeftVariant(finish);
-    setRightVariant(getAlternateAluminumFinish(finish));
-    setProductVariantSelections((current) => ({
-      ...current,
-      [overlayId]: {
-        left: finish,
-        right: getAlternateAluminumFinish(finish),
-      },
-    }));
   };
 
   const handleSwap = () => {
-    const nextLeftVariant = rightVariant;
-    const nextRightVariant = leftVariant;
-    setLeftVariant(nextLeftVariant);
-    setRightVariant(nextRightVariant);
-    saveSelectedProductFinish(nextLeftVariant);
-    if (selectedComparisonOverlayId) {
-      setProductVariantSelections((current) => ({
-        ...current,
-        [selectedComparisonOverlayId]: {
-          left: nextLeftVariant,
-          right: nextRightVariant,
-        },
-      }));
-    }
+    setProductVariantSelections(swapProductVariantSelections);
   };
 
   const handleLeftVariantChange = (variant: AluminumFinishKey) => {
-    setLeftVariant(variant);
-    saveSelectedProductFinish(variant);
     if (!selectedComparisonOverlayId) return;
-    setProductVariantSelections((current) => ({
-      ...current,
-      [selectedComparisonOverlayId]: {
-        left: variant,
-        right: current[selectedComparisonOverlayId]?.right ?? rightVariant,
-      },
-    }));
+    setProductVariantSelections((current) =>
+      updateProductVariantSelection(
+        current,
+        selectedComparisonOverlayId,
+        "left",
+        variant,
+      ),
+    );
   };
 
   const handleRightVariantChange = (variant: AluminumFinishKey) => {
-    setRightVariant(variant);
     if (!selectedComparisonOverlayId) return;
-    setProductVariantSelections((current) => ({
-      ...current,
-      [selectedComparisonOverlayId]: {
-        left: current[selectedComparisonOverlayId]?.left ?? leftVariant,
-        right: variant,
-      },
-    }));
+    setProductVariantSelections((current) =>
+      updateProductVariantSelection(
+        current,
+        selectedComparisonOverlayId,
+        "right",
+        variant,
+      ),
+    );
   };
 
   const handleEditPlacement = () => {
@@ -439,12 +343,6 @@ export function Comparison() {
       return;
     }
 
-    if (!isBeforeAfter && productConfiguration && productConfiguration.aluminumFinish !== leftVariant) {
-      setProductConfiguration({
-        ...productConfiguration,
-        aluminumFinish: leftVariant,
-      });
-    }
   };
 
   const isSideBySide = viewAs === "left";
@@ -463,6 +361,31 @@ export function Comparison() {
     variationSnapshots.find((item) => item.key === finish)?.imageDataUrl ?? afterImage;
   const leftVariantImage = imageForFinish(leftVariant);
   const rightVariantImage = imageForFinish(rightVariant);
+  const leftLayerImageUrls = variantDataComplete
+    ? getComparisonLayerImageUrls(comparisonOverlays, productVariantSelections, "left")
+    : [];
+  const rightLayerImageUrls = variantDataComplete
+    ? getComparisonLayerImageUrls(comparisonOverlays, productVariantSelections, "right")
+    : [];
+  const getVariantPreviewLayerImageUrls = (
+    panel: "left" | "right",
+    variant: AluminumFinishKey,
+  ) => {
+    if (!variantDataComplete || !selectedComparisonOverlayId) {
+      return [];
+    }
+
+    return getComparisonLayerImageUrls(
+      comparisonOverlays,
+      updateProductVariantSelection(
+        productVariantSelections,
+        selectedComparisonOverlayId,
+        panel,
+        variant,
+      ),
+      panel,
+    );
+  };
 
   // Slider State & Logic
   const [sliderPosition, setSliderPosition] = useState(50);
@@ -535,6 +458,11 @@ export function Comparison() {
     if (!isBeforeAfter && selectedComparisonOverlay && comparisonOverlays.length > 0) {
       setIsPreparingQuotation(true);
       try {
+        if (!variantDataComplete) {
+          throw new Error(
+            "Product variation data is incomplete. Return to Edit Placement to regenerate the comparison.",
+          );
+        }
         const targetAwareSnapshots = await Promise.all(
           ALUMINUM_COLOR_VARIATIONS.map(async (variation) => ({
             ...variation,
@@ -542,8 +470,13 @@ export function Comparison() {
               beforeImage,
               getComparisonLayerImageUrls(
                 comparisonOverlays,
-                selectedComparisonOverlay.overlayId,
-                variation.key,
+                updateProductVariantSelection(
+                  productVariantSelections,
+                  selectedComparisonOverlay.overlayId,
+                  "left",
+                  variation.key,
+                ),
+                "left",
               ),
             ),
           } satisfies ProductVariationSnapshot)),
@@ -554,23 +487,18 @@ export function Comparison() {
         if (chosenImage) setFinalSnapshotDataUrl(chosenImage);
         setVariationSnapshots(targetAwareSnapshots);
 
-        const updatedOverlays = comparisonOverlays.map((overlay) =>
-          overlay.overlayId === selectedComparisonOverlay.overlayId
-            ? {
-                ...overlay,
-                configuration: {
-                  ...overlay.configuration,
-                  aluminumFinish: leftVariant,
-                },
-              }
-            : overlay,
+        const updatedOverlays = commitProductVariantSelections(
+          comparisonOverlays,
+          productVariantSelections,
         );
         setComparisonOverlays(updatedOverlays);
+        setPlacedOverlays(updatedOverlays);
 
-        if (selectedComparisonOverlay.isActive && productConfiguration) {
+        const activeOverlay = updatedOverlays.find((overlay) => overlay.isActive);
+        if (activeOverlay && productConfiguration) {
           setProductConfiguration({
             ...productConfiguration,
-            aluminumFinish: leftVariant,
+            aluminumFinish: activeOverlay.configuration.aluminumFinish,
           });
         }
       } catch (error) {
@@ -653,7 +581,7 @@ export function Comparison() {
               Choose a product to compare
             </p>
             <p className="text-sm text-black/60">
-              Click a model in the preview or choose it below. Only that product changes finish.
+              Choose a product below. Only that product changes finish.
             </p>
           </div>
           <div className="flex flex-wrap gap-2" role="group" aria-label="Products to compare">
@@ -699,13 +627,18 @@ export function Comparison() {
                 /* Variant: Selected Left Finish */
                 <>
                   {comparisonOverlays.length > 0 ? (
-                    <ProductVariantScene
-                      backgroundImage={beforeImage}
-                      finish={leftVariant}
-                      overlays={comparisonOverlays}
-                      selectedOverlayId={selectedComparisonOverlayId}
-                      onSelectOverlay={handleSelectComparisonOverlay}
-                    />
+                    variantDataComplete ? (
+                      <ProductVariantScene
+                        backgroundImage={beforeImage}
+                        layerImageUrls={leftLayerImageUrls}
+                        overlays={comparisonOverlays}
+                      />
+                    ) : (
+                      <IncompleteVariationPrompt
+                        editPlacementHref={editPlacementHref}
+                        onEditPlacement={handleEditPlacement}
+                      />
+                    )
                   ) : (
                     <AfterState src={leftVariantImage} />
                   )}
@@ -734,13 +667,18 @@ export function Comparison() {
                 /* Variant: Selected Right Finish */
                 <>
                   {comparisonOverlays.length > 0 ? (
-                    <ProductVariantScene
-                      backgroundImage={beforeImage}
-                      finish={rightVariant}
-                      overlays={comparisonOverlays}
-                      selectedOverlayId={selectedComparisonOverlayId}
-                      onSelectOverlay={handleSelectComparisonOverlay}
-                    />
+                    variantDataComplete ? (
+                      <ProductVariantScene
+                        backgroundImage={beforeImage}
+                        layerImageUrls={rightLayerImageUrls}
+                        overlays={comparisonOverlays}
+                      />
+                    ) : (
+                      <IncompleteVariationPrompt
+                        editPlacementHref={editPlacementHref}
+                        onEditPlacement={handleEditPlacement}
+                      />
+                    )
                   ) : (
                     <AfterState src={rightVariantImage} />
                   )}
@@ -764,13 +702,18 @@ export function Comparison() {
               {isBeforeAfter || comparisonOverlays.length === 0 ? (
                 <AfterState src={isBeforeAfter ? afterImage : rightVariantImage} />
               ) : (
-                <ProductVariantScene
-                  backgroundImage={beforeImage}
-                  finish={rightVariant}
-                  overlays={comparisonOverlays}
-                  selectedOverlayId={selectedComparisonOverlayId}
-                  onSelectOverlay={handleSelectComparisonOverlay}
-                />
+                variantDataComplete ? (
+                  <ProductVariantScene
+                    backgroundImage={beforeImage}
+                    layerImageUrls={rightLayerImageUrls}
+                    overlays={comparisonOverlays}
+                  />
+                ) : (
+                  <IncompleteVariationPrompt
+                    editPlacementHref={editPlacementHref}
+                    onEditPlacement={handleEditPlacement}
+                  />
+                )
               )}
             </div>
 
@@ -783,14 +726,18 @@ export function Comparison() {
                 <BeforeState src={beforeImage} />
               ) : (
                 comparisonOverlays.length > 0 ? (
-                  <ProductVariantScene
-                    backgroundImage={beforeImage}
-                    finish={leftVariant}
-                    overlays={comparisonOverlays}
-                    selectedOverlayId={selectedComparisonOverlayId}
-                    onSelectOverlay={handleSelectComparisonOverlay}
-                    interactive={false}
-                  />
+                  variantDataComplete ? (
+                    <ProductVariantScene
+                      backgroundImage={beforeImage}
+                      layerImageUrls={leftLayerImageUrls}
+                      overlays={comparisonOverlays}
+                    />
+                  ) : (
+                    <IncompleteVariationPrompt
+                      editPlacementHref={editPlacementHref}
+                      onEditPlacement={handleEditPlacement}
+                    />
+                  )
                 ) : (
                   <AfterState src={leftVariantImage} />
                 )
@@ -842,18 +789,17 @@ export function Comparison() {
                   label={variation.label}
                   imageSrc={imageForFinish(variation.key)}
                   preview={comparisonOverlays.length > 0 ? (
-                    <ProductVariantScene
-                      backgroundImage={beforeImage}
-                      finish={variation.key}
-                      overlays={comparisonOverlays}
-                      selectedOverlayId={selectedComparisonOverlayId}
-                      onSelectOverlay={handleSelectComparisonOverlay}
-                      interactive={false}
-                    />
+                    variantDataComplete ? (
+                      <ProductVariantScene
+                        backgroundImage={beforeImage}
+                        layerImageUrls={getVariantPreviewLayerImageUrls("left", variation.key)}
+                        overlays={comparisonOverlays}
+                      />
+                    ) : undefined
                   ) : undefined}
                   swatchClassName={variation.swatchClassName}
                   isSelected={leftVariant === variation.key}
-                  isDisabled={rightVariant === variation.key}
+                  isDisabled={!variantDataComplete || rightVariant === variation.key}
                   onClick={() => handleLeftVariantChange(variation.key)}
                 />
               ))}
@@ -890,18 +836,17 @@ export function Comparison() {
                   label={variation.label}
                   imageSrc={imageForFinish(variation.key)}
                   preview={comparisonOverlays.length > 0 ? (
-                    <ProductVariantScene
-                      backgroundImage={beforeImage}
-                      finish={variation.key}
-                      overlays={comparisonOverlays}
-                      selectedOverlayId={selectedComparisonOverlayId}
-                      onSelectOverlay={handleSelectComparisonOverlay}
-                      interactive={false}
-                    />
+                    variantDataComplete ? (
+                      <ProductVariantScene
+                        backgroundImage={beforeImage}
+                        layerImageUrls={getVariantPreviewLayerImageUrls("right", variation.key)}
+                        overlays={comparisonOverlays}
+                      />
+                    ) : undefined
                   ) : undefined}
                   swatchClassName={variation.swatchClassName}
                   isSelected={rightVariant === variation.key}
-                  isDisabled={leftVariant === variation.key}
+                  isDisabled={!variantDataComplete || leftVariant === variation.key}
                   onClick={() => handleRightVariantChange(variation.key)}
                 />
               ))}

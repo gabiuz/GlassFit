@@ -1164,6 +1164,11 @@ export function ProductModelWorkspace({
 
     if (!structuralDefinition) {
       const fallbackLayer = await captureCurrentProductLayer();
+      if (!fallbackLayer) {
+        throw new Error(
+          "Unable to capture the product variations. Try Edit Placement and prepare the comparison again.",
+        );
+      }
       for (const variation of ALUMINUM_COLOR_VARIATIONS) {
         variationImageDataUrls[variation.key] = fallbackLayer;
       }
@@ -1203,7 +1208,9 @@ export function ProductModelWorkspace({
         const isPlanar = Boolean(perspectiveCorners);
         const renderedCanvas = renderer.render(yaw, pitch, isPlanar);
         if (!renderedCanvas) {
-          continue;
+          throw new Error(
+            `Unable to capture the ${variation.title} product variation. Try Edit Placement and prepare the comparison again.`,
+          );
         }
 
         variationImageDataUrls[variation.key] = await captureWorkspaceSnapshot({
@@ -1234,6 +1241,15 @@ export function ProductModelWorkspace({
       } finally {
         renderer.dispose();
       }
+    }
+
+    const missingVariation = ALUMINUM_COLOR_VARIATIONS.find(
+      (variation) => !variationImageDataUrls[variation.key],
+    );
+    if (missingVariation) {
+      throw new Error(
+        `Unable to capture the ${missingVariation.title} product variation. Try Edit Placement and prepare the comparison again.`,
+      );
     }
 
     return variationImageDataUrls;
@@ -1273,7 +1289,9 @@ export function ProductModelWorkspace({
       const currentFinish = normalizeAluminumFinish(
         currentConfiguration.aluminumFinish,
       );
+      const variationLayers = await captureCurrentProductVariationLayers();
       const variationImageDataUrls: Partial<Record<AluminumFinishKey, string>> = {
+        ...variationLayers,
         [currentFinish]: activeImageDataUrl,
       };
       const placedLayer = preserveActivePlacedLayer({
@@ -1311,6 +1329,7 @@ export function ProductModelWorkspace({
     [
       activeLayerNumber,
       captureCurrentProductLayer,
+      captureCurrentProductVariationLayers,
       currentConfiguration,
       currentProductId,
       overlayName,
@@ -1569,7 +1588,9 @@ export function ProductModelWorkspace({
     try {
       await captureCurrentSnapshot();
       setIsSnapshotApplied(true);
-      await generateVariationSnapshots();
+      if (!selectedProduct && placedOverlays.length === 0) {
+        await generateVariationSnapshots();
+      }
       const comparisonOverlays = selectedProduct
         ? [
           ...placedOverlays,
@@ -1593,6 +1614,7 @@ export function ProductModelWorkspace({
     createPlacedOverlay,
     generateVariationSnapshots,
     onComparisonOverlaysChange,
+    onPlacedOverlaysChange,
     placedOverlays,
     router,
     selectedProduct,

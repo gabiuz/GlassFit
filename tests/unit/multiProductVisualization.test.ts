@@ -1,11 +1,16 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  commitProductVariantSelections,
+  createProductVariantSelections,
   createDuplicateConfiguration,
-  getComparisonOverlayFrame,
   getComparisonLayerImageUrls,
   getPlacedLayerImageUrls,
+  hasCompleteVariationLayers,
   preserveActivePlacedLayer,
+  reconcileProductVariantSelections,
+  swapProductVariantSelections,
+  updateProductVariantSelection,
   getVisualizationHeaderDetails,
 } from "../../src/lib/visualization/multiProductPresentation";
 import {
@@ -129,67 +134,122 @@ describe("PRD-F15/PRD-F16: multi-product visualization and comparison", () => {
     assert.equal(comparisonVerticalFov, resizedEditorVerticalFov);
   });
 
-  it("uses the captured visible model bounds for comparison selection", () => {
-    const overlay = placedOverlay("selected");
-    overlay.configuration = {
-      ...sourceConfiguration,
-      positionX: 100,
-      positionY: -40,
-      rotateAngle: 0,
+  it("renders every product from its independent panel selection", () => {
+    const first = placedOverlay("first");
+    const second = placedOverlay("second");
+    first.variationImageDataUrls = {
+      white: "first-white",
+      black: "first-black",
+      silver: "first-silver",
     };
-    overlay.sourceCanvasWidth = 1000;
-    overlay.sourceCanvasHeight = 800;
-    overlay.sourceOverlayWidth = 400;
-    overlay.sourceOverlayHeight = 300;
-    overlay.visibleModelBounds = {
-      left: 0.25,
-      top: 0.1,
-      width: 0.5,
-      height: 0.6,
+    second.variationImageDataUrls = {
+      white: "second-white",
+      black: "second-black",
+      silver: "second-silver",
     };
+    const selections = {
+      first: { left: "silver", right: "black" },
+      second: { left: "white", right: "silver" },
+    } as const;
 
+    assert.deepEqual(getComparisonLayerImageUrls([first, second], selections, "left"), [
+      "first-silver",
+      "second-white",
+    ]);
+    assert.deepEqual(getComparisonLayerImageUrls([first, second], selections, "right"), [
+      "first-black",
+      "second-silver",
+    ]);
+  });
+
+  it("updates one panel for one product without changing other selections", () => {
+    const current = {
+      first: { left: "white", right: "black" },
+      second: { left: "silver", right: "white" },
+    } as const;
+    const updated = updateProductVariantSelection(current, "first", "left", "silver");
+
+    assert.deepEqual(updated, {
+      first: { left: "silver", right: "black" },
+      second: { left: "silver", right: "white" },
+    });
+    assert.deepEqual(current.first, { left: "white", right: "black" });
+  });
+
+  it("reconciles selections by stable overlay id", () => {
+    const first = placedOverlay("first");
+    const third = placedOverlay("third");
+    third.configuration = { ...sourceConfiguration, aluminumFinish: "silver" };
+    const reconciled = reconcileProductVariantSelections(
+      {
+        first: { left: "black", right: "silver" },
+        removed: { left: "white", right: "black" },
+      },
+      [third, first],
+    );
+
+    assert.deepEqual(reconciled, {
+      third: { left: "silver", right: "silver" },
+      first: { left: "black", right: "silver" },
+    });
+    assert.deepEqual(createProductVariantSelections([third, first]), {
+      third: { left: "silver", right: "silver" },
+      first: { left: "white", right: "white" },
+    });
+  });
+
+  it("swaps both panels for every configured product", () => {
     assert.deepEqual(
-      getComparisonOverlayFrame({
-        overlay,
-        renderedWidth: 500,
-        renderedHeight: 400,
-        offsetX: 0,
-        offsetY: 0,
+      swapProductVariantSelections({
+        first: { left: "white", right: "black" },
+        second: { left: "silver", right: "white" },
       }),
       {
-        centerX: 300,
-        centerY: 165,
-        width: 100,
-        height: 90,
-        rotation: 0,
+        first: { left: "black", right: "white" },
+        second: { left: "white", right: "silver" },
       },
     );
   });
 
-  it("changes only the selected product when comparing a finish", () => {
-    const selected = placedOverlay("selected");
-    const unchanged = placedOverlay("unchanged");
-    selected.configuration = { ...sourceConfiguration, aluminumFinish: "white" };
-    unchanged.configuration = { ...sourceConfiguration, aluminumFinish: "silver" };
-    selected.variationImageDataUrls = {
-      white: "data:image/png;base64,selected-white",
-      black: "data:image/png;base64,selected-black",
+  it("detects incomplete variation data without falling back", () => {
+    const complete = placedOverlay("complete");
+    const incomplete = placedOverlay("incomplete");
+    complete.variationImageDataUrls = {
+      white: "complete-white",
+      black: "complete-black",
+      silver: "complete-silver",
     };
-    unchanged.variationImageDataUrls = {
-      silver: "data:image/png;base64,unchanged-silver",
-      black: "data:image/png;base64,unchanged-black",
+    incomplete.variationImageDataUrls = {
+      white: "incomplete-white",
+      black: "incomplete-black",
     };
 
-    assert.deepEqual(
-      getComparisonLayerImageUrls(
-        [selected, unchanged],
-        "selected",
-        "black",
+    assert.equal(hasCompleteVariationLayers([complete]), true);
+    assert.equal(hasCompleteVariationLayers([complete, incomplete]), false);
+    assert.throws(
+      () => getComparisonLayerImageUrls(
+        [incomplete],
+        { incomplete: { left: "silver", right: "black" } },
+        "left",
       ),
-      [
-        "data:image/png;base64,selected-black",
-        "data:image/png;base64,unchanged-silver",
-      ],
+      /regenerate/i,
     );
+  });
+
+  it("commits Panel A for every product without mutating the source overlays", () => {
+    const first = placedOverlay("first");
+    const second = placedOverlay("second");
+    const committed = commitProductVariantSelections(
+      [first, second],
+      {
+        first: { left: "silver", right: "black" },
+        second: { left: "black", right: "white" },
+      },
+    );
+
+    assert.equal(committed[0].configuration.aluminumFinish, "silver");
+    assert.equal(committed[1].configuration.aluminumFinish, "black");
+    assert.equal(first.configuration.aluminumFinish, "white");
+    assert.notEqual(committed[0], first);
   });
 });

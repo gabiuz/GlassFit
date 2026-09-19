@@ -418,3 +418,39 @@ export function createMaterialPalette(options: MaterialPaletteOptions) {
 
   return { frameMaterial, glassMaterial, hardwareMaterial };
 }
+
+export function applyPresentationMaterials(
+  group: THREE.Group,
+  glassAppearance: GlassAppearanceMode,
+  alumFinish?: string,
+) {
+  const { frameMaterial, glassMaterial, hardwareMaterial } = createMaterialPalette({
+    alumFinish,
+    glassAppearance,
+  });
+
+  group.traverse((object) => {
+    if (!(object instanceof THREE.Mesh)) {
+      return;
+    }
+
+    const classification = classifySceneMesh(object);
+    if (classification === "Glass") {
+      object.material = glassMaterial.clone();
+      object.castShadow = false;
+      object.receiveShadow = true;
+    } else if (classification === "Hardware") {
+      object.material = hardwareMaterial.clone();
+      object.castShadow = true;
+      object.receiveShadow = true;
+    } else {
+      object.material = frameMaterial.clone();
+      object.castShadow = true;
+      object.receiveShadow = true;
+    }
+  });
+
+  frameMaterial.dispose();
+  glassMaterial.dispose();
+  hardwareMaterial.dispose();
+}
