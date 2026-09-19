@@ -13,11 +13,33 @@ import {
   classifyComponentContext,
   createMaterialPalette,
   createWindowGlassMaterial,
+  applyPresentationMaterials,
 } from "../../src/lib/visualization/materialClassifier.js";
 import { autoDetectComponentSettings } from "../../src/lib/admin/products/autoDetection.js";
 import type { RawMaterial } from "../../src/lib/pricing/types.js";
 
 describe("Fix-02: Multi-Material Classification & Photorealistic Glazing Physics", () => {
+  it("applies the requested finish and glass appearance to a fixed-model scene", () => {
+    const group = new THREE.Group();
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 0.1));
+    frame.name = "aluminum_frame";
+    const glass = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.01));
+    glass.name = "glass_panel";
+    group.add(frame, glass);
+
+    applyPresentationMaterials(group, "clear", "silver");
+
+    assert.strictEqual(
+      (frame.material as THREE.MeshPhysicalMaterial).color.getHex(),
+      0xc8cbce,
+    );
+    assert.strictEqual(
+      (glass.material as THREE.MeshPhysicalMaterial).transmission,
+      0.88,
+    );
+    assert.strictEqual(frame.castShadow, true);
+    assert.strictEqual(glass.castShadow, false);
+  });
   // --------------------------------------------------------------------------
   // 1. Linked Raw Material Category Classification Priority (User Requirement)
   // --------------------------------------------------------------------------

@@ -11,6 +11,7 @@ import {
 import { buildParametricProduct } from "@/lib/visualization/parametricProductBuilder";
 import { resolveProductStructure } from "@/lib/visualization/structuralResolver";
 import { preloadComponentModels } from "@/lib/visualization/componentModelCache";
+import { applyPresentationMaterials } from "@/lib/visualization/materialClassifier";
 
 // Cache the environment map globally so we only download the HDR once
 let cachedEnvironmentMap: THREE.Texture | null = null;
@@ -188,7 +189,7 @@ export class ProductModelRenderer {
 
     const group =
       definition.template.modelStrategy === "Fixed"
-        ? await this.loadFixedModel(definition)
+        ? await this.loadFixedModel(definition, glassAppearance, alumFinish)
         : await this.loadParametricModel(
             definition,
             values,
@@ -237,7 +238,11 @@ export class ProductModelRenderer {
     return group;
   }
 
-  private async loadFixedModel(definition: ProductStructuralDefinition) {
+  private async loadFixedModel(
+    definition: ProductStructuralDefinition,
+    glassAppearance: GlassAppearanceMode,
+    alumFinish?: string,
+  ) {
     const asset = definition.assets?.find(
       (item) =>
         (item.assetType === "Whole Model" ||
@@ -260,6 +265,7 @@ export class ProductModelRenderer {
     const group = new THREE.Group();
     group.add(source);
     normalizeModelForViewer(group, source);
+    applyPresentationMaterials(group, glassAppearance, alumFinish);
 
     return group;
   }
