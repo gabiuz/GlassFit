@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  DEFAULT_SCENE_ZOOM,
   commitProductVariantSelections,
   createProductVariantSelections,
   createDuplicateConfiguration,
@@ -66,12 +67,12 @@ function rgbaMask(width: number, height: number, opaquePixels: Array<[number, nu
 }
 
 describe("PRD-F15/PRD-F16: multi-product visualization and comparison", () => {
-  it("preserves a duplicated product's visual size and orientation while centering it", () => {
+  it("resets a duplicated product's position and zoom to default while preserving dimensions and orientation", () => {
     const duplicate = createDuplicateConfiguration(sourceConfiguration);
 
     assert.equal(duplicate.widthCm, sourceConfiguration.widthCm);
     assert.equal(duplicate.heightCm, sourceConfiguration.heightCm);
-    assert.equal(duplicate.zoomLevel, sourceConfiguration.zoomLevel);
+    assert.equal(duplicate.zoomLevel, DEFAULT_SCENE_ZOOM);
     assert.equal(duplicate.rotateAngle, sourceConfiguration.rotateAngle);
     assert.equal(duplicate.yaw, sourceConfiguration.yaw);
     assert.equal(duplicate.pitch, sourceConfiguration.pitch);

@@ -89,12 +89,14 @@ export function VisualizationComparison() {
                       : "border border-neutral-800 hover:scale-[1.02] shadow-sm"
                     }`}
                 >
-                  <img
-                    alt={variation.title}
-                    className="h-full w-full rounded-[15px] object-cover"
-                    draggable={false}
-                    src={variation.imageDataUrl}
-                  />
+                  {variation.imageDataUrl ? (
+                    <img
+                      alt={variation.title}
+                      className="h-full w-full rounded-[15px] object-cover"
+                      draggable={false}
+                      src={variation.imageDataUrl}
+                    />
+                  ) : null}
                   <div className={`absolute bottom-3 left-3 h-8 w-8 rounded-full shadow-md ${variation.swatchClassName}`} />
 
                   {isActive && (
@@ -133,12 +135,14 @@ function ComparisonImageCard({
 }) {
   return (
     <div className="relative flex flex-col h-64 sm:h-96 lg:h-144.75 w-full rounded-[20px] overflow-hidden shadow-[0px_0px_5px_0px_rgba(0,0,0,0.15)] bg-neutral-100">
-      <img
-        alt={alt}
-        className="h-full w-full rounded-[20px] object-contain"
-        draggable={false}
-        src={imageUrl}
-      />
+      {imageUrl ? (
+        <img
+          alt={alt}
+          className="h-full w-full rounded-[20px] object-contain"
+          draggable={false}
+          src={imageUrl}
+        />
+      ) : null}
       {swatchClassName && (
         <div className={`absolute bottom-6 right-6 h-11 w-11 rounded-full shadow-lg ring-4 ring-white/90 ${swatchClassName}`} />
       )}

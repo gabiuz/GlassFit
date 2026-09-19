@@ -86,6 +86,7 @@ export type ProductStructuralDefinition = {
     description?: string | null;
     basePrice?: number;
     catalogImageUrl?: string | null;
+    preview_glb_url?: string | null;
   };
   template: {
     templateId: string;
@@ -149,6 +150,7 @@ export type PlacedOverlay = {
   unitPrice?: number;
   totalPrice?: number;
   layerNumber?: number;
+  previewGlbUrl?: string | null;
 };
 
 export type VisualizationSessionState = {
@@ -213,5 +215,29 @@ export type ProductConfigurationSnapshot = {
   positionX?: number;
   positionY?: number;
   visualParameterValues: Record<string, unknown>;
+};
+
+export type MeasurementOverride = {
+  widthIn: number;
+  heightIn: number;
+  widthOverridden: boolean;
+  heightOverridden: boolean;
+  acknowledged: boolean;
+};
+
+export type MeasurementConfirmationEntry = {
+  overlayId: string;
+  productId: string;
+  productName: string;
+  aluminumFinish: string;
+  previewGlbUrl: string | null;
+  systemWidthCm: number;
+  systemHeightCm: number;
+  systemTotalPrice: number;
+  structuralDefinition: ProductStructuralDefinition | null;
+  overlayConfiguration: ProductConfigurationSnapshot;
+  isActiveProduct: boolean;
+  override: MeasurementOverride;
+  recalculatedTotalPrice: number | null;
 };
 
