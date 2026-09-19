@@ -154,6 +154,8 @@ export function preserveActivePlacedLayer({
   };
 }
 
+export const DEFAULT_SCENE_ZOOM = 10;
+
 export function getOverlaySizeFromConfiguration(
   configuration: ProductConfigurationSnapshot,
 ) {
@@ -161,7 +163,7 @@ export function getOverlaySizeFromConfiguration(
   const height = Number(configuration.heightCm) || DEFAULT_PRODUCT_HEIGHT_CM;
   const widthPx = DEFAULT_OVERLAY_WIDTH_PX * (width / DEFAULT_PRODUCT_WIDTH_CM);
   const heightPx = DEFAULT_OVERLAY_HEIGHT_PX * (height / DEFAULT_PRODUCT_HEIGHT_CM);
-  const zoomScale = 1 + (configuration.zoomLevel ?? 10) / 100;
+  const zoomScale = 1 + (configuration.zoomLevel ?? DEFAULT_SCENE_ZOOM) / 100;
 
   return {
     width: Math.round(
@@ -180,6 +182,7 @@ export function createDuplicateConfiguration(
     ...configuration,
     positionX: 0,
     positionY: 0,
+    zoomLevel: DEFAULT_SCENE_ZOOM,
     perspectiveFitCorners: null,
   };
 }

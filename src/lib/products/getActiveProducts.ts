@@ -35,8 +35,6 @@ export async function getActiveProducts(): Promise<DatabaseProduct[]> {
       )
     `)
     .eq("status", "Active")
-    .eq("product_assets.asset_type", "Catalog Image")
-    .eq("product_assets.is_primary", true)
     .eq("product_assets.status", "Active")
     .order("product_type", { ascending: true })
     .order("product_name", { ascending: true });
@@ -110,13 +108,49 @@ export async function getActiveProducts(): Promise<DatabaseProduct[]> {
       continue;
     }
 
-    const catalogImageAsset = row.product_assets?.[0];
+    const assets = Array.isArray(row.product_assets)
+      ? (row.product_assets as Array<{
+          asset_id: string;
+          asset_type: string;
+          r2_object_key: string;
+          is_primary: boolean;
+          status: string;
+        }>)
+      : [];
+
+    const catalogImageAsset =
+      assets.find(
+        (a) =>
+          a.asset_type === "Catalog Image" &&
+          a.is_primary === true &&
+          a.status === "Active",
+      ) ?? assets.find((a) => a.asset_type === "Catalog Image" && a.status === "Active");
+
+    const glbAsset =
+      assets.find(
+        (a) =>
+          (a.asset_type === "Catalog 3D Preview" || a.asset_type === "Whole Model") &&
+          a.is_primary === true &&
+          a.status === "Active",
+      ) ??
+      assets.find(
+        (a) =>
+          (a.asset_type === "Catalog 3D Preview" || a.asset_type === "Whole Model") &&
+          a.status === "Active",
+      );
 
     const catalogImageR2Key =
       catalogImageAsset &&
-        typeof catalogImageAsset.r2_object_key === "string" &&
-        catalogImageAsset.r2_object_key.trim() !== ""
+      typeof catalogImageAsset.r2_object_key === "string" &&
+      catalogImageAsset.r2_object_key.trim() !== ""
         ? catalogImageAsset.r2_object_key
+        : null;
+
+    const previewGlbR2Key =
+      glbAsset &&
+      typeof glbAsset.r2_object_key === "string" &&
+      glbAsset.r2_object_key.trim() !== ""
+        ? glbAsset.r2_object_key
         : null;
 
     validated.push({
@@ -140,6 +174,7 @@ export async function getActiveProducts(): Promise<DatabaseProduct[]> {
           : "",
 
       catalog_image_r2_key: catalogImageR2Key,
+      preview_glb_r2_key: previewGlbR2Key,
     });
   }
 

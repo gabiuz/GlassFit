@@ -36,5 +36,6 @@ export function mapDatabaseProductToCatalog(
     basePrice: dbProduct.base_price,
     rendererKey: resolveRendererKey(dbProduct.product_type),
     imageUrl: getR2AssetUrl(dbProduct.catalog_image_r2_key),
+    previewGlbUrl: getR2AssetUrl(dbProduct.preview_glb_r2_key ?? null),
   };
 }
