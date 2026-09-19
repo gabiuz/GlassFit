@@ -17,6 +17,12 @@ import {
   getHorizontalFovRadians,
   getVerticalFovDegrees,
 } from "../../src/lib/visualization/cameraFraming";
+import {
+  calculateContainTransform,
+  createOverlayAlphaMask,
+  findTopmostOverlayAtPoint,
+  getOverlayHitMaskSource,
+} from "../../src/lib/visualization/overlayHitTesting";
 import type {
   PlacedOverlay,
   ProductConfigurationSnapshot,
@@ -49,6 +55,14 @@ function placedOverlay(overlayId: string): PlacedOverlay {
     configuration: sourceConfiguration,
     flattenedImageDataUrl: "data:image/png;base64,layer",
   };
+}
+
+function rgbaMask(width: number, height: number, opaquePixels: Array<[number, number, number]>) {
+  const rgba = new Uint8ClampedArray(width * height * 4);
+  for (const [x, y, alpha] of opaquePixels) {
+    rgba[(y * width + x) * 4 + 3] = alpha;
+  }
+  return rgba;
 }
 
 describe("PRD-F15/PRD-F16: multi-product visualization and comparison", () => {
@@ -251,5 +265,116 @@ describe("PRD-F15/PRD-F16: multi-product visualization and comparison", () => {
     assert.equal(committed[1].configuration.aluminumFinish, "black");
     assert.equal(first.configuration.aluminumFinish, "white");
     assert.notEqual(committed[0], first);
+  });
+
+  it("maps alpha masks through equal, letterboxed, and pillarboxed containers", () => {
+    assert.deepEqual(calculateContainTransform(200, 100, 200, 100), {
+      scale: 1,
+      offsetX: 0,
+      offsetY: 0,
+      renderedWidth: 200,
+      renderedHeight: 100,
+    });
+    assert.deepEqual(calculateContainTransform(300, 100, 100, 100), {
+      scale: 1,
+      offsetX: 100,
+      offsetY: 0,
+      renderedWidth: 100,
+      renderedHeight: 100,
+    });
+    assert.deepEqual(calculateContainTransform(100, 300, 100, 100), {
+      scale: 1,
+      offsetX: 0,
+      offsetY: 100,
+      renderedWidth: 100,
+      renderedHeight: 100,
+    });
+    assert.equal(calculateContainTransform(0, 100, 100, 100), null);
+    assert.equal(calculateContainTransform(Number.NaN, 100, 100, 100), null);
+  });
+
+  it("uses the documented alpha threshold and circular hit slop", () => {
+    const mask = createOverlayAlphaMask(
+      "thin-frame",
+      20,
+      20,
+      rgbaMask(20, 20, [[10, 10, 24], [11, 10, 23]]),
+    );
+
+    assert.equal(findTopmostOverlayAtPoint({
+      x: 10,
+      y: 10,
+      containerWidth: 20,
+      containerHeight: 20,
+      orderedOverlayIds: ["thin-frame"],
+      masks: { "thin-frame": mask },
+      hitSlopCssPx: 0,
+    }), "thin-frame");
+    assert.equal(findTopmostOverlayAtPoint({
+      x: 11,
+      y: 10,
+      containerWidth: 20,
+      containerHeight: 20,
+      orderedOverlayIds: ["thin-frame"],
+      masks: { "thin-frame": mask },
+      hitSlopCssPx: 0,
+    }), null);
+    assert.equal(findTopmostOverlayAtPoint({
+      x: 13,
+      y: 10,
+      containerWidth: 20,
+      containerHeight: 20,
+      orderedOverlayIds: ["thin-frame"],
+      masks: { "thin-frame": mask },
+      hitSlopCssPx: 3,
+    }), "thin-frame");
+  });
+
+  it("selects the topmost opaque overlay and skips transparent upper pixels", () => {
+    const lower = createOverlayAlphaMask(
+      "lower",
+      10,
+      10,
+      rgbaMask(10, 10, [[5, 5, 255], [2, 2, 255]]),
+    );
+    const upper = createOverlayAlphaMask(
+      "upper",
+      10,
+      10,
+      rgbaMask(10, 10, [[5, 5, 255]]),
+    );
+    const input = {
+      containerWidth: 10,
+      containerHeight: 10,
+      orderedOverlayIds: ["lower", "upper"],
+      masks: { lower, upper },
+      hitSlopCssPx: 0,
+    } as const;
+
+    assert.equal(findTopmostOverlayAtPoint({ ...input, x: 5, y: 5 }), "upper");
+    assert.equal(findTopmostOverlayAtPoint({ ...input, x: 2, y: 2 }), "lower");
+    assert.equal(findTopmostOverlayAtPoint({ ...input, x: 9, y: 9 }), null);
+    assert.equal(findTopmostOverlayAtPoint({
+      ...input,
+      x: -1,
+      y: 5,
+      containerWidth: 30,
+    }), null);
+  });
+
+  it("chooses a stable mask source without inventing missing geometry", () => {
+    const overlay = placedOverlay("source");
+    overlay.flattenedImageDataUrl = "";
+    overlay.variationImageDataUrls = {
+      white: "committed-white",
+      black: "alternate-black",
+    };
+    assert.equal(getOverlayHitMaskSource(overlay), "committed-white");
+
+    overlay.configuration = { ...sourceConfiguration, aluminumFinish: "silver" };
+    assert.equal(getOverlayHitMaskSource(overlay), "committed-white");
+
+    overlay.variationImageDataUrls = {};
+    assert.equal(getOverlayHitMaskSource(overlay), null);
   });
 });

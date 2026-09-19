@@ -1,6 +1,14 @@
 "use client";
 
-import { useState, useRef, useEffect, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight, Check } from "lucide-react";
 import Link from "next/link";
@@ -23,6 +31,15 @@ import {
   updateProductVariantSelection,
   type ProductVariantSelections,
 } from "@/lib/visualization/multiProductPresentation";
+import {
+  MAX_OVERLAY_MASK_DIMENSION,
+  calculateContainTransform,
+  createOverlayAlphaMask,
+  findTopmostOverlayAtPoint,
+  getOverlayHitMaskSource,
+  type OverlayAlphaMask,
+  type OverlayAlphaMaskMap,
+} from "@/lib/visualization/overlayHitTesting";
 import type {
   PlacedOverlay,
   ProductVariationSnapshot,
@@ -30,6 +47,8 @@ import type {
 
 const BEFORE_IMAGE = "/comparison_assets/room_without_furniture.png";
 const AFTER_IMAGE = "/comparison_assets/room_with_furniture.png";
+const EMPTY_ALPHA_MASKS: OverlayAlphaMaskMap = Object.freeze({});
+const POINTER_TAP_MOVEMENT_PX = 6;
 
 type ToggleSwitchProps = {
   value: "left" | "right";
@@ -69,16 +88,19 @@ function ToggleSwitch({ value, onChange, textLeft, textRight }: ToggleSwitchProp
 function ComparisonImage({
   alt,
   className,
+  selectionState,
   src,
 }: {
   alt: string;
   className: string;
+  selectionState?: "selected" | "idle";
   src: string;
 }) {
   return (
     <img
       alt={alt}
       className={className}
+      data-selection-state={selectionState}
       draggable={false}
       src={src}
     />
@@ -110,16 +132,34 @@ function AfterState({ src }: { src: string }) {
 }
 
 function ProductVariantScene({
+  alphaMasks,
   backgroundImage,
   layerImageUrls,
   overlays,
+  selectedOverlayId,
+  selectionFeedback,
 }: {
+  alphaMasks: OverlayAlphaMaskMap;
   backgroundImage: string;
   layerImageUrls: string[];
   overlays: PlacedOverlay[];
+  selectedOverlayId: string;
+  selectionFeedback: "full" | "none";
 }) {
+  const sceneRef = useRef<HTMLDivElement>(null);
+  const sceneSize = useElementSize(sceneRef, selectionFeedback === "full");
+  const selectedOverlay = overlays.find(
+    (overlay) => overlay.overlayId === selectedOverlayId,
+  );
+  const selectedMask = alphaMasks[selectedOverlayId];
+  const labelStyle: CSSProperties | null = selectedOverlay
+    ? selectedMask
+      ? getSelectionLabelStyle(selectedMask, sceneSize.width, sceneSize.height)
+      : { left: "50%", top: 52, transform: "translate(-50%, -100%)" }
+    : null;
+
   return (
-    <div className="absolute inset-0 rounded-[15px] bg-neutral-100">
+    <div ref={sceneRef} className="absolute inset-0 rounded-[15px] bg-neutral-100">
       <ComparisonImage
         alt="Uploaded room"
         className="absolute inset-0 h-full w-full rounded-[15px] object-contain"
@@ -129,11 +169,112 @@ function ProductVariantScene({
         <ComparisonImage
           key={overlays[index]?.overlayId}
           alt=""
-          className="absolute inset-0 h-full w-full rounded-[15px] object-contain pointer-events-none"
+          className={`absolute inset-0 h-full w-full rounded-[15px] object-contain pointer-events-none ${selectionFeedback === "full" ? "comparison-overlay-layer" : ""}`}
+          selectionState={selectionFeedback === "full"
+            ? overlays[index]?.overlayId === selectedOverlayId ? "selected" : "idle"
+            : undefined}
           src={imageUrl}
         />
       ))}
+      {selectionFeedback === "full" && selectedOverlay && labelStyle && (
+        <span
+          aria-hidden="true"
+          className="comparison-overlay-label pointer-events-none absolute z-20 max-w-[calc(100%-24px)] truncate rounded-full border border-white/10 bg-[#0f1422]/90 px-3 py-1.5 text-xs font-medium text-white shadow-lg backdrop-blur-sm"
+          style={labelStyle}
+        >
+          <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-[#07b6d3]" />
+          Editing {selectedOverlay.productName}
+        </span>
+      )}
     </div>
+  );
+}
+
+function ProductVariantInteractionLayer({
+  alphaMasks,
+  onSelectOverlay,
+  overlays,
+}: {
+  alphaMasks: OverlayAlphaMaskMap;
+  onSelectOverlay: (overlayId: string) => void;
+  overlays: PlacedOverlay[];
+}) {
+  const surfaceRef = useRef<HTMLDivElement>(null);
+  const pointerStartRef = useRef<{ pointerId: number; x: number; y: number } | null>(null);
+  const pendingHoverPointRef = useRef<{ x: number; y: number } | null>(null);
+  const hoverFrameRef = useRef<number | null>(null);
+  const [hasHoverTarget, setHasHoverTarget] = useState(false);
+  const orderedOverlayIds = overlays.map((overlay) => overlay.overlayId);
+
+  const resolveOverlay = (clientX: number, clientY: number) => {
+    const surface = surfaceRef.current;
+    if (!surface) return null;
+    const rect = surface.getBoundingClientRect();
+    return findTopmostOverlayAtPoint({
+      x: clientX - rect.left,
+      y: clientY - rect.top,
+      containerWidth: rect.width,
+      containerHeight: rect.height,
+      orderedOverlayIds,
+      masks: alphaMasks,
+    });
+  };
+
+  const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!event.isPrimary || event.button !== 0) return;
+    pointerStartRef.current = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const handlePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.pointerType !== "mouse") return;
+    pendingHoverPointRef.current = { x: event.clientX, y: event.clientY };
+    if (hoverFrameRef.current !== null) return;
+    hoverFrameRef.current = window.requestAnimationFrame(() => {
+      hoverFrameRef.current = null;
+      const point = pendingHoverPointRef.current;
+      if (!point) return;
+      setHasHoverTarget(Boolean(resolveOverlay(point.x, point.y)));
+    });
+  };
+
+  const handlePointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const start = pointerStartRef.current;
+    pointerStartRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    if (!start || start.pointerId !== event.pointerId) return;
+
+    const movement = Math.hypot(event.clientX - start.x, event.clientY - start.y);
+    if (movement > POINTER_TAP_MOVEMENT_PX) return;
+    const overlayId = resolveOverlay(event.clientX, event.clientY);
+    if (overlayId) onSelectOverlay(overlayId);
+  };
+
+  useEffect(() => () => {
+    if (hoverFrameRef.current !== null) {
+      window.cancelAnimationFrame(hoverFrameRef.current);
+    }
+  }, []);
+
+  return (
+    <div
+      ref={surfaceRef}
+      aria-hidden="true"
+      className={`absolute inset-0 z-30 touch-manipulation ${hasHoverTarget ? "cursor-pointer" : "cursor-default"}`}
+      onPointerCancel={() => {
+        pointerStartRef.current = null;
+      }}
+      onPointerDown={handlePointerDown}
+      onPointerLeave={() => setHasHoverTarget(false)}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+    />
   );
 }
 
@@ -231,6 +372,174 @@ function ComparisonPanelCard({
         </p>
       </div>
     </div>
+  );
+}
+
+function useElementSize(
+  elementRef: RefObject<HTMLDivElement | null>,
+  enabled: boolean,
+) {
+  const [size, setSize] = useState({ width: 0, height: 0 });
+
+  useEffect(() => {
+    const element = elementRef.current;
+    if (!enabled || !element) {
+      return;
+    }
+
+    const updateSize = () => {
+      const rect = element.getBoundingClientRect();
+      setSize((current) => (
+        current.width === rect.width && current.height === rect.height
+          ? current
+          : { width: rect.width, height: rect.height }
+      ));
+    };
+
+    updateSize();
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [elementRef, enabled]);
+
+  return size;
+}
+
+function getSelectionLabelStyle(
+  mask: OverlayAlphaMask,
+  containerWidth: number,
+  containerHeight: number,
+): CSSProperties | null {
+  if (!mask.opaqueBounds) return null;
+  const transform = calculateContainTransform(
+    containerWidth,
+    containerHeight,
+    mask.width,
+    mask.height,
+  );
+  if (!transform) return null;
+
+  const bounds = mask.opaqueBounds;
+  const modelCenterX = transform.offsetX
+    + ((bounds.left + bounds.right) / 2) * transform.scale;
+  const modelTop = transform.offsetY + bounds.top * transform.scale;
+  const labelHalfWidth = Math.min(104, containerWidth / 2);
+  const left = Math.min(
+    Math.max(modelCenterX, labelHalfWidth),
+    containerWidth - labelHalfWidth,
+  );
+  const renderBelow = modelTop < 44;
+
+  return {
+    left,
+    top: renderBelow ? modelTop + 10 : modelTop - 10,
+    transform: renderBelow ? "translateX(-50%)" : "translate(-50%, -100%)",
+  };
+}
+
+function useOverlayAlphaMasks(overlays: PlacedOverlay[], enabled: boolean) {
+  const cacheRef = useRef(new Map<
+    string,
+    { source: string; mask: OverlayAlphaMask }
+  >());
+  const [maskState, setMaskState] = useState<{
+    sources: Array<{ overlayId: string; source: string }>;
+    masks: Record<string, OverlayAlphaMask>;
+  }>({ sources: [], masks: {} });
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!enabled) {
+      cacheRef.current.clear();
+      return;
+    }
+
+    const sourceEntries = overlays.flatMap((overlay) => {
+      const source = getOverlayHitMaskSource(overlay);
+      return source ? [{ overlayId: overlay.overlayId, source }] : [];
+    });
+
+    void Promise.all(sourceEntries.map(async ({ overlayId, source }) => {
+      const cached = cacheRef.current.get(overlayId);
+      if (cached?.source === source) return cached.mask;
+
+      try {
+        return await decodeOverlayAlphaMask(overlayId, source);
+      } catch (error) {
+        if (process.env.NODE_ENV !== "production") {
+          console.warn(`Unable to prepare comparison hit mask for ${overlayId}.`, error);
+        }
+        return null;
+      }
+    })).then((decodedMasks) => {
+      if (cancelled) return;
+      const nextCache = new Map<
+        string,
+        { source: string; mask: OverlayAlphaMask }
+      >();
+      const nextMasks: Record<string, OverlayAlphaMask> = {};
+
+      decodedMasks.forEach((mask, index) => {
+        if (!mask) return;
+        const entry = sourceEntries[index];
+        nextCache.set(entry.overlayId, { source: entry.source, mask });
+        nextMasks[entry.overlayId] = mask;
+      });
+      cacheRef.current = nextCache;
+      setMaskState({ sources: sourceEntries, masks: nextMasks });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled, overlays]);
+
+  if (!enabled) return EMPTY_ALPHA_MASKS;
+  const currentSources = getOverlayMaskSources(overlays);
+  return overlayMaskSourcesMatch(currentSources, maskState.sources)
+    ? maskState.masks
+    : EMPTY_ALPHA_MASKS;
+}
+
+function getOverlayMaskSources(overlays: PlacedOverlay[]) {
+  return overlays.flatMap((overlay) => {
+    const source = getOverlayHitMaskSource(overlay);
+    return source ? [{ overlayId: overlay.overlayId, source }] : [];
+  });
+}
+
+function overlayMaskSourcesMatch(
+  left: Array<{ overlayId: string; source: string }>,
+  right: Array<{ overlayId: string; source: string }>,
+) {
+  return left.length === right.length && left.every((entry, index) => (
+    entry.overlayId === right[index]?.overlayId
+    && entry.source === right[index]?.source
+  ));
+}
+
+async function decodeOverlayAlphaMask(overlayId: string, source: string) {
+  const image = await loadComparisonImage(source);
+  const scale = Math.min(
+    1,
+    MAX_OVERLAY_MASK_DIMENSION / Math.max(image.naturalWidth, image.naturalHeight),
+  );
+  const width = Math.max(1, Math.round(image.naturalWidth * scale));
+  const height = Math.max(1, Math.round(image.naturalHeight * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) {
+    throw new Error("Canvas alpha-mask decoding is unavailable in this browser.");
+  }
+
+  context.drawImage(image, 0, 0, width, height);
+  return createOverlayAlphaMask(
+    overlayId,
+    width,
+    height,
+    context.getImageData(0, 0, width, height).data,
   );
 }
 
@@ -347,6 +656,13 @@ export function Comparison() {
 
   const isSideBySide = viewAs === "left";
   const isBeforeAfter = compareMode === "left";
+  const alphaMasks = useOverlayAlphaMasks(
+    comparisonOverlays,
+    !isBeforeAfter && variantDataComplete,
+  );
+  const selectedComparisonOverlayOrdinal = comparisonOverlays.findIndex(
+    (overlay) => overlay.overlayId === selectedComparisonOverlayId,
+  ) + 1;
   const editProductId = selectedComparisonOverlay?.productId ?? selectedProductId;
   const editPlacementHref = editProductId
     ? `/visualize/${editProductId}/workspace`
@@ -581,7 +897,7 @@ export function Comparison() {
               Choose a product to compare
             </p>
             <p className="text-sm text-black/60">
-              Choose a product below. Only that product changes finish.
+              Click a product in either preview or choose it here. Only that product changes finish.
             </p>
           </div>
           <div className="flex flex-wrap gap-2" role="group" aria-label="Products to compare">
@@ -603,6 +919,11 @@ export function Comparison() {
               );
             })}
           </div>
+          {selectedComparisonOverlay && (
+            <p className="sr-only" aria-live="polite" aria-atomic="true">
+              Editing {selectedComparisonOverlay.productName} {selectedComparisonOverlayOrdinal}
+            </p>
+          )}
         </div>
       )}
 
@@ -628,11 +949,21 @@ export function Comparison() {
                 <>
                   {comparisonOverlays.length > 0 ? (
                     variantDataComplete ? (
-                      <ProductVariantScene
-                        backgroundImage={beforeImage}
-                        layerImageUrls={leftLayerImageUrls}
-                        overlays={comparisonOverlays}
-                      />
+                      <>
+                        <ProductVariantScene
+                          alphaMasks={alphaMasks}
+                          backgroundImage={beforeImage}
+                          layerImageUrls={leftLayerImageUrls}
+                          overlays={comparisonOverlays}
+                          selectedOverlayId={selectedComparisonOverlayId}
+                          selectionFeedback="full"
+                        />
+                        <ProductVariantInteractionLayer
+                          alphaMasks={alphaMasks}
+                          onSelectOverlay={handleSelectComparisonOverlay}
+                          overlays={comparisonOverlays}
+                        />
+                      </>
                     ) : (
                       <IncompleteVariationPrompt
                         editPlacementHref={editPlacementHref}
@@ -668,11 +999,21 @@ export function Comparison() {
                 <>
                   {comparisonOverlays.length > 0 ? (
                     variantDataComplete ? (
-                      <ProductVariantScene
-                        backgroundImage={beforeImage}
-                        layerImageUrls={rightLayerImageUrls}
-                        overlays={comparisonOverlays}
-                      />
+                      <>
+                        <ProductVariantScene
+                          alphaMasks={alphaMasks}
+                          backgroundImage={beforeImage}
+                          layerImageUrls={rightLayerImageUrls}
+                          overlays={comparisonOverlays}
+                          selectedOverlayId={selectedComparisonOverlayId}
+                          selectionFeedback="full"
+                        />
+                        <ProductVariantInteractionLayer
+                          alphaMasks={alphaMasks}
+                          onSelectOverlay={handleSelectComparisonOverlay}
+                          overlays={comparisonOverlays}
+                        />
+                      </>
                     ) : (
                       <IncompleteVariationPrompt
                         editPlacementHref={editPlacementHref}
@@ -704,9 +1045,12 @@ export function Comparison() {
               ) : (
                 variantDataComplete ? (
                   <ProductVariantScene
+                    alphaMasks={alphaMasks}
                     backgroundImage={beforeImage}
                     layerImageUrls={rightLayerImageUrls}
                     overlays={comparisonOverlays}
+                    selectedOverlayId={selectedComparisonOverlayId}
+                    selectionFeedback="full"
                   />
                 ) : (
                   <IncompleteVariationPrompt
@@ -728,9 +1072,12 @@ export function Comparison() {
                 comparisonOverlays.length > 0 ? (
                   variantDataComplete ? (
                     <ProductVariantScene
+                      alphaMasks={alphaMasks}
                       backgroundImage={beforeImage}
                       layerImageUrls={leftLayerImageUrls}
                       overlays={comparisonOverlays}
+                      selectedOverlayId={selectedComparisonOverlayId}
+                      selectionFeedback="full"
                     />
                   ) : (
                     <IncompleteVariationPrompt
@@ -743,6 +1090,14 @@ export function Comparison() {
                 )
               )}
             </div>
+
+            {!isBeforeAfter && comparisonOverlays.length > 0 && variantDataComplete && (
+              <ProductVariantInteractionLayer
+                alphaMasks={alphaMasks}
+                onSelectOverlay={handleSelectComparisonOverlay}
+                overlays={comparisonOverlays}
+              />
+            )}
 
             {/* Interactive Vertical Slider Line / Handle */}
             <div
@@ -791,9 +1146,12 @@ export function Comparison() {
                   preview={comparisonOverlays.length > 0 ? (
                     variantDataComplete ? (
                       <ProductVariantScene
+                        alphaMasks={EMPTY_ALPHA_MASKS}
                         backgroundImage={beforeImage}
                         layerImageUrls={getVariantPreviewLayerImageUrls("left", variation.key)}
                         overlays={comparisonOverlays}
+                        selectedOverlayId={selectedComparisonOverlayId}
+                        selectionFeedback="none"
                       />
                     ) : undefined
                   ) : undefined}
@@ -838,9 +1196,12 @@ export function Comparison() {
                   preview={comparisonOverlays.length > 0 ? (
                     variantDataComplete ? (
                       <ProductVariantScene
+                        alphaMasks={EMPTY_ALPHA_MASKS}
                         backgroundImage={beforeImage}
                         layerImageUrls={getVariantPreviewLayerImageUrls("right", variation.key)}
                         overlays={comparisonOverlays}
+                        selectedOverlayId={selectedComparisonOverlayId}
+                        selectionFeedback="none"
                       />
                     ) : undefined
                   ) : undefined}
