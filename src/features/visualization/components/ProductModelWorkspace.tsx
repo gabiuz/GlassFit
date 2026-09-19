@@ -244,6 +244,30 @@ export function ProductModelWorkspace({
   const [activeOverlayId, setActiveOverlayId] = useState(
     `active-${currentProductId ?? "product"}`,
   );
+  const initialLayerState = useMemo(() => {
+    let maxNum = 0;
+    const used = new Set<number>();
+    for (let i = 0; i < placedOverlays.length; i += 1) {
+      const ov = placedOverlays[i];
+      let num = ov.layerNumber;
+      if (!num || used.has(num)) {
+        let next = 1;
+        while (used.has(next)) next += 1;
+        num = next;
+      }
+      used.add(num);
+      if (num > maxNum) {
+        maxNum = num;
+      }
+    }
+    return {
+      activeNum: maxNum + 1,
+      nextNum: maxNum + 2,
+    };
+  }, [placedOverlays]); // Initial calculation
+  const [activeLayerNumber, setActiveLayerNumber] = useState(initialLayerState.activeNum);
+  const nextLayerNumberRef = useRef(initialLayerState.nextNum);
+  const [activeFocusPulse, setActiveFocusPulse] = useState(false);
   const [overlayPosition, setOverlayPosition] = useState({
     x: initialConfiguration?.positionX ?? 0,
     y: initialConfiguration?.positionY ?? 0,
@@ -532,6 +556,59 @@ export function ProductModelWorkspace({
   const totalSceneProductCount = useMemo(() => {
     return nonActivePlacedOverlays.length + (selectedProduct ? 1 : 0);
   }, [nonActivePlacedOverlays.length, selectedProduct]);
+
+  // Unified, stable layer list for the Layers panel (never shuffles when switching active layer)
+  const sceneLayers = useMemo(() => {
+    const layers: {
+      id: string;
+      name: string;
+      layerNumber: number;
+      isActive: boolean;
+      overlay?: PlacedOverlay;
+    }[] = [];
+
+    const usedNumbers = new Set<number>();
+    if (selectedProduct) {
+      usedNumbers.add(activeLayerNumber);
+      layers.push({
+        id: activeOverlayId,
+        name: overlayName,
+        layerNumber: activeLayerNumber,
+        isActive: true,
+      });
+    }
+
+    let nextAvailable = 1;
+    const getNextAvailable = () => {
+      while (usedNumbers.has(nextAvailable)) {
+        nextAvailable += 1;
+      }
+      usedNumbers.add(nextAvailable);
+      return nextAvailable;
+    };
+
+    for (let i = 0; i < nonActivePlacedOverlays.length; i += 1) {
+      const ov = nonActivePlacedOverlays[i];
+      let assignedNum = ov.layerNumber;
+      if (!assignedNum || usedNumbers.has(assignedNum)) {
+        assignedNum = getNextAvailable();
+      } else {
+        usedNumbers.add(assignedNum);
+      }
+
+      layers.push({
+        id: ov.overlayId,
+        name: ov.productName,
+        layerNumber: assignedNum,
+        isActive: false,
+        overlay: ov,
+      });
+    }
+
+    // Stably sort by layerNumber ascending so the layer pills never shuffle
+    layers.sort((a, b) => a.layerNumber - b.layerNumber);
+    return layers;
+  }, [selectedProduct, activeOverlayId, overlayName, activeLayerNumber, nonActivePlacedOverlays]);
 
   // Dynamic price card presentation: single product while editing, sum of all products when applied
   const displayPriceData = useMemo(() => {
@@ -862,6 +939,8 @@ export function ProductModelWorkspace({
     setYaw(0);
     setPitch(0);
     setOverlayPosition({ x: 0, y: 0 });
+    overlayX.set(0);
+    overlayY.set(0);
     setPerspectiveCorners(null);
     setZoomLevel(DEFAULT_SCENE_ZOOM);
     setOverlaySize({
@@ -870,7 +949,7 @@ export function ProductModelWorkspace({
     });
     setProjectedModelBounds({ left: 0, top: 0, width: 1, height: 1 });
     setProductInstanceRevision((current) => current + 1);
-  }, [heightCm, widthCm]);
+  }, [heightCm, overlayX, overlayY, widthCm]);
 
   const applyProductConfiguration = useCallback(
     (configuration: ProductConfigurationSnapshot) => {
@@ -879,6 +958,8 @@ export function ProductModelWorkspace({
       const baseSize = getOverlaySizeFromDimensions(nextWidth, nextHeight);
       const nextZoom = configuration.zoomLevel ?? DEFAULT_SCENE_ZOOM;
       const scale = 1 + nextZoom / 100;
+      const posX = configuration.positionX ?? 0;
+      const posY = configuration.positionY ?? 0;
 
       setWidthCm(nextWidth);
       setHeightCm(nextHeight);
@@ -907,9 +988,11 @@ export function ProductModelWorkspace({
       setAutoShadow(configuration.autoShadow ?? true);
       setAutoRealism(configuration.autoRealism ?? true);
       setOverlayPosition({
-        x: configuration.positionX ?? 0,
-        y: configuration.positionY ?? 0,
+        x: posX,
+        y: posY,
       });
+      overlayX.set(posX);
+      overlayY.set(posY);
       setOverlaySize({
         width: Math.round(baseSize.width * scale),
         height: Math.round(baseSize.height * scale),
@@ -918,7 +1001,7 @@ export function ProductModelWorkspace({
       setIsSnapshotApplied(false);
       setProductInstanceRevision((current) => current + 1);
     },
-    [],
+    [overlayX, overlayY],
   );
 
   const handleReset = (e: React.MouseEvent) => {
@@ -956,7 +1039,7 @@ export function ProductModelWorkspace({
     let newlyPlacedOverlay: PlacedOverlay | undefined;
     if (mode === "add" && selectedProduct) {
       try {
-        newlyPlacedOverlay = await createPlacedOverlay();
+        newlyPlacedOverlay = await createPlacedOverlay(activeLayerNumber);
         onPlacedOverlaysChange?.([...placedOverlays, newlyPlacedOverlay]);
       } catch (err) {
         console.error("Failed to place active product before adding:", err);
@@ -965,6 +1048,18 @@ export function ProductModelWorkspace({
 
     const nextActiveOverlayId = `active-${product.id}-${crypto.randomUUID()}`;
     setActiveOverlayId(nextActiveOverlayId);
+
+    if (mode === "add") {
+      let maxNum = activeLayerNumber;
+      for (const ov of placedOverlays) {
+        if (ov.layerNumber && ov.layerNumber > maxNum) {
+          maxNum = ov.layerNumber;
+        }
+      }
+      const nextNum = maxNum + 1;
+      nextLayerNumberRef.current = nextNum + 1;
+      setActiveLayerNumber(nextNum);
+    }
 
     if (product.id === currentProductId) {
       applyProductConfiguration(createDuplicateConfiguration(currentConfiguration));
@@ -1163,99 +1258,134 @@ export function ProductModelWorkspace({
     yaw,
   ]);
 
-  const createPlacedOverlay = useCallback(async (): Promise<PlacedOverlay> => {
-    const overlayElement = overlayBoxRef.current;
-    const overlayBounds = overlayElement?.getBoundingClientRect();
-    const sourceOverlayWidth =
-      overlayElement?.offsetWidth || overlayBounds?.width || overlaySize.width;
-    const sourceOverlayHeight =
-      overlayElement?.offsetHeight || overlayBounds?.height || overlaySize.height;
-    const visibleModelBounds = projectedModelBounds
-      ? { ...projectedModelBounds }
-      : undefined;
-    const activeImageDataUrl = await captureCurrentProductLayer();
-    const currentFinish = normalizeAluminumFinish(
-      currentConfiguration.aluminumFinish,
-    );
-    const variationImageDataUrls: Partial<Record<AluminumFinishKey, string>> = {
-      [currentFinish]: activeImageDataUrl,
-    };
-    const placedLayer = preserveActivePlacedLayer({
-      activeImageDataUrl,
-      currentFinish,
-      variationImageDataUrls,
-    });
+  const createPlacedOverlay = useCallback(
+    async (explicitLayerNumber?: number): Promise<PlacedOverlay> => {
+      const overlayElement = overlayBoxRef.current;
+      const overlayBounds = overlayElement?.getBoundingClientRect();
+      const sourceOverlayWidth =
+        overlayElement?.offsetWidth || overlayBounds?.width || overlaySize.width;
+      const sourceOverlayHeight =
+        overlayElement?.offsetHeight || overlayBounds?.height || overlaySize.height;
+      const visibleModelBounds = projectedModelBounds
+        ? { ...projectedModelBounds }
+        : (mvpCanvasRef.current ? getVisibleModelBounds(mvpCanvasRef.current) ?? undefined : undefined);
+      const activeImageDataUrl = await captureCurrentProductLayer();
+      const currentFinish = normalizeAluminumFinish(
+        currentConfiguration.aluminumFinish,
+      );
+      const variationImageDataUrls: Partial<Record<AluminumFinishKey, string>> = {
+        [currentFinish]: activeImageDataUrl,
+      };
+      const placedLayer = preserveActivePlacedLayer({
+        activeImageDataUrl,
+        currentFinish,
+        variationImageDataUrls,
+      });
 
-    const uniqueOverlayId = crypto.randomUUID();
+      const uniqueOverlayId = crypto.randomUUID();
+      const posX = overlayX.get();
+      const posY = overlayY.get();
 
-    return {
-      overlayId: uniqueOverlayId,
-      productId: currentProductId ?? structuralDefinition?.product.productId ?? "",
-      productName: overlayName,
-      templateId: structuralDefinition?.template.templateId ?? "catalog-image",
-      configuration: currentConfiguration,
-      ...placedLayer,
-      sourceCanvasWidth: canvasRef.current?.getBoundingClientRect().width,
-      sourceCanvasHeight: canvasRef.current?.getBoundingClientRect().height,
-      sourceOverlayWidth,
-      sourceOverlayHeight,
-      visibleModelBounds,
-      bomResult: realtimePricing.bomCalc ?? undefined,
-      unitPrice: realtimePricing.unitPrice,
-      totalPrice: realtimePricing.totalPrice,
-    };
-  }, [
-    captureCurrentProductLayer,
-    currentConfiguration,
-    currentProductId,
-    overlayName,
-    overlaySize.height,
-    overlaySize.width,
-    projectedModelBounds,
-    realtimePricing,
-    structuralDefinition,
-  ]);
+      return {
+        overlayId: uniqueOverlayId,
+        productId: currentProductId ?? structuralDefinition?.product.productId ?? "",
+        productName: overlayName,
+        layerNumber: explicitLayerNumber ?? activeLayerNumber,
+        templateId: structuralDefinition?.template.templateId ?? "catalog-image",
+        configuration: {
+          ...currentConfiguration,
+          positionX: posX,
+          positionY: posY,
+        },
+        ...placedLayer,
+        sourceCanvasWidth: canvasRef.current?.getBoundingClientRect().width,
+        sourceCanvasHeight: canvasRef.current?.getBoundingClientRect().height,
+        sourceOverlayWidth,
+        sourceOverlayHeight,
+        visibleModelBounds,
+        bomResult: realtimePricing.bomCalc ?? undefined,
+        unitPrice: realtimePricing.unitPrice,
+        totalPrice: realtimePricing.totalPrice,
+      };
+    },
+    [
+      activeLayerNumber,
+      captureCurrentProductLayer,
+      currentConfiguration,
+      currentProductId,
+      overlayName,
+      overlaySize.height,
+      overlaySize.width,
+      overlayX,
+      overlayY,
+      projectedModelBounds,
+      realtimePricing,
+      structuralDefinition,
+    ],
+  );
 
-  const handleEditPlacedOverlay = useCallback(async (overlay: PlacedOverlay) => {
-    const remainingOverlays = placedOverlays.filter(
-      (placedOverlay) => placedOverlay.overlayId !== overlay.overlayId,
-    );
+  const handleEditPlacedOverlay = useCallback(
+    async (overlay: PlacedOverlay) => {
+      const targetIndex = placedOverlays.findIndex(
+        (placedOverlay) => placedOverlay.overlayId === overlay.overlayId,
+      );
 
-    let newlyPlaced: PlacedOverlay | undefined;
-    if (selectedProduct) {
-      try {
-        newlyPlaced = await createPlacedOverlay();
-        remainingOverlays.push(newlyPlaced);
-      } catch (err) {
-        console.error("Failed to place active product before editing layer:", err);
+      const targetLayerNumber =
+        overlay.layerNumber ?? (targetIndex >= 0 ? targetIndex + 1 : 1);
+      const currentActiveNum = activeLayerNumber;
+
+      let newlyPlaced: PlacedOverlay | undefined;
+      let nextOverlays: PlacedOverlay[];
+
+      if (selectedProduct) {
+        try {
+          newlyPlaced = await createPlacedOverlay(currentActiveNum);
+        } catch (err) {
+          console.error("Failed to place active product before editing layer:", err);
+        }
       }
-    }
 
-    onPlacedOverlaysChange?.(remainingOverlays);
-    setActiveOverlayId(overlay.overlayId);
-    setIsSnapshotApplied(false);
+      if (newlyPlaced) {
+        newlyPlaced.layerNumber = currentActiveNum;
+        nextOverlays = [...placedOverlays];
+        if (targetIndex >= 0) {
+          nextOverlays[targetIndex] = newlyPlaced;
+        } else {
+          nextOverlays.push(newlyPlaced);
+        }
+      } else {
+        nextOverlays = placedOverlays.filter(
+          (placedOverlay) => placedOverlay.overlayId !== overlay.overlayId,
+        );
+      }
 
-    if (overlay.productId === currentProductId) {
+      onPlacedOverlaysChange?.(nextOverlays);
+      setActiveOverlayId(overlay.overlayId);
+      setActiveLayerNumber(targetLayerNumber);
+      setIsSnapshotApplied(false);
       applyProductConfiguration(overlay.configuration);
-      return;
-    }
 
-    onProductSelect?.(
-      overlay.productId,
-      "edit",
-      newlyPlaced,
-      overlay.configuration,
-      overlay.overlayId,
-    );
-  }, [
-    applyProductConfiguration,
-    createPlacedOverlay,
-    currentProductId,
-    onPlacedOverlaysChange,
-    onProductSelect,
-    placedOverlays,
-    selectedProduct,
-  ]);
+      if (overlay.productId !== currentProductId) {
+        onProductSelect?.(
+          overlay.productId,
+          "edit",
+          newlyPlaced,
+          overlay.configuration,
+          overlay.overlayId,
+        );
+      }
+    },
+    [
+      activeLayerNumber,
+      applyProductConfiguration,
+      createPlacedOverlay,
+      currentProductId,
+      onPlacedOverlaysChange,
+      onProductSelect,
+      placedOverlays,
+      selectedProduct,
+    ],
+  );
 
   const handleDeletePlacedOverlay = useCallback((overlayId: string) => {
     onPlacedOverlaysChange?.(
@@ -1442,9 +1572,9 @@ export function ProductModelWorkspace({
       await generateVariationSnapshots();
       const comparisonOverlays = selectedProduct
         ? [
-            ...placedOverlays,
-            { ...(await createPlacedOverlay()), isActive: true },
-          ]
+          ...placedOverlays,
+          { ...(await createPlacedOverlay()), isActive: true },
+        ]
         : placedOverlays;
       onPlacedOverlaysChange?.(comparisonOverlays);
       onComparisonOverlaysChange?.(comparisonOverlays);
@@ -2006,7 +2136,7 @@ export function ProductModelWorkspace({
           >
             <div className="flex items-center gap-3">
               <span className="text-base font-medium text-[#0f1422]">
-                Layers ({placedOverlays.length + (selectedProduct ? 1 : 0)})
+                Layers ({sceneLayers.length})
               </span>
               <span className="hidden text-xs text-neutral-500 sm:inline">
                 Select products when they overlap
@@ -2043,34 +2173,69 @@ export function ProductModelWorkspace({
                 className="overflow-hidden"
               >
                 <div className="flex flex-wrap gap-2 border-t border-neutral-100 px-4 pb-4 pt-3">
-                  {selectedProduct && (
-                    <div className="flex items-center gap-2 rounded-full border border-[#07b6d3] bg-[#e9f9fb] px-3 py-1.5 text-sm text-[#0f1422]">
-                      <span>{overlayName}</span>
-                      <span className="text-xs font-medium text-[#078da4]">Active</span>
-                    </div>
-                  )}
-                  {placedOverlays.map((overlay, index) => (
-                    <div
-                      key={overlay.overlayId}
-                      className="flex items-center overflow-hidden rounded-full border border-neutral-200 bg-neutral-50"
-                    >
-                      <button
-                        type="button"
-                        onClick={() => void handleEditPlacedOverlay(overlay)}
-                        className="px-3 py-1.5 text-sm text-[#0f1422] hover:bg-[#e9f9fb] cursor-pointer"
+                  {sceneLayers.map((layer) => {
+                    if (layer.isActive) {
+                      return (
+                        <div
+                          key={layer.id}
+                          className="flex items-center overflow-hidden rounded-full border border-[#07b6d3] bg-[#e9f9fb] ring-2 ring-[#07b6d3]/40 shadow-xs"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsSnapshotApplied(false);
+                              setActiveFocusPulse(true);
+                              setTimeout(() => setActiveFocusPulse(false), 1000);
+                            }}
+                            title="Currently active for 3D editing on canvas (click to focus)"
+                            className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-[#0f1422] hover:bg-[#d8f4f8] transition-colors cursor-pointer"
+                          >
+                            <span>{layer.name} {layer.layerNumber}</span>
+                            <span className="rounded-full bg-[#07b6d3] px-2 py-0.5 text-[10px] font-bold text-white uppercase tracking-wider shadow-xs">
+                              Active (Editing)
+                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => handleRemove(e)}
+                            aria-label={`Remove active ${layer.name} ${layer.layerNumber}`}
+                            title={`Remove ${layer.name} ${layer.layerNumber}`}
+                            className="border-l border-[#07b6d3]/30 px-2 py-1.5 text-neutral-500 hover:bg-red-50 hover:text-red-700 transition-colors cursor-pointer"
+                          >
+                            <Trash2 className="size-3.5" />
+                          </button>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div
+                        key={layer.id}
+                        className="flex items-center overflow-hidden rounded-full border border-neutral-200 bg-neutral-50 hover:border-[#07b6d3]/60 shadow-xs transition-colors"
                       >
-                        Edit {overlay.productName} {index + 1}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeletePlacedOverlay(overlay.overlayId)}
-                        aria-label={`Remove ${overlay.productName} ${index + 1}`}
-                        className="border-l border-neutral-200 px-2 py-1.5 text-neutral-500 hover:bg-red-50 hover:text-red-700 cursor-pointer"
-                      >
-                        <Trash2 className="size-3.5" />
-                      </button>
-                    </div>
-                  ))}
+                        <button
+                          type="button"
+                          onClick={() => void handleEditPlacedOverlay(layer.overlay!)}
+                          title={`Click to select and edit ${layer.name} ${layer.layerNumber}`}
+                          className="flex items-center gap-2 px-3 py-1.5 text-sm text-[#0f1422] hover:bg-[#e9f9fb] transition-colors cursor-pointer"
+                        >
+                          <span>{layer.name} {layer.layerNumber}</span>
+                          <span className="rounded bg-neutral-200/80 px-1.5 py-0.5 text-[10px] font-medium text-neutral-600">
+                            Edit
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeletePlacedOverlay(layer.overlay!.overlayId)}
+                          aria-label={`Remove ${layer.name} ${layer.layerNumber}`}
+                          title={`Remove ${layer.name} ${layer.layerNumber}`}
+                          className="border-l border-neutral-200 px-2 py-1.5 text-neutral-500 hover:bg-red-50 hover:text-red-700 transition-colors cursor-pointer"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               </motion.div>
             )}
@@ -2102,33 +2267,99 @@ export function ProductModelWorkspace({
                 className="w-full h-full object-cover select-none"
               />
 
-              {placedOverlays.map((overlay) => {
-                const placedSize = getOverlaySizeFromConfiguration(
-                  overlay.configuration,
-                );
+              {nonActivePlacedOverlays.map((overlay) => {
+                const layerNum = overlay.layerNumber ?? 1;
+
+                // Scale factor between source canvas (at capture time) and current canvas display
+                const sourceW = overlay.sourceCanvasWidth || canvasDisplaySize.width || 1;
+                const sourceH = overlay.sourceCanvasHeight || canvasDisplaySize.height || 1;
+                const scaleX = canvasDisplaySize.width / sourceW;
+                const scaleY = canvasDisplaySize.height / sourceH;
+
+                const overlayW = overlay.sourceOverlayWidth
+                  ?? getOverlaySizeFromConfiguration(overlay.configuration).width;
+                const overlayH = overlay.sourceOverlayHeight
+                  ?? getOverlaySizeFromConfiguration(overlay.configuration).height;
+                const bounds = overlay.visibleModelBounds
+                  ?? { left: 0.08, top: 0.08, width: 0.84, height: 0.84 };
 
                 return (
                   <React.Fragment key={overlay.overlayId}>
+                    {/* Rendered 2D Product Layer Bitmap */}
                     <img
                       src={overlay.flattenedImageDataUrl}
-                      alt={`Placed ${overlay.productName}`}
+                      alt={`Placed ${overlay.productName} ${layerNum}`}
                       draggable={false}
                       className="absolute inset-0 z-10 h-full w-full pointer-events-none select-none"
                     />
-                    <div className="absolute inset-0 z-[15] flex items-center justify-center pointer-events-none">
-                      <button
-                        type="button"
-                        onClick={() => void handleEditPlacedOverlay(overlay)}
-                        aria-label={`Edit placed ${overlay.productName}`}
-                        title={`Edit ${overlay.productName}`}
-                        className="pointer-events-auto rounded-sm border border-transparent bg-transparent cursor-pointer transition-colors hover:border-[#07b6d3] focus-visible:border-[#07b6d3] focus-visible:outline-none"
+
+                    {/* Interactive Hit Target matching active product outline */}
+                    {overlay.configuration.perspectiveFitCorners ? (
+                      <div
+                        className="absolute pointer-events-none z-[15]"
                         style={{
-                          width: placedSize.width,
-                          height: placedSize.height,
-                          transform: `translate(${overlay.configuration.positionX ?? 0}px, ${overlay.configuration.positionY ?? 0}px) rotate(${overlay.configuration.rotateAngle}deg)`,
+                          left: 0,
+                          top: 0,
+                          width: overlayW,
+                          height: overlayH,
+                          transformOrigin: "0 0",
+                          transform: homographyToCssMatrix3d(
+                            denormalizeCorners(
+                              overlay.configuration.perspectiveFitCorners,
+                              canvasDisplaySize.width,
+                              canvasDisplaySize.height,
+                            ),
+                            overlayW,
+                            overlayH,
+                          ),
+                          transformStyle: "preserve-3d",
+                          WebkitTransformStyle: "preserve-3d",
                         }}
-                      />
-                    </div>
+                      >
+                        <button
+                          type="button"
+                          onClick={() => void handleEditPlacedOverlay(overlay)}
+                          aria-label={`Edit placed ${overlay.productName} ${layerNum}`}
+                          title={`Click to edit ${overlay.productName} ${layerNum}`}
+                          className="pointer-events-auto absolute inset-0 rounded-[4px] border-2 border-dashed border-transparent bg-transparent cursor-pointer transition-all hover:border-[#07b6d3] hover:bg-[#07b6d3]/15 focus-visible:border-[#07b6d3] focus-visible:outline-none"
+                        />
+                      </div>
+                    ) : (
+                      <div className="absolute inset-0 z-[15] flex items-center justify-center pointer-events-none">
+                        <div
+                          className="relative pointer-events-none"
+                          style={{
+                            width: overlayW * scaleX,
+                            height: overlayH * scaleY,
+                            transform: `translate(${(overlay.configuration.positionX ?? 0) * scaleX}px, ${(overlay.configuration.positionY ?? 0) * scaleY}px)`,
+                          }}
+                        >
+                          <div
+                            className="relative pointer-events-none"
+                            style={{
+                              width: "100%",
+                              height: "100%",
+                              transform: `rotate(${overlay.configuration.rotateAngle}deg)`,
+                              transformOrigin: "center center",
+                            }}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => void handleEditPlacedOverlay(overlay)}
+                              aria-label={`Edit placed ${overlay.productName} ${layerNum}`}
+                              title={`Click to edit ${overlay.productName} ${layerNum}`}
+                              className="pointer-events-auto absolute rounded-[4px] border-2 border-dashed border-transparent bg-transparent cursor-pointer transition-all hover:border-[#07b6d3] hover:bg-[#07b6d3]/15 focus-visible:border-[#07b6d3] focus-visible:outline-none"
+                              style={{
+                                left: `${bounds.left * 100}%`,
+                                top: `${bounds.top * 100}%`,
+                                width: `${bounds.width * 100}%`,
+                                height: `${bounds.height * 100}%`,
+                              }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </React.Fragment>
                 );
               })}
@@ -2160,9 +2391,9 @@ export function ProductModelWorkspace({
                       <div
                         ref={overlayBoxRef}
                         onPointerDown={isEditingProduct ? startPerspectiveMove : undefined}
-                        className={`absolute pointer-events-auto select-none ${
+                        className={`absolute pointer-events-auto select-none transition-all ${
                           isEditingProduct ? "cursor-grab active:cursor-grabbing" : "cursor-default"
-                        }`}
+                        } ${activeFocusPulse ? "ring-4 ring-[#07b6d3] ring-offset-2 animate-pulse rounded-[6px]" : ""}`}
                         style={{
                           left: 0,
                           top: 0,
@@ -2249,10 +2480,11 @@ export function ProductModelWorkspace({
                           ref={overlayBoxRef}
                           onPointerDown={isEditingProduct ? startOverlayDrag : undefined}
                           className={[
-                            "relative group select-none",
+                            "relative group select-none transition-all",
                             isEditingProduct
                               ? "cursor-grab active:cursor-grabbing"
                               : "cursor-default",
+                            activeFocusPulse ? "ring-4 ring-[#07b6d3] ring-offset-2 animate-pulse rounded-[8px]" : "",
                           ].join(" ")}
                           style={{
                             width: overlaySize.width,
@@ -2300,49 +2532,49 @@ export function ProductModelWorkspace({
               )}
               {selectedProduct &&
                 (activeOcclusionObjects.length > 0 || manualMaskDataUrl) && (
-                <div
-                  data-visualization-layer="foreground-occlusion"
-                  className="absolute inset-0 pointer-events-none z-30"
-                >
-                  {activeOcclusionObjects.map((object) => (
-                    <img
-                      key={object.id}
-                      src={bgImage}
-                      alt=""
-                      aria-hidden="true"
-                      className="absolute inset-0 h-full w-full object-contain select-none"
-                      style={{
-                        WebkitMaskImage: `url(${object.mask_url})`,
-                        maskImage: `url(${object.mask_url})`,
-                        WebkitMaskPosition: "center",
-                        maskPosition: "center",
-                        WebkitMaskRepeat: "no-repeat",
-                        maskRepeat: "no-repeat",
-                        WebkitMaskSize: "100% 100%",
-                        maskSize: "100% 100%",
-                      }}
-                    />
-                  ))}
-                  {manualMaskDataUrl && (
-                    <img
-                      src={bgImage}
-                      alt=""
-                      aria-hidden="true"
-                      className="absolute inset-0 h-full w-full object-contain select-none"
-                      style={{
-                        WebkitMaskImage: `url(${manualMaskDataUrl})`,
-                        maskImage: `url(${manualMaskDataUrl})`,
-                        WebkitMaskPosition: "center",
-                        maskPosition: "center",
-                        WebkitMaskRepeat: "no-repeat",
-                        maskRepeat: "no-repeat",
-                        WebkitMaskSize: "100% 100%",
-                        maskSize: "100% 100%",
-                      }}
-                    />
-                  )}
-                </div>
-              )}
+                  <div
+                    data-visualization-layer="foreground-occlusion"
+                    className="absolute inset-0 pointer-events-none z-30"
+                  >
+                    {activeOcclusionObjects.map((object) => (
+                      <img
+                        key={object.id}
+                        src={bgImage}
+                        alt=""
+                        aria-hidden="true"
+                        className="absolute inset-0 h-full w-full object-contain select-none"
+                        style={{
+                          WebkitMaskImage: `url(${object.mask_url})`,
+                          maskImage: `url(${object.mask_url})`,
+                          WebkitMaskPosition: "center",
+                          maskPosition: "center",
+                          WebkitMaskRepeat: "no-repeat",
+                          maskRepeat: "no-repeat",
+                          WebkitMaskSize: "100% 100%",
+                          maskSize: "100% 100%",
+                        }}
+                      />
+                    ))}
+                    {manualMaskDataUrl && (
+                      <img
+                        src={bgImage}
+                        alt=""
+                        aria-hidden="true"
+                        className="absolute inset-0 h-full w-full object-contain select-none"
+                        style={{
+                          WebkitMaskImage: `url(${manualMaskDataUrl})`,
+                          maskImage: `url(${manualMaskDataUrl})`,
+                          WebkitMaskPosition: "center",
+                          maskPosition: "center",
+                          WebkitMaskRepeat: "no-repeat",
+                          maskRepeat: "no-repeat",
+                          WebkitMaskSize: "100% 100%",
+                          maskSize: "100% 100%",
+                        }}
+                      />
+                    )}
+                  </div>
+                )}
               {selectedProduct && isEditingProduct && (
                 <div
                   data-visualization-layer="product-controls"
@@ -2594,513 +2826,513 @@ export function ProductModelWorkspace({
 
           {selectedProduct ? (
             <>
-          {/* Price Card */}
-          <div className="bg-grad-light rounded-[20px] p-6 sm:p-7 flex flex-col gap-2.5 w-full text-white shadow-md">
-            <div className="flex items-center justify-between">
-              <span className="text-xl sm:text-2xl font-normal text-white/90 tracking-[-0.456px]">
-                {displayPriceData.title}
-              </span>
-              {displayPriceData.badgeText && (
-                <span className="text-xs font-medium bg-white/20 px-2.5 py-1 rounded-full text-white">
-                  {displayPriceData.badgeText}
+              {/* Price Card */}
+              <div className="bg-grad-light rounded-[20px] p-6 sm:p-7 flex flex-col gap-2.5 w-full text-white shadow-md">
+                <div className="flex items-center justify-between">
+                  <span className="text-xl sm:text-2xl font-normal text-white/90 tracking-[-0.456px]">
+                    {displayPriceData.title}
+                  </span>
+                  {displayPriceData.badgeText && (
+                    <span className="text-xs font-medium bg-white/20 px-2.5 py-1 rounded-full text-white">
+                      {displayPriceData.badgeText}
+                    </span>
+                  )}
+                </div>
+                <span className="text-3xl sm:text-4xl font-medium tracking-[-0.608px] text-white">
+                  {displayPriceData.formattedPrice}
                 </span>
-              )}
-            </div>
-            <span className="text-3xl sm:text-4xl font-medium tracking-[-0.608px] text-white">
-              {displayPriceData.formattedPrice}
-            </span>
-            <div className="flex flex-col gap-0.5 text-xs font-normal text-white/80 tracking-[-0.228px]">
-              <span>{displayPriceData.subtext}</span>
-            </div>
-          </div>
+                <div className="flex flex-col gap-0.5 text-xs font-normal text-white/80 tracking-[-0.228px]">
+                  <span>{displayPriceData.subtext}</span>
+                </div>
+              </div>
 
-          {/* Workspace Accordions with Motion Animation */}
-          <div className="w-full flex flex-col gap-4">
-            {/* 1. Adaptive Accordion */}
-            <div className="bg-[#f5f5f5]/30 border border-white rounded-[20px] shadow-[0px_0px_5px_0px_rgba(0,0,0,0.25)] overflow-hidden transition-colors">
-              <button
-                type="button"
-                onClick={() => toggleAccordion("Adaptive")}
-                className="w-full p-6 flex justify-between items-center text-left cursor-pointer"
-              >
-                <span className="text-[#0f1422] text-[18px] font-medium tracking-[-0.342px]">
-                  Adaptive
-                </span>
-                <motion.div
-                  animate={{ rotate: openAccordions.includes("Adaptive") ? 180 : 0 }}
-                  transition={{ duration: 0.25, ease: "easeInOut" }}
-                >
-                  <Image
-                    src="/visualization/dropdown-btn.svg"
-                    alt="Toggle"
-                    width={20}
-                    height={20}
-                  />
-                </motion.div>
-              </button>
-
-              <AnimatePresence initial={false}>
-                {openAccordions.includes("Adaptive") && (
-                  <motion.div
-                    key="adaptive-content"
-                    initial={{ height: 0 }}
-                    animate={{ height: "auto" }}
-                    exit={{ height: 0 }}
-                    transition={{ duration: 0.3, ease: [0.04, 0.62, 0.23, 0.98] }}
-                    className="overflow-hidden"
+              {/* Workspace Accordions with Motion Animation */}
+              <div className="w-full flex flex-col gap-4">
+                {/* 1. Adaptive Accordion */}
+                <div className="bg-[#f5f5f5]/30 border border-white rounded-[20px] shadow-[0px_0px_5px_0px_rgba(0,0,0,0.25)] overflow-hidden transition-colors">
+                  <button
+                    type="button"
+                    onClick={() => toggleAccordion("Adaptive")}
+                    className="w-full p-6 flex justify-between items-center text-left cursor-pointer"
                   >
-                    <div className="px-6 pb-6 flex flex-col gap-4">
-                      <div className="flex justify-between items-center text-sm text-[#0f1422]">
-                        <span className="text-base tracking-[-0.304px]">Apply Ambient Light Adjustment</span>
-                        <button
-                          type="button"
-                          onClick={() => setAmbientLight(!ambientLight)}
-                          className={`w-[44px] h-[24px] rounded-full p-0.5 transition-colors cursor-pointer relative ${ambientLight ? "bg-[#07b6d3]" : "bg-[#c3c3c3]"
-                            }`}
-                        >
-                          <div
-                            className={`size-[20px] bg-white rounded-full shadow-xs transform transition-transform ${ambientLight ? "translate-x-[20px]" : "translate-x-0"
-                              }`}
-                          />
-                        </button>
-                      </div>
+                    <span className="text-[#0f1422] text-[18px] font-medium tracking-[-0.342px]">
+                      Adaptive
+                    </span>
+                    <motion.div
+                      animate={{ rotate: openAccordions.includes("Adaptive") ? 180 : 0 }}
+                      transition={{ duration: 0.25, ease: "easeInOut" }}
+                    >
+                      <Image
+                        src="/visualization/dropdown-btn.svg"
+                        alt="Toggle"
+                        width={20}
+                        height={20}
+                      />
+                    </motion.div>
+                  </button>
 
-                      <div className="flex justify-between items-center text-sm text-[#0f1422]">
-                        <span className="text-base tracking-[-0.304px]">Auto Shadow</span>
-                        <button
-                          type="button"
-                          onClick={() => setAutoShadow(!autoShadow)}
-                          className={`w-[44px] h-[24px] rounded-full p-0.5 transition-colors cursor-pointer relative ${autoShadow ? "bg-[#07b6d3]" : "bg-[#c3c3c3]"
-                            }`}
-                        >
-                          <div
-                            className={`size-[20px] bg-white rounded-full shadow-xs transform transition-transform ${autoShadow ? "translate-x-[20px]" : "translate-x-0"
-                              }`}
-                          />
-                        </button>
-                      </div>
-
-                      <div className="flex justify-between items-center text-sm text-[#0f1422]">
-                        <span className="text-base tracking-[-0.304px]">Auto Output Realism</span>
-                        <button
-                          type="button"
-                          onClick={() => setAutoRealism(!autoRealism)}
-                          className={`w-[44px] h-[24px] rounded-full p-0.5 transition-colors cursor-pointer relative ${autoRealism ? "bg-[#07b6d3]" : "bg-[#c3c3c3]"
-                            }`}
-                        >
-                          <div
-                            className={`size-[20px] bg-white rounded-full shadow-xs transform transition-transform ${autoRealism ? "translate-x-[20px]" : "translate-x-0"
-                              }`}
-                          />
-                        </button>
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-
-            {/* 2. Placement Accordion */}
-            <div className="bg-[#f5f5f5]/30 border border-white rounded-[20px] shadow-[0px_0px_5px_0px_rgba(0,0,0,0.25)] overflow-hidden transition-colors">
-              <button
-                type="button"
-                onClick={() => toggleAccordion("Placement")}
-                className="w-full p-6 flex justify-between items-center text-left cursor-pointer"
-              >
-                <span className="text-[#0f1422] text-[18px] font-medium tracking-[-0.342px]">
-                  Placement
-                </span>
-                <motion.div
-                  animate={{ rotate: openAccordions.includes("Placement") ? 180 : 0 }}
-                  transition={{ duration: 0.25, ease: "easeInOut" }}
-                >
-                  <Image
-                    src="/visualization/dropdown-btn.svg"
-                    alt="Toggle"
-                    width={20}
-                    height={20}
-                  />
-                </motion.div>
-              </button>
-
-              <AnimatePresence initial={false}>
-                {openAccordions.includes("Placement") && (
-                  <motion.div
-                    key="placement-content"
-                    initial={{ height: 0 }}
-                    animate={{ height: "auto" }}
-                    exit={{ height: 0 }}
-                    transition={{ duration: 0.3, ease: [0.04, 0.62, 0.23, 0.98] }}
-                    className="overflow-hidden"
-                  >
-                    <div className="px-6 pb-6 flex flex-col gap-5">
-                      <div className="flex flex-col gap-2">
-                        <span className="text-[#c3c3c3] text-base font-normal">3d Yaw</span>
-                        <div className="flex items-center gap-3">
-                          <input
-                            type="range"
-                            min="-180"
-                            max="180"
-                            value={yaw}
-                            onChange={(e) => setYaw(Number(e.target.value))}
-                            className="w-full accent-[#07b6d3] h-2 bg-[#c3c3c3] rounded-lg cursor-pointer"
-                          />
-                          <span className="text-[#0f1422] text-xs font-normal whitespace-nowrap min-w-12 text-right">
-                            {yaw} Deg
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="flex flex-col gap-2">
-                        <span className="text-[#c3c3c3] text-base font-normal">3d Pitch</span>
-                        <div className="flex items-center gap-3">
-                          <input
-                            type="range"
-                            min="-90"
-                            max="90"
-                            value={pitch}
-                            onChange={(e) => setPitch(Number(e.target.value))}
-                            className="w-full accent-[#07b6d3] h-2 bg-[#c3c3c3] rounded-lg cursor-pointer"
-                          />
-                          <span className="text-[#0f1422] text-xs font-normal whitespace-nowrap min-w-12 text-right">
-                            {pitch} Deg
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-
-            {/* 3. Design and Customization Option Accordion */}
-            <div className="bg-[#f5f5f5]/30 border border-white rounded-[20px] shadow-[0px_0px_5px_0px_rgba(0,0,0,0.25)] overflow-hidden transition-colors">
-              <button
-                type="button"
-                onClick={() => toggleAccordion("Design and Customization Option")}
-                className="w-full p-6 flex justify-between items-center text-left cursor-pointer"
-              >
-                <span className="text-[#0f1422] text-[18px] font-medium tracking-[-0.342px]">
-                  Design and Customization Option
-                </span>
-                <motion.div
-                  animate={{ rotate: openAccordions.includes("Design and Customization Option") ? 180 : 0 }}
-                  transition={{ duration: 0.25, ease: "easeInOut" }}
-                >
-                  <Image
-                    src="/visualization/dropdown-btn.svg"
-                    alt="Toggle"
-                    width={20}
-                    height={20}
-                  />
-                </motion.div>
-              </button>
-
-              <AnimatePresence initial={false}>
-                {openAccordions.includes("Design and Customization Option") && (
-                  <motion.div
-                    key="design-content"
-                    initial={{ height: 0 }}
-                    animate={{ height: "auto" }}
-                    exit={{ height: 0 }}
-                    transition={{ duration: 0.3, ease: [0.04, 0.62, 0.23, 0.98] }}
-                    className="overflow-hidden"
-                  >
-                    <div className="px-6 pb-6 flex flex-col gap-6">
-                      {/* Aluminum Finish */}
-                      <div className="flex flex-col gap-2">
-                        <span className="text-[#c3c3c3] text-base font-normal">Aluminum Finish</span>
-                        <div className="flex flex-col gap-2.5">
-                          {/* Option 1: Black */}
-                          <label
-                            onClick={() => setAlumFinish("black")}
-                            className="flex items-center gap-3 cursor-pointer select-none"
-                          >
-                            <div className="w-3 h-3 rounded-full border border-[#0f1422] flex items-center justify-center p-0.5">
-                              {alumFinish === "black" && (
-                                <div className="w-full h-full rounded-full bg-[#0f1422]" />
-                              )}
-                            </div>
-                            {/* Swatch circle */}
-                            <div className="size-6 rounded-full bg-[#151719] shadow-xs border border-gray-300" />
-                            <span className="text-[#0f1422] text-base font-normal">
-                              Black
-                            </span>
-                          </label>
-
-                          {/* Option 2: White */}
-                          <label
-                            onClick={() => setAlumFinish("white")}
-                            className="flex items-center gap-3 cursor-pointer select-none"
-                          >
-                            <div className="w-3 h-3 rounded-full border border-[#0f1422] flex items-center justify-center p-0.5">
-                              {alumFinish === "white" && (
-                                <div className="w-full h-full rounded-full bg-[#0f1422]" />
-                              )}
-                            </div>
-                            {/* Swatch circle */}
-                            <div className="size-6 rounded-full bg-[#f4f1ea] shadow-xs border border-gray-300" />
-                            <span className="text-[#0f1422] text-base font-normal">
-                              White
-                            </span>
-                          </label>
-
-                          {/* Option 3: Silver */}
-                          <label
-                            onClick={() => setAlumFinish("silver")}
-                            className="flex items-center gap-3 cursor-pointer select-none"
-                          >
-                            <div className="w-3 h-3 rounded-full border border-[#0f1422] flex items-center justify-center p-0.5">
-                              {alumFinish === "silver" && (
-                                <div className="w-full h-full rounded-full bg-[#0f1422]" />
-                              )}
-                            </div>
-                            {/* Swatch circle */}
-                            <div className="size-6 rounded-full bg-[#9aa3a5] shadow-xs border border-gray-300" />
-                            <span className="text-[#0f1422] text-base font-normal">
-                              Silver
-                            </span>
-                          </label>
-                        </div>
-                      </div>
-
-                      {/* Glass Appearance */}
-                      <div className="flex flex-col gap-2">
-                        <span className="text-[#c3c3c3] text-base font-normal">Glass Appearance</span>
-                        <div className="grid grid-cols-2 gap-2.5">
-                          {(["clear", "frosted", "opaque", "reflective", "outdoor"] as GlassAppearanceMode[]).map((mode) => (
+                  <AnimatePresence initial={false}>
+                    {openAccordions.includes("Adaptive") && (
+                      <motion.div
+                        key="adaptive-content"
+                        initial={{ height: 0 }}
+                        animate={{ height: "auto" }}
+                        exit={{ height: 0 }}
+                        transition={{ duration: 0.3, ease: [0.04, 0.62, 0.23, 0.98] }}
+                        className="overflow-hidden"
+                      >
+                        <div className="px-6 pb-6 flex flex-col gap-4">
+                          <div className="flex justify-between items-center text-sm text-[#0f1422]">
+                            <span className="text-base tracking-[-0.304px]">Apply Ambient Light Adjustment</span>
                             <button
-                              key={mode}
                               type="button"
-                              onClick={() => setGlassAppearance(mode)}
-                              className={`px-3 py-1.5 rounded-[20px] border border-[#c3c3c3] text-base font-normal capitalize transition-colors cursor-pointer ${glassAppearance === mode
-                                ? "bg-[#0f1422] text-white"
-                                : "bg-transparent text-[#0f1422]"
+                              onClick={() => setAmbientLight(!ambientLight)}
+                              className={`w-[44px] h-[24px] rounded-full p-0.5 transition-colors cursor-pointer relative ${ambientLight ? "bg-[#07b6d3]" : "bg-[#c3c3c3]"
                                 }`}
                             >
-                              {mode}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      {isWindowProduct && (
-                        <label className="flex items-center justify-between gap-4 rounded-[10px] bg-white px-3 py-2.5 border border-[#c3c3c3]">
-                          <span className="text-[#0f1422] text-base font-normal">Include Window Sill</span>
-                          <button
-                            type="button"
-                            onClick={handleIncludeSillToggle}
-                            className={`w-[44px] h-[24px] rounded-full p-0.5 transition-colors cursor-pointer relative ${includeSill ? "bg-[#07b6d3]" : "bg-[#c3c3c3]"}`}
-                            aria-pressed={includeSill}
-                          >
-                            <span
-                              className={`block size-[20px] bg-white rounded-full shadow-xs transform transition-transform ${includeSill ? "translate-x-[20px]" : "translate-x-0"}`}
-                            />
-                          </button>
-                        </label>
-                      )}
-
-                      {/* Dimension */}
-                      <div className="flex flex-col gap-2">
-                        <span className="text-[#0f1422] text-base font-medium">Dimension</span>
-                        <div className="grid grid-cols-3 gap-3">
-                          <div className="flex flex-col gap-1">
-                            <span className="text-[#c3c3c3] text-sm">Width (cm)</span>
-                            <input
-                              type="text"
-                              value={widthCm}
-                              onChange={(e) => handleWidthCmChange(e.target.value)}
-                              className="w-full bg-white border border-[#c3c3c3] rounded-[10px] px-3 py-1.5 text-center text-[#0f1422] text-base shadow-[0px_0px_7px_rgba(0,0,0,0.1)] focus:outline-none"
-                            />
-                          </div>
-                          <div className="flex flex-col gap-1">
-                            <span className="text-[#c3c3c3] text-sm">Height (cm)</span>
-                            <input
-                              type="text"
-                              value={heightCm}
-                              onChange={(e) => handleHeightCmChange(e.target.value)}
-                              className="w-full bg-white border border-[#c3c3c3] rounded-[10px] px-3 py-1.5 text-center text-[#0f1422] text-base shadow-[0px_0px_7px_rgba(0,0,0,0.1)] focus:outline-none"
-                            />
-                          </div>
-                          <div className="flex flex-col gap-1">
-                            <span className="text-[#c3c3c3] text-sm">Thickness (mm)</span>
-                            <input
-                              type="text"
-                              value={thicknessMm}
-                              onChange={(e) => setThicknessMm(e.target.value)}
-                              className="w-full bg-white border border-[#c3c3c3] rounded-[10px] px-3 py-1.5 text-center text-[#0f1422] text-base shadow-[0px_0px_7px_rgba(0,0,0,0.1)] focus:outline-none"
-                            />
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Quantity */}
-                      <div className="flex flex-col gap-2">
-                        <span className="text-[#0f1422] text-base font-medium">Quantity</span>
-                        <div className="flex flex-col gap-1">
-                          <span className="text-[#c3c3c3] text-sm">Qty</span>
-                          <div className="bg-white border border-[#c3c3c3] rounded-[10px] px-3 py-1.5 flex items-center justify-between w-28 shadow-[0px_0px_7px_rgba(0,0,0,0.1)]">
-                            <button
-                              type="button"
-                              onClick={() => setQuantity((q) => Math.max(1, q - 1))}
-                              className="p-1 hover:opacity-75 transition-opacity cursor-pointer"
-                            >
-                              <Image
-                                src="/visualization/minus-solid-full 1.svg"
-                                alt="Minus"
-                                width={10}
-                                height={10}
+                              <div
+                                className={`size-[20px] bg-white rounded-full shadow-xs transform transition-transform ${ambientLight ? "translate-x-[20px]" : "translate-x-0"
+                                  }`}
                               />
                             </button>
-                            <span className="text-[#0f1422] text-base font-medium">{quantity}</span>
+                          </div>
+
+                          <div className="flex justify-between items-center text-sm text-[#0f1422]">
+                            <span className="text-base tracking-[-0.304px]">Auto Shadow</span>
                             <button
                               type="button"
-                              onClick={() => setQuantity((q) => q + 1)}
-                              className="p-1 hover:opacity-75 transition-opacity cursor-pointer"
+                              onClick={() => setAutoShadow(!autoShadow)}
+                              className={`w-[44px] h-[24px] rounded-full p-0.5 transition-colors cursor-pointer relative ${autoShadow ? "bg-[#07b6d3]" : "bg-[#c3c3c3]"
+                                }`}
                             >
-                              <Image
-                                src="/visualization/plus-solid-full 1.svg"
-                                alt="Plus"
-                                width={10}
-                                height={10}
+                              <div
+                                className={`size-[20px] bg-white rounded-full shadow-xs transform transition-transform ${autoShadow ? "translate-x-[20px]" : "translate-x-0"
+                                  }`}
+                              />
+                            </button>
+                          </div>
+
+                          <div className="flex justify-between items-center text-sm text-[#0f1422]">
+                            <span className="text-base tracking-[-0.304px]">Auto Output Realism</span>
+                            <button
+                              type="button"
+                              onClick={() => setAutoRealism(!autoRealism)}
+                              className={`w-[44px] h-[24px] rounded-full p-0.5 transition-colors cursor-pointer relative ${autoRealism ? "bg-[#07b6d3]" : "bg-[#c3c3c3]"
+                                }`}
+                            >
+                              <div
+                                className={`size-[20px] bg-white rounded-full shadow-xs transform transition-transform ${autoRealism ? "translate-x-[20px]" : "translate-x-0"
+                                  }`}
                               />
                             </button>
                           </div>
                         </div>
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
 
-            {/* 4. Object Aware Occlusion Accordion */}
-            <div className="bg-[#f5f5f5]/30 border border-white rounded-[20px] shadow-[0px_0px_5px_0px_rgba(0,0,0,0.25)] overflow-hidden transition-colors">
-              <button
-                type="button"
-                onClick={() => toggleAccordion("Object Aware Occlusion")}
-                className="w-full p-6 flex justify-between items-center text-left cursor-pointer"
-              >
-                <span className="text-[#0f1422] text-[18px] font-medium tracking-[-0.342px]">
-                  Object Aware Occlusion
-                </span>
-                <motion.div
-                  animate={{ rotate: openAccordions.includes("Object Aware Occlusion") ? 180 : 0 }}
-                  transition={{ duration: 0.25, ease: "easeInOut" }}
-                >
-                  <Image
-                    src="/visualization/dropdown-btn.svg"
-                    alt="Toggle"
-                    width={20}
-                    height={20}
-                  />
-                </motion.div>
-              </button>
-
-              <AnimatePresence initial={false}>
-                {openAccordions.includes("Object Aware Occlusion") && (
-                  <motion.div
-                    key="occlusion-content"
-                    initial={{ height: 0 }}
-                    animate={{ height: "auto" }}
-                    exit={{ height: 0 }}
-                    transition={{ duration: 0.3, ease: [0.04, 0.62, 0.23, 0.98] }}
-                    className="overflow-hidden"
+                {/* 2. Placement Accordion */}
+                <div className="bg-[#f5f5f5]/30 border border-white rounded-[20px] shadow-[0px_0px_5px_0px_rgba(0,0,0,0.25)] overflow-hidden transition-colors">
+                  <button
+                    type="button"
+                    onClick={() => toggleAccordion("Placement")}
+                    className="w-full p-6 flex justify-between items-center text-left cursor-pointer"
                   >
-                    <div className="px-6 pb-6 flex flex-col gap-3">
-                      {occlusions.length > 0 ? (
-                        occlusions.map((item) => (
-                          <div
-                            key={item.id}
-                            onClick={() => toggleOcclusion(item.id)}
-                            className="bg-white rounded-[20px] p-5 flex justify-between items-center shadow-xs cursor-pointer hover:border-neutral-200 border border-transparent transition-colors"
-                          >
+                    <span className="text-[#0f1422] text-[18px] font-medium tracking-[-0.342px]">
+                      Placement
+                    </span>
+                    <motion.div
+                      animate={{ rotate: openAccordions.includes("Placement") ? 180 : 0 }}
+                      transition={{ duration: 0.25, ease: "easeInOut" }}
+                    >
+                      <Image
+                        src="/visualization/dropdown-btn.svg"
+                        alt="Toggle"
+                        width={20}
+                        height={20}
+                      />
+                    </motion.div>
+                  </button>
+
+                  <AnimatePresence initial={false}>
+                    {openAccordions.includes("Placement") && (
+                      <motion.div
+                        key="placement-content"
+                        initial={{ height: 0 }}
+                        animate={{ height: "auto" }}
+                        exit={{ height: 0 }}
+                        transition={{ duration: 0.3, ease: [0.04, 0.62, 0.23, 0.98] }}
+                        className="overflow-hidden"
+                      >
+                        <div className="px-6 pb-6 flex flex-col gap-5">
+                          <div className="flex flex-col gap-2">
+                            <span className="text-[#c3c3c3] text-base font-normal">3d Yaw</span>
+                            <div className="flex items-center gap-3">
+                              <input
+                                type="range"
+                                min="-180"
+                                max="180"
+                                value={yaw}
+                                onChange={(e) => setYaw(Number(e.target.value))}
+                                className="w-full accent-[#07b6d3] h-2 bg-[#c3c3c3] rounded-lg cursor-pointer"
+                              />
+                              <span className="text-[#0f1422] text-xs font-normal whitespace-nowrap min-w-12 text-right">
+                                {yaw} Deg
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-col gap-2">
+                            <span className="text-[#c3c3c3] text-base font-normal">3d Pitch</span>
+                            <div className="flex items-center gap-3">
+                              <input
+                                type="range"
+                                min="-90"
+                                max="90"
+                                value={pitch}
+                                onChange={(e) => setPitch(Number(e.target.value))}
+                                className="w-full accent-[#07b6d3] h-2 bg-[#c3c3c3] rounded-lg cursor-pointer"
+                              />
+                              <span className="text-[#0f1422] text-xs font-normal whitespace-nowrap min-w-12 text-right">
+                                {pitch} Deg
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+
+                {/* 3. Design and Customization Option Accordion */}
+                <div className="bg-[#f5f5f5]/30 border border-white rounded-[20px] shadow-[0px_0px_5px_0px_rgba(0,0,0,0.25)] overflow-hidden transition-colors">
+                  <button
+                    type="button"
+                    onClick={() => toggleAccordion("Design and Customization Option")}
+                    className="w-full p-6 flex justify-between items-center text-left cursor-pointer"
+                  >
+                    <span className="text-[#0f1422] text-[18px] font-medium tracking-[-0.342px]">
+                      Design and Customization Option
+                    </span>
+                    <motion.div
+                      animate={{ rotate: openAccordions.includes("Design and Customization Option") ? 180 : 0 }}
+                      transition={{ duration: 0.25, ease: "easeInOut" }}
+                    >
+                      <Image
+                        src="/visualization/dropdown-btn.svg"
+                        alt="Toggle"
+                        width={20}
+                        height={20}
+                      />
+                    </motion.div>
+                  </button>
+
+                  <AnimatePresence initial={false}>
+                    {openAccordions.includes("Design and Customization Option") && (
+                      <motion.div
+                        key="design-content"
+                        initial={{ height: 0 }}
+                        animate={{ height: "auto" }}
+                        exit={{ height: 0 }}
+                        transition={{ duration: 0.3, ease: [0.04, 0.62, 0.23, 0.98] }}
+                        className="overflow-hidden"
+                      >
+                        <div className="px-6 pb-6 flex flex-col gap-6">
+                          {/* Aluminum Finish */}
+                          <div className="flex flex-col gap-2">
+                            <span className="text-[#c3c3c3] text-base font-normal">Aluminum Finish</span>
+                            <div className="flex flex-col gap-2.5">
+                              {/* Option 1: Black */}
+                              <label
+                                onClick={() => setAlumFinish("black")}
+                                className="flex items-center gap-3 cursor-pointer select-none"
+                              >
+                                <div className="w-3 h-3 rounded-full border border-[#0f1422] flex items-center justify-center p-0.5">
+                                  {alumFinish === "black" && (
+                                    <div className="w-full h-full rounded-full bg-[#0f1422]" />
+                                  )}
+                                </div>
+                                {/* Swatch circle */}
+                                <div className="size-6 rounded-full bg-[#151719] shadow-xs border border-gray-300" />
+                                <span className="text-[#0f1422] text-base font-normal">
+                                  Black
+                                </span>
+                              </label>
+
+                              {/* Option 2: White */}
+                              <label
+                                onClick={() => setAlumFinish("white")}
+                                className="flex items-center gap-3 cursor-pointer select-none"
+                              >
+                                <div className="w-3 h-3 rounded-full border border-[#0f1422] flex items-center justify-center p-0.5">
+                                  {alumFinish === "white" && (
+                                    <div className="w-full h-full rounded-full bg-[#0f1422]" />
+                                  )}
+                                </div>
+                                {/* Swatch circle */}
+                                <div className="size-6 rounded-full bg-[#f4f1ea] shadow-xs border border-gray-300" />
+                                <span className="text-[#0f1422] text-base font-normal">
+                                  White
+                                </span>
+                              </label>
+
+                              {/* Option 3: Silver */}
+                              <label
+                                onClick={() => setAlumFinish("silver")}
+                                className="flex items-center gap-3 cursor-pointer select-none"
+                              >
+                                <div className="w-3 h-3 rounded-full border border-[#0f1422] flex items-center justify-center p-0.5">
+                                  {alumFinish === "silver" && (
+                                    <div className="w-full h-full rounded-full bg-[#0f1422]" />
+                                  )}
+                                </div>
+                                {/* Swatch circle */}
+                                <div className="size-6 rounded-full bg-[#9aa3a5] shadow-xs border border-gray-300" />
+                                <span className="text-[#0f1422] text-base font-normal">
+                                  Silver
+                                </span>
+                              </label>
+                            </div>
+                          </div>
+
+                          {/* Glass Appearance */}
+                          <div className="flex flex-col gap-2">
+                            <span className="text-[#c3c3c3] text-base font-normal">Glass Appearance</span>
+                            <div className="grid grid-cols-2 gap-2.5">
+                              {(["clear", "frosted", "opaque", "reflective", "outdoor"] as GlassAppearanceMode[]).map((mode) => (
+                                <button
+                                  key={mode}
+                                  type="button"
+                                  onClick={() => setGlassAppearance(mode)}
+                                  className={`px-3 py-1.5 rounded-[20px] border border-[#c3c3c3] text-base font-normal capitalize transition-colors cursor-pointer ${glassAppearance === mode
+                                    ? "bg-[#0f1422] text-white"
+                                    : "bg-transparent text-[#0f1422]"
+                                    }`}
+                                >
+                                  {mode}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          {isWindowProduct && (
+                            <label className="flex items-center justify-between gap-4 rounded-[10px] bg-white px-3 py-2.5 border border-[#c3c3c3]">
+                              <span className="text-[#0f1422] text-base font-normal">Include Window Sill</span>
+                              <button
+                                type="button"
+                                onClick={handleIncludeSillToggle}
+                                className={`w-[44px] h-[24px] rounded-full p-0.5 transition-colors cursor-pointer relative ${includeSill ? "bg-[#07b6d3]" : "bg-[#c3c3c3]"}`}
+                                aria-pressed={includeSill}
+                              >
+                                <span
+                                  className={`block size-[20px] bg-white rounded-full shadow-xs transform transition-transform ${includeSill ? "translate-x-[20px]" : "translate-x-0"}`}
+                                />
+                              </button>
+                            </label>
+                          )}
+
+                          {/* Dimension */}
+                          <div className="flex flex-col gap-2">
+                            <span className="text-[#0f1422] text-base font-medium">Dimension</span>
+                            <div className="grid grid-cols-3 gap-3">
+                              <div className="flex flex-col gap-1">
+                                <span className="text-[#c3c3c3] text-sm">Width (cm)</span>
+                                <input
+                                  type="text"
+                                  value={widthCm}
+                                  onChange={(e) => handleWidthCmChange(e.target.value)}
+                                  className="w-full bg-white border border-[#c3c3c3] rounded-[10px] px-3 py-1.5 text-center text-[#0f1422] text-base shadow-[0px_0px_7px_rgba(0,0,0,0.1)] focus:outline-none"
+                                />
+                              </div>
+                              <div className="flex flex-col gap-1">
+                                <span className="text-[#c3c3c3] text-sm">Height (cm)</span>
+                                <input
+                                  type="text"
+                                  value={heightCm}
+                                  onChange={(e) => handleHeightCmChange(e.target.value)}
+                                  className="w-full bg-white border border-[#c3c3c3] rounded-[10px] px-3 py-1.5 text-center text-[#0f1422] text-base shadow-[0px_0px_7px_rgba(0,0,0,0.1)] focus:outline-none"
+                                />
+                              </div>
+                              <div className="flex flex-col gap-1">
+                                <span className="text-[#c3c3c3] text-sm">Thickness (mm)</span>
+                                <input
+                                  type="text"
+                                  value={thicknessMm}
+                                  onChange={(e) => setThicknessMm(e.target.value)}
+                                  className="w-full bg-white border border-[#c3c3c3] rounded-[10px] px-3 py-1.5 text-center text-[#0f1422] text-base shadow-[0px_0px_7px_rgba(0,0,0,0.1)] focus:outline-none"
+                                />
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Quantity */}
+                          <div className="flex flex-col gap-2">
+                            <span className="text-[#0f1422] text-base font-medium">Quantity</span>
                             <div className="flex flex-col gap-1">
-                              <span className="text-[#0f1422] text-[18px] font-medium tracking-[-0.342px]">
-                                {item.label}
-                              </span>
-                              <span className="text-[#c3c3c3] text-xs font-normal">
-                                Confidence: {item.confidence}
-                              </span>
-                              <span className="text-[#0f1422] text-sm font-normal">
-                                Put Product Behind
-                              </span>
+                              <span className="text-[#c3c3c3] text-sm">Qty</span>
+                              <div className="bg-white border border-[#c3c3c3] rounded-[10px] px-3 py-1.5 flex items-center justify-between w-28 shadow-[0px_0px_7px_rgba(0,0,0,0.1)]">
+                                <button
+                                  type="button"
+                                  onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+                                  className="p-1 hover:opacity-75 transition-opacity cursor-pointer"
+                                >
+                                  <Image
+                                    src="/visualization/minus-solid-full 1.svg"
+                                    alt="Minus"
+                                    width={10}
+                                    height={10}
+                                  />
+                                </button>
+                                <span className="text-[#0f1422] text-base font-medium">{quantity}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setQuantity((q) => q + 1)}
+                                  className="p-1 hover:opacity-75 transition-opacity cursor-pointer"
+                                >
+                                  <Image
+                                    src="/visualization/plus-solid-full 1.svg"
+                                    alt="Plus"
+                                    width={10}
+                                    height={10}
+                                  />
+                                </button>
+                              </div>
                             </div>
-                            <div
-                              className={`size-3.5 rounded-[2px] border transition-colors ${item.active
-                                ? "bg-[#0f1422] border-[#0f1422]"
-                                : "bg-[#c3c3c3] border-transparent"
-                                }`}
-                            />
                           </div>
-                        ))
-                      ) : (
-                        <p className="text-xs text-neutral-500 py-1">
-                          No auto-detected foreground objects in this photo.
-                        </p>
-                      )}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
 
-                      {/* Manual Occlusion Mask Subsection */}
-                      <div className="mt-2 pt-3 border-t border-neutral-200/60 flex flex-col gap-2.5">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-semibold uppercase tracking-wider text-neutral-500">
-                            Manual Occlusion Mask
-                          </span>
-                          {manualMaskDataUrl && (
+                {/* 4. Object Aware Occlusion Accordion */}
+                <div className="bg-[#f5f5f5]/30 border border-white rounded-[20px] shadow-[0px_0px_5px_0px_rgba(0,0,0,0.25)] overflow-hidden transition-colors">
+                  <button
+                    type="button"
+                    onClick={() => toggleAccordion("Object Aware Occlusion")}
+                    className="w-full p-6 flex justify-between items-center text-left cursor-pointer"
+                  >
+                    <span className="text-[#0f1422] text-[18px] font-medium tracking-[-0.342px]">
+                      Object Aware Occlusion
+                    </span>
+                    <motion.div
+                      animate={{ rotate: openAccordions.includes("Object Aware Occlusion") ? 180 : 0 }}
+                      transition={{ duration: 0.25, ease: "easeInOut" }}
+                    >
+                      <Image
+                        src="/visualization/dropdown-btn.svg"
+                        alt="Toggle"
+                        width={20}
+                        height={20}
+                      />
+                    </motion.div>
+                  </button>
+
+                  <AnimatePresence initial={false}>
+                    {openAccordions.includes("Object Aware Occlusion") && (
+                      <motion.div
+                        key="occlusion-content"
+                        initial={{ height: 0 }}
+                        animate={{ height: "auto" }}
+                        exit={{ height: 0 }}
+                        transition={{ duration: 0.3, ease: [0.04, 0.62, 0.23, 0.98] }}
+                        className="overflow-hidden"
+                      >
+                        <div className="px-6 pb-6 flex flex-col gap-3">
+                          {occlusions.length > 0 ? (
+                            occlusions.map((item) => (
+                              <div
+                                key={item.id}
+                                onClick={() => toggleOcclusion(item.id)}
+                                className="bg-white rounded-[20px] p-5 flex justify-between items-center shadow-xs cursor-pointer hover:border-neutral-200 border border-transparent transition-colors"
+                              >
+                                <div className="flex flex-col gap-1">
+                                  <span className="text-[#0f1422] text-[18px] font-medium tracking-[-0.342px]">
+                                    {item.label}
+                                  </span>
+                                  <span className="text-[#c3c3c3] text-xs font-normal">
+                                    Confidence: {item.confidence}
+                                  </span>
+                                  <span className="text-[#0f1422] text-sm font-normal">
+                                    Put Product Behind
+                                  </span>
+                                </div>
+                                <div
+                                  className={`size-3.5 rounded-[2px] border transition-colors ${item.active
+                                    ? "bg-[#0f1422] border-[#0f1422]"
+                                    : "bg-[#c3c3c3] border-transparent"
+                                    }`}
+                                />
+                              </div>
+                            ))
+                          ) : (
+                            <p className="text-xs text-neutral-500 py-1">
+                              No auto-detected foreground objects in this photo.
+                            </p>
+                          )}
+
+                          {/* Manual Occlusion Mask Subsection */}
+                          <div className="mt-2 pt-3 border-t border-neutral-200/60 flex flex-col gap-2.5">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-semibold uppercase tracking-wider text-neutral-500">
+                                Manual Occlusion Mask
+                              </span>
+                              {manualMaskDataUrl && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setManualMaskDataUrl(null);
+                                    setManualOcclusionPolygons([]);
+                                  }}
+                                  className="text-xs font-medium text-red-500 hover:text-red-700 transition-colors cursor-pointer"
+                                >
+                                  Remove Mask
+                                </button>
+                              )}
+                            </div>
+                            <p className="text-xs text-neutral-500 leading-relaxed">
+                              Outline protruding wall columns, piers, or beams that should appear in front of the product.
+                            </p>
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setManualMaskDataUrl(null);
-                                setManualOcclusionPolygons([]);
+                                setShowOcclusionPointPicker(true);
                               }}
-                              className="text-xs font-medium text-red-500 hover:text-red-700 transition-colors cursor-pointer"
+                              className="w-full flex items-center justify-center gap-2 bg-[#0f1422] hover:bg-black text-white text-sm font-medium py-3 px-4 rounded-[20px] transition-colors cursor-pointer shadow-xs"
                             >
-                              Remove Mask
+                              <MousePointer2 className="size-4 text-[#07b6d3]" />
+                              <span>
+                                {manualMaskDataUrl
+                                  ? manualOcclusionPolygons.length > 0
+                                    ? "Edit Occlusion Areas"
+                                    : "Replace Legacy Mask"
+                                  : "Select Occlusion Areas"}
+                              </span>
                             </button>
-                          )}
+                          </div>
                         </div>
-                        <p className="text-xs text-neutral-500 leading-relaxed">
-                          Outline protruding wall columns, piers, or beams that should appear in front of the product.
-                        </p>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setShowOcclusionPointPicker(true);
-                          }}
-                          className="w-full flex items-center justify-center gap-2 bg-[#0f1422] hover:bg-black text-white text-sm font-medium py-3 px-4 rounded-[20px] transition-colors cursor-pointer shadow-xs"
-                        >
-                          <MousePointer2 className="size-4 text-[#07b6d3]" />
-                          <span>
-                            {manualMaskDataUrl
-                              ? manualOcclusionPolygons.length > 0
-                                ? "Edit Occlusion Areas"
-                                : "Replace Legacy Mask"
-                              : "Select Occlusion Areas"}
-                          </span>
-                        </button>
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-          </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              </div>
 
-          {/* Apply Changes Primary CTA */}
-          <button
-            type="button"
-            disabled={isCapturingSnapshot}
-            onClick={handleApplySnapshotClick}
-            className="w-full bg-green hover:bg-[#06a3bd] text-white text-lg sm:text-[20px] font-normal py-4 rounded-[25px] transition-colors cursor-pointer shadow-sm text-center tracking-[-0.38px]"
-          >
-            {isCapturingSnapshot
-              ? "Generating Snapshot..."
-              : isSnapshotApplied
-                ? "Edit"
-                : "Apply Changes"}
-          </button>
+              {/* Apply Changes Primary CTA */}
+              <button
+                type="button"
+                disabled={isCapturingSnapshot}
+                onClick={handleApplySnapshotClick}
+                className="w-full bg-green hover:bg-[#06a3bd] text-white text-lg sm:text-[20px] font-normal py-4 rounded-[25px] transition-colors cursor-pointer shadow-sm text-center tracking-[-0.38px]"
+              >
+                {isCapturingSnapshot
+                  ? "Generating Snapshot..."
+                  : isSnapshotApplied
+                    ? "Edit"
+                    : "Apply Changes"}
+              </button>
             </>
           ) : (
             <div className="w-full rounded-[20px] border border-[#c3c3c3]/60 bg-white p-6 text-center shadow-xs">
