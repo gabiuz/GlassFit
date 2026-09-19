@@ -75,6 +75,7 @@ function ComparisonImage({
   className: string;
   src: string;
 }) {
+  if (!src) return null;
   return (
     <img
       alt={alt}
@@ -633,6 +634,8 @@ export function Comparison() {
                         layerImageUrls={leftLayerImageUrls}
                         overlays={comparisonOverlays}
                       />
+                    ) : variationSnapshots.length > 0 ? (
+                      <AfterState src={leftVariantImage} />
                     ) : (
                       <IncompleteVariationPrompt
                         editPlacementHref={editPlacementHref}
@@ -673,6 +676,8 @@ export function Comparison() {
                         layerImageUrls={rightLayerImageUrls}
                         overlays={comparisonOverlays}
                       />
+                    ) : variationSnapshots.length > 0 ? (
+                      <AfterState src={rightVariantImage} />
                     ) : (
                       <IncompleteVariationPrompt
                         editPlacementHref={editPlacementHref}
@@ -708,6 +713,8 @@ export function Comparison() {
                     layerImageUrls={rightLayerImageUrls}
                     overlays={comparisonOverlays}
                   />
+                ) : variationSnapshots.length > 0 ? (
+                  <AfterState src={rightVariantImage} />
                 ) : (
                   <IncompleteVariationPrompt
                     editPlacementHref={editPlacementHref}
@@ -732,6 +739,8 @@ export function Comparison() {
                       layerImageUrls={leftLayerImageUrls}
                       overlays={comparisonOverlays}
                     />
+                  ) : variationSnapshots.length > 0 ? (
+                    <AfterState src={leftVariantImage} />
                   ) : (
                     <IncompleteVariationPrompt
                       editPlacementHref={editPlacementHref}
@@ -799,7 +808,7 @@ export function Comparison() {
                   ) : undefined}
                   swatchClassName={variation.swatchClassName}
                   isSelected={leftVariant === variation.key}
-                  isDisabled={!variantDataComplete || rightVariant === variation.key}
+                  isDisabled={(!variantDataComplete && variationSnapshots.length === 0) || rightVariant === variation.key}
                   onClick={() => handleLeftVariantChange(variation.key)}
                 />
               ))}
@@ -846,7 +855,7 @@ export function Comparison() {
                   ) : undefined}
                   swatchClassName={variation.swatchClassName}
                   isSelected={rightVariant === variation.key}
-                  isDisabled={!variantDataComplete || leftVariant === variation.key}
+                  isDisabled={(!variantDataComplete && variationSnapshots.length === 0) || leftVariant === variation.key}
                   onClick={() => handleRightVariantChange(variation.key)}
                 />
               ))}

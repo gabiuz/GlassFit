@@ -20,6 +20,7 @@ export type DatabaseProduct = {
   updated_at: string;
 
   catalog_image_r2_key: string | null;
+  preview_glb_r2_key?: string | null;
 };
 
 /**
@@ -33,7 +34,7 @@ export type SupportedRendererKey = "window" | "cabinet";
  * Carries the database UUID so later persistence can reference the exact selected product.
  */
 export type CatalogProduct = {
-  /** Stable database UUID — use this as the product identity, not the name. */
+  /** Stable database UUID - use this as the product identity, not the name. */
   id: string;
   name: string;
   type: DatabaseProduct["product_type"];
@@ -46,4 +47,6 @@ export type CatalogProduct = {
   rendererKey: SupportedRendererKey | null;
   /** R2 public URL for the catalog image, or null if no image is uploaded yet. */
   imageUrl: string | null;
+  /** R2 public URL for the 3D model preview GLB, or null if unavailable. */
+  previewGlbUrl?: string | null;
 };

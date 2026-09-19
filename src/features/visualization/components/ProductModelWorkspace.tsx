@@ -46,6 +46,7 @@ import {
   type AluminumFinishKey,
 } from "@/lib/visualization/colorVariations";
 import {
+  DEFAULT_SCENE_ZOOM,
   createDuplicateConfiguration,
   getPlacedLayerImageUrls,
   getOverlaySizeFromConfiguration,
@@ -60,6 +61,14 @@ import {
   calculateOverlayPricing,
 } from "@/lib/pricing/pricingEngine";
 import { StructuralGuardrailModal } from "./StructuralGuardrailModal";
+import { MeasurementConfirmationModal } from "./MeasurementConfirmationModal";
+import {
+  buildMeasurementEntries,
+  applyMeasurementOverridesToOverlays,
+  convertInToCm,
+} from "@/lib/visualization/measurementConfirmation";
+import type { MeasurementConfirmationEntry } from "@/lib/visualization/types";
+
 export type ProjectedModelBounds = {
   left: number;
   top: number;
@@ -128,7 +137,6 @@ const MAX_OVERLAY_WIDTH = 1800;
 const MAX_OVERLAY_HEIGHT = 1400;
 const MIN_SCENE_ZOOM = -55;
 const MAX_SCENE_ZOOM = 150;
-const DEFAULT_SCENE_ZOOM = 10;
 const DEFAULT_PRODUCT_WIDTH_CM = 210;
 const DEFAULT_PRODUCT_HEIGHT_CM = 150;
 const DEFAULT_OVERLAY_WIDTH_PX = 540;
@@ -200,6 +208,9 @@ export function ProductModelWorkspace({
   );
   const [isGuardrailModalOpen, setIsGuardrailModalOpen] = useState<boolean>(false);
   const [guardrailValidation, setGuardrailValidation] = useState<EngineeringValidationResult | null>(null);
+  const [isMeasurementModalOpen, setIsMeasurementModalOpen] = useState(false);
+  const [measurementEntries, setMeasurementEntries] = useState<MeasurementConfirmationEntry[]>([]);
+  const pendingComparisonOverlaysRef = useRef<PlacedOverlay[]>([]);
   const [widthCm, setWidthCm] = useState(
     initialConfiguration?.widthCm
       ? String(initialConfiguration.widthCm)
@@ -233,9 +244,20 @@ export function ProductModelWorkspace({
   const { setNavbarHidden } = useNavbarVisibility();
 
   useEffect(() => {
-    setNavbarHidden(showPerspectivePicker || showOcclusionPointPicker);
+    setNavbarHidden(
+      showPerspectivePicker ||
+      showOcclusionPointPicker ||
+      isMeasurementModalOpen ||
+      isGuardrailModalOpen,
+    );
     return () => setNavbarHidden(false);
-  }, [showPerspectivePicker, showOcclusionPointPicker, setNavbarHidden]);
+  }, [
+    showPerspectivePicker,
+    showOcclusionPointPicker,
+    isMeasurementModalOpen,
+    isGuardrailModalOpen,
+    setNavbarHidden,
+  ]);
 
   const [selectedProduct, setSelectedProduct] = useState(
     Boolean(currentProductId || structuralDefinition),
@@ -283,6 +305,7 @@ export function ProductModelWorkspace({
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isLayersPanelOpen, setIsLayersPanelOpen] = useState(false);
+
   const [modalTitle, setModalTitle] = useState("Add Product");
   const [productBuildError, setProductBuildError] = useState<string | null>(null);
   const initialOverlaySize = useMemo(() => {
@@ -1303,10 +1326,21 @@ export function ProductModelWorkspace({
       const uniqueOverlayId = crypto.randomUUID();
       const posX = overlayX.get();
       const posY = overlayY.get();
+      const prodId = currentProductId ?? structuralDefinition?.product.productId ?? "";
+      const glbUrl =
+        structuralDefinition?.product.preview_glb_url ??
+        structuralDefinition?.assets?.find(
+          (a) =>
+            (a.assetType === "Catalog 3D Preview" || a.assetType === "Whole Model") &&
+            a.status === "Active" &&
+            Boolean(a.url),
+        )?.url ??
+        catalogProducts.find((p) => p.id === prodId)?.previewGlbUrl ??
+        null;
 
       return {
         overlayId: uniqueOverlayId,
-        productId: currentProductId ?? structuralDefinition?.product.productId ?? "",
+        productId: prodId,
         productName: overlayName,
         layerNumber: explicitLayerNumber ?? activeLayerNumber,
         templateId: structuralDefinition?.template.templateId ?? "catalog-image",
@@ -1324,12 +1358,14 @@ export function ProductModelWorkspace({
         bomResult: realtimePricing.bomCalc ?? undefined,
         unitPrice: realtimePricing.unitPrice,
         totalPrice: realtimePricing.totalPrice,
+        previewGlbUrl: glbUrl,
       };
     },
     [
       activeLayerNumber,
       captureCurrentProductLayer,
       captureCurrentProductVariationLayers,
+      catalogProducts,
       currentConfiguration,
       currentProductId,
       overlayName,
@@ -1597,9 +1633,22 @@ export function ProductModelWorkspace({
           { ...(await createPlacedOverlay()), isActive: true },
         ]
         : placedOverlays;
-      onPlacedOverlaysChange?.(comparisonOverlays);
-      onComparisonOverlaysChange?.(comparisonOverlays);
-      router.push("/comparison");
+
+      // Stash complete overlay set with variationImageDataUrls and flattenedImageDataUrl
+      pendingComparisonOverlaysRef.current = comparisonOverlays;
+
+      const entries = buildMeasurementEntries(
+        comparisonOverlays,
+        structuralDefinition ?? null,
+        widthCm,
+        heightCm,
+        realtimePricing.totalPrice,
+        catalogProducts,
+        currentConfiguration,
+      );
+
+      setMeasurementEntries(entries);
+      setIsMeasurementModalOpen(true);
     } catch (error) {
       const message =
         error instanceof Error
@@ -1611,14 +1660,78 @@ export function ProductModelWorkspace({
     }
   }, [
     captureCurrentSnapshot,
+    catalogProducts,
     createPlacedOverlay,
+    currentConfiguration,
     generateVariationSnapshots,
-    onComparisonOverlaysChange,
-    onPlacedOverlaysChange,
+    heightCm,
     placedOverlays,
-    router,
+    realtimePricing.totalPrice,
     selectedProduct,
+    structuralDefinition,
+    widthCm,
   ]);
+
+  const handleMeasurementConfirmAll = useCallback(
+    (confirmedEntries: MeasurementConfirmationEntry[]) => {
+      setIsMeasurementModalOpen(false);
+
+      const activeEntry = confirmedEntries.find((e) => e.isActiveProduct);
+      if (activeEntry?.override.widthOverridden) {
+        setWidthCm(String(convertInToCm(activeEntry.override.widthIn)));
+      }
+      if (activeEntry?.override.heightOverridden) {
+        setHeightCm(String(convertInToCm(activeEntry.override.heightIn)));
+      }
+
+      const patchedOverlays = applyMeasurementOverridesToOverlays(
+        confirmedEntries.filter((e) => !e.isActiveProduct),
+        placedOverlays,
+      );
+
+      // Use pre-captured overlays that contain genuine variationImageDataUrls and flattenedImageDataUrl
+      const baseOverlays = pendingComparisonOverlaysRef.current.length > 0
+        ? pendingComparisonOverlaysRef.current
+        : (selectedProduct ? [...placedOverlays] : placedOverlays);
+
+      // Apply measurement overrides directly onto the intact overlays
+      const patchedComparisonOverlays = applyMeasurementOverridesToOverlays(
+        confirmedEntries,
+        baseOverlays,
+      );
+
+      // Synchronize canonical placed overlays list
+      const activeComparisonOverlay = patchedComparisonOverlays.find((o) => o.isActive);
+      const completePlacedOverlays = activeComparisonOverlay
+        ? [
+            ...patchedOverlays.filter((o) => o.overlayId !== activeComparisonOverlay.overlayId),
+            activeComparisonOverlay,
+          ]
+        : patchedOverlays;
+
+      // Clear the pending ref
+      pendingComparisonOverlaysRef.current = [];
+
+      onPlacedOverlaysChange?.(completePlacedOverlays);
+      onComparisonOverlaysChange?.(patchedComparisonOverlays);
+      router.push("/comparison");
+    },
+    [
+      onComparisonOverlaysChange,
+      onPlacedOverlaysChange,
+      placedOverlays,
+      router,
+      selectedProduct,
+      setHeightCm,
+      setWidthCm,
+    ],
+  );
+
+  const handleMeasurementModalCancel = useCallback(() => {
+    setIsMeasurementModalOpen(false);
+    setIsSnapshotApplied(false);
+    pendingComparisonOverlaysRef.current = [];
+  }, []);
 
   const applySceneZoom = useCallback((nextZoomLevel: number) => {
     setZoomLevel((currentZoomLevel) => {
@@ -2308,12 +2421,14 @@ export function ProductModelWorkspace({
                 return (
                   <React.Fragment key={overlay.overlayId}>
                     {/* Rendered 2D Product Layer Bitmap */}
-                    <img
-                      src={overlay.flattenedImageDataUrl}
-                      alt={`Placed ${overlay.productName} ${layerNum}`}
-                      draggable={false}
-                      className="absolute inset-0 z-10 h-full w-full pointer-events-none select-none"
-                    />
+                    {overlay.flattenedImageDataUrl ? (
+                      <img
+                        src={overlay.flattenedImageDataUrl}
+                        alt={`Placed ${overlay.productName} ${layerNum}`}
+                        draggable={false}
+                        className="absolute inset-0 z-10 h-full w-full pointer-events-none select-none"
+                      />
+                    ) : null}
 
                     {/* Interactive Hit Target matching active product outline */}
                     {overlay.configuration.perspectiveFitCorners ? (
@@ -3416,6 +3531,17 @@ export function ProductModelWorkspace({
         onAcknowledgeAndProceed={handleAcknowledgeAndProceed}
         onClose={() => setIsGuardrailModalOpen(false)}
       />
+
+      {/* ── Measurement Confirmation Modal (MS-08) ── */}
+      {isMeasurementModalOpen && (
+        <MeasurementConfirmationModal
+          isOpen={isMeasurementModalOpen}
+          entries={measurementEntries}
+          onConfirmAll={handleMeasurementConfirmAll}
+          onCancel={handleMeasurementModalCancel}
+        />
+      )}
+
 
       {/* Point-based Manual Occlusion Modal (MS-03) */}
       {showOcclusionPointPicker && (

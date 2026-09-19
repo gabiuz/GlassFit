@@ -1,15 +1,30 @@
 "use client";
 
-import { Suspense, useRef, useEffect } from "react";
-import { Canvas, useFrame } from "@react-three/fiber";
+import { Suspense, useRef, useMemo, useEffect } from "react";
+import { Canvas } from "@react-three/fiber";
 import { useGLTF, OrbitControls, Environment, ContactShadows } from "@react-three/drei";
-import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import * as THREE from "three";
+import { applyPresentationMaterials } from "@/lib/visualization/materialClassifier";
+import type { GlassAppearanceMode } from "@/lib/visualization/types";
 
 // ── Auto-rotating GLB model ──────────────────────────────────────────────────
-function Model({ url }: { url: string }) {
+function Model({
+  url,
+  aluminumFinish = "white",
+  glassAppearance = "clear",
+}: {
+  url: string;
+  aluminumFinish?: string;
+  glassAppearance?: GlassAppearanceMode;
+}) {
   const { scene } = useGLTF(url);
   const groupRef = useRef<THREE.Group>(null);
+
+  const clonedScene = useMemo(() => {
+    const clone = scene.clone(true);
+    applyPresentationMaterials(clone, glassAppearance, aluminumFinish);
+    return clone;
+  }, [scene, aluminumFinish, glassAppearance]);
 
   // Centre + normalise the model so it fills the canvas regardless of source scale
   useEffect(() => {
@@ -21,11 +36,11 @@ function Model({ url }: { url: string }) {
     const scale = 2 / maxDim;
     groupRef.current.scale.setScalar(scale);
     groupRef.current.position.sub(center.multiplyScalar(scale));
-  }, [scene]);
+  }, [clonedScene]);
 
   return (
     <group ref={groupRef}>
-      <primitive object={scene} />
+      <primitive object={clonedScene} />
     </group>
   );
 }
@@ -33,11 +48,15 @@ function Model({ url }: { url: string }) {
 // ── Public component ─────────────────────────────────────────────────────────
 interface ProductModel3DProps {
   glbUrl: string;
+  aluminumFinish?: string;
+  glassAppearance?: GlassAppearanceMode;
 }
 
-export function ProductModel3D({ glbUrl }: ProductModel3DProps) {
-  const controlsRef = useRef<OrbitControlsImpl | null>(null);
-
+export function ProductModel3D({
+  glbUrl,
+  aluminumFinish = "white",
+  glassAppearance = "clear",
+}: ProductModel3DProps) {
   return (
     <Canvas
       camera={{ position: [0, 0.5, 4], fov: 45 }}
@@ -52,7 +71,11 @@ export function ProductModel3D({ glbUrl }: ProductModel3DProps) {
 
       {/* Model */}
       <Suspense fallback={null}>
-        <Model url={glbUrl} />
+        <Model
+          url={glbUrl}
+          aluminumFinish={aluminumFinish}
+          glassAppearance={glassAppearance}
+        />
         <ContactShadows
           position={[0, -1.1, 0]}
           opacity={0.35}

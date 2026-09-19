@@ -129,7 +129,7 @@ export function transitionSessionState(
     productConfiguration: nextConfiguration ?? null,
     variationSnapshots: [],
     activeOverlay: null,
-    comparisonOverlays: [],
+    comparisonOverlays: mode === "add" ? current.comparisonOverlays : [],
     finalSnapshotDataUrl: null,
   };
 }
@@ -183,7 +183,7 @@ export function VisualizationSessionProvider({
           productConfiguration: productConfiguration ?? null,
           variationSnapshots: [],
           activeOverlay: null,
-          comparisonOverlays: [],
+          comparisonOverlays: current.comparisonOverlays,
           finalSnapshotDataUrl: null,
         };
 
@@ -445,7 +445,41 @@ export function writeStoredVisualizationSession(state: VisualizationSessionState
         JSON.stringify(lightweightState),
       );
     } catch {
-      // Session persistence is a convenience; visualization still works in memory.
+      console.warn(
+        "[GlassFit] sessionStorage quota exceeded even for lightweight session. " +
+        "Attempting minimal config-only write.",
+      );
+      try {
+        window.sessionStorage.setItem(
+          SESSION_STORAGE_KEY,
+          JSON.stringify({
+            selectedProductId: state.selectedProductId,
+            spaceImageSession: state.spaceImageSession
+              ? {
+                  ...state.spaceImageSession,
+                  workspaceImage: { ...state.spaceImageSession.workspaceImage, url: "" },
+                }
+              : null,
+            workspaceBackgroundDataUrl: null,
+            structuralDefinition: state.structuralDefinition,
+            productConfiguration: state.productConfiguration,
+            variationSnapshots: [],
+            placedOverlays: state.placedOverlays.map((overlay) => ({
+              ...overlay,
+              flattenedImageDataUrl: "",
+              variationImageDataUrls: undefined,
+            })),
+            comparisonOverlays: state.comparisonOverlays.map((overlay) => ({
+              ...overlay,
+              flattenedImageDataUrl: "",
+              variationImageDataUrls: undefined,
+            })),
+            finalSnapshotDataUrl: null,
+          }),
+        );
+      } catch {
+        // Minimal write also failed. In-memory session remains valid for the current page.
+      }
     }
   }
 }
