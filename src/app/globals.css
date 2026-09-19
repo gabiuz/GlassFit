@@ -184,6 +184,41 @@ body {
   }
 }
 
+/* PRD-F15 / PRD-F16 / DSD-UI9: alpha-aligned comparison selection feedback. */
+.comparison-overlay-layer {
+  transition: opacity 180ms var(--ease-out);
+}
+
+.comparison-overlay-layer[data-selection-state="selected"] {
+  filter:
+    drop-shadow(0 0 2px rgba(255, 255, 255, 0.95))
+    drop-shadow(0 0 7px rgba(7, 182, 211, 0.9));
+  opacity: 1;
+}
+
+.comparison-overlay-layer[data-selection-state="idle"] {
+  filter: drop-shadow(0 0 1px rgba(255, 255, 255, 0.55));
+  opacity: 0.96;
+}
+
+.comparison-overlay-label {
+  opacity: 1;
+  transition: opacity 160ms var(--ease-out);
+}
+
+@starting-style {
+  .comparison-overlay-label {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .comparison-overlay-layer,
+  .comparison-overlay-label {
+    transition-duration: 100ms;
+  }
+}
+
 @theme inline {
   --font-heading: var(--font-sans);
   --font-sans: var(--font-sans);

@@ -29,7 +29,7 @@ GlassFit is a responsive, web-based photo-simulation and consultation-support pl
 | SDD | System Design Document | `docs/sdd-glassfit.md` | Locked | September 9, 2026 | Reynard John B. Rabanal |
 | DSD | Design Specification Document | `docs/dsd-glassfit.md` | Locked | September 9, 2026 | Gianne Crizzle A. Dasco |
 | ERD | Entity Relationship Document | `docs/erd-glassfit.md` | Locked | September 9, 2026 | Gabriel Nicolai D. Pelagio |
-| QAD | Quality Assurance Document | `docs/qad-glassfit.md` | Locked | September 9, 2026 | Jedia Nicole I. Sagun |
+| QAD | Quality Assurance Document | `docs/qad-glassfit.md` | Locked | September 19, 2026 | Jedia Nicole I. Sagun |
 | BUILD| Build & Deployment Runbook | `docs/build-glassfit.md` | Locked | September 9, 2026 | Reynard John B. Rabanal |
 | PRICE| Parametric Fenestration Pricing Engine | `docs/pricing.md` | Active | September 9, 2026 | Reynard John B. Rabanal |
 | MILE | Master Implementation Milestones | `docs/milestone.md` | Active | September 9, 2026 | Reynard John B. Rabanal |
@@ -76,6 +76,7 @@ GlassFit is a responsive, web-based photo-simulation and consultation-support pl
 | September 9, 2026 | `docs/index.md` | Reynard John B. Rabanal | Initial master index registry and end-to-end traceability matrix reconciliation | PR #8 |
 | September 9, 2026 | `docs/milestone.md` | Reynard John B. Rabanal | Master implementation roadmap integrating parametric BOM pricing, structural guardrails, and part inspector | PR #9 |
 | September 9, 2026 | `docs/milestone.md` | Reynard John B. Rabanal | Specification of Milestone 10 for admin product setup wizard state persistence and smooth component lifecycle | PR #10 |
+| September 19, 2026 | `docs/qad-glassfit.md` | Jedia Nicole I. Sagun | Added QAD-TC27 for alpha-aware Product Variant comparison model selection | Pending |
 
 ---
 
