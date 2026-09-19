@@ -52,6 +52,7 @@ export function PerspectivePlanePicker({
   const [activeDragIndex, setActiveDragIndex] = useState<number | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
+  const dragOffsetRef = useRef<{ x: number; y: number } | null>(null);
 
   // Close on Escape key
   useEffect(() => {
@@ -99,39 +100,54 @@ export function PerspectivePlanePicker({
     e: React.PointerEvent<SVGCircleElement | SVGTextElement | SVGGElement>,
   ) => {
     e.stopPropagation();
-    e.currentTarget.setPointerCapture(e.pointerId);
+    e.preventDefault();
+    const coord = getCanvasCoordinates(e.clientX, e.clientY);
+    if (coord) {
+      dragOffsetRef.current = {
+        x: points[index].x - coord.x,
+        y: points[index].y - coord.y,
+      };
+    }
     setActiveDragIndex(index);
   };
 
-  const handleHandlePointerMove = (
-    e: React.PointerEvent<SVGCircleElement | SVGTextElement | SVGGElement>,
+  const handleSvgPointerMove = (
+    e: React.PointerEvent<SVGSVGElement | SVGGElement>,
   ) => {
     if (activeDragIndex === null) return;
     const coord = getCanvasCoordinates(e.clientX, e.clientY);
     if (!coord) return;
 
+    const offset = dragOffsetRef.current ?? { x: 0, y: 0 };
+    const x = Math.max(0, Math.min(canvasWidth, coord.x + offset.x));
+    const y = Math.max(0, Math.min(canvasHeight, coord.y + offset.y));
+
     setPoints((prev) => {
       const next = [...prev];
-      next[activeDragIndex] = coord;
+      next[activeDragIndex] = { x, y };
       return next;
     });
   };
 
-  const handleHandlePointerUp = (
-    e: React.PointerEvent<SVGCircleElement | SVGTextElement | SVGGElement>,
+  const handleSvgPointerUp = (
+    e: React.PointerEvent<SVGSVGElement | SVGGElement>,
   ) => {
     if (activeDragIndex !== null) {
       try {
-        e.currentTarget.releasePointerCapture(e.pointerId);
+        if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+          e.currentTarget.releasePointerCapture(e.pointerId);
+        }
       } catch {
         // Pointer capture may have already been released
       }
+      dragOffsetRef.current = null;
       setActiveDragIndex(null);
     }
   };
 
   const handleReset = () => {
     setPoints([]);
+    dragOffsetRef.current = null;
     setActiveDragIndex(null);
   };
 
@@ -235,8 +251,15 @@ export function PerspectivePlanePicker({
             ref={svgRef}
             viewBox={`0 0 ${canvasWidth} ${canvasHeight}`}
             onClick={handleSvgClick}
+            onPointerMove={handleSvgPointerMove}
+            onPointerUp={handleSvgPointerUp}
+            onPointerCancel={handleSvgPointerUp}
             className={`absolute inset-0 w-full h-full object-contain z-10 ${
-              points.length < 4 ? "cursor-crosshair" : "cursor-default"
+              points.length < 4
+                ? "cursor-crosshair"
+                : activeDragIndex !== null
+                ? "cursor-grabbing"
+                : "cursor-default"
             }`}
             style={{ touchAction: "none" }}
           >
@@ -269,16 +292,31 @@ export function PerspectivePlanePicker({
                 <g
                   key={index}
                   transform={`translate(${point.x}, ${point.y})`}
-                  onPointerDown={(e) => isDraggable && handleHandlePointerDown(index, e)}
-                  onPointerMove={isDraggable ? handleHandlePointerMove : undefined}
-                  onPointerUp={isDraggable ? handleHandlePointerUp : undefined}
+                  onPointerDown={(e) => {
+                    if (!isDraggable) return;
+                    handleHandlePointerDown(index, e);
+                    try {
+                      e.currentTarget.setPointerCapture(e.pointerId);
+                    } catch {
+                      // Pointer capture fallback
+                    }
+                  }}
+                  onPointerMove={isDraggable ? handleSvgPointerMove : undefined}
+                  onPointerUp={isDraggable ? handleSvgPointerUp : undefined}
+                  onPointerCancel={isDraggable ? handleSvgPointerUp : undefined}
+                  onClick={(e) => e.stopPropagation()}
                   className={
                     isDraggable
-                      ? "cursor-grab active:cursor-grabbing hover:scale-110 transition-transform"
+                      ? "cursor-grab active:cursor-grabbing"
                       : "cursor-default"
                   }
                   style={{ touchAction: "none" }}
+                  role="button"
+                  aria-label={`Corner ${index + 1}: ${CORNER_NAMES[index]}`}
                 >
+                  {/* Invisible generous hit target */}
+                  <circle r={18} fill="transparent" />
+
                   {/* Outer pulse circle on active point */}
                   <circle
                     r={14}
