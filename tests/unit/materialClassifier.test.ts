@@ -27,7 +27,12 @@ describe("Fix-02: Multi-Material Classification & Photorealistic Glazing Physics
     glass.name = "glass_panel";
     group.add(frame, glass);
 
-    applyPresentationMaterials(group, "clear", "silver");
+    applyPresentationMaterials(group, {
+      aluminumFinish: "silver",
+      glassAppearance: "clear",
+      glassColor: "clear",
+      glassThicknessMm: 6,
+    });
 
     assert.strictEqual(
       (frame.material as THREE.MeshPhysicalMaterial).color.getHex(),
@@ -187,18 +192,24 @@ describe("Fix-02: Multi-Material Classification & Photorealistic Glazing Physics
   describe("Aluminum Finish Isolation (QAD-TC22.2)", () => {
     it("should decouple aluminum finish color changes from optical glass material", () => {
       const whitePalette = createMaterialPalette({
-        alumFinish: "white",
+        aluminumFinish: "white",
         glassAppearance: "clear",
+        glassColor: "clear",
+        glassThicknessMm: 6,
       });
 
       const blackPalette = createMaterialPalette({
-        alumFinish: "black",
+        aluminumFinish: "black",
         glassAppearance: "clear",
+        glassColor: "clear",
+        glassThicknessMm: 6,
       });
 
       const silverPalette = createMaterialPalette({
-        alumFinish: "silver",
+        aluminumFinish: "silver",
         glassAppearance: "clear",
+        glassColor: "clear",
+        glassThicknessMm: 6,
       });
 
       // Frame materials should differ across finishes

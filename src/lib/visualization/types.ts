@@ -6,6 +6,8 @@ export type JsonObject = Record<string, unknown>;
 
 export type ModelStrategy = "Fixed" | "Parametric";
 export type GlassAppearanceMode = "clear" | "frosted" | "opaque" | "reflective" | "outdoor";
+export type GlassColorKey = "clear" | "bronze" | "silver" | "blue";
+export type GlassThicknessMm = 6 | 8 | 12;
 
 export type SelectedVisualizationProduct = {
   productId: string;

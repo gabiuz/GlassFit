@@ -172,7 +172,8 @@ describe("MS-04: Scene-Adaptive Photorealism Harmonization", () => {
     );
     const productBuilderSource =
       readFileSync("src/lib/visualization/parametricProductBuilder.ts", "utf8") +
-      readFileSync("src/lib/visualization/materialClassifier.ts", "utf8");
+      readFileSync("src/lib/visualization/materialClassifier.ts", "utf8") +
+      readFileSync("src/lib/products/materialMapping.ts", "utf8");
     const workspaceSource = readFileSync(
       "src/features/visualization/components/ProductModelWorkspace.tsx",
       "utf8",
@@ -198,11 +199,11 @@ describe("MS-04: Scene-Adaptive Photorealism Harmonization", () => {
     });
 
     it("parametricProductBuilder configures powder-coated white frame with micro-roughness", () => {
-      // Powder-coat white: 0xeceae4
-      assert.match(productBuilderSource, /0xeceae4/);
-      // Metalness 0.08, roughness 0.32
-      assert.match(productBuilderSource, /0\.08/);
-      assert.match(productBuilderSource, /0\.32/);
+      // R.R.D. powder-coat white: #ECEAE4
+      assert.match(productBuilderSource, /#ECEAE4/i);
+      // IMP-MS09 powder-coat defaults: metalness 0.20, roughness 0.30
+      assert.match(productBuilderSource, /metalness:\s*0\.2/);
+      assert.match(productBuilderSource, /roughness:\s*0\.3/);
     });
 
     it("workspace includes SVG grain filter and connects autoRealism to lighting", () => {

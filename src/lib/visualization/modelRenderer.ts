@@ -12,6 +12,7 @@ import { buildParametricProduct } from "@/lib/visualization/parametricProductBui
 import { resolveProductStructure } from "@/lib/visualization/structuralResolver";
 import { preloadComponentModels } from "@/lib/visualization/componentModelCache";
 import { applyPresentationMaterials } from "@/lib/visualization/materialClassifier";
+import { normalizeAluminumFinish } from "@/lib/visualization/colorVariations";
 
 // Cache the environment map globally so we only download the HDR once
 let cachedEnvironmentMap: THREE.Texture | null = null;
@@ -265,7 +266,12 @@ export class ProductModelRenderer {
     const group = new THREE.Group();
     group.add(source);
     normalizeModelForViewer(group, source);
-    applyPresentationMaterials(group, glassAppearance, alumFinish);
+    applyPresentationMaterials(group, {
+      aluminumFinish: normalizeAluminumFinish(alumFinish),
+      glassAppearance,
+      glassColor: "clear",
+      glassThicknessMm: 6,
+    });
 
     return group;
   }

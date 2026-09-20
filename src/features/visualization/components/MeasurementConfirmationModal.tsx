@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef, useId } from "react";
 import dynamic from "next/dynamic";
+import { normalizeAluminumFinish } from "@/lib/visualization/colorVariations";
 import Image from "next/image";
 import {
   ChevronLeft,
@@ -388,8 +389,11 @@ export function MeasurementConfirmationModal({
             <ProductModel3D
               key={`3d-preview-${currentEntry.productId}-${currentPageIndex}-${currentEntry.aluminumFinish}-${currentEntry.overlayConfiguration.glassAppearance}`}
               glbUrl={currentEntry.previewGlbUrl}
-              aluminumFinish={currentEntry.aluminumFinish}
+              aluminumFinish={normalizeAluminumFinish(currentEntry.aluminumFinish)}
               glassAppearance={currentEntry.overlayConfiguration.glassAppearance}
+              glassColor="clear"
+              glassThicknessMm={6}
+              quantity={1}
             />
           ) : (
             <div className="flex flex-col items-center justify-center gap-2 p-4 text-center">
