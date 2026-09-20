@@ -22,7 +22,12 @@ import {
   normalizeProductQuantity,
   validateDimensionPair,
 } from "../../src/lib/products/productPreviewConfiguration.js";
-import { applyPresentationMaterials, createMaterialPalette } from "../../src/lib/visualization/materialClassifier.js";
+import {
+  applyPresentationMaterials,
+  classifySceneMesh,
+  createMaterialPalette,
+  detectProductMaterialCapabilities,
+} from "../../src/lib/visualization/materialClassifier.js";
 
 describe("IMP-MS09 product preview configuration", () => {
   it("defines the complete R.R.D. option catalog and classifications", () => {
@@ -114,6 +119,50 @@ describe("IMP-MS09 product preview configuration", () => {
     assert.strictEqual(glassMaterial.color.getHexString().toUpperCase(), "7FA9C4");
     assert.strictEqual(glassMaterial.thickness, 0.012);
     assert.strictEqual(glassMaterial.attenuationDistance, 1.2);
+  });
+
+  it("classifies a Screen Door frame by explicit material name despite ambiguous mesh names", () => {
+    const screenDoor = new THREE.Group();
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(1, 2, 0.1), new THREE.MeshStandardMaterial({ name: "SCD_Frame_Material" }));
+    const handle = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.2, 0.1), new THREE.MeshStandardMaterial({ name: "SCD_Handle_Material" }));
+    const kickplate = new THREE.Mesh(new THREE.BoxGeometry(1, 0.2, 0.1), new THREE.MeshStandardMaterial({ name: "SCD_Kickplate_Material" }));
+    const screenWire = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 1.6), new THREE.MeshStandardMaterial({ name: "SCD_Screen_Wire_Metal" }));
+    [frame, handle, kickplate, screenWire].forEach((mesh, index) => {
+      mesh.name = `SCD_Door_Handle_Mesh001_${index}`;
+      screenDoor.add(mesh);
+    });
+    assert.strictEqual(classifySceneMesh(frame), "Aluminum");
+    assert.strictEqual(classifySceneMesh(kickplate), "Aluminum");
+    assert.strictEqual(classifySceneMesh(handle), "Hardware");
+    assert.deepStrictEqual(detectProductMaterialCapabilities(screenDoor), {
+      hasAluminum: true,
+      hasGlass: false,
+    });
+
+    applyPresentationMaterials(screenDoor, {
+      aluminumFinish: "al_1005",
+      glassAppearance: "reflective",
+      glassColor: "blue",
+      glassThicknessMm: 12,
+    });
+    assert.strictEqual((frame.material as THREE.MeshPhysicalMaterial).color.getHexString(), "d4af37");
+    assert.strictEqual((kickplate.material as THREE.MeshPhysicalMaterial).color.getHexString(), "d4af37");
+    assert.strictEqual((handle.material as THREE.MeshStandardMaterial).color.getHexString(), "1f2326");
+    assert.strictEqual((screenWire.material as THREE.MeshStandardMaterial).color.getHexString(), "1f2326");
+    assert.strictEqual(classifySceneMesh(frame), "Aluminum");
+  });
+
+  it("detects when a product model has glass configuration support", () => {
+    const product = new THREE.Group();
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 0.1));
+    frame.name = "window_frame";
+    const glass = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.8));
+    glass.name = "window_glass";
+    product.add(frame, glass);
+    assert.deepStrictEqual(detectProductMaterialCapabilities(product), {
+      hasAluminum: true,
+      hasGlass: true,
+    });
   });
 
   it("sets the specified optical thickness and attenuation for every thickness", () => {

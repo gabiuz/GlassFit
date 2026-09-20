@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import Image from "next/image";
 import Link from "next/link";
@@ -23,6 +23,7 @@ import {
 } from "@/lib/products/productPreviewConfiguration";
 import type { RrdAluminumFinishKey } from "@/lib/visualization/colorVariations";
 import type { GlassColorKey, GlassThicknessMm } from "@/lib/visualization/types";
+import type { ProductMaterialCapabilities } from "@/lib/visualization/materialClassifier";
 
 const ProductModel3D = dynamic(
   () => import("./ProductModel3D").then((module) => module.ProductModel3D),
@@ -42,7 +43,7 @@ function Breadcrumb({ productName = "Product Name" }: { productName?: string }) 
 }
 
 const segmentClass = (selected: boolean) =>
-  `rounded-[20px] border px-2.5 py-1.5 text-base font-normal transition-all duration-200 ${
+  `rounded-[20px] border px-2.5 py-1.5 text-base font-normal transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-50 ${
     selected ? "border-black bg-black text-white" : "border-[#c3c3c3] text-black hover:border-black"
   }`;
 
@@ -57,6 +58,10 @@ export function ProductDetails({ product }: { product: ProductDetail }) {
   const [previewDimensions, setPreviewDimensions] = useState<{ widthCm: number; heightCm: number }>();
   const [quantityInput, setQuantityInput] = useState(String(defaults.quantity));
   const [view3d, setView3d] = useState(false);
+  const [detectedMaterials, setDetectedMaterials] = useState<{
+    glbUrl: string;
+    capabilities: ProductMaterialCapabilities;
+  } | null>(null);
 
   const dimensionResult = validateDimensionPair(width, height);
   useEffect(() => {
@@ -81,6 +86,13 @@ export function ProductDetails({ product }: { product: ProductDetail }) {
     : null;
   const finishOptions = supportedProductType ? getAvailableFinishOptions(supportedProductType) : [];
   const glassTypeOptions = supportedProductType ? getAvailableGlassTypeOptions(supportedProductType) : [];
+  const glassControlsDisabled = detectedMaterials?.glbUrl === product.preview_glb_url
+    && detectedMaterials.capabilities.hasGlass === false;
+
+  const handleCapabilitiesDetected = useCallback((capabilities: ProductMaterialCapabilities) => {
+    if (!product.preview_glb_url) return;
+    setDetectedMaterials({ glbUrl: product.preview_glb_url, capabilities });
+  }, [product.preview_glb_url]);
 
   const commitQuantity = (value: string | number) => {
     setQuantityInput(String(normalizeProductQuantity(value)));
@@ -111,6 +123,7 @@ export function ProductDetails({ product }: { product: ProductDetail }) {
                 widthCm={supportsConfiguration ? previewDimensions?.widthCm : undefined}
                 heightCm={supportsConfiguration ? previewDimensions?.heightCm : undefined}
                 quantity={supportsConfiguration ? normalizedQuantity : 1}
+                onCapabilitiesDetected={handleCapabilitiesDetected}
               />
             </Suspense>
           )}
@@ -163,10 +176,10 @@ export function ProductDetails({ product }: { product: ProductDetail }) {
                           type="button"
                           onClick={() => setSelectedFinish(option.id)}
                           aria-pressed={selected}
-                          className={`flex items-center gap-2 rounded-[8px] border px-2 py-2 text-left text-sm transition-colors ${selected ? "border-black bg-white" : "border-transparent hover:bg-neutral-50"}`}
+                          className={`flex items-center gap-2 rounded-[8px] border px-2 py-2 text-left text-sm transition-colors ${selected ? "border-green bg-white" : "border-transparent hover:bg-neutral-50"}`}
                         >
                           <span className="h-5 w-5 shrink-0 rounded-full border border-black/15" style={{ backgroundColor: option.previewHex }} aria-hidden="true" />
-                          <span className="min-w-0"><span className="block truncate font-medium text-black">{option.label}</span><span className="block truncate text-xs text-[#777]">{option.rrdCode}</span></span>
+                          <span className="min-w-0 truncate font-medium text-black">{option.label}</span>
                         </button>
                       );
                     })}
@@ -174,13 +187,21 @@ export function ProductDetails({ product }: { product: ProductDetail }) {
                 </fieldset>
 
                 <div className="flex flex-col gap-5">
-                  <fieldset className="flex flex-col gap-3">
+                  <fieldset
+                    disabled={glassControlsDisabled}
+                    aria-describedby={glassControlsDisabled ? "glass-capability-feedback" : undefined}
+                    className={`flex flex-col gap-3 ${glassControlsDisabled ? "opacity-60" : ""}`}
+                  >
                     <legend className="text-base leading-6 font-normal text-[#c3c3c3]">Glass Type</legend>
                     <div className="flex flex-wrap gap-1.5">
                       {glassTypeOptions.map((option) => <button key={option.id} type="button" onClick={() => setSelectedGlassType(option.id)} aria-pressed={selectedGlassType === option.id} className={segmentClass(selectedGlassType === option.id)}>{option.label}</button>)}
                     </div>
                   </fieldset>
-                  <fieldset className="flex flex-col gap-3">
+                  <fieldset
+                    disabled={glassControlsDisabled}
+                    aria-describedby={glassControlsDisabled ? "glass-capability-feedback" : undefined}
+                    className={`flex flex-col gap-3 ${glassControlsDisabled ? "opacity-60" : ""}`}
+                  >
                     <legend className="text-base leading-6 font-normal text-[#c3c3c3]">Glass Color</legend>
                     <div className="flex flex-wrap gap-1.5">
                       {GLASS_COLOR_OPTIONS.map((option) => (
@@ -190,12 +211,21 @@ export function ProductDetails({ product }: { product: ProductDetail }) {
                       ))}
                     </div>
                   </fieldset>
-                  <fieldset className="flex flex-col gap-3">
+                  <fieldset
+                    disabled={glassControlsDisabled}
+                    aria-describedby={glassControlsDisabled ? "glass-capability-feedback" : undefined}
+                    className={`flex flex-col gap-3 ${glassControlsDisabled ? "opacity-60" : ""}`}
+                  >
                     <legend className="text-base leading-6 font-normal text-[#c3c3c3]">Thickness</legend>
                     <div className="flex flex-wrap gap-1.5">
                       {GLASS_THICKNESS_OPTIONS.map((option) => <button key={option.value} type="button" onClick={() => setSelectedThickness(option.value)} aria-pressed={selectedThickness === option.value} className={segmentClass(selectedThickness === option.value)}>{option.label}</button>)}
                     </div>
                   </fieldset>
+                  {glassControlsDisabled && (
+                    <p id="glass-capability-feedback" role="status" className="text-sm leading-5 text-[#777]">
+                      Glass options are unavailable because this product model has no glass components.
+                    </p>
+                  )}
                 </div>
               </div>
 

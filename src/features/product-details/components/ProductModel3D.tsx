@@ -4,7 +4,11 @@ import { Component, Suspense, useEffect, useMemo, type ReactNode } from "react";
 import { Canvas } from "@react-three/fiber";
 import { ContactShadows, Environment, OrbitControls, useGLTF } from "@react-three/drei";
 import * as THREE from "three";
-import { applyPresentationMaterials } from "@/lib/visualization/materialClassifier";
+import {
+  applyPresentationMaterials,
+  detectProductMaterialCapabilities,
+  type ProductMaterialCapabilities,
+} from "@/lib/visualization/materialClassifier";
 import type { AluminumFinishKey } from "@/lib/visualization/colorVariations";
 import type { GlassAppearanceMode, GlassColorKey, GlassThicknessMm } from "@/lib/visualization/types";
 import {
@@ -57,6 +61,7 @@ interface ModelProps {
   widthCm?: number;
   heightCm?: number;
   quantity: number;
+  onCapabilitiesDetected?: (capabilities: ProductMaterialCapabilities) => void;
 }
 
 function disposePresentationMaterials(root: THREE.Object3D) {
@@ -78,8 +83,17 @@ function Model({
   widthCm,
   heightCm,
   quantity,
+  onCapabilitiesDetected,
 }: ModelProps) {
   const { scene } = useGLTF(url);
+  const capabilities = useMemo(
+    () => detectProductMaterialCapabilities(scene),
+    [scene],
+  );
+
+  useEffect(() => {
+    onCapabilitiesDetected?.(capabilities);
+  }, [capabilities, onCapabilitiesDetected]);
 
   const preparedModel = useMemo(() => {
     const clone = scene.clone(true);
@@ -147,9 +161,11 @@ export interface ProductModel3DProps {
   widthCm?: number;
   heightCm?: number;
   quantity: number;
+  onCapabilitiesDetected?: (capabilities: ProductMaterialCapabilities) => void;
 }
 
 export function ProductModel3D(props: ProductModel3DProps) {
+  const { glbUrl, onCapabilitiesDetected, ...modelProps } = props;
   const overflowLabel = getPreviewOverflowLabel(props.quantity);
   const resetKey = [props.glbUrl, props.aluminumFinish, props.glassAppearance, props.glassColor, props.glassThicknessMm].join(":");
 
@@ -166,7 +182,11 @@ export function ProductModel3D(props: ProductModel3DProps) {
           <directionalLight position={[-5, 4, -3]} intensity={0.5} />
           <Environment preset="city" />
           <Suspense fallback={null}>
-            <Model url={props.glbUrl} {...props} />
+            <Model
+              url={glbUrl}
+              onCapabilitiesDetected={onCapabilitiesDetected}
+              {...modelProps}
+            />
             <ContactShadows position={[0, -1.1, 0]} opacity={0.35} scale={6} blur={2.5} far={4} />
           </Suspense>
           <OrbitControls

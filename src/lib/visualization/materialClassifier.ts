@@ -17,6 +17,11 @@ import {
 
 export type MaterialClassification = "Glass" | "Aluminum" | "Hardware";
 
+export interface ProductMaterialCapabilities {
+  hasAluminum: boolean;
+  hasGlass: boolean;
+}
+
 export interface MaterialPaletteOptions {
   aluminumFinish: AluminumFinishKey;
   glassAppearance: GlassAppearanceMode;
@@ -184,6 +189,17 @@ export function classifySceneMesh(object: THREE.Object3D): MaterialClassificatio
       ) {
         return "Hardware";
       }
+      if (
+        matName.includes("frame") ||
+        matName.includes("aluminum") ||
+        matName.includes("aluminium") ||
+        matName.includes("alu_") ||
+        matName.includes("_alu") ||
+        matName.includes("kickplate") ||
+        matName.includes("kick_plate")
+      ) {
+        return "Aluminum";
+      }
 
       // Optical physical properties check (transmission > 0.05 or transparent with lower opacity)
       if ("transmission" in mat && typeof (mat as THREE.MeshPhysicalMaterial).transmission === "number") {
@@ -261,6 +277,22 @@ export function classifySceneMesh(object: THREE.Object3D): MaterialClassificatio
 
   // Tier 5: Default Framing Fallback
   return "Aluminum";
+}
+
+export function detectProductMaterialCapabilities(
+  root: THREE.Object3D,
+): ProductMaterialCapabilities {
+  let hasAluminum = false;
+  let hasGlass = false;
+
+  root.traverse((object) => {
+    if (!(object instanceof THREE.Mesh)) return;
+    const classification = classifySceneMesh(object);
+    if (classification === "Aluminum") hasAluminum = true;
+    if (classification === "Glass") hasGlass = true;
+  });
+
+  return { hasAluminum, hasGlass };
 }
 
 /**
@@ -450,6 +482,7 @@ export function applyPresentationMaterials(
     }
 
     const classification = classifySceneMesh(object);
+    object.userData.materialCategory = classification;
     if (classification === "Glass") {
       object.material = glassMaterial.clone();
       object.castShadow = false;
