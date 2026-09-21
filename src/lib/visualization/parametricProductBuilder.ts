@@ -13,6 +13,8 @@ import { normalizeAluminumFinish } from "./colorVariations";
 export { createWindowGlassMaterial, createMaterialPalette };
 import type {
   GlassAppearanceMode,
+  GlassColorKey,
+  GlassThicknessMm,
   ProductComponentDefinition,
   ProductStructuralDefinition,
   ResolvedStructure,
@@ -27,6 +29,8 @@ export type BuiltParametricProduct = {
 
 export interface ParametricProductBuilderOptions {
   glassAppearance?: GlassAppearanceMode;
+  glassColor?: GlassColorKey;
+  glassThicknessMm?: GlassThicknessMm;
   includeSill?: boolean;
   alumFinish?: string;
 }
@@ -246,8 +250,8 @@ function buildWindowLikeProduct(
   applyPresentationMaterials(group, {
     aluminumFinish: normalizeAluminumFinish(options.alumFinish),
     glassAppearance: options.glassAppearance ?? "frosted",
-    glassColor: "clear",
-    glassThicknessMm: 6,
+    glassColor: options.glassColor ?? "clear",
+    glassThicknessMm: options.glassThicknessMm ?? 6,
   });
   group.userData.productId = definition.product.productId;
   group.userData.templateId = definition.template.templateId;
@@ -350,8 +354,8 @@ function buildAssembledProduct(
   applyPresentationMaterials(group, {
     aluminumFinish: normalizeAluminumFinish(options.alumFinish),
     glassAppearance: options.glassAppearance ?? "frosted",
-    glassColor: "clear",
-    glassThicknessMm: 6,
+    glassColor: options.glassColor ?? "clear",
+    glassThicknessMm: options.glassThicknessMm ?? 6,
   });
 
   group.userData.productId = definition.product.productId;

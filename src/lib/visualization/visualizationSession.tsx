@@ -12,11 +12,16 @@ import type { SpaceImageSession } from "@/lib/imageApi";
 import type {
   ActiveOverlay,
   PlacedOverlay,
+  ProductConfigurationSeed,
   ProductConfigurationSnapshot,
   ProductStructuralDefinition,
   ProductVariationSnapshot,
   VisualizationSessionState,
 } from "./types";
+import {
+  normalizePendingProductConfiguration,
+  normalizeProductConfigurationSeed,
+} from "./configurationPropagation";
 
 export interface TransitionWorkspaceProductOptions {
   nextProductId: string;
@@ -29,6 +34,8 @@ export interface TransitionWorkspaceProductOptions {
 
 export type VisualizationSessionContextValue = VisualizationSessionState & {
   setPreparedSpaceImage: (productId: string, session: SpaceImageSession) => void;
+  setPendingProductConfiguration: (productId: string, configuration: ProductConfigurationSeed) => void;
+  clearPendingProductConfiguration: () => void;
   selectWorkspaceProduct: (
     productId: string,
     workspaceBackgroundDataUrl?: string,
@@ -50,6 +57,7 @@ const VisualizationSessionContext =
 
 export const initialState: VisualizationSessionState = {
   selectedProductId: null,
+  pendingProductConfiguration: null,
   spaceImageSession: null,
   workspaceBackgroundDataUrl: null,
   structuralDefinition: null,
@@ -124,6 +132,7 @@ export function transitionSessionState(
   return {
     ...current,
     selectedProductId: nextProductId,
+    pendingProductConfiguration: null,
     placedOverlays: updatedPlacedOverlays,
     structuralDefinition: isSameProduct ? current.structuralDefinition : null,
     productConfiguration: nextConfiguration ?? null,
@@ -145,24 +154,35 @@ export function VisualizationSessionProvider({
 
   const setPreparedSpaceImage = useCallback(
     (productId: string, session: SpaceImageSession) => {
-      const nextState: VisualizationSessionState = {
-        selectedProductId: productId,
-        spaceImageSession: session,
-        workspaceBackgroundDataUrl: null,
-        structuralDefinition: null,
-        productConfiguration: null,
-        variationSnapshots: [],
-        activeOverlay: null,
-        placedOverlays: [],
-        comparisonOverlays: [],
-        finalSnapshotDataUrl: null,
-      };
-
-      writeStoredVisualizationSession(nextState);
-      setState(nextState);
+      setState((current) => {
+        const nextState = createPreparedSpaceImageState(current, productId, session);
+        writeStoredVisualizationSession(nextState);
+        return nextState;
+      });
     },
     [],
   );
+
+  const setPendingProductConfiguration = useCallback(
+    (productId: string, configuration: ProductConfigurationSeed) => {
+      const normalized = normalizeProductConfigurationSeed(configuration);
+      if (!normalized) return;
+      const nextState = {
+        ...state,
+        pendingProductConfiguration: { productId, configuration: normalized },
+      };
+      writeStoredVisualizationSession(nextState);
+      setState(nextState);
+    },
+    [state],
+  );
+
+  const clearPendingProductConfiguration = useCallback(() => {
+    if (!state.pendingProductConfiguration) return;
+    const nextState = { ...state, pendingProductConfiguration: null };
+    writeStoredVisualizationSession(nextState);
+    setState(nextState);
+  }, [state]);
 
   const selectWorkspaceProduct = useCallback(
     (
@@ -293,6 +313,8 @@ export function VisualizationSessionProvider({
     () => ({
       ...state,
       setPreparedSpaceImage,
+      setPendingProductConfiguration,
+      clearPendingProductConfiguration,
       selectWorkspaceProduct,
       transitionWorkspaceProduct,
       setStructuralDefinition,
@@ -307,6 +329,8 @@ export function VisualizationSessionProvider({
     [
       state,
       setPreparedSpaceImage,
+      setPendingProductConfiguration,
+      clearPendingProductConfiguration,
       selectWorkspaceProduct,
       transitionWorkspaceProduct,
       setStructuralDefinition,
@@ -339,13 +363,12 @@ export function readStoredVisualizationSession(): VisualizationSessionState {
     }
 
     const parsed = JSON.parse(stored) as Partial<VisualizationSessionState>;
-    if (!parsed.selectedProductId || !parsed.spaceImageSession) {
-      return initialState;
-    }
-
     return {
-      selectedProductId: parsed.selectedProductId,
-      spaceImageSession: parsed.spaceImageSession,
+      selectedProductId: typeof parsed.selectedProductId === "string" ? parsed.selectedProductId : null,
+      pendingProductConfiguration: normalizePendingProductConfiguration(parsed.pendingProductConfiguration),
+      spaceImageSession: parsed.spaceImageSession && typeof parsed.spaceImageSession === "object"
+        ? parsed.spaceImageSession
+        : null,
       workspaceBackgroundDataUrl:
         typeof parsed.workspaceBackgroundDataUrl === "string"
           ? parsed.workspaceBackgroundDataUrl
@@ -390,6 +413,7 @@ export function writeStoredVisualizationSession(state: VisualizationSessionState
       SESSION_STORAGE_KEY,
       JSON.stringify({
         selectedProductId: state.selectedProductId,
+        pendingProductConfiguration: state.pendingProductConfiguration,
         spaceImageSession: state.spaceImageSession,
         workspaceBackgroundDataUrl: state.workspaceBackgroundDataUrl,
         structuralDefinition: state.structuralDefinition,
@@ -454,6 +478,7 @@ export function writeStoredVisualizationSession(state: VisualizationSessionState
           SESSION_STORAGE_KEY,
           JSON.stringify({
             selectedProductId: state.selectedProductId,
+            pendingProductConfiguration: state.pendingProductConfiguration,
             spaceImageSession: state.spaceImageSession
               ? {
                   ...state.spaceImageSession,
@@ -482,6 +507,29 @@ export function writeStoredVisualizationSession(state: VisualizationSessionState
       }
     }
   }
+}
+
+export function createPreparedSpaceImageState(
+  current: VisualizationSessionState,
+  productId: string,
+  session: SpaceImageSession,
+): VisualizationSessionState {
+  return {
+    selectedProductId: productId,
+    pendingProductConfiguration:
+      current.pendingProductConfiguration?.productId === productId
+        ? current.pendingProductConfiguration
+        : null,
+    spaceImageSession: session,
+    workspaceBackgroundDataUrl: null,
+    structuralDefinition: null,
+    productConfiguration: null,
+    variationSnapshots: [],
+    activeOverlay: null,
+    placedOverlays: [],
+    comparisonOverlays: [],
+    finalSnapshotDataUrl: null,
+  };
 }
 
 export function clearStoredVisualizationSession() {

@@ -4,6 +4,7 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ChevronRight, Minus, Plus } from "lucide-react";
 import Button from "@/components/shared/Button";
 import type { ProductDetail } from "@/lib/products/getProductById";
@@ -24,6 +25,7 @@ import {
 import type { RrdAluminumFinishKey } from "@/lib/visualization/colorVariations";
 import type { GlassColorKey, GlassThicknessMm } from "@/lib/visualization/types";
 import type { ProductMaterialCapabilities } from "@/lib/visualization/materialClassifier";
+import { useVisualizationSession } from "@/lib/visualization/visualizationSession";
 
 const ProductModel3D = dynamic(
   () => import("./ProductModel3D").then((module) => module.ProductModel3D),
@@ -48,6 +50,11 @@ const segmentClass = (selected: boolean) =>
   }`;
 
 export function ProductDetails({ product }: { product: ProductDetail }) {
+  const router = useRouter();
+  const {
+    setPendingProductConfiguration,
+    clearPendingProductConfiguration,
+  } = useVisualizationSession();
   const defaults = DEFAULT_PRODUCT_PREVIEW_CONFIGURATION;
   const [selectedFinish, setSelectedFinish] = useState<RrdAluminumFinishKey>(defaults.aluminumFinish);
   const [selectedGlassType, setSelectedGlassType] = useState<GlassTypeKey>(defaults.glassType);
@@ -62,6 +69,7 @@ export function ProductDetails({ product }: { product: ProductDetail }) {
     glbUrl: string;
     capabilities: ProductMaterialCapabilities;
   } | null>(null);
+  const [navigationError, setNavigationError] = useState<string | null>(null);
 
   const dimensionResult = validateDimensionPair(width, height);
   useEffect(() => {
@@ -96,6 +104,32 @@ export function ProductDetails({ product }: { product: ProductDetail }) {
 
   const commitQuantity = (value: string | number) => {
     setQuantityInput(String(normalizeProductQuantity(value)));
+  };
+
+  const handleVisualize = () => {
+    const dimensions = validateDimensionPair(width, height);
+    if (dimensions.status === "invalid") {
+      setNavigationError(dimensions.message);
+      return;
+    }
+
+    setNavigationError(null);
+    if (supportsConfiguration) {
+      setPendingProductConfiguration(product.product_id, {
+        aluminumFinish: selectedFinish,
+        glassType: selectedGlassType,
+        glassAppearance,
+        glassColor: selectedGlassColor,
+        glassThicknessMm: selectedThickness,
+        ...(dimensions.status === "valid"
+          ? { widthCm: dimensions.widthCm, heightCm: dimensions.heightCm }
+          : {}),
+        quantity: normalizeProductQuantity(quantityInput),
+      });
+    } else {
+      clearPendingProductConfiguration();
+    }
+    router.push(`/visualize/${product.product_id}/upload`);
   };
 
   return (
@@ -258,9 +292,20 @@ export function ProductDetails({ product }: { product: ProductDetail }) {
             </section>
           )}
 
-          <Link href={`/visualize/${product.product_id}/upload`} className="block w-full">
-            <Button variant="blackBtnWhiteText" value="Visualize on my own Space" leftIcon={null} rightIcon={<Image src="/right_arrow.svg" alt="right arrow" width={25} height={25} />} className="flex w-full justify-center rounded-[25px] py-4 text-center font-medium" />
-          </Link>
+          {navigationError && (
+            <p id="visualization-navigation-feedback" role="alert" className="text-sm text-red-700">
+              {navigationError}
+            </p>
+          )}
+          <Button
+            variant="blackBtnWhiteText"
+            value="Visualize on my own Space"
+            leftIcon={null}
+            rightIcon={<Image src="/right_arrow.svg" alt="" width={25} height={25} />}
+            onClick={handleVisualize}
+            aria-describedby={navigationError ? "visualization-navigation-feedback" : undefined}
+            className="flex w-full justify-center rounded-[25px] py-4 text-center font-medium"
+          />
         </div>
       </div>
     </div>

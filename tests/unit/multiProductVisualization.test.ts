@@ -204,11 +204,11 @@ describe("PRD-F15/PRD-F16: multi-product visualization and comparison", () => {
     );
 
     assert.deepEqual(reconciled, {
-      third: { left: "silver", right: "silver" },
-      first: { left: "black", right: "silver" },
+      third: { left: "white", right: "white" },
+      first: { left: "white", right: "white" },
     });
     assert.deepEqual(createProductVariantSelections([third, first]), {
-      third: { left: "silver", right: "silver" },
+      third: { left: "white", right: "white" },
       first: { left: "white", right: "white" },
     });
   });
@@ -231,8 +231,13 @@ describe("PRD-F15/PRD-F16: multi-product visualization and comparison", () => {
     const incomplete = placedOverlay("incomplete");
     complete.variationImageDataUrls = {
       white: "complete-white",
-      black: "complete-black",
-      silver: "complete-silver",
+      al_1009: "complete-black",
+      analok: "complete-analok",
+      al_1001: "complete-silver",
+      al_1004: "complete-gold",
+      al_1006: "complete-jade",
+      al_1015: "complete-forest",
+      al_1018: "complete-blue",
     };
     incomplete.variationImageDataUrls = {
       white: "incomplete-white",

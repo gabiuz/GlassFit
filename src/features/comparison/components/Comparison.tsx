@@ -16,7 +16,8 @@ import Image from "next/image";
 import Button from "@/components/shared/Button";
 import { useVisualizationSession } from "@/lib/visualization/visualizationSession";
 import {
-  ALUMINUM_COLOR_VARIATIONS,
+  getAluminumVariationMetadata,
+  getAvailableVariationFinishes,
   getAluminumVariationTitle,
   normalizeAluminumFinish,
   type AluminumFinishKey,
@@ -592,6 +593,9 @@ export function Comparison() {
   const leftVariant = selectedProductVariants.left;
   const rightVariant = selectedProductVariants.right;
   const variantDataComplete = hasCompleteVariationLayers(comparisonOverlays);
+  const comparisonVariations = getAvailableVariationFinishes(
+    comparisonOverlays.map((overlay) => overlay.variationImageDataUrls),
+  ).map(getAluminumVariationMetadata);
 
   if (reconciledOverlayIds !== comparisonOverlayIds) {
     setReconciledOverlayIds(comparisonOverlayIds);
@@ -781,7 +785,7 @@ export function Comparison() {
           );
         }
         const targetAwareSnapshots = await Promise.all(
-          ALUMINUM_COLOR_VARIATIONS.map(async (variation) => ({
+          comparisonVariations.map(async (variation) => ({
             ...variation,
             imageDataUrl: await composeComparisonSnapshot(
               beforeImage,
@@ -1146,7 +1150,7 @@ export function Comparison() {
               Panel A - Left
             </p>
             <div className="flex flex-wrap sm:flex-nowrap gap-4 items-center justify-center sm:justify-between w-full">
-              {ALUMINUM_COLOR_VARIATIONS.map((variation) => (
+              {comparisonVariations.map((variation) => (
                 <ComparisonPanelCard
                   key={variation.key}
                   title={variation.title}
@@ -1196,7 +1200,7 @@ export function Comparison() {
               Panel B - Right
             </p>
             <div className="flex flex-wrap sm:flex-nowrap gap-4 items-center justify-center sm:justify-between w-full">
-              {ALUMINUM_COLOR_VARIATIONS.map((variation) => (
+              {comparisonVariations.map((variation) => (
                 <ComparisonPanelCard
                   key={variation.key}
                   title={variation.title}

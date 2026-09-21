@@ -1,6 +1,6 @@
 import type { SpaceImageSession } from "@/lib/imageApi";
 import type { RawMaterial, CalculatedBOMResult } from "@/lib/pricing/types";
-import type { AluminumFinishKey } from "./colorVariations";
+import type { AluminumFinishKey, RrdAluminumFinishKey } from "./colorVariations";
 
 export type JsonObject = Record<string, unknown>;
 
@@ -8,6 +8,23 @@ export type ModelStrategy = "Fixed" | "Parametric";
 export type GlassAppearanceMode = "clear" | "frosted" | "opaque" | "reflective" | "outdoor";
 export type GlassColorKey = "clear" | "bronze" | "silver" | "blue";
 export type GlassThicknessMm = 6 | 8 | 12;
+export type GlassTypeKey = "regular" | "frosted" | "mirror" | "tempered" | "reflective";
+
+export type ProductConfigurationSeed = {
+  aluminumFinish: RrdAluminumFinishKey;
+  glassType: GlassTypeKey;
+  glassAppearance: GlassAppearanceMode;
+  glassColor: GlassColorKey;
+  glassThicknessMm: GlassThicknessMm;
+  widthCm?: number;
+  heightCm?: number;
+  quantity: number;
+};
+
+export type PendingProductConfiguration = {
+  productId: string;
+  configuration: ProductConfigurationSeed;
+};
 
 export type SelectedVisualizationProduct = {
   productId: string;
@@ -157,6 +174,7 @@ export type PlacedOverlay = {
 
 export type VisualizationSessionState = {
   selectedProductId: string | null;
+  pendingProductConfiguration: PendingProductConfiguration | null;
   spaceImageSession: SpaceImageSession | null;
   workspaceBackgroundDataUrl: string | null;
   structuralDefinition: ProductStructuralDefinition | null;
@@ -201,6 +219,9 @@ export type ProductConfigurationSnapshot = {
   structuralWaiver?: boolean;
   aluminumFinish: "black" | "white" | "silver" | string;
   glassAppearance: GlassAppearanceMode;
+  glassColor?: GlassColorKey;
+  glassThicknessMm?: GlassThicknessMm;
+  glassType?: GlassTypeKey;
   includeSill: boolean;
   yaw: number;
   pitch: number;

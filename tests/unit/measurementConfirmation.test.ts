@@ -314,8 +314,13 @@ describe("MS-08 / PRD-F10 / QAD-TC22: Measurement Confirmation Pre-Comparison Wo
         flattenedImageDataUrl: "data:image/png;base64,mockFlattened",
         variationImageDataUrls: {
           white: "data:image/png;base64,mockWhite",
-          black: "data:image/png;base64,mockBlack",
-          silver: "data:image/png;base64,mockSilver",
+          al_1009: "data:image/png;base64,mockBlack",
+          analok: "data:image/png;base64,mockAnalok",
+          al_1001: "data:image/png;base64,mockSilver",
+          al_1004: "data:image/png;base64,mockGold",
+          al_1006: "data:image/png;base64,mockJade",
+          al_1015: "data:image/png;base64,mockForest",
+          al_1018: "data:image/png;base64,mockBlue",
         },
         isActive: true,
         totalPrice: 15000,
@@ -347,8 +352,8 @@ describe("MS-08 / PRD-F10 / QAD-TC22: Measurement Confirmation Pre-Comparison Wo
       assert.equal(result.length, 1);
       assert.equal(result[0].flattenedImageDataUrl, "data:image/png;base64,mockFlattened");
       assert.equal(result[0].variationImageDataUrls?.white, "data:image/png;base64,mockWhite");
-      assert.equal(result[0].variationImageDataUrls?.black, "data:image/png;base64,mockBlack");
-      assert.equal(result[0].variationImageDataUrls?.silver, "data:image/png;base64,mockSilver");
+      assert.equal(result[0].variationImageDataUrls?.al_1009, "data:image/png;base64,mockBlack");
+      assert.equal(result[0].variationImageDataUrls?.al_1001, "data:image/png;base64,mockSilver");
       assert.equal(hasCompleteVariationLayers(result), true);
     });
   });

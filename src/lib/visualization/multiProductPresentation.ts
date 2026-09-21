@@ -1,6 +1,7 @@
 import type { AluminumFinishKey } from "./colorVariations";
 import {
   ALUMINUM_COLOR_VARIATIONS,
+  getAvailableVariationFinishes,
   normalizeAluminumFinish,
 } from "./colorVariations";
 import type {
@@ -67,10 +68,14 @@ export function hasCompleteVariationLayers(overlays: PlacedOverlay[]) {
 export function createProductVariantSelections(
   overlays: PlacedOverlay[],
 ): ProductVariantSelections {
+  const available = getAvailableVariationFinishes(
+    overlays.map((overlay) => overlay.variationImageDataUrls),
+  );
   return Object.fromEntries(
     overlays.map((overlay) => {
       const finish = normalizeAluminumFinish(overlay.configuration.aluminumFinish);
-      return [overlay.overlayId, { left: finish, right: finish }];
+      const initial = available.includes(finish) ? finish : "white";
+      return [overlay.overlayId, { left: initial, right: initial }];
     }),
   );
 }
@@ -80,11 +85,19 @@ export function reconcileProductVariantSelections(
   overlays: PlacedOverlay[],
 ): ProductVariantSelections {
   const initialized = createProductVariantSelections(overlays);
+  const available = getAvailableVariationFinishes(
+    overlays.map((overlay) => overlay.variationImageDataUrls),
+  );
   return Object.fromEntries(
-    overlays.map((overlay) => [
-      overlay.overlayId,
-      current[overlay.overlayId] ?? initialized[overlay.overlayId],
-    ]),
+    overlays.map((overlay) => {
+      const existing = current[overlay.overlayId] ?? initialized[overlay.overlayId];
+      const left = normalizeAluminumFinish(existing.left);
+      const right = normalizeAluminumFinish(existing.right);
+      return [overlay.overlayId, {
+        left: available.includes(left) ? left : "white",
+        right: available.includes(right) ? right : "white",
+      }];
+    }),
   );
 }
 

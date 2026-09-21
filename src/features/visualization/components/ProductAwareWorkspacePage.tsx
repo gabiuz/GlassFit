@@ -6,6 +6,7 @@ import { HeroSection, ProductModelWorkspace } from "@/features/visualization";
 import { useVisualizationSession } from "@/lib/visualization/visualizationSession";
 import type { ProductStructuralDefinition } from "@/lib/visualization/types";
 import type { CatalogProduct } from "@/lib/products/types";
+import { getMatchingProductConfigurationSeed } from "@/lib/visualization/configurationPropagation";
 
 export function ProductAwareWorkspacePage({
   productId,
@@ -18,24 +19,28 @@ export function ProductAwareWorkspacePage({
 }) {
   const router = useRouter();
   const {
-    selectedProductId,
     spaceImageSession,
     workspaceBackgroundDataUrl,
     productConfiguration,
+    pendingProductConfiguration,
     placedOverlays,
     finalSnapshotDataUrl,
     setStructuralDefinition,
     setProductConfiguration,
+    clearPendingProductConfiguration,
     setVariationSnapshots,
     setPlacedOverlays,
     setComparisonOverlays,
     setFinalSnapshotDataUrl,
-    selectWorkspaceProduct,
     transitionWorkspaceProduct,
     resetVisualizationSession,
   } = useVisualizationSession();
 
   const hasValidSession = Boolean(spaceImageSession);
+  const matchingProductConfiguration = getMatchingProductConfigurationSeed(
+    pendingProductConfiguration,
+    productId,
+  );
 
   useEffect(() => {
     if (!hasValidSession) {
@@ -50,6 +55,16 @@ export function ProductAwareWorkspacePage({
     router,
     setStructuralDefinition,
     structuralDefinition,
+  ]);
+
+  useEffect(() => {
+    if (matchingProductConfiguration && productConfiguration) {
+      clearPendingProductConfiguration();
+    }
+  }, [
+    clearPendingProductConfiguration,
+    matchingProductConfiguration,
+    productConfiguration,
   ]);
 
   if (!hasValidSession || !spaceImageSession) {
@@ -77,6 +92,7 @@ export function ProductAwareWorkspacePage({
           selectedProductName={structuralDefinition.product.productName}
           initialSnapshotDataUrl={finalSnapshotDataUrl}
           initialConfiguration={productConfiguration}
+          initialProductConfiguration={productConfiguration ? null : matchingProductConfiguration}
           placedOverlays={placedOverlays}
           onConfigurationChange={setProductConfiguration}
           onVariationSnapshotsChange={setVariationSnapshots}
