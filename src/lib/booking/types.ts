@@ -35,19 +35,44 @@ export type SignedLinkStatus = z.infer<typeof SignedLinkStatusSchema>;
 // 2. Input / Output Schemas for Generating Signed Links
 // ----------------------------------------------------------------------------
 
+export const ItemizedProductQuotationInputSchema = z.object({
+  itemId: z.string(),
+  productId: z.string().optional(),
+  productName: z.string(),
+  productType: z.string().default("Window & Door"),
+  variantName: z.string().optional(),
+  specSummary: z.string().optional(),
+  dimensionsFormatted: z.string().optional(),
+  widthMm: z.number().positive(),
+  heightMm: z.number().positive(),
+  panelCount: z.number().int().positive().default(2),
+  hasSill: z.boolean().default(true),
+  structuralWaiver: z.boolean().default(false),
+  finishType: z.string().default("Analok"),
+  glassType: z.string().default("6mm_bronze"),
+  quantity: z.number().positive().default(1),
+  unitPrice: z.number().nonnegative(),
+  totalPrice: z.number().nonnegative(),
+  imageUrl: z.string().optional(),
+  bomResult: z.unknown().optional(),
+});
+export type ItemizedProductQuotationInput = z.infer<typeof ItemizedProductQuotationInputSchema>;
+
 export const GenerateBookingLinkInputSchema = z.object({
   quotationId: z.string().uuid().optional(),
   productId: z.string().uuid().optional(),
   productName: z.string().min(1).default("Series 798 Sliding Window"),
   productType: z.string().default("Sliding Window"),
-  widthMm: z.number().positive(),
-  heightMm: z.number().positive(),
+  widthMm: z.number().positive().optional().default(1200),
+  heightMm: z.number().positive().optional().default(1200),
   panelCount: z.number().int().positive().default(2),
   hasSill: z.boolean().default(true),
   finishType: z.string().default("Analok"),
   glassType: z.string().default("6mm_bronze"),
   structuralWaiver: z.boolean().default(false),
   finalSnapshotDataUrl: z.string().nullable().optional(),
+  items: z.array(ItemizedProductQuotationInputSchema).optional(),
+  totalEstimatedAmount: z.number().nonnegative().optional(),
 });
 export type GenerateBookingLinkInput = z.infer<typeof GenerateBookingLinkInputSchema>;
 
@@ -58,7 +83,9 @@ export const GeneratedBookingLinkResultSchema = z.object({
   referenceCode: z.string(),
   tokenHash: z.string().regex(/^[0-9a-fA-F]{64}$/),
   signedUrl: z.string(),
+  shareableUrl: z.string().default(""),
   displayLink: z.string(),
+  displayBadge: z.string().default(""),
   expiresAt: z.string(),
   totalEstimatedAmount: z.number().nonnegative(),
   hasStructuralWaiver: z.boolean(),
@@ -87,6 +114,28 @@ export type RecordBookingRequestResult = z.infer<typeof RecordBookingRequestResu
 // 4. Public Reference View Schema (/q/[code])
 // ----------------------------------------------------------------------------
 
+export const PublicQuotationItemSchema = z.object({
+  itemId: z.string(),
+  productId: z.string().optional(),
+  productName: z.string(),
+  productType: z.string().default("Window & Door"),
+  variantName: z.string().optional(),
+  specSummary: z.string().optional(),
+  dimensionsFormatted: z.string().optional(),
+  widthMm: z.number(),
+  heightMm: z.number(),
+  panelCount: z.number(),
+  hasSill: z.boolean(),
+  structuralWaiver: z.boolean(),
+  finishType: z.string(),
+  glassType: z.string(),
+  quantity: z.number(),
+  unitPrice: z.number(),
+  totalPrice: z.number(),
+  imageUrl: z.string().nullable().optional(),
+});
+export type PublicQuotationItem = z.infer<typeof PublicQuotationItemSchema>;
+
 export const PublicQuotationSummarySchema = z.object({
   referenceCode: z.string(),
   quotationNumber: z.string(),
@@ -103,8 +152,19 @@ export const PublicQuotationSummarySchema = z.object({
   totalEstimatedAmount: z.number(),
   createdAtFormatted: z.string(),
   expiresAtFormatted: z.string(),
+  isExpired: z.boolean().default(false),
   snapshotImageUrl: z.string().nullable(),
   status: SignedLinkStatusSchema,
+  isMultiProduct: z.boolean().default(false),
+  items: z.array(PublicQuotationItemSchema).optional(),
+  consolidatedMetrics: z
+    .object({
+      totalQuantity: z.number(),
+      totalFramingMeters: z.number(),
+      totalGlazingSqm: z.number(),
+      totalLaborCost: z.number(),
+    })
+    .optional(),
   groups: z.array(
     z.object({
       item_group_name: z.string(),
@@ -112,6 +172,7 @@ export const PublicQuotationSummarySchema = z.object({
       unit_label: z.string(),
       unit_price: z.number(),
       estimated_subtotal: z.number(),
+      product_name: z.string().optional(),
     })
   ),
 });

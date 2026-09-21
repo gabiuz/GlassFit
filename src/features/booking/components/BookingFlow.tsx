@@ -39,7 +39,9 @@ export function BookingFlow() {
   const [quotationNumber, setQuotationNumber] = useState("Q-2026-0482");
   const [referenceCode, setReferenceCode] = useState("CF-2026-001");
   const [generatedLink, setGeneratedLink] = useState("glassfit.ph/q/cf-2026-001");
+  const [shareableUrl, setShareableUrl] = useState("");
   const [activeLinkId, setActiveLinkId] = useState<string | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
 
   const {
     productConfiguration,
@@ -59,6 +61,7 @@ export function BookingFlow() {
         } = await supabase.auth.getUser();
 
         if (user) {
+          setIsAuthenticated(true);
           const { data: profile } = await supabase
             .from("profiles")
             .select("full_name, contact_number, email")
@@ -72,9 +75,12 @@ export function BookingFlow() {
           } else if (user.user_metadata?.full_name) {
             setCustomerName(user.user_metadata.full_name);
           }
+        } else {
+          setIsAuthenticated(false);
         }
       } catch (err) {
         console.error("Failed to load user profile in booking flow:", err);
+        setIsAuthenticated(false);
       }
     }
 
@@ -309,24 +315,27 @@ export function BookingFlow() {
         hasSill,
         finishType,
         glassType,
-        structuralWaiver,
-        productName: structuralDefinition?.product.productName || "Series 798 Sliding Window",
-        productType: structuralDefinition?.product.productType || "Sliding Window",
+        structuralWaiver: hasAnyStructuralWaiver,
+        productName: productNameSummary,
+        productType:
+          quotationItems.length > 1
+            ? "Multi-Product Installation"
+            : structuralDefinition?.product.productType || "Sliding Window",
         finalSnapshotDataUrl,
+        items: quotationItems.length > 0 ? quotationItems : undefined,
+        totalEstimatedAmount: effectiveTotal,
       });
 
       setQuotationNumber(result.quotationNumber);
       setReferenceCode(result.referenceCode);
-      setGeneratedLink(result.displayLink);
+      setGeneratedLink(result.displayBadge || result.displayLink);
+      setShareableUrl(result.shareableUrl);
       setActiveLinkId(result.linkId);
       setIsLinkGenerated(true);
     } catch (err: unknown) {
       console.error("Failed to generate signed reference link:", err);
-      // If unauthenticated or token expired, give friendly fallback and keep standard flow
-      const fallbackRef = `CF-2026-${Math.floor(100 + Math.random() * 900)}`;
-      setReferenceCode(fallbackRef);
-      setGeneratedLink(`glassfit.ph/q/${fallbackRef.toLowerCase()}`);
-      setIsLinkGenerated(true);
+      const msg = err instanceof Error ? err.message : "Failed to generate consultation reference link.";
+      setErrorMessage(msg);
     } finally {
       setIsGeneratingLink(false);
     }
@@ -366,8 +375,27 @@ export function BookingFlow() {
       {step < 5 && <Stepper currentStep={step} />}
 
       {errorMessage && (
-        <div className="bg-red-50 border border-red-300 text-red-700 text-sm rounded-[14px] p-4 text-center">
-          {errorMessage}
+        <div className="bg-red-50 border border-red-300 text-red-700 text-sm rounded-[14px] p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex flex-col gap-1 text-left">
+            <span className="font-semibold text-red-900">Action Required</span>
+            <span>{errorMessage}</span>
+          </div>
+          {errorMessage.toLowerCase().includes("authentication") || errorMessage.toLowerCase().includes("account") || errorMessage.toLowerCase().includes("log in") ? (
+            <div className="flex items-center gap-3 shrink-0">
+              <button
+                onClick={() => router.push("/login?redirect=/send-booking")}
+                className="bg-[#0f1422] text-white text-xs px-4 py-2 rounded-full hover:bg-black transition-colors"
+              >
+                Log In
+              </button>
+              <button
+                onClick={() => router.push("/register?redirect=/send-booking")}
+                className="bg-white border border-[#0f1422] text-[#0f1422] text-xs px-4 py-2 rounded-full hover:bg-neutral-50 transition-colors"
+              >
+                Register
+              </button>
+            </div>
+          ) : null}
         </div>
       )}
 
@@ -391,6 +419,7 @@ export function BookingFlow() {
             isGenerating={isGeneratingLink}
             onGenerateLink={handleGenerateLink}
             generatedLink={generatedLink}
+            shareableUrl={shareableUrl}
             totalEstimatePhp={effectiveTotal}
             hasStructuralWaiver={hasAnyStructuralWaiver}
             customerName={customerName}
@@ -404,6 +433,7 @@ export function BookingFlow() {
         {step === 3 && (
           <Step3SendReference
             generatedLink={generatedLink}
+            shareableUrl={shareableUrl}
             onSend={handleSend}
             totalEstimatePhp={effectiveTotal}
             hasStructuralWaiver={hasAnyStructuralWaiver}
