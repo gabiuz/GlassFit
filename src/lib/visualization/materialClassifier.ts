@@ -6,14 +6,27 @@
  */
 
 import * as THREE from "three";
-import type { GlassAppearanceMode } from "./types";
+import type { AluminumFinishKey } from "./colorVariations";
+import type { GlassAppearanceMode, GlassColorKey, GlassThicknessMm } from "./types";
 import type { RawMaterial } from "@/lib/pricing/types";
+import {
+  findFinishOption,
+  findGlassColorOption,
+  findGlassThicknessOption,
+} from "@/lib/products/materialMapping";
 
 export type MaterialClassification = "Glass" | "Aluminum" | "Hardware";
 
+export interface ProductMaterialCapabilities {
+  hasAluminum: boolean;
+  hasGlass: boolean;
+}
+
 export interface MaterialPaletteOptions {
-  alumFinish?: string; // "black" | "white" | "silver" | "bronze"
-  glassAppearance: GlassAppearanceMode; // "clear" | "frosted" | "reflective" | "opaque" | "outdoor"
+  aluminumFinish: AluminumFinishKey;
+  glassAppearance: GlassAppearanceMode;
+  glassColor: GlassColorKey;
+  glassThicknessMm: GlassThicknessMm;
 }
 
 export interface MaterialClassificationContext {
@@ -176,6 +189,17 @@ export function classifySceneMesh(object: THREE.Object3D): MaterialClassificatio
       ) {
         return "Hardware";
       }
+      if (
+        matName.includes("frame") ||
+        matName.includes("aluminum") ||
+        matName.includes("aluminium") ||
+        matName.includes("alu_") ||
+        matName.includes("_alu") ||
+        matName.includes("kickplate") ||
+        matName.includes("kick_plate")
+      ) {
+        return "Aluminum";
+      }
 
       // Optical physical properties check (transmission > 0.05 or transparent with lower opacity)
       if ("transmission" in mat && typeof (mat as THREE.MeshPhysicalMaterial).transmission === "number") {
@@ -255,6 +279,22 @@ export function classifySceneMesh(object: THREE.Object3D): MaterialClassificatio
   return "Aluminum";
 }
 
+export function detectProductMaterialCapabilities(
+  root: THREE.Object3D,
+): ProductMaterialCapabilities {
+  let hasAluminum = false;
+  let hasGlass = false;
+
+  root.traverse((object) => {
+    if (!(object instanceof THREE.Mesh)) return;
+    const classification = classifySceneMesh(object);
+    if (classification === "Aluminum") hasAluminum = true;
+    if (classification === "Glass") hasGlass = true;
+  });
+
+  return { hasAluminum, hasGlass };
+}
+
 /**
  * Classify a component definition or metadata object before 3D instantiation.
  */
@@ -305,11 +345,26 @@ function getOutdoorTexture(): THREE.Texture {
   return texture;
 }
 
-export function createWindowGlassMaterial(mode: GlassAppearanceMode): THREE.Material {
+export function createWindowGlassMaterial(
+  mode: GlassAppearanceMode,
+  glassColor: GlassColorKey = "clear",
+  glassThicknessMm: GlassThicknessMm = 6,
+): THREE.Material {
+  const colorOption = findGlassColorOption(glassColor);
+  const thicknessOption = findGlassThicknessOption(glassThicknessMm);
+  if (!colorOption || !thicknessOption) {
+    throw new Error("Unknown glass presentation option.");
+  }
+  const tint = new THREE.Color(colorOption.previewHex);
+  const physicalOptics = {
+    thickness: glassThicknessMm / 1000,
+    attenuationColor: tint,
+    attenuationDistance: thicknessOption.attenuationDistance,
+  };
   switch (mode) {
     case "clear":
       return new THREE.MeshPhysicalMaterial({
-        color: new THREE.Color(0xf0f5f7),
+        color: tint,
         transparent: true,
         opacity: 0.18,          // Low opacity allows the room background to show through naturally
         transmission: 0.88,     // High transmission for true clear glass behavior
@@ -320,10 +375,11 @@ export function createWindowGlassMaterial(mode: GlassAppearanceMode): THREE.Mate
         clearcoatRoughness: 0.04,
         side: THREE.DoubleSide,
         depthWrite: false,      // Prevents occlusion sorting artifacts with background image
+        ...physicalOptics,
       });
     case "reflective":
       return new THREE.MeshPhysicalMaterial({
-        color: new THREE.Color(0x9eb1bc),
+        color: tint,
         transparent: true,
         opacity: 0.65,
         transmission: 0.35,
@@ -334,6 +390,7 @@ export function createWindowGlassMaterial(mode: GlassAppearanceMode): THREE.Mate
         clearcoatRoughness: 0.06,
         side: THREE.DoubleSide,
         depthWrite: true,
+        ...physicalOptics,
       });
     case "opaque":
       return new THREE.MeshStandardMaterial({
@@ -358,7 +415,7 @@ export function createWindowGlassMaterial(mode: GlassAppearanceMode): THREE.Mate
     case "frosted":
     default:
       return new THREE.MeshPhysicalMaterial({
-        color: new THREE.Color(0xe4ebed),
+        color: tint,
         transparent: true,
         opacity: 0.82,
         transmission: 0.15,
@@ -369,6 +426,7 @@ export function createWindowGlassMaterial(mode: GlassAppearanceMode): THREE.Mate
         clearcoatRoughness: 0.60,
         side: THREE.DoubleSide,
         depthWrite: true,
+        ...physicalOptics,
       });
   }
 }
@@ -377,37 +435,30 @@ export function createWindowGlassMaterial(mode: GlassAppearanceMode): THREE.Mate
  * Creates decoupled material palettes for Aluminum Framing, Optical Glass, and Mechanical Hardware.
  */
 export function createMaterialPalette(options: MaterialPaletteOptions) {
-  const isBlack = options.alumFinish === "black";
-  const isWhite = options.alumFinish === "white";
-  const isSilver = options.alumFinish === "silver";
-  const isBronze = options.alumFinish === "bronze";
-
-  // 1. Aluminum Structural Frame Material (Driven strictly by alumFinish)
-  const frameColor = isBlack
-    ? 0x232527
-    : isWhite
-      ? 0xeceae4
-      : isSilver
-        ? 0xc8cbce
-        : isBronze
-          ? 0x3e332b
-          : 0x232527;
-
-  const frameMetalness = isWhite ? 0.08 : isSilver ? 0.85 : isBronze ? 0.55 : 0.45;
-  const frameRoughness = isBlack ? 0.28 : isWhite ? 0.32 : isSilver ? 0.22 : 0.26;
-  const frameClearcoat = isWhite ? 0.35 : isSilver ? 0.60 : isBronze ? 0.45 : 0.40;
-  const frameClearcoatRoughness = isWhite ? 0.25 : isSilver ? 0.15 : isBronze ? 0.20 : 0.20;
+  const legacyFinish = options.aluminumFinish === "black"
+    ? { previewHex: "#232527", metalness: 0.45, roughness: 0.28, clearcoat: 0.4, clearcoatRoughness: 0.2 }
+    : options.aluminumFinish === "silver"
+      ? { previewHex: "#C8CBCE", metalness: 0.85, roughness: 0.22, clearcoat: 0.6, clearcoatRoughness: 0.15 }
+      : null;
+  const finish = findFinishOption(options.aluminumFinish) ?? legacyFinish;
+  if (!finish) {
+    throw new Error(`Unknown aluminum finish: ${options.aluminumFinish}`);
+  }
 
   const frameMaterial = new THREE.MeshPhysicalMaterial({
-    color: frameColor,
-    metalness: frameMetalness,
-    roughness: frameRoughness,
-    clearcoat: frameClearcoat,
-    clearcoatRoughness: frameClearcoatRoughness,
+    color: finish.previewHex,
+    metalness: finish.metalness,
+    roughness: finish.roughness,
+    clearcoat: finish.clearcoat,
+    clearcoatRoughness: finish.clearcoatRoughness,
   });
 
   // 2. Optical Glass Material (Driven strictly by glassAppearance)
-  const glassMaterial = createWindowGlassMaterial(options.glassAppearance);
+  const glassMaterial = createWindowGlassMaterial(
+    options.glassAppearance,
+    options.glassColor,
+    options.glassThicknessMm,
+  );
 
   // 3. Mechanical Hardware Material (Neutral Dark Metallic / Delrin Nylon)
   const hardwareMaterial = new THREE.MeshStandardMaterial({
@@ -421,13 +472,9 @@ export function createMaterialPalette(options: MaterialPaletteOptions) {
 
 export function applyPresentationMaterials(
   group: THREE.Group,
-  glassAppearance: GlassAppearanceMode,
-  alumFinish?: string,
+  options: MaterialPaletteOptions,
 ) {
-  const { frameMaterial, glassMaterial, hardwareMaterial } = createMaterialPalette({
-    alumFinish,
-    glassAppearance,
-  });
+  const { frameMaterial, glassMaterial, hardwareMaterial } = createMaterialPalette(options);
 
   group.traverse((object) => {
     if (!(object instanceof THREE.Mesh)) {
@@ -435,6 +482,7 @@ export function applyPresentationMaterials(
     }
 
     const classification = classifySceneMesh(object);
+    object.userData.materialCategory = classification;
     if (classification === "Glass") {
       object.material = glassMaterial.clone();
       object.castShadow = false;

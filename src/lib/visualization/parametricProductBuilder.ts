@@ -8,6 +8,7 @@ import {
   createMaterialPalette,
   createWindowGlassMaterial,
 } from "./materialClassifier";
+import { normalizeAluminumFinish } from "./colorVariations";
 
 export { createWindowGlassMaterial, createMaterialPalette };
 import type {
@@ -242,7 +243,12 @@ function buildWindowLikeProduct(
     );
   }
 
-  applyPresentationMaterials(group, options.glassAppearance ?? "frosted", options.alumFinish);
+  applyPresentationMaterials(group, {
+    aluminumFinish: normalizeAluminumFinish(options.alumFinish),
+    glassAppearance: options.glassAppearance ?? "frosted",
+    glassColor: "clear",
+    glassThicknessMm: 6,
+  });
   group.userData.productId = definition.product.productId;
   group.userData.templateId = definition.template.templateId;
   group.userData.resolvedStructure = resolved;
@@ -341,7 +347,12 @@ function buildAssembledProduct(
 
   group.scale.set(scaleX, scaleY, scaleZ);
 
-  applyPresentationMaterials(group, options.glassAppearance ?? "frosted", options.alumFinish);
+  applyPresentationMaterials(group, {
+    aluminumFinish: normalizeAluminumFinish(options.alumFinish),
+    glassAppearance: options.glassAppearance ?? "frosted",
+    glassColor: "clear",
+    glassThicknessMm: 6,
+  });
 
   group.userData.productId = definition.product.productId;
   group.userData.templateId = definition.template.templateId;
