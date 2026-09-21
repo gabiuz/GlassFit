@@ -315,6 +315,7 @@ type ComparisonPanelCardProps = {
   swatchClassName: string;
   isSelected: boolean;
   isDisabled: boolean;
+  disabledLabel: string;
   onClick: () => void;
 };
 
@@ -326,54 +327,45 @@ function ComparisonPanelCard({
   swatchClassName,
   isSelected,
   isDisabled,
+  disabledLabel,
   onClick,
 }: ComparisonPanelCardProps) {
   return (
-    <div
-      onClick={!isDisabled ? onClick : undefined}
-      className={`flex flex-col gap-2.25 items-center relative w-full max-w-[176px] select-none ${isDisabled ? "cursor-not-allowed" : "cursor-pointer group"
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={isDisabled}
+      aria-pressed={isSelected}
+      className={`group relative flex min-h-24 w-full items-center gap-3 rounded-[16px] border p-2.5 text-left outline-none transition-[border-color,background-color,box-shadow,transform] duration-150 ease-out focus-visible:ring-2 focus-visible:ring-[#07b6d3] focus-visible:ring-offset-2 active:scale-[0.98] disabled:active:scale-100 ${isSelected
+        ? "border-[#129044] bg-[#edf8f1] shadow-[0_0_0_1px_rgba(18,144,68,0.12)]"
+        : isDisabled
+          ? "cursor-not-allowed border-neutral-200 bg-neutral-100/80 opacity-55"
+          : "cursor-pointer border-neutral-200 bg-white hover:border-[#07b6d3] hover:bg-[#f3fbfc] hover:shadow-sm"
         }`}
     >
       <div
-        className={`relative rounded-[20px] overflow-hidden shrink-0 w-24 h-24 sm:w-37.5 sm:h-37.5 transition-all duration-300 ${isSelected
-          ? "border-[5px] border-[#129044] shadow-lg scale-105"
-          : "border border-neutral-200/60 shadow-sm hover:scale-[1.02] hover:shadow-md"
-          }`}
+        className={`relative size-18 shrink-0 overflow-hidden rounded-[12px] border bg-neutral-100 ${isSelected ? "border-[#129044]" : "border-neutral-200"}`}
       >
         {preview ?? <AfterState src={imageSrc} />}
-        <div className={`absolute bottom-2 left-2 h-7 w-7 rounded-full shadow-md ${swatchClassName}`} />
-
-        {isSelected && (
-          <div className="absolute top-2.75 right-2.75 w-7.5 h-7.5 bg-[#129044]/30 border-[2.5px] border-[#129044] rounded-[50%] flex items-center justify-center z-20 animate-in zoom-in duration-200">
-            <Check className="w-4 h-4 text-[#129044] stroke-[3.5px]" />
-          </div>
-        )}
-        {isDisabled && (
-          <>
-            <div className="absolute inset-0 bg-black/55 z-10" />
-            <div className="absolute inset-0 flex items-center justify-center z-20">
-              <div className="w-9 h-9 bg-black/60 rounded-full flex items-center justify-center border border-white/20">
-                <Image
-                  src="/eye-slash.svg"
-                  alt="Disabled"
-                  width={30}
-                  height={30}
-                />
-              </div>
-            </div>
-          </>
-        )}
+        <span className={`absolute bottom-1.5 left-1.5 size-5 rounded-full border-2 border-white shadow-sm ${swatchClassName}`} aria-hidden="true" />
       </div>
 
-      <div className="flex flex-col items-center w-full leading-[1.4] text-center">
-        <p className="font-medium text-black text-[16px] w-full transition-colors duration-200 group-hover:text-black">
+      <span className="min-w-0 flex-1 leading-[1.35]">
+        <span className="block truncate text-sm font-medium text-[#0f1422]">
           {title}
-        </p>
-        <p className="font-normal text-black/60 text-[14px] w-full">
-          {label}
-        </p>
-      </div>
-    </div>
+        </span>
+        <span className="mt-1 block line-clamp-2 text-xs font-normal text-black/55">
+          {isDisabled && !isSelected ? disabledLabel : label}
+        </span>
+      </span>
+
+      <span className={`flex size-6 shrink-0 items-center justify-center rounded-full border transition-[background-color,border-color] duration-150 ${isSelected
+        ? "border-[#129044] bg-[#129044] text-white"
+        : "border-neutral-300 bg-white text-transparent"
+        }`} aria-hidden="true">
+        <Check className="size-3.5 stroke-[3]" />
+      </span>
+    </button>
   );
 }
 
@@ -1143,13 +1135,30 @@ export function Comparison() {
 
       {/* Product Variant Selection Panel */}
       {!isBeforeAfter && (
-        <div className="w-full flex flex-col lg:flex-row gap-6 lg:gap-8 justify-center items-center py-6 animate-in fade-in slide-in-from-bottom-5 duration-500">
-          {/* Panel A - Left */}
-          <div className="bg-[rgba(245,245,245,0.4)] backdrop-blur-md border border-white/30 p-7.5 rounded-[20px] shadow-[0px_0px_10px_0px_rgba(0,0,0,0.08)] flex flex-col gap-5 items-start w-full max-w-155">
-            <p className="font-medium text-black text-2xl tracking-[-0.456px] leading-[1.2]">
-              Panel A - Left
+        <section className="w-full rounded-[20px] border border-neutral-200 bg-[#f5f5f5] p-4 shadow-sm sm:p-6" aria-labelledby="variant-selection-heading">
+          <div className="mb-5 flex flex-col gap-1">
+            <h2 id="variant-selection-heading" className="text-xl font-medium tracking-[-0.38px] text-[#0f1422] sm:text-2xl">
+              Choose finishes for each panel
+            </h2>
+            <p className="text-sm text-black/60">
+              Panel A appears on the left and Panel B appears on the right. A finish can only be used on one side at a time.
             </p>
-            <div className="flex flex-wrap sm:flex-nowrap gap-4 items-center justify-center sm:justify-between w-full">
+          </div>
+
+          <div className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] lg:gap-5">
+          {/* Panel A - Left */}
+          <fieldset className="min-w-0 rounded-[16px] border border-neutral-200 bg-white p-3.5 sm:p-4">
+            <legend className="sr-only">Panel A finish</legend>
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-lg font-medium text-[#0f1422]">Panel A</p>
+                <p className="text-xs text-black/50">Left side</p>
+              </div>
+              <span className="max-w-[65%] truncate rounded-full bg-[#edf8f1] px-3 py-1.5 text-xs font-medium text-[#106b34]">
+                {getVariantLabel(leftVariant)}
+              </span>
+            </div>
+            <div className="grid max-h-88 grid-cols-1 gap-2.5 overflow-y-auto pr-1 sm:grid-cols-2" role="group" aria-label="Panel A finish options">
               {comparisonVariations.map((variation) => (
                 <ComparisonPanelCard
                   key={variation.key}
@@ -1171,35 +1180,44 @@ export function Comparison() {
                   swatchClassName={variation.swatchClassName}
                   isSelected={leftVariant === variation.key}
                   isDisabled={(!variantDataComplete && variationSnapshots.length === 0) || rightVariant === variation.key}
+                  disabledLabel="Selected in Panel B"
                   onClick={() => handleLeftVariantChange(variation.key)}
                 />
               ))}
             </div>
-          </div>
+          </fieldset>
 
           {/* Swap Button */}
           <button
             type="button"
             onClick={handleSwap}
-            className="bg-black hover:bg-black/90 active:scale-95 text-white flex flex-col items-center justify-center gap-1.5 w-19 h-19 rounded-full shadow-[0px_0px_5px_0px_rgba(0,0,0,0.25)] shrink-0 transition-all cursor-pointer border border-white/10"
+            aria-label="Swap Panel A and Panel B finishes"
+            className="mx-auto flex h-11 min-w-28 shrink-0 cursor-pointer items-center justify-center gap-2 self-center rounded-full border border-white/10 bg-black px-4 text-white shadow-sm outline-none transition-[background-color,transform] duration-150 ease-out hover:bg-black/90 focus-visible:ring-2 focus-visible:ring-[#07b6d3] focus-visible:ring-offset-2 active:scale-[0.97] lg:size-13 lg:min-w-0 lg:flex-col lg:gap-0.5 lg:px-0"
           >
             <Image
               src="/swap-icons.svg"
-              alt="Swap"
-              width={20}
-              height={20}
+              alt=""
+              width={18}
+              height={18}
             />
-            <span className="text-[12px] font-normal tracking-[-0.228px] leading-[1.4] whitespace-nowrap">
+            <span className="whitespace-nowrap text-xs font-normal lg:sr-only">
               Swap
             </span>
           </button>
 
           {/* Panel B - Right */}
-          <div className="bg-[rgba(245,245,245,0.4)] backdrop-blur-md border border-white/30 p-7.5 rounded-[20px] shadow-[0px_0px_10px_0px_rgba(0,0,0,0.08)] flex flex-col gap-5 items-start w-full max-w-155">
-            <p className="font-medium text-black text-2xl tracking-[-0.456px] leading-[1.2]">
-              Panel B - Right
-            </p>
-            <div className="flex flex-wrap sm:flex-nowrap gap-4 items-center justify-center sm:justify-between w-full">
+          <fieldset className="min-w-0 rounded-[16px] border border-neutral-200 bg-white p-3.5 sm:p-4">
+            <legend className="sr-only">Panel B finish</legend>
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-lg font-medium text-[#0f1422]">Panel B</p>
+                <p className="text-xs text-black/50">Right side</p>
+              </div>
+              <span className="max-w-[65%] truncate rounded-full bg-[#edf8f1] px-3 py-1.5 text-xs font-medium text-[#106b34]">
+                {getVariantLabel(rightVariant)}
+              </span>
+            </div>
+            <div className="grid max-h-88 grid-cols-1 gap-2.5 overflow-y-auto pr-1 sm:grid-cols-2" role="group" aria-label="Panel B finish options">
               {comparisonVariations.map((variation) => (
                 <ComparisonPanelCard
                   key={variation.key}
@@ -1221,12 +1239,14 @@ export function Comparison() {
                   swatchClassName={variation.swatchClassName}
                   isSelected={rightVariant === variation.key}
                   isDisabled={(!variantDataComplete && variationSnapshots.length === 0) || leftVariant === variation.key}
+                  disabledLabel="Selected in Panel A"
                   onClick={() => handleRightVariantChange(variation.key)}
                 />
               ))}
             </div>
+          </fieldset>
           </div>
-        </div>
+        </section>
       )}
       {/* Bottom Footer Actions Box */}
       {comparisonError && (
