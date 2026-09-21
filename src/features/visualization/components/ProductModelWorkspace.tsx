@@ -57,6 +57,12 @@ import {
   type EngineeringValidationResult,
 } from "@/lib/visualization/guardrailEngine";
 import {
+  computeEstimatedDimensions,
+  sampleDepthAtPoint,
+  getScaleAwareInitialDimensions,
+  computePhotoGroundedCm,
+} from "@/lib/visualization/scaleEstimation";
+import {
   calculateBOMFromStructuralDefinition,
   calculateOverlayPricing,
 } from "@/lib/pricing/pricingEngine";
@@ -211,16 +217,44 @@ export function ProductModelWorkspace({
   const [isMeasurementModalOpen, setIsMeasurementModalOpen] = useState(false);
   const [measurementEntries, setMeasurementEntries] = useState<MeasurementConfirmationEntry[]>([]);
   const pendingComparisonOverlaysRef = useRef<PlacedOverlay[]>([]);
-  const [widthCm, setWidthCm] = useState(
-    initialConfiguration?.widthCm
-      ? String(initialConfiguration.widthCm)
-      : String(DEFAULT_PRODUCT_WIDTH_CM),
-  );
-  const [heightCm, setHeightCm] = useState(
-    initialConfiguration?.heightCm
-      ? String(initialConfiguration.heightCm)
-      : String(DEFAULT_PRODUCT_HEIGHT_CM),
-  );
+  const [widthCm, setWidthCm] = useState(() => {
+    if (initialConfiguration?.widthCm) {
+      return String(initialConfiguration.widthCm);
+    }
+    const photoWidthPx = spaceImageSession?.workspaceImage?.width ?? 0;
+    const photoHeightPx = spaceImageSession?.workspaceImage?.height ?? 0;
+    const initialDims = getScaleAwareInitialDimensions(
+      spaceImageSession?.scaleEstimation ?? null,
+      DEFAULT_PRODUCT_WIDTH_CM,
+      DEFAULT_PRODUCT_HEIGHT_CM,
+      DEFAULT_OVERLAY_WIDTH_PX,
+      DEFAULT_OVERLAY_HEIGHT_PX,
+      photoWidthPx || 636,
+      photoHeightPx || 579,
+      photoWidthPx,
+      photoHeightPx,
+    );
+    return String(initialDims.widthCm);
+  });
+  const [heightCm, setHeightCm] = useState(() => {
+    if (initialConfiguration?.heightCm) {
+      return String(initialConfiguration.heightCm);
+    }
+    const photoWidthPx = spaceImageSession?.workspaceImage?.width ?? 0;
+    const photoHeightPx = spaceImageSession?.workspaceImage?.height ?? 0;
+    const initialDims = getScaleAwareInitialDimensions(
+      spaceImageSession?.scaleEstimation ?? null,
+      DEFAULT_PRODUCT_WIDTH_CM,
+      DEFAULT_PRODUCT_HEIGHT_CM,
+      DEFAULT_OVERLAY_WIDTH_PX,
+      DEFAULT_OVERLAY_HEIGHT_PX,
+      photoWidthPx || 636,
+      photoHeightPx || 579,
+      photoWidthPx,
+      photoHeightPx,
+    );
+    return String(initialDims.heightCm);
+  });
   const [thicknessMm, setThicknessMm] = useState(
     initialConfiguration?.thicknessMm
       ? String(initialConfiguration.thicknessMm)
@@ -311,10 +345,10 @@ export function ProductModelWorkspace({
   const initialOverlaySize = useMemo(() => {
     const wStr = initialConfiguration?.widthCm
       ? String(initialConfiguration.widthCm)
-      : String(DEFAULT_PRODUCT_WIDTH_CM);
+      : widthCm;
     const hStr = initialConfiguration?.heightCm
       ? String(initialConfiguration.heightCm)
-      : String(DEFAULT_PRODUCT_HEIGHT_CM);
+      : heightCm;
     const baseSize = getOverlaySizeFromDimensions(wStr, hStr);
     const zoom = initialConfiguration?.zoomLevel ?? DEFAULT_SCENE_ZOOM;
     const scale = 1 + zoom / 100;
@@ -326,6 +360,8 @@ export function ProductModelWorkspace({
     initialConfiguration?.heightCm,
     initialConfiguration?.widthCm,
     initialConfiguration?.zoomLevel,
+    widthCm,
+    heightCm,
   ]);
   const [overlaySize, setOverlaySize] = useState(initialOverlaySize);
   const renderFrameSize = useMemo(
@@ -436,6 +472,7 @@ export function ProductModelWorkspace({
     structuralDefinition?.product.productType === "Door" ||
     (structuralDefinition?.product.productType || "").toLowerCase().includes("door") ||
     (structuralDefinition?.product.productName || "").toLowerCase().includes("door") ||
+    (selectedProductName || "").toLowerCase().includes("door") ||
     Boolean(
       structuralDefinition?.components.some((component) =>
         component.componentKey.replace(/_/g, "-").includes("door"),
@@ -854,18 +891,20 @@ export function ProductModelWorkspace({
       return;
     }
 
+    const defaultWFallback = isDoorProduct ? 900 : 2100;
+    const defaultHFallback = isDoorProduct ? 2100 : 1500;
     const nextWidthCm = String(
-      Math.round(getStructuralDefaultMm(structuralDefinition, "width", 2100) / 10),
+      Math.round(getStructuralDefaultMm(structuralDefinition, "width", defaultWFallback) / 10),
     );
     const nextHeightCm = String(
-      Math.round(getStructuralDefaultMm(structuralDefinition, "height", 1500) / 10),
+      Math.round(getStructuralDefaultMm(structuralDefinition, "height", defaultHFallback) / 10),
     );
 
     setWidthCm(nextWidthCm);
     setHeightCm(nextHeightCm);
     setOverlaySize(getOverlaySizeFromDimensions(nextWidthCm, nextHeightCm));
     appliedTemplateDefaultsRef.current = templateId;
-  }, [structuralDefinition]);
+  }, [structuralDefinition, isDoorProduct]);
 
   const currentConfiguration = useMemo<ProductConfigurationSnapshot>(() => {
     const width = Number(widthCm) || DEFAULT_PRODUCT_WIDTH_CM;
@@ -1859,17 +1898,71 @@ export function ProductModelWorkspace({
 
       setOverlaySize({ width: nextWidth, height: nextHeight });
 
+      const scaleSignal = spaceImageSession?.scaleEstimation;
+      const photoWidthPx = spaceImageSession?.workspaceImage?.width ?? 0;
+      const photoHeightPx = spaceImageSession?.workspaceImage?.height ?? 0;
+      const canvasWidthPx = canvasDisplaySize.width;
+      const canvasHeightPx = canvasDisplaySize.height;
+
+      const hasScale = Boolean(
+        scaleSignal &&
+        scaleSignal.best_scale_cm_per_px !== null &&
+        scaleSignal.confidence >= 0.2 &&
+        photoWidthPx > 0 &&
+        photoHeightPx > 0,
+      );
+
       if (session.mode === "scale" || session.mode === "width") {
         const widthRatio = nextWidth / Math.max(session.startWidth, 1);
-        setWidthCm(String(Math.max(1, Math.round(session.startWidthCm * widthRatio))));
+        const proportionalWidthCm = Math.max(1, Math.round(session.startWidthCm * widthRatio));
+
+        if (hasScale && scaleSignal && scaleSignal.best_scale_cm_per_px !== null) {
+          const photoGrounded = computePhotoGroundedCm(
+            nextWidth,
+            nextHeight,
+            canvasWidthPx,
+            canvasHeightPx,
+            photoWidthPx,
+            photoHeightPx,
+            scaleSignal.best_scale_cm_per_px,
+          );
+          const photoWeight = Math.min(scaleSignal.confidence * 0.4, 0.35);
+          const blendedWidthCm = Math.max(
+            1,
+            Math.round((1 - photoWeight) * proportionalWidthCm + photoWeight * photoGrounded.widthCm),
+          );
+          setWidthCm(String(blendedWidthCm));
+        } else {
+          setWidthCm(String(proportionalWidthCm));
+        }
       }
 
       if (session.mode === "scale" || session.mode === "height") {
         const heightRatio = nextHeight / Math.max(session.startHeight, 1);
-        setHeightCm(String(Math.max(1, Math.round(session.startHeightCm * heightRatio))));
+        const proportionalHeightCm = Math.max(1, Math.round(session.startHeightCm * heightRatio));
+
+        if (hasScale && scaleSignal && scaleSignal.best_scale_cm_per_px !== null) {
+          const photoGrounded = computePhotoGroundedCm(
+            nextWidth,
+            nextHeight,
+            canvasWidthPx,
+            canvasHeightPx,
+            photoWidthPx,
+            photoHeightPx,
+            scaleSignal.best_scale_cm_per_px,
+          );
+          const photoWeight = Math.min(scaleSignal.confidence * 0.4, 0.35);
+          const blendedHeightCm = Math.max(
+            1,
+            Math.round((1 - photoWeight) * proportionalHeightCm + photoWeight * photoGrounded.heightCm),
+          );
+          setHeightCm(String(blendedHeightCm));
+        } else {
+          setHeightCm(String(proportionalHeightCm));
+        }
       }
     },
-    [],
+    [spaceImageSession, canvasDisplaySize],
   );
 
   const startResize = useCallback(
@@ -3568,37 +3661,50 @@ export function ProductModelWorkspace({
           canvasHeight={aspectHeight}
           initialCorners={perspectiveCorners}
           openingType={isDoorProduct ? "door" : "window"}
-          onConfirm={(corners) => {
+          onConfirm={async (corners) => {
             const currentDisplayWidth = canvasRef.current?.clientWidth || canvasDisplaySize.width;
             const currentDisplayHeight = canvasRef.current?.clientHeight || canvasDisplaySize.height;
             const pxCorners = denormalizeCorners(corners, currentDisplayWidth, currentDisplayHeight);
-            const { widthRatio, heightRatio } = estimateDimensionsFromCorners(pxCorners);
+
+            const photoWidth =
+              spaceImageSession?.workspaceImage.width ||
+              currentDisplayWidth;
+            const photoHeight =
+              spaceImageSession?.workspaceImage.height ||
+              currentDisplayHeight;
+            const photoCorners = denormalizeCorners(corners, photoWidth, photoHeight);
+            const { widthRatio, heightRatio } = estimateDimensionsFromCorners(photoCorners);
             if (heightRatio > 0 && widthRatio > 0) {
-              const openingAspect = widthRatio / heightRatio;
-              if (isDoorProduct) {
-                const templateDefaultH = Number(
-                  structuralDefinition?.parameters?.find((p) => p.parameterKey === "height")?.defaultValue
-                );
-                const currentH = Number(heightCm) || (templateDefaultH > 0 ? templateDefaultH : 210);
-                const nextW = Math.round(clampNumber(currentH * openingAspect, 50, 500));
-                const nextH = currentH;
-                setWidthCm(String(nextW));
-                setHeightCm(String(nextH));
-                setOverlaySize(getOverlaySizeFromDimensions(String(nextW), String(nextH)));
-              } else {
-                const currentH = Number(heightCm) || 120;
-                const currentW = Number(widthCm) || 120;
-                let nextW = currentW;
-                let nextH = currentH;
-                if (openingAspect >= 1) {
-                  nextW = Math.round(clampNumber(currentH * openingAspect, 50, 400));
-                } else {
-                  nextH = Math.round(clampNumber(currentW / openingAspect, 50, 400));
+              const quadCenterX = (corners[0].x + corners[1].x + corners[2].x + corners[3].x) / 4;
+              const quadCenterY = (corners[0].y + corners[1].y + corners[2].y + corners[3].y) / 4;
+              const depthMapUrl = spaceImageSession?.depth?.depth_map_url;
+              let depthAtQuadCenter: number | null = null;
+              if (depthMapUrl) {
+                try {
+                  depthAtQuadCenter = await sampleDepthAtPoint(depthMapUrl, quadCenterX, quadCenterY);
+                } catch {
+                  depthAtQuadCenter = null;
                 }
-                setWidthCm(String(nextW));
-                setHeightCm(String(nextH));
-                setOverlaySize(getOverlaySizeFromDimensions(String(nextW), String(nextH)));
               }
+
+              const templateDefaultH = Number(
+                structuralDefinition?.parameters?.find((p) => p.parameterKey === "height")?.defaultValue
+              ) || null;
+
+              const scaleSignal = spaceImageSession?.scaleEstimation || spaceImageSession?.scale_estimation;
+
+              const estimate = computeEstimatedDimensions(
+                widthRatio,
+                heightRatio,
+                scaleSignal,
+                isDoorProduct,
+                templateDefaultH,
+                depthAtQuadCenter,
+              );
+
+              setWidthCm(String(estimate.widthCm));
+              setHeightCm(String(estimate.heightCm));
+              setOverlaySize(getOverlaySizeFromDimensions(String(estimate.widthCm), String(estimate.heightCm)));
             }
 
             const [p0, p1, p2, p3] = pxCorners;
