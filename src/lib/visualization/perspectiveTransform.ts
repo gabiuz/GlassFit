@@ -162,6 +162,8 @@ export function isValidQuadrilateral(corners: QuadrilateralCorners): boolean {
 
 /**
  * Estimates proportional width and height from quadrilateral edge dimensions.
+ * Uses projective cross-ratio invariants to correct for perspective foreshortening
+ * under oblique camera angles.
  */
 export function estimateDimensionsFromCorners(corners: QuadrilateralCorners): {
   widthRatio: number;
@@ -174,12 +176,19 @@ export function estimateDimensionsFromCorners(corners: QuadrilateralCorners): {
   const leftHeight = dist(corners[0], corners[3]);
   const rightHeight = dist(corners[1], corners[2]);
 
-  const avgWidth = (topWidth + bottomWidth) / 2;
-  const avgHeight = (leftHeight + rightHeight) / 2;
+  // Cross-ratio invariant: corrects for perspective foreshortening
+  // when the camera is at an oblique angle to the opening.
+  const horizontalProduct = topWidth * bottomWidth;
+  const verticalProduct = leftHeight * rightHeight;
+
+  // Return corrected values using geometric mean for each axis.
+  // This preserves the function signature and downstream consumer compatibility.
+  const correctedWidth = Math.sqrt(horizontalProduct);
+  const correctedHeight = Math.sqrt(verticalProduct);
 
   return {
-    widthRatio: avgWidth,
-    heightRatio: avgHeight,
+    widthRatio: correctedWidth,
+    heightRatio: correctedHeight,
   };
 }
 

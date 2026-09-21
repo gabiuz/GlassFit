@@ -69,6 +69,8 @@ export interface SceneAnalysis {
   error: string | null;
 }
 
+import type { ScaleEstimationSignal } from "@/lib/visualization/types";
+
 export interface WorkspaceImage {
   url: string;
   width: number;
@@ -87,6 +89,7 @@ export interface ImageAnalysisResponse {
   };
   depth?: DepthAnalysis;
   scene?: SceneAnalysis;
+  scale_estimation?: ScaleEstimationSignal;
   warning?: string | null;
   warnings?: string[];
 }
@@ -101,6 +104,8 @@ export interface SpaceImageSession {
   segmentation: ImageAnalysisResponse["segmentation"];
   depth?: DepthAnalysis;
   scene?: SceneAnalysis;
+  scaleEstimation?: ScaleEstimationSignal;
+  scale_estimation?: ScaleEstimationSignal;
   warnings: string[];
 }
 
@@ -203,6 +208,8 @@ function toSpaceImageSession(
           wall_mask_url: toAbsoluteOptionalApiUrl(payload.scene.wall_mask_url, apiBaseUrl),
         }
       : undefined,
+    scaleEstimation: payload.scale_estimation,
+    scale_estimation: payload.scale_estimation,
     warnings: payload.warnings?.length ? payload.warnings : payload.warning ? [payload.warning] : [],
   };
 }

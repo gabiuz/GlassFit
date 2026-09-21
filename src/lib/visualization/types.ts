@@ -243,3 +243,30 @@ export type MeasurementConfirmationEntry = {
   recalculatedTotalPrice: number | null;
 };
 
+export type ScaleEstimationAnchor = {
+  label: string;
+  bbox_height_px: number;
+  reference_height_cm: number;
+  scale_cm_per_px: number;
+  confidence: number;
+  depth_correction: number;
+};
+
+export type ScaleEstimationSignal = {
+  anchors: ScaleEstimationAnchor[];
+  best_scale_cm_per_px: number | null;
+  confidence: number;
+  method: string;
+  exif_focal_length_mm: number | null;
+  exif_focal_length_35mm: number | null;
+  exif_device_model: string | null;
+};
+
+export type DimensionEstimate = {
+  widthCm: number;
+  heightCm: number;
+  confidence: number;
+  method: string;
+};
+
+

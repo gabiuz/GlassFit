@@ -12,7 +12,9 @@ from fastapi.staticfiles import StaticFiles
 
 from brightness import analyze_brightness, analyze_lighting
 from depth import estimate_depth, get_depth_pipeline
+from exif_extraction import extract_exif_camera_info
 from image_preparation import ImagePreparationError, prepare_workspace_image, save_oriented_upload
+from scale_estimation import estimate_scale_from_objects
 from scene_detection import detect_scene_regions, get_scene_model
 from segmentation import SegmentationError, analyze_objects
 
@@ -101,6 +103,7 @@ async def analyze_image(image: UploadFile = File(...)) -> dict:
 
         session_mask_dir.mkdir(parents=True, exist_ok=True)
         raw_upload_path.write_bytes(contents)
+        exif_info = extract_exif_camera_info(raw_upload_path)
 
         try:
             original_metadata = save_oriented_upload(raw_upload_path, upload_path)
@@ -189,6 +192,29 @@ async def analyze_image(image: UploadFile = File(...)) -> dict:
             workspace_height=workspace_metadata["height"],
         )
 
+        try:
+            scale_result = estimate_scale_from_objects(
+                detected_objects=objects,
+                depth_array_normalized=depth_array_for_scene,
+                image_height=workspace_metadata["height"],
+                image_width=workspace_metadata["width"],
+            )
+            scale_result.exif_focal_length_mm = exif_info.focal_length_mm
+            scale_result.exif_focal_length_35mm = exif_info.focal_length_35mm_equiv
+            scale_result.exif_device_model = exif_info.device_model
+            scale_estimation_dict = scale_result.to_dict()
+        except Exception as exc:
+            warnings.append(f"Scale estimation failed: {exc}")
+            scale_estimation_dict = {
+                "anchors": [],
+                "best_scale_cm_per_px": None,
+                "confidence": 0.0,
+                "method": "none",
+                "exif_focal_length_mm": exif_info.focal_length_mm,
+                "exif_focal_length_35mm": exif_info.focal_length_35mm_equiv,
+                "exif_device_model": exif_info.device_model,
+            }
+
         _append_optional_warning(
             warnings,
             depth_result.get("error") if not depth_result.get("available") else None,
@@ -211,6 +237,7 @@ async def analyze_image(image: UploadFile = File(...)) -> dict:
             "segmentation": segmentation,
             "depth": depth_result,
             "scene": scene_result,
+            "scale_estimation": scale_estimation_dict,
             "warning": warnings[0] if warnings else None,
             "warnings": warnings,
         }

@@ -57,6 +57,10 @@ import {
   type EngineeringValidationResult,
 } from "@/lib/visualization/guardrailEngine";
 import {
+  computeEstimatedDimensions,
+  sampleDepthAtPoint,
+} from "@/lib/visualization/scaleEstimation";
+import {
   calculateBOMFromStructuralDefinition,
   calculateOverlayPricing,
 } from "@/lib/pricing/pricingEngine";
@@ -3568,37 +3572,42 @@ export function ProductModelWorkspace({
           canvasHeight={aspectHeight}
           initialCorners={perspectiveCorners}
           openingType={isDoorProduct ? "door" : "window"}
-          onConfirm={(corners) => {
+          onConfirm={async (corners) => {
             const currentDisplayWidth = canvasRef.current?.clientWidth || canvasDisplaySize.width;
             const currentDisplayHeight = canvasRef.current?.clientHeight || canvasDisplaySize.height;
             const pxCorners = denormalizeCorners(corners, currentDisplayWidth, currentDisplayHeight);
             const { widthRatio, heightRatio } = estimateDimensionsFromCorners(pxCorners);
             if (heightRatio > 0 && widthRatio > 0) {
-              const openingAspect = widthRatio / heightRatio;
-              if (isDoorProduct) {
-                const templateDefaultH = Number(
-                  structuralDefinition?.parameters?.find((p) => p.parameterKey === "height")?.defaultValue
-                );
-                const currentH = Number(heightCm) || (templateDefaultH > 0 ? templateDefaultH : 210);
-                const nextW = Math.round(clampNumber(currentH * openingAspect, 50, 500));
-                const nextH = currentH;
-                setWidthCm(String(nextW));
-                setHeightCm(String(nextH));
-                setOverlaySize(getOverlaySizeFromDimensions(String(nextW), String(nextH)));
-              } else {
-                const currentH = Number(heightCm) || 120;
-                const currentW = Number(widthCm) || 120;
-                let nextW = currentW;
-                let nextH = currentH;
-                if (openingAspect >= 1) {
-                  nextW = Math.round(clampNumber(currentH * openingAspect, 50, 400));
-                } else {
-                  nextH = Math.round(clampNumber(currentW / openingAspect, 50, 400));
+              const quadCenterX = (corners[0].x + corners[1].x + corners[2].x + corners[3].x) / 4;
+              const quadCenterY = (corners[0].y + corners[1].y + corners[2].y + corners[3].y) / 4;
+              const depthMapUrl = spaceImageSession?.depth?.depth_map_url;
+              let depthAtQuadCenter: number | null = null;
+              if (depthMapUrl) {
+                try {
+                  depthAtQuadCenter = await sampleDepthAtPoint(depthMapUrl, quadCenterX, quadCenterY);
+                } catch {
+                  depthAtQuadCenter = null;
                 }
-                setWidthCm(String(nextW));
-                setHeightCm(String(nextH));
-                setOverlaySize(getOverlaySizeFromDimensions(String(nextW), String(nextH)));
               }
+
+              const templateDefaultH = Number(
+                structuralDefinition?.parameters?.find((p) => p.parameterKey === "height")?.defaultValue
+              ) || null;
+
+              const scaleSignal = spaceImageSession?.scaleEstimation || spaceImageSession?.scale_estimation;
+
+              const estimate = computeEstimatedDimensions(
+                widthRatio,
+                heightRatio,
+                scaleSignal,
+                isDoorProduct,
+                templateDefaultH,
+                depthAtQuadCenter,
+              );
+
+              setWidthCm(String(estimate.widthCm));
+              setHeightCm(String(estimate.heightCm));
+              setOverlaySize(getOverlaySizeFromDimensions(String(estimate.widthCm), String(estimate.heightCm)));
             }
 
             const [p0, p1, p2, p3] = pxCorners;
