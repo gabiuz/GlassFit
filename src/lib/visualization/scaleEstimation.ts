@@ -26,23 +26,30 @@ export function computeEstimatedDimensions(
   templateDefaultHeightCm: number | null | undefined,
   depthAtQuadCenter: number | null | undefined,
 ): DimensionEstimate {
-  const defaultHeight = isDoor
-    ? (templateDefaultHeightCm && templateDefaultHeightCm > 0 ? templateDefaultHeightCm : 210)
-    : (templateDefaultHeightCm && templateDefaultHeightCm > 0 ? templateDefaultHeightCm : 120);
+  // Normalize template default height (convert mm to cm if in mm, e.g. 2100mm -> 210cm)
+  let normalizedTemplateHeightCm: number | null = null;
+  if (templateDefaultHeightCm && templateDefaultHeightCm > 0) {
+    normalizedTemplateHeightCm =
+      templateDefaultHeightCm > 500
+        ? Math.round(templateDefaultHeightCm / 10)
+        : Math.round(templateDefaultHeightCm);
+  }
 
-  // No scale signal available: fall back to existing behavior.
+  const aspect = quadWidthPx / Math.max(quadHeightPx, 1);
+  const isTallOpening = isDoor || aspect < 0.65;
+
+  const defaultHeight = isTallOpening
+    ? (normalizedTemplateHeightCm ?? 210)
+    : (normalizedTemplateHeightCm ?? 120);
+
+  // No scale signal available: fall back to architectural default-height heuristic.
   if (
     !scaleSignal ||
     scaleSignal.best_scale_cm_per_px === null ||
     scaleSignal.confidence < 0.1
   ) {
-    const aspect = quadWidthPx / Math.max(quadHeightPx, 1);
-    const fallbackWidth = isDoor
-      ? Math.round(defaultHeight * aspect)
-      : (aspect >= 1 ? Math.round(defaultHeight * aspect) : defaultHeight);
-    const fallbackHeight = isDoor
-      ? defaultHeight
-      : (aspect >= 1 ? defaultHeight : Math.round(defaultHeight / Math.max(aspect, 0.01)));
+    const fallbackWidth = Math.round(defaultHeight * aspect);
+    const fallbackHeight = defaultHeight;
 
     return {
       widthCm: Math.max(30, Math.min(600, fallbackWidth)),
@@ -72,10 +79,10 @@ export function computeEstimatedDimensions(
 
   // Blend with default heuristic using confidence weight.
   const w = Math.min(Math.max(scaleSignal.confidence, 0), 0.85);
-  const aspect = quadWidthPx / Math.max(quadHeightPx, 1);
-  const defaultEstWidth = defaultHeight * aspect;
+  const defaultEstWidth = Math.round(defaultHeight * aspect);
+  const defaultEstHeight = defaultHeight;
   const blendedWidth = Math.round(w * estimatedWidth + (1 - w) * defaultEstWidth);
-  const blendedHeight = Math.round(w * estimatedHeight + (1 - w) * defaultHeight);
+  const blendedHeight = Math.round(w * estimatedHeight + (1 - w) * defaultEstHeight);
 
   // Clamp to architecturally reasonable ranges.
   const clampedWidth = Math.max(30, Math.min(600, blendedWidth));
@@ -144,3 +151,90 @@ export async function sampleDepthAtPoint(
     img.src = depthMapUrl;
   });
 }
+
+/**
+ * Computes photo-grounded initial dimensions using the scale estimation signal.
+ *
+ * Uses the overlay's default pixel footprint and the photo's spatial scale
+ * factor to estimate what real-world dimensions the overlay "covers" in the
+ * uploaded room photo.
+ *
+ * Falls back to hardcoded defaults when the scale signal is unavailable
+ * or has low confidence.
+ *
+ * Traces to: PRD-F6, PRD-F10, SDD-C5, IMP-MS10, IMP-MS11
+ */
+export function getScaleAwareInitialDimensions(
+  scaleSignal: ScaleEstimationSignal | null | undefined,
+  defaultWidthCm: number,
+  defaultHeightCm: number,
+  overlayWidthPx: number,
+  overlayHeightPx: number,
+  canvasWidthPx: number,
+  canvasHeightPx: number,
+  photoWidthPx: number,
+  photoHeightPx: number,
+): { widthCm: number; heightCm: number; method: string } {
+  if (
+    !scaleSignal ||
+    scaleSignal.best_scale_cm_per_px === null ||
+    scaleSignal.confidence < 0.2 ||
+    photoWidthPx <= 0 ||
+    photoHeightPx <= 0
+  ) {
+    return {
+      widthCm: defaultWidthCm,
+      heightCm: defaultHeightCm,
+      method: "default_fallback",
+    };
+  }
+
+  // Convert overlay screen pixels to photo-space pixels.
+  const canvasToPhotoRatioW = photoWidthPx / Math.max(canvasWidthPx, 1);
+  const canvasToPhotoRatioH = photoHeightPx / Math.max(canvasHeightPx, 1);
+  const overlayWidthInPhotoPx = overlayWidthPx * canvasToPhotoRatioW;
+  const overlayHeightInPhotoPx = overlayHeightPx * canvasToPhotoRatioH;
+
+  // Apply the photo-grounded scale factor.
+  const estimatedWidth = overlayWidthInPhotoPx * scaleSignal.best_scale_cm_per_px;
+  const estimatedHeight = overlayHeightInPhotoPx * scaleSignal.best_scale_cm_per_px;
+
+  // Blend with defaults using confidence weight.
+  // Cap confidence contribution at 0.7 to remain conservative.
+  const w = Math.min(Math.max(scaleSignal.confidence, 0), 0.7);
+  const blendedWidth = Math.round(w * estimatedWidth + (1 - w) * defaultWidthCm);
+  const blendedHeight = Math.round(w * estimatedHeight + (1 - w) * defaultHeightCm);
+
+  return {
+    widthCm: Math.max(30, Math.min(600, blendedWidth)),
+    heightCm: Math.max(30, Math.min(400, blendedHeight)),
+    method: "scale_aware_initial",
+  };
+}
+
+/**
+ * Converts overlay pixel dimensions to real-world cm using the photo's
+ * spatial scale factor.
+ *
+ * This provides a "what does this pixel footprint physically represent"
+ * cross-check alongside the proportional method that preserves user intent.
+ *
+ * Traces to: PRD-F6, SDD-C5, IMP-MS10, IMP-MS11
+ */
+export function computePhotoGroundedCm(
+  overlayWidthPx: number,
+  overlayHeightPx: number,
+  canvasWidthPx: number,
+  canvasHeightPx: number,
+  photoWidthPx: number,
+  photoHeightPx: number,
+  scaleCmPerPx: number,
+): { widthCm: number; heightCm: number } {
+  const canvasToPhotoRatioW = photoWidthPx / Math.max(canvasWidthPx, 1);
+  const canvasToPhotoRatioH = photoHeightPx / Math.max(canvasHeightPx, 1);
+  return {
+    widthCm: Math.max(1, Math.round(overlayWidthPx * canvasToPhotoRatioW * scaleCmPerPx)),
+    heightCm: Math.max(1, Math.round(overlayHeightPx * canvasToPhotoRatioH * scaleCmPerPx)),
+  };
+}
+

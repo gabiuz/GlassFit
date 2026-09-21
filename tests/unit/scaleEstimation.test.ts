@@ -5,6 +5,8 @@ import {
 } from "../../src/lib/visualization/perspectiveTransform";
 import {
   computeEstimatedDimensions,
+  getScaleAwareInitialDimensions,
+  computePhotoGroundedCm,
 } from "../../src/lib/visualization/scaleEstimation";
 import type { QuadrilateralCorners, ScaleEstimationSignal } from "../../src/lib/visualization/types";
 
@@ -175,5 +177,205 @@ describe("IMP-MS10: Measurement Estimation Engine", () => {
       assert.ok(tinyEst.widthCm >= 30);
       assert.ok(tinyEst.heightCm >= 30);
     });
+
+    it("auto-detects tall openings (aspect < 0.65) as door-scale (210cm) even when isDoor is false", () => {
+      // 80px width, 200px height -> aspect 0.40
+      const tallOpeningEst = computeEstimatedDimensions(80, 200, null, false, null, null);
+      assert.equal(tallOpeningEst.heightCm, 210);
+      assert.equal(tallOpeningEst.widthCm, 84);
+    });
   });
 });
+
+describe("IMP-MS11: Scale-Aware Manual Workspace Dimension Tracking", () => {
+  describe("Scale-Aware Initial Dimensions", () => {
+    it("returns hardcoded defaults when scaleSignal is null", () => {
+      const result = getScaleAwareInitialDimensions(
+        null,
+        210,
+        150,
+        540,
+        385,
+        1080,
+        720,
+        1080,
+        720,
+      );
+      assert.equal(result.method, "default_fallback");
+      assert.equal(result.widthCm, 210);
+      assert.equal(result.heightCm, 150);
+    });
+
+    it("returns hardcoded defaults when confidence is < 0.2", () => {
+      const lowConfSignal: ScaleEstimationSignal = {
+        anchors: [],
+        best_scale_cm_per_px: 0.4,
+        confidence: 0.15,
+        method: "low_confidence",
+        exif_focal_length_mm: null,
+        exif_focal_length_35mm: null,
+        exif_device_model: null,
+      };
+      const result = getScaleAwareInitialDimensions(
+        lowConfSignal,
+        210,
+        150,
+        540,
+        385,
+        1080,
+        720,
+        1080,
+        720,
+      );
+      assert.equal(result.method, "default_fallback");
+      assert.equal(result.widthCm, 210);
+      assert.equal(result.heightCm, 150);
+    });
+
+    it("computes photo-grounded dimensions when confidence is high (0.8)", () => {
+      const signal: ScaleEstimationSignal = {
+        anchors: [],
+        best_scale_cm_per_px: 0.4,
+        confidence: 0.8,
+        method: "yolo_anchor",
+        exif_focal_length_mm: null,
+        exif_focal_length_35mm: null,
+        exif_device_model: null,
+      };
+      // Overlay 540px wide on a 1080px canvas displaying a 2160px photo
+      // Ratio = 2160 / 1080 = 2.0
+      // Overlay in photo = 540 * 2 = 1080px
+      // Estimated width = 1080 * 0.4 = 432cm
+      // Confidence capped at 0.7 -> blend 0.7 * 432 + 0.3 * 210 = 302.4 + 63 = 365.4 -> 365cm
+      const result = getScaleAwareInitialDimensions(
+        signal,
+        210,
+        150,
+        540,
+        385,
+        1080,
+        720,
+        2160,
+        1440,
+      );
+      assert.equal(result.method, "scale_aware_initial");
+      assert.equal(result.widthCm, 365);
+      // Height: 385 * 2 = 770 photo px -> 770 * 0.4 = 308cm -> blend 0.7 * 308 + 0.3 * 150 = 215.6 + 45 = 261
+      assert.equal(result.heightCm, 261);
+    });
+
+    it("clamps output to 30-600cm width and 30-400cm height", () => {
+      const extremeSignal: ScaleEstimationSignal = {
+        anchors: [],
+        best_scale_cm_per_px: 100.0,
+        confidence: 0.9,
+        method: "extreme",
+        exif_focal_length_mm: null,
+        exif_focal_length_35mm: null,
+        exif_device_model: null,
+      };
+      const clampedLarge = getScaleAwareInitialDimensions(
+        extremeSignal,
+        210,
+        150,
+        540,
+        385,
+        1080,
+        720,
+        1080,
+        720,
+      );
+      assert.equal(clampedLarge.widthCm, 600);
+      assert.equal(clampedLarge.heightCm, 400);
+
+      const tinySignal: ScaleEstimationSignal = {
+        anchors: [],
+        best_scale_cm_per_px: 0.0001,
+        confidence: 0.9,
+        method: "tiny",
+        exif_focal_length_mm: null,
+        exif_focal_length_35mm: null,
+        exif_device_model: null,
+      };
+      const clampedSmall = getScaleAwareInitialDimensions(
+        tinySignal,
+        210,
+        150,
+        10,
+        10,
+        1080,
+        720,
+        1080,
+        720,
+      );
+      assert.ok(clampedSmall.widthCm >= 30);
+      assert.ok(clampedSmall.heightCm >= 30);
+    });
+
+    it("caps confidence contribution at 0.7 even when confidence is 1.0", () => {
+      const fullConfSignal: ScaleEstimationSignal = {
+        anchors: [],
+        best_scale_cm_per_px: 0.5,
+        confidence: 1.0,
+        method: "perfect",
+        exif_focal_length_mm: null,
+        exif_focal_length_35mm: null,
+        exif_device_model: null,
+      };
+      // 540px * 1.0 ratio * 0.5 = 270cm estimated width
+      // Capped weight w = 0.7: 0.7 * 270 + 0.3 * 210 = 189 + 63 = 252
+      const result = getScaleAwareInitialDimensions(
+        fullConfSignal,
+        210,
+        150,
+        540,
+        385,
+        1080,
+        720,
+        1080,
+        720,
+      );
+      assert.equal(result.widthCm, 252);
+    });
+  });
+
+  describe("Photo-Grounded Drag-Resize Conversion", () => {
+    it("correctly maps overlay px to photo px to cm with known scale factor", () => {
+      // 500 overlay px on 1000 canvas px displaying 2000 photo px -> ratio = 2
+      // overlay in photo px = 1000
+      // scale = 0.3 cm/px -> 300 cm
+      const result = computePhotoGroundedCm(500, 300, 1000, 600, 2000, 1200, 0.3);
+      assert.equal(result.widthCm, 300);
+      assert.equal(result.heightCm, 180);
+    });
+
+    it("handles zero canvas dimensions gracefully without NaN or divide by zero", () => {
+      const result = computePhotoGroundedCm(500, 300, 0, 0, 1000, 600, 0.3);
+      assert.ok(!Number.isNaN(result.widthCm));
+      assert.ok(!Number.isNaN(result.heightCm));
+      assert.ok(result.widthCm >= 1);
+      assert.ok(result.heightCm >= 1);
+    });
+
+    it("returns accurate values when canvas is half the photo width (2x ratio)", () => {
+      const result = computePhotoGroundedCm(250, 200, 500, 400, 1000, 800, 0.25);
+      // 250 * 2 = 500 photo px * 0.25 cm/px = 125 cm
+      // 200 * 2 = 400 photo px * 0.25 cm/px = 100 cm
+      assert.equal(result.widthCm, 125);
+      assert.equal(result.heightCm, 100);
+    });
+
+    it("blends proportional and photo-grounded resize values properly", () => {
+      const proportionalWidthCm = 150;
+      const photoGrounded = { widthCm: 200, heightCm: 160 };
+      const confidence = 0.8;
+      const photoWeight = Math.min(confidence * 0.4, 0.35); // 0.32
+      const blendedWidthCm = Math.round(
+        (1 - photoWeight) * proportionalWidthCm + photoWeight * photoGrounded.widthCm,
+      );
+      // 0.68 * 150 + 0.32 * 200 = 102 + 64 = 166
+      assert.equal(blendedWidthCm, 166);
+    });
+  });
+});
+
