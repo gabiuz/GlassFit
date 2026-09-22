@@ -17,6 +17,8 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import { requirePermission } from "@/lib/auth/admin";
 import { calculateStandardSeries798, generateQuotationSnapshot } from "@/lib/pricing/pricingEngine";
+import { getServerBaseUrl, generateBookingUrls } from "./urlResolver";
+import { uploadSnapshotImage, resolveSnapshotUrl } from "./snapshotStorage";
 import {
   GenerateBookingLinkInputSchema,
   RecordBookingRequestInputSchema,
@@ -52,33 +54,30 @@ export async function generateSignedBookingLink(
 
   const profileId = user.id;
 
-  // 2. Compute accurate Parametric BOM quotation
-  const finishType = validated.finishType === "white" || validated.finishType === "PowderCoatedWhite"
-    ? "PowderCoatedWhite"
-    : "Analok";
-  const glassType = validated.glassType === "6mm_clear" ? "6mm_clear" : "6mm_bronze";
-
-  const bomResult = calculateStandardSeries798({
-    widthMm: validated.widthMm,
-    heightMm: validated.heightMm,
-    panelCount: validated.panelCount,
-    hasSill: validated.hasSill,
-    finishType,
-    glassType,
-    structuralWaiver: validated.structuralWaiver,
-  });
+  const isMultiProduct = Boolean(validated.items && validated.items.length > 1);
+  const items = validated.items && validated.items.length > 0 ? validated.items : null;
 
   // Use service client for atomic database operations
   const serviceClient = createSupabaseServiceClient();
 
-  // 3. Ensure a visualization_snapshots record exists for this consultation
+  // 2. Ensure a visualization_snapshots record exists for this consultation
   const randomSuffix = Math.floor(1000 + Math.random() * 9000);
   const dateYear = new Date().getFullYear();
-  const snapshotObjectKey = `snapshots/${profileId}/${Date.now()}_consultation.webp`;
+  const snapshotId = crypto.randomUUID();
+
+  let snapshotObjectKey = `snapshots/${profileId}/${snapshotId}.webp`;
+  if (validated.finalSnapshotDataUrl) {
+    snapshotObjectKey = await uploadSnapshotImage(
+      validated.finalSnapshotDataUrl,
+      profileId,
+      snapshotId
+    );
+  }
 
   const { data: snapshotData, error: snapshotError } = await serviceClient
     .from("visualization_snapshots")
     .insert({
+      snapshot_id: snapshotId,
       profile_id: profileId,
       final_image_r2_key: snapshotObjectKey,
     })
@@ -90,25 +89,166 @@ export async function generateSignedBookingLink(
     throw new Error(`Failed to record visualization snapshot: ${snapshotError?.message}`);
   }
 
-  const snapshotId = snapshotData.snapshot_id;
-
-  // 4. Generate unique Quotation Number and Reference Code
+  // 3. Generate unique Quotation Number and Reference Code
   const quotationNumber = `Q-${dateYear}-${randomSuffix}`;
   const referenceCode = `CF-${dateYear}-${randomSuffix}`;
   const pdfObjectKey = `quotations/${quotationNumber}/GlassFit_Quotation_${quotationNumber}.pdf`;
+  const quotationId = crypto.randomUUID();
 
-  // 5. Insert quotation_estimates row
+  let totalEstimatedAmount: number;
+  let hasAnyStructuralWaiver = validated.structuralWaiver;
+  let quotationNote = "";
+  const quotationItemRows: Array<{
+    quotation_id: string;
+    item_name: string;
+    item_group_name: string;
+    quantity: number;
+    unit: string;
+    unit_price: number;
+    estimated_subtotal: number;
+    pricing_details: Record<string, unknown>;
+    display_order: number;
+    structural_waiver: boolean;
+  }> = [];
+
+  if (items && items.length > 0) {
+    // Multi-product parametric computation
+    hasAnyStructuralWaiver = items.some((it) => it.structuralWaiver);
+    totalEstimatedAmount = items.reduce(
+      (sum, it) => sum + (it.totalPrice || it.unitPrice * (it.quantity || 1)),
+      0
+    );
+
+    const fixtureNames = items.map((it) => `${it.quantity}x ${it.productName}`).join(", ");
+    quotationNote = isMultiProduct
+      ? `Multi-product consultation estimate (${items.length} Fixtures: ${fixtureNames})${
+          hasAnyStructuralWaiver ? " (Structural Waiver Attached)" : ""
+        }`
+      : hasAnyStructuralWaiver
+      ? "Customer acknowledged NSCP 2015 Structural Span Waiver (Aperture >= 2400mm)"
+      : "Standard compliant consultation estimate";
+
+    let displayOrder = 1;
+    for (const [idx, item] of items.entries()) {
+      const itemFinish =
+        item.finishType === "white" || item.finishType === "PowderCoatedWhite"
+          ? "PowderCoatedWhite"
+          : "Analok";
+      const itemGlass = item.glassType === "6mm_clear" ? "6mm_clear" : "6mm_bronze";
+      const itemQty = Math.max(1, item.quantity);
+
+      const itemBom = calculateStandardSeries798({
+        widthMm: item.widthMm,
+        heightMm: item.heightMm,
+        panelCount: item.panelCount,
+        hasSill: item.hasSill,
+        finishType: itemFinish,
+        glassType: itemGlass,
+        structuralWaiver: item.structuralWaiver,
+      });
+
+      const snapshotSummary = generateQuotationSnapshot(quotationId, itemBom, {
+        structuralWaiver: item.structuralWaiver,
+      });
+
+      for (const group of snapshotSummary.groups) {
+        quotationItemRows.push({
+          quotation_id: quotationId,
+          item_name: isMultiProduct
+            ? `${item.productName} (${group.item_group_name})`
+            : group.item_group_name,
+          item_group_name: group.item_group_name,
+          quantity: group.quantity * itemQty,
+          unit: group.unit_label,
+          unit_price: group.unit_price,
+          estimated_subtotal: group.estimated_subtotal * itemQty,
+          structural_waiver: item.structuralWaiver,
+          pricing_details: {
+            ...group.pricing_details,
+            item_index: idx + 1,
+            item_id: item.itemId,
+            product_id: item.productId,
+            product_name: item.productName,
+            product_type: item.productType,
+            variant_name: item.variantName,
+            spec_summary: item.specSummary,
+            dimensions_formatted: item.dimensionsFormatted,
+            width_mm: item.widthMm,
+            height_mm: item.heightMm,
+            panel_count: item.panelCount,
+            has_sill: item.hasSill,
+            finish_type: item.finishType,
+            glass_type: item.glassType,
+            item_quantity: itemQty,
+            item_unit_price: item.unitPrice,
+            item_total_price: item.totalPrice,
+            structural_waiver: item.structuralWaiver,
+            image_url: item.imageUrl || null,
+            is_multi_product: isMultiProduct,
+          },
+          display_order: displayOrder++,
+        });
+      }
+    }
+  } else {
+    // Single-product fallback
+    const finishType =
+      validated.finishType === "white" || validated.finishType === "PowderCoatedWhite"
+        ? "PowderCoatedWhite"
+        : "Analok";
+    const glassType = validated.glassType === "6mm_clear" ? "6mm_clear" : "6mm_bronze";
+
+    const bomResult = calculateStandardSeries798({
+      widthMm: validated.widthMm,
+      heightMm: validated.heightMm,
+      panelCount: validated.panelCount,
+      hasSill: validated.hasSill,
+      finishType,
+      glassType,
+      structuralWaiver: validated.structuralWaiver,
+    });
+
+    totalEstimatedAmount = bomResult.finalQuotation;
+    quotationNote = validated.structuralWaiver
+      ? "Customer acknowledged NSCP 2015 Structural Span Waiver (Aperture >= 2400mm)"
+      : "Standard compliant consultation estimate";
+
+    const snapshotSummary = generateQuotationSnapshot(quotationId, bomResult, {
+      structuralWaiver: validated.structuralWaiver,
+    });
+
+    quotationItemRows.push(
+      ...snapshotSummary.groups.map((group, idx) => ({
+        quotation_id: quotationId,
+        item_name: group.item_group_name,
+        item_group_name: group.item_group_name,
+        quantity: group.quantity,
+        unit: group.unit_label,
+        unit_price: group.unit_price,
+        estimated_subtotal: group.estimated_subtotal,
+        structural_waiver: validated.structuralWaiver,
+        pricing_details: {
+          ...group.pricing_details,
+          product_name: validated.productName,
+          product_type: validated.productType,
+          is_multi_product: false,
+        },
+        display_order: idx + 1,
+      }))
+    );
+  }
+
+  // 4. Insert quotation_estimates row
   const { data: quotationData, error: quotationError } = await serviceClient
     .from("quotation_estimates")
     .insert({
+      quotation_id: quotationId,
       snapshot_id: snapshotId,
       profile_id: profileId,
       quotation_number: quotationNumber,
-      total_estimated_amount: bomResult.finalQuotation,
+      total_estimated_amount: totalEstimatedAmount,
       currency: "PHP",
-      quotation_note: validated.structuralWaiver
-        ? "Customer acknowledged NSCP 2015 Structural Span Waiver (Aperture >= 2400mm)"
-        : "Standard compliant consultation estimate",
+      quotation_note: quotationNote,
       pdf_r2_object_key: pdfObjectKey,
       status: "Generated",
     })
@@ -120,24 +260,7 @@ export async function generateSignedBookingLink(
     throw new Error(`Failed to create quotation estimate: ${quotationError?.message}`);
   }
 
-  const quotationId = quotationData.quotation_id;
-
-  // 6. Insert itemized 4-group quotation_items
-  const snapshotSummary = generateQuotationSnapshot(quotationId, bomResult, {
-    structuralWaiver: validated.structuralWaiver,
-  });
-
-  const quotationItemRows = snapshotSummary.groups.map((group, idx) => ({
-    quotation_id: quotationId,
-    item_name: group.item_group_name,
-    quantity: group.quantity,
-    unit: group.unit_label,
-    unit_price: group.unit_price,
-    estimated_subtotal: group.estimated_subtotal,
-    pricing_details: group.pricing_details,
-    display_order: idx + 1,
-  }));
-
+  // 5. Insert itemized quotation_items
   const { error: itemsError } = await serviceClient
     .from("quotation_items")
     .insert(quotationItemRows);
@@ -147,7 +270,7 @@ export async function generateSignedBookingLink(
     throw new Error(`Failed to insert quotation line items: ${itemsError.message}`);
   }
 
-  // 7. Generate Cryptographic SHA-256 Token and calculate 7-day expiration
+  // 6. Generate Cryptographic SHA-256 Token and calculate 7-day expiration
   const rawToken = crypto.randomBytes(32).toString("hex");
   const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
 
@@ -155,7 +278,7 @@ export async function generateSignedBookingLink(
   expiresDate.setDate(expiresDate.getDate() + 7);
   const expiresAt = expiresDate.toISOString();
 
-  // 8. Insert signed_booking_links record
+  // 7. Insert signed_booking_links record
   const { data: linkData, error: linkError } = await serviceClient
     .from("signed_booking_links")
     .insert({
@@ -175,9 +298,8 @@ export async function generateSignedBookingLink(
   }
 
   const linkId = linkData.link_id;
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://glassfit.ph";
-  const signedUrl = `${baseUrl}/q/${tokenHash}`;
-  const displayLink = `glassfit.ph/q/${referenceCode.toLowerCase()}`;
+  const baseUrl = await getServerBaseUrl();
+  const urls = generateBookingUrls(referenceCode, tokenHash, baseUrl);
 
   revalidatePath("/admin/bookings");
   revalidatePath("/dashboard");
@@ -188,11 +310,13 @@ export async function generateSignedBookingLink(
     quotationNumber,
     referenceCode,
     tokenHash,
-    signedUrl,
-    displayLink,
+    signedUrl: urls.tokenUrl,
+    shareableUrl: urls.shareableUrl,
+    displayLink: urls.displayBadge,
+    displayBadge: urls.displayBadge,
     expiresAt,
-    totalEstimatedAmount: bomResult.finalQuotation,
-    hasStructuralWaiver: validated.structuralWaiver,
+    totalEstimatedAmount,
+    hasStructuralWaiver: hasAnyStructuralWaiver,
   };
 }
 
@@ -290,7 +414,12 @@ export async function getPublicBookingReference(
 ): Promise<PublicQuotationSummary | null> {
   const serviceClient = createSupabaseServiceClient();
 
-  const isHash = /^[0-9a-fA-F]{64}$/.test(codeOrHash);
+  const trimmed = (codeOrHash || "").trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const isHash = /^[0-9a-fA-F]{64}$/.test(trimmed);
 
   let query = serviceClient
     .from("signed_booking_links")
@@ -304,6 +433,10 @@ export async function getPublicBookingReference(
         full_name,
         email,
         contact_number
+      ),
+      visualization_snapshots (
+        snapshot_id,
+        final_image_r2_key
       ),
       quotation_estimates!inner (
         quotation_id,
@@ -322,10 +455,10 @@ export async function getPublicBookingReference(
     `);
 
   if (isHash) {
-    query = query.eq("token_hash", codeOrHash);
+    query = query.eq("token_hash", trimmed);
   } else {
     // Lookup by quotation number format or reference code
-    const cleanCode = codeOrHash.toUpperCase();
+    const cleanCode = trimmed.toUpperCase();
     const formattedQuoteNo = cleanCode.startsWith("CF-")
       ? cleanCode.replace("CF-", "Q-")
       : cleanCode.startsWith("Q-")
@@ -335,7 +468,7 @@ export async function getPublicBookingReference(
     query = query.eq("quotation_estimates.quotation_number", formattedQuoteNo);
   }
 
-  const { data: linkRecord, error } = await query.single();
+  const { data: linkRecord, error } = await query.maybeSingle();
 
   if (error || !linkRecord) {
     return null;
@@ -348,21 +481,148 @@ export async function getPublicBookingReference(
 
   if (!quote) return null;
 
-  const rawItems = Array.isArray(quote.quotation_items) ? quote.quotation_items : [];
-  const pricingDetails = rawItems[0]?.pricing_details as Record<string, unknown> | undefined;
+  const snapshot = Array.isArray(linkRecord.visualization_snapshots)
+    ? linkRecord.visualization_snapshots[0]
+    : linkRecord.visualization_snapshots;
 
-  const widthM = typeof pricingDetails?.width_m === "number" ? pricingDetails.width_m : 1.2;
-  const heightM = typeof pricingDetails?.height_m === "number" ? pricingDetails.height_m : 1.2;
-  const panelCount = typeof pricingDetails?.panel_count === "number" ? pricingDetails.panel_count : 2;
-  const hasSill = typeof pricingDetails?.has_sill === "boolean" ? pricingDetails.has_sill : true;
-  const finishType = typeof pricingDetails?.finish_type === "string" ? pricingDetails.finish_type : "Analok";
-  const glassType = typeof pricingDetails?.glass_type === "string" ? pricingDetails.glass_type : "6mm_bronze";
-  const structuralWaiver = panelCount === 2 && Math.round(widthM * 1000) >= 2400;
+  const snapshotImageUrl = snapshot?.final_image_r2_key
+    ? resolveSnapshotUrl(snapshot.final_image_r2_key)
+    : null;
+
+  const rawItems = Array.isArray(quote.quotation_items) ? quote.quotation_items : [];
+
+  // Parse multi-product items and aggregated metrics from quotation_items pricing_details
+  const itemsMap = new Map<string, {
+    itemId: string;
+    productId?: string;
+    productName: string;
+    productType: string;
+    variantName?: string;
+    specSummary?: string;
+    dimensionsFormatted?: string;
+    widthMm: number;
+    heightMm: number;
+    panelCount: number;
+    hasSill: boolean;
+    structuralWaiver: boolean;
+    finishType: string;
+    glassType: string;
+    quantity: number;
+    unitPrice: number;
+    totalPrice: number;
+    imageUrl?: string | null;
+  }>();
+
+  let totalFramingMeters = 0;
+  let totalGlazingSqm = 0;
+  let totalLaborCost = 0;
+  let totalQuantity = 0;
+  let hasAnyMultiWaiver = false;
+
+  for (const row of rawItems) {
+    const details = row?.pricing_details as Record<string, unknown> | undefined;
+    if (details) {
+      const isMultiItem = details.is_multi_product || details.product_name || details.item_id || details.item_index;
+      if (isMultiItem) {
+        const itemKey = String(details.item_id || details.item_index || details.product_name || row.item_name);
+        if (!itemsMap.has(itemKey)) {
+          const pName = String(details.product_name || row.item_name || "Custom Architectural Fixture");
+          const pType = String(details.product_type || "Window & Door");
+          const wMm = typeof details.width_mm === "number"
+            ? details.width_mm
+            : typeof details.width_m === "number"
+            ? Math.round(details.width_m * 1000)
+            : 1200;
+          const hMm = typeof details.height_mm === "number"
+            ? details.height_mm
+            : typeof details.height_m === "number"
+            ? Math.round(details.height_m * 1000)
+            : 1200;
+          const pCount = typeof details.panel_count === "number" ? details.panel_count : 2;
+          const sill = typeof details.has_sill === "boolean" ? details.has_sill : true;
+          const waiver = Boolean(details.structural_waiver);
+          const finish = String(details.finish_type || "Analok");
+          const glass = String(details.glass_type || "6mm_bronze");
+          const qty = typeof details.item_quantity === "number" ? details.item_quantity : 1;
+          const uPrice = typeof details.item_unit_price === "number" ? details.item_unit_price : Number(row.unit_price);
+          const tPrice = typeof details.item_total_price === "number" ? details.item_total_price : uPrice * qty;
+          const img = typeof details.image_url === "string" ? details.image_url : null;
+          const specSummary = String(details.spec_summary || `${finish} | ${wMm / 10}cm × ${hMm / 10}cm`);
+          const dimsFormatted = String(details.dimensions_formatted || `${wMm / 10}cm × ${hMm / 10}cm`);
+
+          if (waiver) hasAnyMultiWaiver = true;
+          totalQuantity += qty;
+
+          itemsMap.set(itemKey, {
+            itemId: itemKey,
+            productId: typeof details.product_id === "string" ? details.product_id : undefined,
+            productName: pName,
+            productType: pType,
+            variantName: typeof details.variant_name === "string" ? details.variant_name : `${pCount}-Panel Configuration`,
+            specSummary,
+            dimensionsFormatted: dimsFormatted,
+            widthMm: wMm,
+            heightMm: hMm,
+            panelCount: pCount,
+            hasSill: sill,
+            structuralWaiver: waiver,
+            finishType: finish,
+            glassType: glass,
+            quantity: qty,
+            unitPrice: uPrice,
+            totalPrice: tPrice,
+            imageUrl: img,
+          });
+        }
+      }
+    }
+
+    if (row.unit === "m" || row.item_name?.includes("Framing")) {
+      totalFramingMeters += Number(row.quantity) || 0;
+    } else if (row.unit === "sqm" || row.item_name?.includes("Glass")) {
+      totalGlazingSqm += Number(row.quantity) || 0;
+    } else if (row.unit === "lot" || row.item_name?.includes("Labor")) {
+      totalLaborCost += Number(row.estimated_subtotal) || 0;
+    }
+  }
+
+  const itemsList = Array.from(itemsMap.values());
+  const isMultiProduct = itemsList.length > 1;
+
+  // Single-product fallback parameters
+  const firstDetails = rawItems[0]?.pricing_details as Record<string, unknown> | undefined;
+  const widthM = typeof firstDetails?.width_m === "number" ? firstDetails.width_m : 1.2;
+  const heightM = typeof firstDetails?.height_m === "number" ? firstDetails.height_m : 1.2;
+  const panelCount = typeof firstDetails?.panel_count === "number" ? firstDetails.panel_count : 2;
+  const hasSill = typeof firstDetails?.has_sill === "boolean" ? firstDetails.has_sill : true;
+  const finishType = typeof firstDetails?.finish_type === "string" ? firstDetails.finish_type : "Analok";
+  const glassType = typeof firstDetails?.glass_type === "string" ? firstDetails.glass_type : "6mm_bronze";
+  const singleStructuralWaiver = panelCount === 2 && Math.round(widthM * 1000) >= 2400;
+
+  const structuralWaiver = isMultiProduct
+    ? hasAnyMultiWaiver
+    : (itemsList[0]?.structuralWaiver ?? singleStructuralWaiver);
+
+  let productName = "Series 798 Sliding Window";
+  let productType = "Sliding Window";
+
+  if (isMultiProduct) {
+    productName = `${itemsList.length} Architectural Fixtures (${totalQuantity || itemsList.length} Units)`;
+    productType = "Multi-Product Installation";
+  } else if (itemsList.length === 1) {
+    productName = itemsList[0].productName;
+    productType = itemsList[0].productType;
+  } else if (firstDetails?.product_name) {
+    productName = String(firstDetails.product_name);
+    productType = String(firstDetails.product_type || "Sliding Window");
+  }
 
   const referenceCode = quote.quotation_number.replace("Q-", "CF-");
 
   const createdDate = new Date(linkRecord.created_at);
   const expiresDate = new Date(linkRecord.expires_at);
+  const now = new Date();
+  const isExpired = now > expiresDate || linkRecord.status === "Expired";
 
   const createdAtFormatted = new Intl.DateTimeFormat("en-US", {
     month: "long",
@@ -377,33 +637,60 @@ export async function getPublicBookingReference(
     month: "long",
     day: "numeric",
     year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
   }).format(expiresDate);
 
   return {
     referenceCode,
     quotationNumber: quote.quotation_number,
     customerName: profile?.full_name || "Valued Customer",
-    productName: "Series 798 Sliding Window",
-    productType: "Sliding Window",
-    widthMm: Math.round(widthM * 1000),
-    heightMm: Math.round(heightM * 1000),
-    panelCount,
-    hasSill,
-    finishType,
-    glassType,
+    productName,
+    productType,
+    widthMm: itemsList[0]?.widthMm || Math.round(widthM * 1000),
+    heightMm: itemsList[0]?.heightMm || Math.round(heightM * 1000),
+    panelCount: itemsList[0]?.panelCount || panelCount,
+    hasSill: itemsList[0]?.hasSill ?? hasSill,
+    finishType: itemsList[0]?.finishType || finishType,
+    glassType: itemsList[0]?.glassType || glassType,
     structuralWaiver,
     totalEstimatedAmount: Number(quote.total_estimated_amount),
     createdAtFormatted,
     expiresAtFormatted,
-    snapshotImageUrl: null,
+    isExpired,
+    snapshotImageUrl,
     status: linkRecord.status as PublicQuotationSummary["status"],
-    groups: rawItems.map((item: { item_name: string; quantity: number; unit: string; unit_price: number; estimated_subtotal: number }) => ({
-      item_group_name: item.item_name,
-      quantity: Number(item.quantity),
-      unit_label: item.unit,
-      unit_price: Number(item.unit_price),
-      estimated_subtotal: Number(item.estimated_subtotal),
-    })),
+    isMultiProduct,
+    items: itemsList.length > 0 ? itemsList : undefined,
+    consolidatedMetrics: isMultiProduct
+      ? {
+          totalQuantity: totalQuantity || itemsList.length,
+          totalFramingMeters: Math.round(totalFramingMeters * 10) / 10,
+          totalGlazingSqm: Math.round(totalGlazingSqm * 100) / 100,
+          totalLaborCost: Math.round(totalLaborCost * 100) / 100,
+        }
+      : undefined,
+    groups: rawItems.map(
+      (item: {
+        item_name: string;
+        quantity: number;
+        unit: string;
+        unit_price: number;
+        estimated_subtotal: number;
+        pricing_details?: unknown;
+      }) => {
+        const det = item.pricing_details as Record<string, unknown> | undefined;
+        return {
+          item_group_name: item.item_name,
+          quantity: Number(item.quantity),
+          unit_label: item.unit,
+          unit_price: Number(item.unit_price),
+          estimated_subtotal: Number(item.estimated_subtotal),
+          product_name: typeof det?.product_name === "string" ? det.product_name : undefined,
+        };
+      }
+    ),
   };
 }
 

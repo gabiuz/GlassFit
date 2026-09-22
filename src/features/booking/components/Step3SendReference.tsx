@@ -8,6 +8,7 @@ import { formatBookingShareMessage } from "@/lib/pricing/quotationPdfGenerator";
 
 interface Step3SendReferenceProps {
   generatedLink: string;
+  shareableUrl?: string;
   onSend: (method: "Messenger" | "Viber") => void;
   totalEstimatePhp?: number;
   hasStructuralWaiver?: boolean;
@@ -18,6 +19,7 @@ interface Step3SendReferenceProps {
 
 export function Step3SendReference({
   generatedLink,
+  shareableUrl = "",
   onSend,
   totalEstimatePhp = 50000,
   hasStructuralWaiver = false,
@@ -27,10 +29,17 @@ export function Step3SendReference({
 }: Step3SendReferenceProps) {
   const [copied, setCopied] = useState(false);
 
+  const workableUrl =
+    shareableUrl && shareableUrl.trim() !== ""
+      ? shareableUrl
+      : generatedLink.startsWith("http://") || generatedLink.startsWith("https://")
+      ? generatedLink
+      : `http://${generatedLink}`;
+
   const { messageText, messengerUrl, viberUrl } = formatBookingShareMessage({
     customerName,
     quotationNumber,
-    referenceLink: generatedLink,
+    referenceLink: workableUrl,
     productDescription: productName,
     totalEstimatePhp,
     hasStructuralWaiver,

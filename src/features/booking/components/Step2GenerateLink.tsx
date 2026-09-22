@@ -2,12 +2,14 @@
 
 import React, { useState } from "react";
 import Image from "next/image";
+import { ExternalLink } from "lucide-react";
 
 interface Step2GenerateLinkProps {
   isLinkGenerated: boolean;
   isGenerating?: boolean;
   onGenerateLink: () => void;
   generatedLink: string;
+  shareableUrl?: string;
   totalEstimatePhp?: number;
   hasStructuralWaiver?: boolean;
   customerName?: string;
@@ -23,6 +25,7 @@ export function Step2GenerateLink({
   isGenerating = false,
   onGenerateLink,
   generatedLink,
+  shareableUrl = "",
   totalEstimatePhp = 50000,
   hasStructuralWaiver = false,
   customerName = "Juan Dela Cruz",
@@ -34,6 +37,13 @@ export function Step2GenerateLink({
 }: Step2GenerateLinkProps) {
   const [copied, setCopied] = useState(false);
 
+  const fullWorkableUrl =
+    shareableUrl && shareableUrl.trim() !== ""
+      ? shareableUrl
+      : generatedLink.startsWith("http://") || generatedLink.startsWith("https://")
+      ? generatedLink
+      : `http://${generatedLink}`;
+
   const formattedPrice = new Intl.NumberFormat("en-PH", {
     style: "currency",
     currency: "PHP",
@@ -41,9 +51,15 @@ export function Step2GenerateLink({
   }).format(totalEstimatePhp).replace("PHP", "Php");
 
   const handleCopyLink = () => {
-    navigator.clipboard.writeText(generatedLink);
+    navigator.clipboard.writeText(fullWorkableUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleOpenInNewTab = () => {
+    if (typeof window !== "undefined") {
+      window.open(fullWorkableUrl, "_blank");
+    }
   };
 
   return (
@@ -166,23 +182,32 @@ export function Step2GenerateLink({
               </div>
 
               {/* Link Box */}
-              <div className="flex items-center border border-[#c3c3c3] rounded-lg bg-neutral-50 px-4 py-3 gap-4 w-full justify-between">
+              <div className="flex items-center border border-[#c3c3c3] rounded-lg bg-neutral-50 px-4 py-3 gap-3 w-full justify-between">
                 <span className="text-[#07b6d3] font-normal text-base truncate select-all">
                   {generatedLink}
                 </span>
-                <button
-                  onClick={handleCopyLink}
-                  className="text-black hover:text-[#07b6d3] transition-colors focus:outline-none flex items-center shrink-0 cursor-pointer"
-                  title="Copy link"
-                >
-                  <Image
-                    src={"/send-booking/copy.svg"}
-                    alt="Copy link"
-                    width={26}
-                    height={26}
-                    className="object-contain"
-                  />
-                </button>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={handleCopyLink}
+                    className="p-1.5 text-neutral-700 hover:text-[#07b6d3] transition-colors focus:outline-none flex items-center shrink-0 cursor-pointer rounded-md hover:bg-neutral-200/60"
+                    title="Copy full workable link"
+                  >
+                    <Image
+                      src={"/send-booking/copy.svg"}
+                      alt="Copy link"
+                      width={24}
+                      height={24}
+                      className="object-contain"
+                    />
+                  </button>
+                  <button
+                    onClick={handleOpenInNewTab}
+                    className="p-1.5 text-neutral-700 hover:text-[#07b6d3] transition-colors focus:outline-none flex items-center shrink-0 cursor-pointer rounded-md hover:bg-neutral-200/60"
+                    title="Open reference in new tab"
+                  >
+                    <ExternalLink className="w-5 h-5" />
+                  </button>
+                </div>
               </div>
 
               <div className="hidden md:grid grid-cols-[auto_auto_auto] gap-x-[70px] gap-y-[10px] pt-4 border-t border-neutral-100 select-none text-left items-baseline">
