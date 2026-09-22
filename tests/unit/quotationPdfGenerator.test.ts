@@ -20,31 +20,114 @@ describe("IMP-MS14 quotation preview", () => {
     assert.ok(!html.includes("<script>alert"));
   });
 
-  it("renders responsive A4 styles, official logo, fallback, checklist, and notice", () => {
+  it("isolates the narrow screen layout and restores print-safe A4 geometry", () => {
     const html = generateQuotationPdfHtml(base);
-    for (const text of ["width:min(210mm, 100%)", "@media (max-width:640px)", "@page { size: A4 portrait; margin: 15mm; }", ".no-print { display:none !important; }", "thead { display:table-header-group; }", "https://glassfit.test/Logo.svg", "Visualization preview not available", "Ocular inspection checklist", "Preliminary Estimate and Consumer Notice"]) assert.ok(html.includes(text), text);
+    for (const text of [
+      "width:min(210mm, 100%)",
+      "@media screen and (max-width:640px)",
+      "@page { size: A4 portrait; margin: 15mm; }",
+      ".document-header { display:flex; flex-direction:row;",
+      ".meta-grid,.fixture-specs,.signature-grid { grid-template-columns:repeat(2,minmax(0,1fr));",
+      ".brand-logo { width:40mm; max-width:none; height:15mm;",
+      ".items-table { font-size:9pt;",
+      ".items-table th,.items-table td { padding:2mm;",
+      ".no-print { display:none !important; }",
+      "thead { display:table-header-group; }",
+      "https://glassfit.test/Logo.svg",
+      "Visualization preview not available",
+      "Ocular inspection checklist",
+      "Preliminary Estimate and Consumer Notice",
+    ]) assert.ok(html.includes(text), text);
+    assert.ok(!html.includes("@media (max-width:640px)"));
     assert.ok(!html.includes("undefined"));
     assert.ok(!html.includes("null"));
     assert.ok(!html.includes("Metro Manila, Philippines"));
     assert.ok(!html.includes("certified code-compliant"));
   });
 
+  it("uses bounded fragmentation rules without clipping long fixture cards", () => {
+    const html = generateQuotationPdfHtml(base);
+    for (const text of [
+      ".item-card { overflow:visible;",
+      ".document-header,.meta-grid,.summary-card,.fixture-specs,.ocular-card,.consumer-notice",
+      ".item-card>header { break-after:avoid; page-break-after:avoid;",
+      ".snapshot { break-inside:avoid; page-break-inside:avoid;",
+      ".snapshot img { width:100%; height:auto; max-height:82mm; object-fit:contain;",
+      "tr { break-inside:avoid; page-break-inside:avoid; }",
+      "p,li { orphans:3; widows:3; }",
+    ]) assert.ok(html.includes(text), text);
+    assert.ok(!html.includes(".item-card { break-inside:avoid"));
+  });
+
   it("handles popup failure and keeps preview mode print-free", () => {
     assert.deepStrictEqual(openQuotationPreview("<p>x</p>", { autoPrint: false }, () => null), { ok: false, reason: "POPUP_BLOCKED" });
     let prints = 0;
-    const preview = { opener: {}, document: { open() {}, write() {}, close() {}, images: [] as unknown as HTMLCollectionOf<HTMLImageElement> }, print() { prints += 1; } } satisfies QuotationPreviewWindowPort;
+    const preview = { opener: {}, document: { open() {}, write() {}, close() {}, readyState: "complete", images: [] as unknown as HTMLCollectionOf<HTMLImageElement> }, addEventListener() {}, clearTimeout() {}, requestAnimationFrame(callback: FrameRequestCallback) { callback(0); return 0; }, setTimeout() { return 1; }, print() { prints += 1; } } satisfies QuotationPreviewWindowPort;
     assert.deepStrictEqual(openQuotationPreview("<p>x</p>", { autoPrint: false }, () => preview), { ok: true });
     assert.strictEqual(preview.opener, null);
     assert.strictEqual(prints, 0);
   });
 
-  it("waits for image readiness before auto-printing", async () => {
+  it("waits for document, fonts, complete-image decode, and two paint frames", async () => {
+    let releaseLoad: (() => void) | undefined;
     let release: (() => void) | undefined;
     let prints = 0;
-    const image = { complete: false, decode: () => new Promise<void>((resolve) => { release = resolve; }) } as HTMLImageElement;
-    const preview = { opener: {}, document: { open() {}, write() {}, close() {}, fonts: { ready: Promise.resolve() }, images: [image] as unknown as HTMLCollectionOf<HTMLImageElement> }, print() { prints += 1; } } satisfies QuotationPreviewWindowPort;
+    let frames = 0;
+    const image = { complete: true, decode: () => new Promise<void>((resolve) => { release = resolve; }) } as HTMLImageElement;
+    const preview = {
+      opener: {},
+      document: { open() {}, write() {}, close() {}, readyState: "loading", fonts: { ready: Promise.resolve() }, images: [image] as unknown as HTMLCollectionOf<HTMLImageElement> },
+      addEventListener(type: "load", listener: () => void) { assert.strictEqual(type, "load"); releaseLoad = listener; },
+      clearTimeout() {},
+      requestAnimationFrame(callback: FrameRequestCallback) { frames += 1; callback(frames); return frames; },
+      setTimeout() { return 1; },
+      print() { prints += 1; },
+    } satisfies QuotationPreviewWindowPort;
     assert.deepStrictEqual(openQuotationPreview("<p>x</p>", { autoPrint: true }, () => preview), { ok: true });
+    await Promise.resolve(); assert.strictEqual(prints, 0); releaseLoad?.();
     await Promise.resolve(); assert.strictEqual(prints, 0); release?.();
-    await new Promise((resolve) => setTimeout(resolve, 0)); assert.strictEqual(prints, 1);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.strictEqual(frames, 2);
+    assert.strictEqual(prints, 1);
+  });
+
+  it("treats image decode rejection as settled", async () => {
+    let prints = 0;
+    let frames = 0;
+    const image = { complete: true, decode: () => Promise.reject(new Error("decode failed")) } as HTMLImageElement;
+    const preview = {
+      opener: {},
+      document: { open() {}, write() {}, close() {}, readyState: "complete", images: [image] as unknown as HTMLCollectionOf<HTMLImageElement> },
+      addEventListener() {},
+      clearTimeout() {},
+      requestAnimationFrame(callback: FrameRequestCallback) { frames += 1; callback(frames); return frames; },
+      setTimeout() { return 1; },
+      print() { prints += 1; },
+    } satisfies QuotationPreviewWindowPort;
+    openQuotationPreview("<p>x</p>", { autoPrint: true }, () => preview);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.strictEqual(frames, 2);
+    assert.strictEqual(prints, 1);
+  });
+
+  it("uses the bounded five-second fallback when readiness never settles", async () => {
+    let prints = 0;
+    let requestedTimeout = 0;
+    let releaseTimeout: (() => void) | undefined;
+    const preview = {
+      opener: {},
+      document: { open() {}, write() {}, close() {}, readyState: "loading", fonts: { ready: new Promise(() => undefined) }, images: [] as unknown as HTMLCollectionOf<HTMLImageElement> },
+      addEventListener() {},
+      clearTimeout() {},
+      requestAnimationFrame(callback: FrameRequestCallback) { callback(0); return 0; },
+      setTimeout(handler: () => void, timeout: number) { requestedTimeout = timeout; releaseTimeout = handler; return 1; },
+      print() { prints += 1; },
+    } satisfies QuotationPreviewWindowPort;
+    openQuotationPreview("<p>x</p>", { autoPrint: true }, () => preview);
+    assert.strictEqual(requestedTimeout, 5_000);
+    assert.strictEqual(prints, 0);
+    releaseTimeout?.();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.strictEqual(prints, 1);
   });
 });

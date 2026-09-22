@@ -86,8 +86,29 @@ export function generateQuotationPdfHtml(metadata: QuotationPdfMetadata): string
 .items-table { width:100%; border-collapse:collapse; margin:12px 0 20px; } .items-table th,.items-table td { padding:8px; border-bottom:1px solid #e2e8f0; text-align:left; vertical-align:top; } .items-table th { background:#f1f5f9; font-size:10px; text-transform:uppercase; } .items-table td:nth-child(n+2),.items-table th:nth-child(n+2) { text-align:right; }
 .item-subtotal { display:flex; flex-wrap:wrap; justify-content:space-between; gap:8px; padding:12px; background:#f1f5f9; } .total-table { width:min(100%,390px); margin-left:auto; border-collapse:collapse; } .total-table td { padding:7px; } .total-table td:last-child { text-align:right; font-weight:700; } .grand-total-row { background:#07b6d3; color:#fff; font-size:15px; }
 .ocular-card,.consumer-notice { margin-top:24px; padding:16px; border:1px solid #cbd5e1; border-radius:8px; } .checklist { padding-left:20px; } .checklist li { margin:7px 0; list-style:"☐  "; } .signature-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:28px; margin-top:32px; } .signature-block .line { height:30px; border-bottom:1px solid #64748b; } .consumer-notice { background:#f8fafc; color:#475569; font-size:11px; }
-@media (max-width:640px) { body { padding:12px 8px 32px; } .document-header,.preview-toolbar { align-items:flex-start; flex-direction:column; } .meta-grid,.fixture-specs,.signature-grid { grid-template-columns:1fr; } .items-table { font-size:10px; } .items-table th,.items-table td { padding:5px 3px; } }
-@media print { body { padding:0; background:transparent; print-color-adjust:exact; -webkit-print-color-adjust:exact; } .no-print { display:none !important; } .document-sheet { width:100%; margin:0; padding:0; border-radius:0; box-shadow:none; } tr,.summary-card,.signature-block,.ocular-card { break-inside:avoid; page-break-inside:avoid; } thead { display:table-header-group; } }
+@media screen and (max-width:640px) { body { padding:12px 8px 32px; } .document-header,.preview-toolbar { align-items:flex-start; flex-direction:column; } .meta-grid,.fixture-specs,.signature-grid { grid-template-columns:1fr; } .items-table { font-size:10px; } .items-table th,.items-table td { padding:5px 3px; } }
+@media print {
+  html,body { width:100%; margin:0; padding:0; background:transparent; font-size:9pt; print-color-adjust:exact; -webkit-print-color-adjust:exact; }
+  .no-print { display:none !important; }
+  .document-sheet { box-sizing:border-box; width:100%; max-width:none; margin:0; padding:0; border-radius:0; box-shadow:none; }
+  .document-header { display:flex; flex-direction:row; align-items:flex-start; gap:8mm; padding-bottom:4mm; }
+  .meta-grid,.fixture-specs,.signature-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .meta-grid { margin:4mm 0; padding:4mm; }
+  .brand-logo { width:40mm; max-width:none; height:15mm; }
+  h1 { font-size:14pt; } h2 { margin:6mm 0 2.5mm; font-size:12pt; } h3 { font-size:10pt; }
+  .items-table { font-size:9pt; margin:3mm 0 5mm; }
+  .items-table th,.items-table td { padding:2mm; }
+  .item-card { overflow:visible; border-radius:0; }
+  .item-card>header { break-after:avoid; page-break-after:avoid; }
+  .document-header,.meta-grid,.summary-card,.fixture-specs,.ocular-card,.consumer-notice { break-inside:avoid; page-break-inside:avoid; }
+  .snapshot { break-inside:avoid; page-break-inside:avoid; }
+  .snapshot img { width:100%; height:auto; max-height:82mm; object-fit:contain; }
+  .item-card .snapshot img { max-height:58mm; }
+  .snapshot-fallback { break-inside:avoid; page-break-inside:avoid; margin:4mm 0; padding:6mm; }
+  tr { break-inside:avoid; page-break-inside:avoid; }
+  thead { display:table-header-group; }
+  p,li { orphans:3; widows:3; }
+}
 </style></head><body><nav class="preview-toolbar no-print" aria-label="Quotation preview controls"><div><strong>Quotation preview</strong><div>${escapeHtml(metadata.quotationNumber)}</div></div><div class="toolbar-actions"><button class="primary" type="button" onclick="window.print()">Print / Save as PDF</button><button type="button" onclick="window.close()">Close preview</button></div></nav>
 <main class="document-sheet"><header class="document-header"><div><img class="brand-logo" src="${escapeHtml(metadata.brandLogoUrl)}" alt="GlassFit"><p>Consultation Partner: R.R.D. Aluminum &amp; Glass Works</p></div><div><h1>PRELIMINARY CONSULTATION ESTIMATE</h1><strong>No. ${escapeHtml(metadata.quotationNumber)}</strong><div>${escapeHtml(metadata.createdAtFormatted)}</div>${reference}${metadata.quotationValidityText ? `<div>${escapeHtml(metadata.quotationValidityText)}</div>` : ""}</div></header>
 <section class="meta-grid"><div><span>Customer</span><strong>${escapeHtml(metadata.customerName)}</strong></div>${field("Phone",metadata.customerPhone)}${field("Email",metadata.customerEmail)}${field("Site location",metadata.siteLocation)}<div><span>Project</span><strong>${escapeHtml(metadata.projectName)}</strong></div></section>${waiver}${snapshot(sanitizeImageSource(metadata.snapshotImageUrl,origins),"Client-space visualization preview")}${!isMulti ? `<div class="fixture-specs"><span><b>Dimensions:</b> W: ${Math.round(metadata.bomResult.widthM * 1000)} mm × H: ${Math.round(metadata.bomResult.heightM * 1000)} mm</span><span><b>Panels:</b> ${metadata.bomResult.panelCount}</span><span><b>Finish:</b> ${escapeHtml(metadata.bomResult.frozenDetails.finish_type)}</span><span><b>Glass:</b> ${escapeHtml(metadata.bomResult.frozenDetails.glass_type)}</span><span><b>Sill:</b> ${metadata.hasSill ? "Standard sill" : "Bottom Sill Omitted. Net material reduction applied."}</span></div>` : ""}
