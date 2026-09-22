@@ -373,14 +373,16 @@ describe("Milestone 8: Automated Test Suites & Numerical Validation (QA Layer)",
         customerEmail: "maria@example.com",
         siteLocation: "Makati City, Metro Manila",
         createdAtFormatted: "September 9, 2026",
-        validUntilFormatted: "September 23, 2026",
+        quotationValidityText: "Valid until September 23, 2026",
+        projectName: "Series 798 Sliding Window",
+        brandLogoUrl: "https://glassfit.ph/Logo.svg",
         hasSill: true,
         structuralWaiver: true,
         bomResult,
       });
 
       assert.ok(pdfHtml.includes("NSCP 2015 Structural Span Waiver Attached"));
-      assert.ok(pdfHtml.includes("2-panel configuration exceeds standard Series 798 structural leaf recommendations"));
+      assert.ok(pdfHtml.includes("configuration exceeds standard Series 798 2-panel structural width recommendations"));
       assert.ok(pdfHtml.includes("wind-load deflection risks"));
     });
 
