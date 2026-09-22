@@ -8,6 +8,7 @@ import {
   getComparisonLayerImageUrls,
   getPlacedLayerImageUrls,
   hasCompleteVariationLayers,
+  hasRenderableVariationLayers,
   preserveActivePlacedLayer,
   reconcileProductVariantSelections,
   swapProductVariantSelections,
@@ -28,6 +29,7 @@ import type {
   PlacedOverlay,
   ProductConfigurationSnapshot,
 } from "../../src/lib/visualization/types";
+import { ALUMINUM_COLOR_VARIATIONS } from "../../src/lib/visualization/colorVariations";
 
 const sourceConfiguration: ProductConfigurationSnapshot = {
   widthCm: 80,
@@ -204,11 +206,11 @@ describe("PRD-F15/PRD-F16: multi-product visualization and comparison", () => {
     );
 
     assert.deepEqual(reconciled, {
-      third: { left: "silver", right: "silver" },
-      first: { left: "black", right: "silver" },
+      third: { left: "al_1001", right: "al_1001" },
+      first: { left: "white", right: "white" },
     });
     assert.deepEqual(createProductVariantSelections([third, first]), {
-      third: { left: "silver", right: "silver" },
+      third: { left: "al_1001", right: "al_1001" },
       first: { left: "white", right: "white" },
     });
   });
@@ -230,9 +232,20 @@ describe("PRD-F15/PRD-F16: multi-product visualization and comparison", () => {
     const complete = placedOverlay("complete");
     const incomplete = placedOverlay("incomplete");
     complete.variationImageDataUrls = {
+      ...Object.fromEntries(
+        ALUMINUM_COLOR_VARIATIONS.map((variation) => [
+          variation.key,
+          `complete-${variation.key}`,
+        ]),
+      ),
       white: "complete-white",
-      black: "complete-black",
-      silver: "complete-silver",
+      al_1009: "complete-black",
+      analok: "complete-analok",
+      al_1001: "complete-silver",
+      al_1004: "complete-gold",
+      al_1006: "complete-jade",
+      al_1015: "complete-forest",
+      al_1018: "complete-blue",
     };
     incomplete.variationImageDataUrls = {
       white: "incomplete-white",
@@ -241,6 +254,8 @@ describe("PRD-F15/PRD-F16: multi-product visualization and comparison", () => {
 
     assert.equal(hasCompleteVariationLayers([complete]), true);
     assert.equal(hasCompleteVariationLayers([complete, incomplete]), false);
+    assert.equal(hasRenderableVariationLayers([complete]), true);
+    assert.equal(hasRenderableVariationLayers([incomplete]), false);
     assert.throws(
       () => getComparisonLayerImageUrls(
         [incomplete],
@@ -249,6 +264,44 @@ describe("PRD-F15/PRD-F16: multi-product visualization and comparison", () => {
       ),
       /regenerate/i,
     );
+  });
+
+  it("accepts a render recipe with a partial asset map as a normal ready state", () => {
+    const overlay = placedOverlay("lazy");
+    overlay.variationAssetRefs = {
+      white: {
+        cacheKey: "session:lazy:white:fingerprint",
+        mimeType: "image/png",
+        byteLength: 4,
+        width: 1,
+        height: 1,
+        fingerprint: "fingerprint",
+      },
+    };
+    overlay.variationRenderRecipe = {
+      productId: overlay.productId,
+      templateId: overlay.templateId,
+      structuralDefinition: {
+        product: { productId: overlay.productId, productName: overlay.productName, productType: "Window" },
+        template: { templateId: overlay.templateId, templateName: "Window", modelStrategy: "Parametric", measurementUnit: "mm", baseConfiguration: {} },
+        parameters: [],
+        components: [],
+        rules: [],
+      },
+      configuration: overlay.configuration,
+      sourceCanvasWidth: 1200,
+      sourceCanvasHeight: 800,
+      sourceOverlayWidth: 540,
+      sourceOverlayHeight: 385,
+      visibleModelBounds: { left: 0, top: 0, width: 540, height: 385 },
+    };
+
+    assert.equal(hasCompleteVariationLayers([overlay]), false);
+    assert.equal(hasRenderableVariationLayers([overlay]), true);
+    assert.deepEqual(createProductVariantSelections([overlay]).lazy, {
+      left: "white",
+      right: "white",
+    });
   });
 
   it("commits Panel A for every product without mutating the source overlays", () => {

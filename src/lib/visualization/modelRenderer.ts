@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { ProductStructuralDefinition } from "@/lib/visualization/types";
 import type { LightingAnalysis } from "@/lib/imageApi";
-import type { GlassAppearanceMode } from "./types";
+import type { GlassAppearanceMode, GlassColorKey, GlassThicknessMm } from "./types";
 import {
   getHorizontalFovRadians,
   getVerticalFovDegrees,
@@ -11,8 +11,24 @@ import {
 import { buildParametricProduct } from "@/lib/visualization/parametricProductBuilder";
 import { resolveProductStructure } from "@/lib/visualization/structuralResolver";
 import { preloadComponentModels } from "@/lib/visualization/componentModelCache";
-import { applyPresentationMaterials } from "@/lib/visualization/materialClassifier";
-import { normalizeAluminumFinish } from "@/lib/visualization/colorVariations";
+import {
+  applyPresentationMaterials,
+  detectProductMaterialCapabilities,
+  type ProductMaterialCapabilities,
+} from "@/lib/visualization/materialClassifier";
+import type { RrdAluminumFinishKey } from "@/lib/visualization/colorVariations";
+
+export type ModelPresentationOptions = {
+  aluminumFinish: RrdAluminumFinishKey;
+  glassAppearance: GlassAppearanceMode;
+  glassColor: GlassColorKey;
+  glassThicknessMm: GlassThicknessMm;
+  includeSill: boolean;
+};
+
+export type LoadedModelResult = {
+  capabilities: ProductMaterialCapabilities;
+};
 
 // Cache the environment map globally so we only download the HDR once
 let cachedEnvironmentMap: THREE.Texture | null = null;
@@ -73,6 +89,10 @@ export class ProductModelRenderer {
   private canvas: HTMLCanvasElement;
   private modelGroup: THREE.Group;
   private modelLoadVersion = 0;
+  private materialCapabilities: ProductMaterialCapabilities = {
+    hasAluminum: false,
+    hasGlass: false,
+  };
   private lockedHorizontalFovRadians: number | null = null;
   
   private ambientLight: THREE.AmbientLight;
@@ -182,22 +202,19 @@ export class ProductModelRenderer {
   async loadModel(
     definition: ProductStructuralDefinition,
     values: Record<string, unknown>,
-    glassAppearance: GlassAppearanceMode,
-    includeSill: boolean,
-    alumFinish?: string
-  ) {
+    presentation: ModelPresentationOptions,
+  ): Promise<LoadedModelResult | undefined> {
     const loadVersion = (this.modelLoadVersion += 1);
 
     const group =
       definition.template.modelStrategy === "Fixed"
-        ? await this.loadFixedModel(definition, glassAppearance, alumFinish)
+        ? await this.loadFixedModel(definition, presentation)
         : await this.loadParametricModel(
             definition,
             values,
-            glassAppearance,
-            includeSill,
-            alumFinish,
+            presentation,
           );
+    const capabilities = detectProductMaterialCapabilities(group);
 
     // Ensure the environment map is loaded before rendering
     try {
@@ -219,21 +236,39 @@ export class ProductModelRenderer {
     }
 
     this.modelGroup.add(group);
+    this.materialCapabilities = capabilities;
+    return { capabilities };
+  }
+
+  updatePresentation(
+    presentation: ModelPresentationOptions,
+  ): ProductMaterialCapabilities {
+    if (this.modelGroup.children.length === 0) {
+      return this.materialCapabilities;
+    }
+    disposeOwnedModelMaterials(this.modelGroup);
+    applyPresentationMaterials(this.modelGroup, {
+      aluminumFinish: presentation.aluminumFinish,
+      glassAppearance: presentation.glassAppearance,
+      glassColor: presentation.glassColor,
+      glassThicknessMm: presentation.glassThicknessMm,
+    });
+    return this.materialCapabilities;
   }
 
   private async loadParametricModel(
     definition: ProductStructuralDefinition,
     values: Record<string, unknown>,
-    glassAppearance: GlassAppearanceMode,
-    includeSill: boolean,
-    alumFinish?: string,
+    presentation: ModelPresentationOptions,
   ) {
     const resolved = resolveProductStructure({ definition, values });
     const cache = await preloadComponentModels(definition.components);
     const { group } = buildParametricProduct(definition, resolved, cache, {
-      glassAppearance,
-      includeSill,
-      alumFinish,
+      glassAppearance: presentation.glassAppearance,
+      glassColor: presentation.glassColor,
+      glassThicknessMm: presentation.glassThicknessMm,
+      includeSill: presentation.includeSill,
+      alumFinish: presentation.aluminumFinish,
     });
 
     return group;
@@ -241,8 +276,7 @@ export class ProductModelRenderer {
 
   private async loadFixedModel(
     definition: ProductStructuralDefinition,
-    glassAppearance: GlassAppearanceMode,
-    alumFinish?: string,
+    presentation: ModelPresentationOptions,
   ) {
     const asset = definition.assets?.find(
       (item) =>
@@ -267,10 +301,10 @@ export class ProductModelRenderer {
     group.add(source);
     normalizeModelForViewer(group, source);
     applyPresentationMaterials(group, {
-      aluminumFinish: normalizeAluminumFinish(alumFinish),
-      glassAppearance,
-      glassColor: "clear",
-      glassThicknessMm: 6,
+      aluminumFinish: presentation.aluminumFinish,
+      glassAppearance: presentation.glassAppearance,
+      glassColor: presentation.glassColor,
+      glassThicknessMm: presentation.glassThicknessMm,
     });
 
     return group;
@@ -425,8 +459,17 @@ export class ProductModelRenderer {
   }
 
   dispose() {
+    disposeOwnedModelMaterials(this.modelGroup);
     this.renderer.dispose();
   }
+}
+
+function disposeOwnedModelMaterials(root: THREE.Object3D) {
+  root.traverse((object) => {
+    if (!(object instanceof THREE.Mesh)) return;
+    const materials = Array.isArray(object.material) ? object.material : [object.material];
+    for (const material of materials) material.dispose();
+  });
 }
 
 function normalizeModelForViewer(container: THREE.Group, source: THREE.Object3D) {

@@ -21,6 +21,10 @@ import type { SpaceImageSession, LightingAnalysis } from "@/lib/imageApi";
 import { ProductModelRenderer } from "@/lib/visualization/modelRenderer";
 import {
   GlassAppearanceMode,
+  GlassColorKey,
+  GlassThicknessMm,
+  GlassTypeKey,
+  ProductConfigurationSeed,
   ProductConfigurationSnapshot,
   ProductStructuralDefinition,
   ProductVariationSnapshot,
@@ -41,16 +45,12 @@ import {
 } from "@/lib/visualization/noiseGenerator";
 import { applyContactOcclusionAndReveals } from "@/lib/visualization/contactShadow";
 import {
-  ALUMINUM_COLOR_VARIATIONS,
   normalizeAluminumFinish,
-  type AluminumFinishKey,
 } from "@/lib/visualization/colorVariations";
 import {
   DEFAULT_SCENE_ZOOM,
   createDuplicateConfiguration,
-  getPlacedLayerImageUrls,
   getOverlaySizeFromConfiguration,
-  preserveActivePlacedLayer,
 } from "@/lib/visualization/multiProductPresentation";
 import {
   validateEngineeringGuardrails,
@@ -74,6 +74,31 @@ import {
   convertInToCm,
 } from "@/lib/visualization/measurementConfirmation";
 import type { MeasurementConfirmationEntry } from "@/lib/visualization/types";
+import {
+  ALUMINUM_FINISH_OPTIONS,
+  GLASS_COLOR_OPTIONS,
+  GLASS_THICKNESS_OPTIONS,
+  getAvailableFinishOptions,
+  getAvailableGlassTypeOptions,
+  isRrdSupportedProductType,
+  mapGlassTypeToAppearanceMode,
+} from "@/lib/products/materialMapping";
+import {
+  deriveGlassTypeFromAppearance,
+  hydrateProductVariationConfiguration,
+  normalizeGlassColor,
+  normalizeGlassThickness,
+  normalizeGlassType,
+} from "@/lib/visualization/configurationPropagation";
+import type { ProductMaterialCapabilities } from "@/lib/visualization/materialClassifier";
+import { captureTransparentCanvasBlob } from "@/lib/visualization/captureSnapshot";
+import { variationAssetStore } from "@/lib/visualization/variationAssetStore";
+import { variationRenderQueue } from "@/lib/visualization/variationRenderQueue";
+import { variationAssetRegistry } from "@/lib/visualization/variationAssetRegistry";
+import {
+  createVariationCacheKey,
+  createVariationRenderFingerprint,
+} from "@/lib/visualization/variationRenderFingerprint";
 
 export type ProjectedModelBounds = {
   left: number;
@@ -83,6 +108,7 @@ export type ProjectedModelBounds = {
 };
 
 interface ProductModelWorkspaceProps {
+  assetSessionId?: string | null;
   uploadedImage: string | null;
   spaceImageSession?: SpaceImageSession | null;
   structuralDefinition?: ProductStructuralDefinition | null;
@@ -91,6 +117,7 @@ interface ProductModelWorkspaceProps {
   selectedProductName?: string;
   initialSnapshotDataUrl?: string | null;
   initialConfiguration?: ProductConfigurationSnapshot | null;
+  initialProductConfiguration?: ProductConfigurationSeed | null;
   placedOverlays?: PlacedOverlay[];
   onConfigurationChange?: (configuration: ProductConfigurationSnapshot) => void;
   onVariationSnapshotsChange?: (snapshots: ProductVariationSnapshot[]) => void;
@@ -152,23 +179,28 @@ const MIN_MODEL_RENDER_SIDE = 512;
 const MODEL_CONTROLS_PADDING_PX = 8;
 
 export function ProductModelWorkspace({
+  assetSessionId,
   uploadedImage,
   spaceImageSession,
   structuralDefinition,
   catalogProducts = [],
   currentProductId,
   selectedProductName,
-  initialSnapshotDataUrl: _initialSnapshotDataUrl,
   initialConfiguration,
+  initialProductConfiguration,
   placedOverlays = [],
   onConfigurationChange,
-  onVariationSnapshotsChange,
   onSnapshotChange,
   onPlacedOverlaysChange,
   onComparisonOverlaysChange,
   onProductSelect,
   onBack,
 }: ProductModelWorkspaceProps) {
+  const seedConfiguration = initialConfiguration ? null : initialProductConfiguration;
+  const hydratedVariation = hydrateProductVariationConfiguration(
+    initialConfiguration,
+    seedConfiguration,
+  );
   const router = useRouter();
   const canvasRef = useRef<HTMLDivElement>(null);
   const overlayBoxRef = useRef<HTMLDivElement>(null);
@@ -176,7 +208,9 @@ export function ProductModelWorkspace({
   const resizeSessionRef = useRef<ResizeSession | null>(null);
   const rotationSessionRef = useRef<RotationSession | null>(null);
   const appliedTemplateDefaultsRef = useRef<string | null>(
-    initialConfiguration ? structuralDefinition?.template.templateId ?? null : null,
+    initialConfiguration || (seedConfiguration?.widthCm && seedConfiguration.heightCm)
+      ? structuralDefinition?.template.templateId ?? null
+      : null,
   );
   const dragControls = useDragControls();
   const prefersReducedMotion = useReducedMotion();
@@ -197,11 +231,18 @@ export function ProductModelWorkspace({
   );
   const [yaw, setYaw] = useState(initialConfiguration?.yaw ?? 0);
   const [pitch, setPitch] = useState(initialConfiguration?.pitch ?? 0);
-  const [alumFinish, setAlumFinish] = useState<"black" | "white" | "silver">(
-    (initialConfiguration?.aluminumFinish as "black" | "white" | "silver") || "white",
+  const [alumFinish, setAlumFinish] = useState(
+    hydratedVariation.aluminumFinish,
   );
   const [glassAppearance, setGlassAppearance] = useState<GlassAppearanceMode>(
-    initialConfiguration?.glassAppearance || "clear",
+    hydratedVariation.glassAppearance,
+  );
+  const [glassType, setGlassType] = useState<GlassTypeKey | undefined>(hydratedVariation.glassType);
+  const [glassColor, setGlassColor] = useState<GlassColorKey>(
+    hydratedVariation.glassColor,
+  );
+  const [glassThicknessMm, setGlassThicknessMm] = useState<GlassThicknessMm>(
+    hydratedVariation.glassThicknessMm,
   );
   const [includeSill, setIncludeSill] = useState(
     initialConfiguration?.includeSill ?? true,
@@ -218,8 +259,9 @@ export function ProductModelWorkspace({
   const [measurementEntries, setMeasurementEntries] = useState<MeasurementConfirmationEntry[]>([]);
   const pendingComparisonOverlaysRef = useRef<PlacedOverlay[]>([]);
   const [widthCm, setWidthCm] = useState(() => {
-    if (initialConfiguration?.widthCm) {
-      return String(initialConfiguration.widthCm);
+    const hydratedWidth = hydratedVariation.widthCm;
+    if (hydratedWidth) {
+      return String(hydratedWidth);
     }
     const photoWidthPx = spaceImageSession?.workspaceImage?.width ?? 0;
     const photoHeightPx = spaceImageSession?.workspaceImage?.height ?? 0;
@@ -237,8 +279,9 @@ export function ProductModelWorkspace({
     return String(initialDims.widthCm);
   });
   const [heightCm, setHeightCm] = useState(() => {
-    if (initialConfiguration?.heightCm) {
-      return String(initialConfiguration.heightCm);
+    const hydratedHeight = hydratedVariation.heightCm;
+    if (hydratedHeight) {
+      return String(hydratedHeight);
     }
     const photoWidthPx = spaceImageSession?.workspaceImage?.width ?? 0;
     const photoHeightPx = spaceImageSession?.workspaceImage?.height ?? 0;
@@ -260,7 +303,7 @@ export function ProductModelWorkspace({
       ? String(initialConfiguration.thicknessMm)
       : "3",
   );
-  const [quantity, setQuantity] = useState(initialConfiguration?.quantity ?? 1);
+  const [quantity, setQuantity] = useState(hydratedVariation.quantity);
   const [activeOcclusionIds, setActiveOcclusionIds] = useState<string[]>(
     initialConfiguration?.activeOcclusionIds ?? [],
   );
@@ -373,6 +416,7 @@ export function ProductModelWorkspace({
   const [projectedModelBounds, setProjectedModelBounds] =
     useState<ProjectedModelBounds | null>({ left: 0, top: 0, width: 1, height: 1 });
   const [modelRevision, setModelRevision] = useState(0);
+  const [materialCapabilities, setMaterialCapabilities] = useState<ProductMaterialCapabilities | null>(null);
 
   const mvpCanvasRef = useRef<HTMLCanvasElement>(null);
   const mvpRendererRef = useRef<ProductModelRenderer | null>(null);
@@ -478,6 +522,32 @@ export function ProductModelWorkspace({
         component.componentKey.replace(/_/g, "-").includes("door"),
       ),
     );
+  const structuralProductType = structuralDefinition?.product.productType ?? "";
+  const supportedProductType = isRrdSupportedProductType(structuralProductType)
+    ? structuralProductType
+    : null;
+  const workspaceFinishOptions = supportedProductType
+    ? getAvailableFinishOptions(supportedProductType)
+    : ALUMINUM_FINISH_OPTIONS.filter((option) =>
+        option.id === "white" || option.id === "al_1009" || option.id === "al_1001",
+      );
+  const workspaceGlassTypeOptions = supportedProductType
+    ? getAvailableGlassTypeOptions(supportedProductType)
+    : [];
+  const glassControlsDisabled = materialCapabilities?.hasGlass === false;
+
+  const handleGlassTypeChange = useCallback((nextType: GlassTypeKey) => {
+    setGlassType(nextType);
+    setGlassAppearance(mapGlassTypeToAppearanceMode(nextType));
+  }, []);
+
+  const handleAdvancedGlassAppearanceChange = useCallback(
+    (appearance: "opaque" | "outdoor") => {
+      setGlassType(undefined);
+      setGlassAppearance(appearance);
+    },
+    [],
+  );
   const supportsPerspectivePlane = isWindowProduct || isDoorProduct;
   const modelEffectStyle = useMemo(
     () => getModelEffectStyle({
@@ -732,6 +802,7 @@ export function ProductModelWorkspace({
 
   useEffect(() => {
     if (!mvpRendererRef.current || !structuralDefinition) return;
+    setMaterialCapabilities(null);
     mvpRendererRef.current.setSize(
       renderFrameSizeRef.current.width,
       renderFrameSizeRef.current.height,
@@ -746,16 +817,22 @@ export function ProductModelWorkspace({
         includeSill,
         include_sill: includeSill,
       },
-      glassAppearance,
-      includeSill,
-      alumFinish
-    ).then(() => {
+      {
+        aluminumFinish: alumFinish,
+        glassAppearance,
+        glassColor,
+        glassThicknessMm,
+        includeSill,
+      },
+    ).then((result) => {
+      if (!result) return;
+      setMaterialCapabilities(result.capabilities);
       // Preserve the last measured outline while resize interactions pause measurement.
       // The revision redraw measures the rebuilt model as soon as measurement resumes.
       setModelRevision((prev) => prev + 1);
       setProductBuildError(null);
     });
-  }, [structuralDefinition, widthCm, heightCm, panelCount, includeSill, glassAppearance, alumFinish]);
+  }, [structuralDefinition, widthCm, heightCm, panelCount, includeSill, glassAppearance, glassColor, glassThicknessMm, alumFinish]);
 
   useEffect(() => {
     if (!mvpRendererRef.current) return;
@@ -920,6 +997,9 @@ export function ProductModelWorkspace({
       structuralWaiver,
       aluminumFinish: alumFinish,
       glassAppearance,
+      glassColor,
+      glassThicknessMm,
+      ...(glassType ? { glassType } : {}),
       includeSill,
       yaw,
       pitch,
@@ -954,6 +1034,9 @@ export function ProductModelWorkspace({
     autoRealism,
     autoShadow,
     glassAppearance,
+    glassColor,
+    glassThicknessMm,
+    glassType,
     heightCm,
     includeSill,
     isFlipped,
@@ -1029,13 +1112,14 @@ export function ProductModelWorkspace({
       setQuantity(configuration.quantity);
       setPanelCount(configuration.panelCount ?? 2);
       setStructuralWaiver(configuration.structuralWaiver ?? false);
-      setAlumFinish(
-        configuration.aluminumFinish === "black" ||
-          configuration.aluminumFinish === "silver"
-          ? configuration.aluminumFinish
-          : "white",
-      );
+      setAlumFinish(normalizeAluminumFinish(configuration.aluminumFinish));
       setGlassAppearance(configuration.glassAppearance);
+      setGlassType(
+        normalizeGlassType(configuration.glassType)
+          ?? deriveGlassTypeFromAppearance(configuration.glassAppearance),
+      );
+      setGlassColor(normalizeGlassColor(configuration.glassColor));
+      setGlassThicknessMm(normalizeGlassThickness(configuration.glassThicknessMm));
       setIncludeSill(configuration.includeSill);
       setYaw(configuration.yaw);
       setPitch(configuration.pitch);
@@ -1182,28 +1266,27 @@ export function ProductModelWorkspace({
     heightCm,
   ]);
 
-  const captureCurrentProductLayer = useCallback(
-    () =>
-      captureWorkspaceSnapshot({
-        canvasElement: canvasRef.current,
-        overlayElement: overlayBoxRef.current,
-        backgroundImageUrl: null,
-        fallbackProductImageUrl: productOverlayImage,
-        hasGeneratedProduct: Boolean(structuralDefinition),
-        activeOcclusionObjects: [],
-        perspectiveCorners,
-        rotateAngle,
-        isFlipped,
-        modelFilter: exportModelFilter,
-        structuralDefinition: structuralDefinition ?? null,
-        yaw,
-        pitch,
-        lighting: effectiveLighting ?? null,
-        glassAppearance,
-        includeSill,
-        widthCm: Number(widthCm),
-        heightCm: Number(heightCm),
-      }),
+  const captureCurrentProductCanvas = useCallback(
+    () => captureWorkspaceCanvas({
+      canvasElement: canvasRef.current,
+      overlayElement: overlayBoxRef.current,
+      backgroundImageUrl: null,
+      fallbackProductImageUrl: productOverlayImage,
+      hasGeneratedProduct: Boolean(structuralDefinition),
+      activeOcclusionObjects: [],
+      perspectiveCorners,
+      rotateAngle,
+      isFlipped,
+      modelFilter: exportModelFilter,
+      structuralDefinition: structuralDefinition ?? null,
+      yaw,
+      pitch,
+      lighting: effectiveLighting ?? null,
+      glassAppearance,
+      includeSill,
+      widthCm: Number(widthCm),
+      heightCm: Number(heightCm),
+    }),
     [
       effectiveLighting,
       exportModelFilter,
@@ -1221,121 +1304,6 @@ export function ProductModelWorkspace({
     ],
   );
 
-  const captureCurrentProductVariationLayers = useCallback(async () => {
-    const variationImageDataUrls: Partial<Record<AluminumFinishKey, string>> = {};
-
-    if (!structuralDefinition) {
-      const fallbackLayer = await captureCurrentProductLayer();
-      if (!fallbackLayer) {
-        throw new Error(
-          "Unable to capture the product variations. Try Edit Placement and prepare the comparison again.",
-        );
-      }
-      for (const variation of ALUMINUM_COLOR_VARIATIONS) {
-        variationImageDataUrls[variation.key] = fallbackLayer;
-      }
-      return variationImageDataUrls;
-    }
-
-    const width = Number(widthCm) || DEFAULT_PRODUCT_WIDTH_CM;
-    const height = Number(heightCm) || DEFAULT_PRODUCT_HEIGHT_CM;
-
-    for (const variation of ALUMINUM_COLOR_VARIATIONS) {
-      const renderer = new ProductModelRenderer(
-        renderFrameSize.width,
-        renderFrameSize.height,
-      );
-
-      try {
-        const cameraFraming = mvpRendererRef.current?.getCameraFraming();
-        if (cameraFraming !== null && cameraFraming !== undefined) {
-          renderer.setCameraFraming(cameraFraming);
-        }
-        renderer.setSize(renderFrameSize.width, renderFrameSize.height);
-        renderer.applyLighting(effectiveLighting ?? null);
-        await renderer.loadModel(
-          structuralDefinition,
-          {
-            width: width * 10,
-            height: height * 10,
-            pane_count: panelCount,
-            includeSill,
-            include_sill: includeSill,
-          },
-          glassAppearance,
-          includeSill,
-          variation.key,
-        );
-
-        const isPlanar = Boolean(perspectiveCorners);
-        const renderedCanvas = renderer.render(yaw, pitch, isPlanar);
-        if (!renderedCanvas) {
-          throw new Error(
-            `Unable to capture the ${variation.title} product variation. Try Edit Placement and prepare the comparison again.`,
-          );
-        }
-
-        variationImageDataUrls[variation.key] = await captureWorkspaceSnapshot({
-          canvasElement: canvasRef.current,
-          overlayElement: overlayBoxRef.current,
-          backgroundImageUrl: null,
-          fallbackProductImageUrl: productOverlayImage,
-          hasGeneratedProduct: true,
-          activeOcclusionObjects: [],
-          perspectiveCorners,
-          rotateAngle,
-          isFlipped,
-          modelFilter: exportModelFilter,
-          generatedCanvasOverride: cloneCanvas(renderedCanvas, {
-            autoRealism,
-            autoShadow,
-            lighting: effectiveLighting,
-          }),
-          structuralDefinition,
-          yaw,
-          pitch,
-          lighting: effectiveLighting ?? null,
-          glassAppearance,
-          includeSill,
-          widthCm: width,
-          heightCm: height,
-        });
-      } finally {
-        renderer.dispose();
-      }
-    }
-
-    const missingVariation = ALUMINUM_COLOR_VARIATIONS.find(
-      (variation) => !variationImageDataUrls[variation.key],
-    );
-    if (missingVariation) {
-      throw new Error(
-        `Unable to capture the ${missingVariation.title} product variation. Try Edit Placement and prepare the comparison again.`,
-      );
-    }
-
-    return variationImageDataUrls;
-  }, [
-    autoRealism,
-    autoShadow,
-    captureCurrentProductLayer,
-    effectiveLighting,
-    exportModelFilter,
-    glassAppearance,
-    heightCm,
-    includeSill,
-    isFlipped,
-    panelCount,
-    perspectiveCorners,
-    pitch,
-    productOverlayImage,
-    renderFrameSize,
-    rotateAngle,
-    structuralDefinition,
-    widthCm,
-    yaw,
-  ]);
-
   const createPlacedOverlay = useCallback(
     async (explicitLayerNumber?: number): Promise<PlacedOverlay> => {
       const overlayElement = overlayBoxRef.current;
@@ -1347,21 +1315,11 @@ export function ProductModelWorkspace({
       const visibleModelBounds = projectedModelBounds
         ? { ...projectedModelBounds }
         : (mvpCanvasRef.current ? getVisibleModelBounds(mvpCanvasRef.current) ?? undefined : undefined);
-      const activeImageDataUrl = await captureCurrentProductLayer();
+      const capturedCanvas = await captureCurrentProductCanvas();
+      const activeImageDataUrl = capturedCanvas.toDataURL("image/png");
       const currentFinish = normalizeAluminumFinish(
         currentConfiguration.aluminumFinish,
       );
-      const variationLayers = await captureCurrentProductVariationLayers();
-      const variationImageDataUrls: Partial<Record<AluminumFinishKey, string>> = {
-        ...variationLayers,
-        [currentFinish]: activeImageDataUrl,
-      };
-      const placedLayer = preserveActivePlacedLayer({
-        activeImageDataUrl,
-        currentFinish,
-        variationImageDataUrls,
-      });
-
       const uniqueOverlayId = crypto.randomUUID();
       const posX = overlayX.get();
       const posY = overlayY.get();
@@ -1377,18 +1335,71 @@ export function ProductModelWorkspace({
         catalogProducts.find((p) => p.id === prodId)?.previewGlbUrl ??
         null;
 
+      const sourceCanvasBounds = canvasRef.current?.getBoundingClientRect();
+      const configuration = {
+        ...currentConfiguration,
+        positionX: posX,
+        positionY: posY,
+      };
+      const variationRenderRecipe = structuralDefinition ? {
+        productId: prodId,
+        templateId: structuralDefinition.template.templateId,
+        structuralDefinition,
+        configuration: {
+          ...configuration,
+          manualOcclusionMaskDataUrl: null,
+        },
+        sourceCanvasWidth: sourceCanvasBounds?.width ?? capturedCanvas.width,
+        sourceCanvasHeight: sourceCanvasBounds?.height ?? capturedCanvas.height,
+        sourceOverlayWidth,
+        sourceOverlayHeight,
+        visibleModelBounds: visibleModelBounds ?? {
+          left: 0,
+          top: 0,
+          width: sourceOverlayWidth,
+          height: sourceOverlayHeight,
+        },
+      } : undefined;
+      const variationAssetRefs = assetSessionId && variationRenderRecipe
+        ? await (async () => {
+            const fingerprint = createVariationRenderFingerprint(
+              variationRenderRecipe,
+              currentFinish,
+            );
+            const captured = await captureTransparentCanvasBlob(capturedCanvas);
+            const asset = await variationAssetStore.put({
+              cacheKey: createVariationCacheKey(
+                assetSessionId,
+                uniqueOverlayId,
+                currentFinish,
+                fingerprint,
+              ),
+              assetSessionId,
+              overlayId: uniqueOverlayId,
+              finish: currentFinish,
+              fingerprint,
+              width: captured.width,
+              height: captured.height,
+              mimeType: captured.mimeType,
+              blob: captured.blob,
+              createdAt: Date.now(),
+              lastAccessedAt: Date.now(),
+              priority: "visible",
+            });
+            return { [currentFinish]: asset };
+          })()
+        : undefined;
+
       return {
         overlayId: uniqueOverlayId,
         productId: prodId,
         productName: overlayName,
         layerNumber: explicitLayerNumber ?? activeLayerNumber,
         templateId: structuralDefinition?.template.templateId ?? "catalog-image",
-        configuration: {
-          ...currentConfiguration,
-          positionX: posX,
-          positionY: posY,
-        },
-        ...placedLayer,
+        configuration,
+        flattenedImageDataUrl: activeImageDataUrl,
+        variationAssetRefs,
+        variationRenderRecipe,
         sourceCanvasWidth: canvasRef.current?.getBoundingClientRect().width,
         sourceCanvasHeight: canvasRef.current?.getBoundingClientRect().height,
         sourceOverlayWidth,
@@ -1402,8 +1413,8 @@ export function ProductModelWorkspace({
     },
     [
       activeLayerNumber,
-      captureCurrentProductLayer,
-      captureCurrentProductVariationLayers,
+      assetSessionId,
+      captureCurrentProductCanvas,
       catalogProducts,
       currentConfiguration,
       currentProductId,
@@ -1482,10 +1493,18 @@ export function ProductModelWorkspace({
   );
 
   const handleDeletePlacedOverlay = useCallback((overlayId: string) => {
+    if (assetSessionId) {
+      variationRenderQueue.cancelNamespace(`${assetSessionId}:${overlayId}`);
+      void variationAssetStore.removeOverlay(assetSessionId, overlayId);
+    }
+    const removedOverlay = placedOverlays.find((overlay) => overlay.overlayId === overlayId);
+    for (const asset of Object.values(removedOverlay?.variationAssetRefs ?? {})) {
+      if (asset) variationAssetRegistry.revoke(asset.cacheKey);
+    }
     onPlacedOverlaysChange?.(
       placedOverlays.filter((overlay) => overlay.overlayId !== overlayId),
     );
-  }, [onPlacedOverlaysChange, placedOverlays]);
+  }, [assetSessionId, onPlacedOverlaysChange, placedOverlays]);
 
   const applyVisualizationSnapshot = useCallback(async () => {
     setIsCapturingSnapshot(true);
@@ -1543,129 +1562,12 @@ export function ProductModelWorkspace({
     }
   }, [captureCurrentSnapshot]);
 
-  const generateVariationSnapshots = useCallback(async () => {
-    if (!structuralDefinition) {
-      onVariationSnapshotsChange?.([]);
-      return [];
-    }
-
-    const snapshots: ProductVariationSnapshot[] = [];
-    const width = Number(widthCm) || DEFAULT_PRODUCT_WIDTH_CM;
-    const height = Number(heightCm) || DEFAULT_PRODUCT_HEIGHT_CM;
-
-    for (const variation of ALUMINUM_COLOR_VARIATIONS) {
-      const renderer = new ProductModelRenderer(
-        renderFrameSize.width,
-        renderFrameSize.height,
-      );
-
-      try {
-        const cameraFraming = mvpRendererRef.current?.getCameraFraming();
-        if (cameraFraming !== null && cameraFraming !== undefined) {
-          renderer.setCameraFraming(cameraFraming);
-        }
-        renderer.setSize(renderFrameSize.width, renderFrameSize.height);
-        renderer.applyLighting(effectiveLighting ?? null);
-        await renderer.loadModel(
-          structuralDefinition,
-          {
-            width: width * 10,
-            height: height * 10,
-            pane_count: panelCount,
-            includeSill,
-            include_sill: includeSill,
-          },
-          glassAppearance,
-          includeSill,
-          variation.key,
-        );
-
-        const isPlanar = Boolean(perspectiveCorners);
-        const renderedCanvas = renderer.render(yaw, pitch, isPlanar);
-        if (!renderedCanvas) {
-          continue;
-        }
-
-        const generatedCanvasOverride = cloneCanvas(renderedCanvas, {
-          autoRealism,
-          autoShadow,
-          lighting: effectiveLighting,
-        });
-        const imageDataUrl = await captureWorkspaceSnapshot({
-          canvasElement: canvasRef.current,
-          overlayElement: overlayBoxRef.current,
-          backgroundImageUrl: bgImage,
-          fallbackProductImageUrl: productOverlayImage,
-          hasGeneratedProduct: true,
-          activeOcclusionObjects,
-          manualMaskDataUrl,
-          perspectiveCorners,
-          rotateAngle,
-          isFlipped,
-          modelFilter: exportModelFilter,
-          generatedCanvasOverride,
-          structuralDefinition,
-          yaw,
-          pitch,
-          lighting: effectiveLighting ?? null,
-          glassAppearance,
-          includeSill,
-          widthCm: width,
-          heightCm: height,
-          placedLayerImageUrls: getPlacedLayerImageUrls(
-            placedOverlays,
-            variation.key,
-          ),
-        });
-
-        snapshots.push({
-          key: variation.key,
-          title: variation.title,
-          label: variation.label,
-          swatchClassName: variation.swatchClassName,
-          imageDataUrl,
-        });
-      } finally {
-        renderer.dispose();
-      }
-    }
-
-    onVariationSnapshotsChange?.(snapshots);
-    return snapshots;
-  }, [
-    activeOcclusionObjects,
-    autoRealism,
-    autoShadow,
-    manualMaskDataUrl,
-    perspectiveCorners,
-    bgImage,
-    effectiveLighting,
-    exportModelFilter,
-    glassAppearance,
-    heightCm,
-    includeSill,
-    isFlipped,
-    onVariationSnapshotsChange,
-    placedOverlays,
-    panelCount,
-    pitch,
-    productOverlayImage,
-    renderFrameSize,
-    rotateAngle,
-    structuralDefinition,
-    widthCm,
-    yaw,
-  ]);
-
   const handleContinueToComparison = useCallback(async () => {
     setIsCapturingSnapshot(true);
 
     try {
       await captureCurrentSnapshot();
       setIsSnapshotApplied(true);
-      if (!selectedProduct && placedOverlays.length === 0) {
-        await generateVariationSnapshots();
-      }
       const comparisonOverlays = selectedProduct
         ? [
           ...placedOverlays,
@@ -1673,7 +1575,7 @@ export function ProductModelWorkspace({
         ]
         : placedOverlays;
 
-      // Stash complete overlay set with variationImageDataUrls and flattenedImageDataUrl
+      // Publish metadata and the visible finish asset only. Other finishes render on demand.
       pendingComparisonOverlaysRef.current = comparisonOverlays;
 
       const entries = buildMeasurementEntries(
@@ -1702,7 +1604,6 @@ export function ProductModelWorkspace({
     catalogProducts,
     createPlacedOverlay,
     currentConfiguration,
-    generateVariationSnapshots,
     heightCm,
     placedOverlays,
     realtimePricing.totalPrice,
@@ -1728,7 +1629,7 @@ export function ProductModelWorkspace({
         placedOverlays,
       );
 
-      // Use pre-captured overlays that contain genuine variationImageDataUrls and flattenedImageDataUrl
+      // Keep the prepared overlay metadata and visible binary asset reference intact.
       const baseOverlays = pendingComparisonOverlaysRef.current.length > 0
         ? pendingComparisonOverlaysRef.current
         : (selectedProduct ? [...placedOverlays] : placedOverlays);
@@ -3272,79 +3173,68 @@ export function ProductModelWorkspace({
                           {/* Aluminum Finish */}
                           <div className="flex flex-col gap-2">
                             <span className="text-[#c3c3c3] text-base font-normal">Aluminum Finish</span>
-                            <div className="flex flex-col gap-2.5">
-                              {/* Option 1: Black */}
-                              <label
-                                onClick={() => setAlumFinish("black")}
-                                className="flex items-center gap-3 cursor-pointer select-none"
-                              >
-                                <div className="w-3 h-3 rounded-full border border-[#0f1422] flex items-center justify-center p-0.5">
-                                  {alumFinish === "black" && (
-                                    <div className="w-full h-full rounded-full bg-[#0f1422]" />
-                                  )}
-                                </div>
-                                {/* Swatch circle */}
-                                <div className="size-6 rounded-full bg-[#151719] shadow-xs border border-gray-300" />
-                                <span className="text-[#0f1422] text-base font-normal">
-                                  Black
-                                </span>
-                              </label>
-
-                              {/* Option 2: White */}
-                              <label
-                                onClick={() => setAlumFinish("white")}
-                                className="flex items-center gap-3 cursor-pointer select-none"
-                              >
-                                <div className="w-3 h-3 rounded-full border border-[#0f1422] flex items-center justify-center p-0.5">
-                                  {alumFinish === "white" && (
-                                    <div className="w-full h-full rounded-full bg-[#0f1422]" />
-                                  )}
-                                </div>
-                                {/* Swatch circle */}
-                                <div className="size-6 rounded-full bg-[#f4f1ea] shadow-xs border border-gray-300" />
-                                <span className="text-[#0f1422] text-base font-normal">
-                                  White
-                                </span>
-                              </label>
-
-                              {/* Option 3: Silver */}
-                              <label
-                                onClick={() => setAlumFinish("silver")}
-                                className="flex items-center gap-3 cursor-pointer select-none"
-                              >
-                                <div className="w-3 h-3 rounded-full border border-[#0f1422] flex items-center justify-center p-0.5">
-                                  {alumFinish === "silver" && (
-                                    <div className="w-full h-full rounded-full bg-[#0f1422]" />
-                                  )}
-                                </div>
-                                {/* Swatch circle */}
-                                <div className="size-6 rounded-full bg-[#9aa3a5] shadow-xs border border-gray-300" />
-                                <span className="text-[#0f1422] text-base font-normal">
-                                  Silver
-                                </span>
-                              </label>
-                            </div>
-                          </div>
-
-                          {/* Glass Appearance */}
-                          <div className="flex flex-col gap-2">
-                            <span className="text-[#c3c3c3] text-base font-normal">Glass Appearance</span>
-                            <div className="grid grid-cols-2 gap-2.5">
-                              {(["clear", "frosted", "opaque", "reflective", "outdoor"] as GlassAppearanceMode[]).map((mode) => (
+                            <div className="grid max-h-72 grid-cols-1 gap-1 overflow-y-auto pr-1">
+                              {workspaceFinishOptions.map((option) => (
                                 <button
-                                  key={mode}
+                                  key={option.id}
                                   type="button"
-                                  onClick={() => setGlassAppearance(mode)}
-                                  className={`px-3 py-1.5 rounded-[20px] border border-[#c3c3c3] text-base font-normal capitalize transition-colors cursor-pointer ${glassAppearance === mode
-                                    ? "bg-[#0f1422] text-white"
-                                    : "bg-transparent text-[#0f1422]"
-                                    }`}
+                                  onClick={() => setAlumFinish(option.id)}
+                                  aria-pressed={alumFinish === option.id}
+                                  className={`flex items-center gap-2 rounded-[8px] border px-2 py-2 text-left text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3] ${alumFinish === option.id ? "border-[#07b6d3] bg-white" : "border-transparent hover:bg-neutral-50"}`}
                                 >
-                                  {mode}
+                                  <span className="size-5 shrink-0 rounded-full border border-black/15" style={{ backgroundColor: option.previewHex }} aria-hidden="true" />
+                                  <span className="min-w-0 truncate font-medium text-[#0f1422]">{option.label}</span>
                                 </button>
                               ))}
                             </div>
                           </div>
+
+                          {supportedProductType ? (
+                            <div className="flex flex-col gap-5">
+                              <fieldset disabled={glassControlsDisabled} aria-disabled={glassControlsDisabled} aria-describedby={glassControlsDisabled ? "workspace-glass-feedback" : undefined} className={glassControlsDisabled ? "opacity-60" : ""}>
+                                <legend className="text-[#c3c3c3] text-base font-normal">Glass Type</legend>
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                  {workspaceGlassTypeOptions.map((option) => (
+                                    <button key={option.id} type="button" onClick={() => handleGlassTypeChange(option.id)} aria-pressed={glassType === option.id} className={`rounded-[20px] border border-[#c3c3c3] px-3 py-1.5 text-base capitalize transition-colors ${glassType === option.id ? "bg-[#0f1422] text-white" : "text-[#0f1422]"}`}>{option.label}</button>
+                                  ))}
+                                </div>
+                              </fieldset>
+                              <fieldset disabled={glassControlsDisabled} aria-disabled={glassControlsDisabled} aria-describedby={glassControlsDisabled ? "workspace-glass-feedback" : undefined} className={glassControlsDisabled ? "opacity-60" : ""}>
+                                <legend className="text-[#c3c3c3] text-base font-normal">Advanced Glass Appearance</legend>
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                  {(["opaque", "outdoor"] as const).map((mode) => (
+                                    <button key={mode} type="button" onClick={() => handleAdvancedGlassAppearanceChange(mode)} aria-pressed={!glassType && glassAppearance === mode} className={`rounded-[20px] border border-[#c3c3c3] px-3 py-1.5 text-base capitalize transition-colors ${!glassType && glassAppearance === mode ? "bg-[#0f1422] text-white" : "text-[#0f1422]"}`}>{mode}</button>
+                                  ))}
+                                </div>
+                              </fieldset>
+                              <fieldset disabled={glassControlsDisabled} aria-disabled={glassControlsDisabled} aria-describedby={glassControlsDisabled ? "workspace-glass-feedback" : undefined} className={glassControlsDisabled ? "opacity-60" : ""}>
+                                <legend className="text-[#c3c3c3] text-base font-normal">Glass Color</legend>
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                  {GLASS_COLOR_OPTIONS.map((option) => (
+                                    <button key={option.id} type="button" onClick={() => setGlassColor(option.id)} aria-pressed={glassColor === option.id} className={`flex items-center gap-1.5 rounded-[20px] border border-[#c3c3c3] px-3 py-1.5 text-base transition-colors ${glassColor === option.id ? "bg-[#0f1422] text-white" : "text-[#0f1422]"}`}><span className="size-3.5 rounded-full border border-black/15" style={{ backgroundColor: option.previewHex }} aria-hidden="true" />{option.label}</button>
+                                  ))}
+                                </div>
+                              </fieldset>
+                              <fieldset disabled={glassControlsDisabled} aria-disabled={glassControlsDisabled} aria-describedby={glassControlsDisabled ? "workspace-glass-feedback" : undefined} className={glassControlsDisabled ? "opacity-60" : ""}>
+                                <legend className="text-[#c3c3c3] text-base font-normal">Glass Thickness</legend>
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                  {GLASS_THICKNESS_OPTIONS.map((option) => (
+                                    <button key={option.value} type="button" onClick={() => setGlassThicknessMm(option.value)} aria-pressed={glassThicknessMm === option.value} className={`rounded-[20px] border border-[#c3c3c3] px-3 py-1.5 text-base transition-colors ${glassThicknessMm === option.value ? "bg-[#0f1422] text-white" : "text-[#0f1422]"}`}>{option.label}</button>
+                                  ))}
+                                </div>
+                              </fieldset>
+                              {glassControlsDisabled && <p id="workspace-glass-feedback" role="status" className="text-sm text-[#777]">Glass options are unavailable because this product model has no glass components.</p>}
+                            </div>
+                          ) : (
+                            <div className="flex flex-col gap-2">
+                              <span className="text-[#c3c3c3] text-base font-normal">Glass Appearance</span>
+                              <div className="grid grid-cols-2 gap-2.5">
+                                {(["clear", "frosted", "opaque", "reflective", "outdoor"] as GlassAppearanceMode[]).map((mode) => (
+                                  <button key={mode} type="button" onClick={() => { setGlassAppearance(mode); setGlassType(deriveGlassTypeFromAppearance(mode)); }} aria-pressed={glassAppearance === mode} className={`rounded-[20px] border border-[#c3c3c3] px-3 py-1.5 text-base capitalize transition-colors ${glassAppearance === mode ? "bg-[#0f1422] text-white" : "text-[#0f1422]"}`}>{mode}</button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
 
                           {isWindowProduct && (
                             <label className="flex items-center justify-between gap-4 rounded-[10px] bg-white px-3 py-2.5 border border-[#c3c3c3]">
@@ -3748,34 +3638,6 @@ function clampNumber(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
-function cloneCanvas(
-  source: HTMLCanvasElement,
-  options?: {
-    autoRealism?: boolean;
-    autoShadow?: boolean;
-    lighting?: SpaceImageSession["lighting"] | null;
-  },
-) {
-  const canvas = document.createElement("canvas");
-  canvas.width = source.width;
-  canvas.height = source.height;
-  const context = canvas.getContext("2d");
-  if (context) {
-    context.drawImage(source, 0, 0);
-    if (options?.autoRealism && options?.autoShadow && options?.lighting) {
-      applyContactOcclusionAndReveals(context, canvas.width, canvas.height, {
-        lightDirection: options.lighting.light_direction,
-        shadowOpacity: options.lighting.suggested?.shadow_opacity ?? 0.28,
-      });
-    }
-    if (options?.autoRealism && options?.lighting?.suggested?.grain) {
-      applyNoiseToCanvas(context, canvas.width, canvas.height, options.lighting.suggested.grain);
-    }
-  }
-
-  return canvas;
-}
-
 type SnapshotOcclusionObject = SpaceImageSession["objects"][number];
 
 // Snapshot of the overlay's DOM state captured synchronously: before any async
@@ -3788,29 +3650,7 @@ type OverlayCapture = {
   generatedCanvas: HTMLCanvasElement | null;
 };
 
-async function captureWorkspaceSnapshot({
-  canvasElement,
-  overlayElement,
-  backgroundImageUrl,
-  fallbackProductImageUrl,
-  hasGeneratedProduct,
-  activeOcclusionObjects,
-  manualMaskDataUrl,
-  perspectiveCorners,
-  rotateAngle,
-  isFlipped,
-  modelFilter,
-  generatedCanvasOverride,
-  structuralDefinition: _structuralDefinition,
-  yaw: _yaw,
-  pitch: _pitch,
-  lighting: _lighting,
-  glassAppearance: _glassAppearance,
-  includeSill: _includeSill,
-  widthCm: _widthCm,
-  heightCm: _heightCm,
-  placedLayerImageUrls = [],
-}: {
+type WorkspaceSnapshotOptions = {
   canvasElement: HTMLDivElement | null;
   overlayElement: HTMLDivElement | null;
   backgroundImageUrl: string | null;
@@ -3832,7 +3672,30 @@ async function captureWorkspaceSnapshot({
   widthCm: number;
   heightCm: number;
   placedLayerImageUrls?: string[];
-}) {
+};
+
+async function captureWorkspaceSnapshot(options: WorkspaceSnapshotOptions) {
+  const output = await captureWorkspaceCanvas(options);
+  return options.backgroundImageUrl
+    ? output.toDataURL("image/jpeg", 0.92)
+    : output.toDataURL("image/png");
+}
+
+async function captureWorkspaceCanvas({
+  canvasElement,
+  overlayElement,
+  backgroundImageUrl,
+  fallbackProductImageUrl,
+  hasGeneratedProduct,
+  activeOcclusionObjects,
+  manualMaskDataUrl,
+  perspectiveCorners,
+  rotateAngle,
+  isFlipped,
+  modelFilter,
+  generatedCanvasOverride,
+  placedLayerImageUrls = [],
+}: WorkspaceSnapshotOptions) {
   if (!canvasElement) {
     throw new Error("Visualization canvas is not ready yet.");
   }
@@ -3939,9 +3802,7 @@ async function captureWorkspaceSnapshot({
     }
   }
 
-  return backgroundImageUrl
-    ? output.toDataURL("image/jpeg", 0.92)
-    : output.toDataURL("image/png");
+  return output;
 }
 
 async function drawSnapshotOverlay({

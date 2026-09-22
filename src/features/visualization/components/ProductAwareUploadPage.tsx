@@ -25,7 +25,7 @@ export function ProductAwareUploadPage({
 }) {
   const router = useRouter();
   const requestIdRef = useRef(0);
-  const { setPreparedSpaceImage } = useVisualizationSession();
+  const { setPreparedSpaceImage, clearPendingProductConfiguration } = useVisualizationSession();
   const [pendingSession, setPendingSession] = useState<SpaceImageSession | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [status, setStatus] = useState<UploadStatus>("idle");
@@ -111,6 +111,7 @@ export function ProductAwareUploadPage({
           </div>
           <Link
             href="/product"
+            onClick={clearPendingProductConfiguration}
             className="rounded-[10px] border border-[#0f1422] px-4 py-2 text-center text-sm text-[#0f1422] transition-colors hover:bg-neutral-100"
           >
             Change Product

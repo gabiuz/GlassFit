@@ -4,7 +4,7 @@ import React, { useState } from "react";
 import { Check } from "lucide-react";
 import { useVisualizationSession } from "@/lib/visualization/visualizationSession";
 import {
-  ALUMINUM_COLOR_VARIATIONS,
+  getAluminumVariationMetadata,
   normalizeAluminumFinish,
   type AluminumFinishKey,
 } from "@/lib/visualization/colorVariations";
@@ -27,7 +27,10 @@ export function VisualizationComparison() {
   const beforeImage =
     spaceImageSession?.workspaceImage.url ?? FALLBACK_BEFORE_IMAGE;
   const afterImage = finalSnapshotDataUrl ?? FALLBACK_AFTER_IMAGE;
-  const variations = ALUMINUM_COLOR_VARIATIONS.map((variation) => {
+  const variationMetadata = variationSnapshots.length > 0
+    ? variationSnapshots.map((snapshot) => getAluminumVariationMetadata(snapshot.key))
+    : [getAluminumVariationMetadata(configuredFinish)];
+  const variations = variationMetadata.map((variation) => {
     const snapshot = variationSnapshots.find((item) => item.key === variation.key);
     return {
       ...variation,
@@ -65,6 +68,7 @@ export function VisualizationComparison() {
           imageUrl={selectedVariation.imageDataUrl}
           label={`After - ${selectedVariation.title}`}
           swatchClassName={selectedVariation.swatchClassName}
+          previewHex={selectedVariation.previewHex}
         />
       </div>
       <div className="bg-black border border-[#c3c3c3] border-solid drop-shadow-[0px_0px_2.5px_rgba(0,0,0,0.25)] flex flex-col gap-5 items-start p-7.5 rounded-[20px] w-full">
@@ -97,7 +101,7 @@ export function VisualizationComparison() {
                       src={variation.imageDataUrl}
                     />
                   ) : null}
-                  <div className={`absolute bottom-3 left-3 h-8 w-8 rounded-full shadow-md ${variation.swatchClassName}`} />
+                  <div className={`absolute bottom-3 left-3 h-8 w-8 rounded-full shadow-md ${variation.swatchClassName}`} style={{ backgroundColor: variation.previewHex }} />
 
                   {isActive && (
                     <div className="absolute top-3.25 right-3.25 w-7.5 h-7.5 bg-[#129044]/50 border-[2.5px] border-[#129044] rounded-[50%] flex items-center justify-center z-20 animate-in zoom-in duration-200 shadow-sm">
@@ -127,11 +131,13 @@ function ComparisonImageCard({
   imageUrl,
   label,
   swatchClassName,
+  previewHex,
 }: {
   alt: string;
   imageUrl: string;
   label: string;
   swatchClassName?: string;
+  previewHex?: string;
 }) {
   return (
     <div className="relative flex flex-col h-64 sm:h-96 lg:h-144.75 w-full rounded-[20px] overflow-hidden shadow-[0px_0px_5px_0px_rgba(0,0,0,0.15)] bg-neutral-100">
@@ -144,7 +150,7 @@ function ComparisonImageCard({
         />
       ) : null}
       {swatchClassName && (
-        <div className={`absolute bottom-6 right-6 h-11 w-11 rounded-full shadow-lg ring-4 ring-white/90 ${swatchClassName}`} />
+        <div className={`absolute bottom-6 right-6 h-11 w-11 rounded-full shadow-lg ring-4 ring-white/90 ${swatchClassName}`} style={{ backgroundColor: previewHex }} />
       )}
       <div className="absolute top-7.5 left-6 bg-black border border-[#c3c3c3] border-solid flex items-center justify-center px-3.5 py-1.5 rounded-[20px] z-10">
         <span className="text-white text-base font-normal leading-6 whitespace-nowrap">

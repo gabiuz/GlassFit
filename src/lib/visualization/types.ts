@@ -1,6 +1,6 @@
 import type { SpaceImageSession } from "@/lib/imageApi";
 import type { RawMaterial, CalculatedBOMResult } from "@/lib/pricing/types";
-import type { AluminumFinishKey } from "./colorVariations";
+import type { AluminumFinishKey, RrdAluminumFinishKey } from "./colorVariations";
 
 export type JsonObject = Record<string, unknown>;
 
@@ -8,6 +8,23 @@ export type ModelStrategy = "Fixed" | "Parametric";
 export type GlassAppearanceMode = "clear" | "frosted" | "opaque" | "reflective" | "outdoor";
 export type GlassColorKey = "clear" | "bronze" | "silver" | "blue";
 export type GlassThicknessMm = 6 | 8 | 12;
+export type GlassTypeKey = "regular" | "frosted" | "mirror" | "tempered" | "reflective";
+
+export type ProductConfigurationSeed = {
+  aluminumFinish: RrdAluminumFinishKey;
+  glassType: GlassTypeKey;
+  glassAppearance: GlassAppearanceMode;
+  glassColor: GlassColorKey;
+  glassThicknessMm: GlassThicknessMm;
+  widthCm?: number;
+  heightCm?: number;
+  quantity: number;
+};
+
+export type PendingProductConfiguration = {
+  productId: string;
+  configuration: ProductConfigurationSeed;
+};
 
 export type SelectedVisualizationProduct = {
   productId: string;
@@ -137,6 +154,8 @@ export type PlacedOverlay = {
   configuration: ProductConfigurationSnapshot;
   flattenedImageDataUrl: string;
   variationImageDataUrls?: Partial<Record<AluminumFinishKey, string>>;
+  variationAssetRefs?: Partial<Record<AluminumFinishKey, VariationAssetRef>>;
+  variationRenderRecipe?: VariationRenderRecipe;
   sourceCanvasWidth?: number;
   sourceCanvasHeight?: number;
   sourceOverlayWidth?: number;
@@ -155,8 +174,40 @@ export type PlacedOverlay = {
   previewGlbUrl?: string | null;
 };
 
+export type VariationAssetRef = {
+  cacheKey: string;
+  mimeType: "image/webp" | "image/png";
+  byteLength: number;
+  width: number;
+  height: number;
+  fingerprint: string;
+};
+
+export type VariationRenderRecipe = {
+  productId: string;
+  templateId: string;
+  structuralDefinition: ProductStructuralDefinition;
+  configuration: ProductConfigurationSnapshot;
+  sourceCanvasWidth: number;
+  sourceCanvasHeight: number;
+  sourceOverlayWidth: number;
+  sourceOverlayHeight: number;
+  visibleModelBounds: NonNullable<PlacedOverlay["visibleModelBounds"]>;
+};
+
+export type VariationAssetPriority = "visible" | "user" | "idle";
+
+export type VariationAssetStatus =
+  | { state: "missing" }
+  | { state: "queued"; priority: VariationAssetPriority }
+  | { state: "rendering"; finish: AluminumFinishKey }
+  | { state: "ready"; asset: VariationAssetRef; objectUrl: string }
+  | { state: "error"; message: string; retryable: boolean };
+
 export type VisualizationSessionState = {
+  assetSessionId: string | null;
   selectedProductId: string | null;
+  pendingProductConfiguration: PendingProductConfiguration | null;
   spaceImageSession: SpaceImageSession | null;
   workspaceBackgroundDataUrl: string | null;
   structuralDefinition: ProductStructuralDefinition | null;
@@ -173,6 +224,7 @@ export type ProductVariationSnapshot = {
   title: string;
   label: string;
   swatchClassName: string;
+  previewHex?: string;
   imageDataUrl: string;
 };
 
@@ -201,6 +253,9 @@ export type ProductConfigurationSnapshot = {
   structuralWaiver?: boolean;
   aluminumFinish: "black" | "white" | "silver" | string;
   glassAppearance: GlassAppearanceMode;
+  glassColor?: GlassColorKey;
+  glassThicknessMm?: GlassThicknessMm;
+  glassType?: GlassTypeKey;
   includeSill: boolean;
   yaw: number;
   pitch: number;

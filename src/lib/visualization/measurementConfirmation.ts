@@ -253,6 +253,10 @@ export function applyMeasurementOverridesToOverlays(
     return {
       ...overlay,
       configuration: nextConfig,
+      variationAssetRefs: undefined,
+      variationRenderRecipe: overlay.variationRenderRecipe
+        ? { ...overlay.variationRenderRecipe, configuration: nextConfig }
+        : undefined,
       totalPrice: nextTotalPrice,
       unitPrice: nextUnitPrice,
     };

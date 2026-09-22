@@ -7,10 +7,12 @@ import type {
   GlassAppearanceMode,
   GlassColorKey,
   GlassThicknessMm,
+  GlassTypeKey,
 } from "@/lib/visualization/types";
 
+export type { GlassTypeKey } from "@/lib/visualization/types";
+
 export type RrdSupportedProductType = "Window" | "Door" | "Cabinet";
-export type GlassTypeKey = "regular" | "frosted" | "mirror" | "tempered" | "reflective";
 export type PricingClass = "Standard" | "Special" | "Premium";
 
 export interface FinishOption {

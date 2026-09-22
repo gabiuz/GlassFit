@@ -64,13 +64,28 @@ export function hasCompleteVariationLayers(overlays: PlacedOverlay[]) {
   );
 }
 
+export function hasRenderableVariationLayers(overlays: PlacedOverlay[]) {
+  return overlays.length > 0 && overlays.every((overlay) => (
+    Boolean(overlay.variationRenderRecipe)
+    || ALUMINUM_COLOR_VARIATIONS.every(
+      (variation) => Boolean(overlay.variationImageDataUrls?.[variation.key]),
+    )
+  ));
+}
+
 export function createProductVariantSelections(
   overlays: PlacedOverlay[],
 ): ProductVariantSelections {
   return Object.fromEntries(
     overlays.map((overlay) => {
       const finish = normalizeAluminumFinish(overlay.configuration.aluminumFinish);
-      return [overlay.overlayId, { left: finish, right: finish }];
+      const initial = overlay.variationRenderRecipe
+        || overlay.variationAssetRefs?.[finish]
+        || overlay.variationImageDataUrls?.[finish]
+        || overlay.flattenedImageDataUrl
+        ? finish
+        : "white";
+      return [overlay.overlayId, { left: initial, right: initial }];
     }),
   );
 }
@@ -81,10 +96,20 @@ export function reconcileProductVariantSelections(
 ): ProductVariantSelections {
   const initialized = createProductVariantSelections(overlays);
   return Object.fromEntries(
-    overlays.map((overlay) => [
-      overlay.overlayId,
-      current[overlay.overlayId] ?? initialized[overlay.overlayId],
-    ]),
+    overlays.map((overlay) => {
+      const existing = current[overlay.overlayId] ?? initialized[overlay.overlayId];
+      const left = normalizeAluminumFinish(existing.left);
+      const right = normalizeAluminumFinish(existing.right);
+      const supportsLazyRendering = Boolean(overlay.variationRenderRecipe);
+      return [overlay.overlayId, {
+        left: supportsLazyRendering || overlay.variationImageDataUrls?.[left]
+          ? left
+          : initialized[overlay.overlayId].left,
+        right: supportsLazyRendering || overlay.variationImageDataUrls?.[right]
+          ? right
+          : initialized[overlay.overlayId].right,
+      }];
+    }),
   );
 }
 
