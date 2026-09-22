@@ -5,7 +5,7 @@
 **Version:** 1.1 (Capstone Production Release)
 **Owner:** Jedia Nicole I. Sagun (Quality Assurance Lead) & GlassFit Capstone Team (PUP CCIS)  
 **Status:** Locked  
-**Last reconciled:** September 19, 2026 (Added QAD-TC27 for alpha-aware Product Variant comparison selection)
+**Last reconciled:** September 22, 2026 (Added QAD-TC28 for bounded Product Variant asset rendering)
 **PRD:** docs/prd-glassfit.md
 
 ---
@@ -45,6 +45,7 @@
 | QAD-TC18 | PRD-F10 | Mathematical Parametric BOM Pricing & Scrap Accuracy | Dimension confirmation and calculation | 1. Execute calculation across Scenarios 1 to 4<br>2. Verify 1D framing, 2D glass, 12% aluminum scrap, 10% glass scrap, Option A labor floor, and 25% margin | Final calculated prices match benchmark scenarios down to exact centavo; frozen snapshot preserved in `pricing_details` JSONB | P0 |
 | QAD-TC19 | PRD-F14 | Admin Setup Wizard Step Switching & Component Persistence | Configured product draft in `/admin/products/[id]/setup` | 1. Upload components in Step 4<br>2. Navigate to Step 5 (Parameters)<br>3. Return to Step 4 (Components) | Uploaded parts, dimension bindings, and 3D preview meshes persist seamlessly without component loss or page reload | P0 |
 | QAD-TC27 | PRD-F15, PRD-F16 | Alpha-aware direct model selection in Product Variant comparison | Two or more complete placed overlays in Product Variant mode | 1. Select overlapping products from both side-by-side panels<br>2. Select a product from slider mode away from the divider<br>3. Select each product using the keyboard-accessible button group<br>4. Resize through mobile and desktop breakpoints<br>5. Enable reduced motion | Topmost visible product is selected without coordinate drift; both panels and selector buttons remain synchronized; saved left/right finishes remain unchanged; divider drag remains isolated; reduced motion removes decorative movement | P1 |
+| QAD-TC28 | PRD-F6, PRD-F9, PRD-F15, PRD-F16 | Bounded 24-finish comparison rendering and persistence | One or more configured overlays with render recipes | 1. Open Product Variant comparison<br>2. Select uncached finishes rapidly<br>3. Refresh the route<br>4. Simulate storage pressure<br>5. Proceed to quotation | All 24 choices remain available; requested work is prioritized; panels retain their last ready image; metadata restores from session storage; binary storage stays bounded; only the committed output is composed | P0 |
 
 ---
 

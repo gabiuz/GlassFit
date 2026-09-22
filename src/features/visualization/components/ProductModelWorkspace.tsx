@@ -45,17 +45,12 @@ import {
 } from "@/lib/visualization/noiseGenerator";
 import { applyContactOcclusionAndReveals } from "@/lib/visualization/contactShadow";
 import {
-  getAluminumVariationMetadata,
-  getVariationFinishes,
   normalizeAluminumFinish,
-  type AluminumFinishKey,
 } from "@/lib/visualization/colorVariations";
 import {
   DEFAULT_SCENE_ZOOM,
   createDuplicateConfiguration,
-  getPlacedLayerImageUrls,
   getOverlaySizeFromConfiguration,
-  preserveActivePlacedLayer,
 } from "@/lib/visualization/multiProductPresentation";
 import {
   validateEngineeringGuardrails,
@@ -96,6 +91,14 @@ import {
   normalizeGlassType,
 } from "@/lib/visualization/configurationPropagation";
 import type { ProductMaterialCapabilities } from "@/lib/visualization/materialClassifier";
+import { captureTransparentCanvasBlob } from "@/lib/visualization/captureSnapshot";
+import { variationAssetStore } from "@/lib/visualization/variationAssetStore";
+import { variationRenderQueue } from "@/lib/visualization/variationRenderQueue";
+import { variationAssetRegistry } from "@/lib/visualization/variationAssetRegistry";
+import {
+  createVariationCacheKey,
+  createVariationRenderFingerprint,
+} from "@/lib/visualization/variationRenderFingerprint";
 
 export type ProjectedModelBounds = {
   left: number;
@@ -105,6 +108,7 @@ export type ProjectedModelBounds = {
 };
 
 interface ProductModelWorkspaceProps {
+  assetSessionId?: string | null;
   uploadedImage: string | null;
   spaceImageSession?: SpaceImageSession | null;
   structuralDefinition?: ProductStructuralDefinition | null;
@@ -175,18 +179,17 @@ const MIN_MODEL_RENDER_SIDE = 512;
 const MODEL_CONTROLS_PADDING_PX = 8;
 
 export function ProductModelWorkspace({
+  assetSessionId,
   uploadedImage,
   spaceImageSession,
   structuralDefinition,
   catalogProducts = [],
   currentProductId,
   selectedProductName,
-  initialSnapshotDataUrl: _initialSnapshotDataUrl,
   initialConfiguration,
   initialProductConfiguration,
   placedOverlays = [],
   onConfigurationChange,
-  onVariationSnapshotsChange,
   onSnapshotChange,
   onPlacedOverlaysChange,
   onComparisonOverlaysChange,
@@ -1263,28 +1266,27 @@ export function ProductModelWorkspace({
     heightCm,
   ]);
 
-  const captureCurrentProductLayer = useCallback(
-    () =>
-      captureWorkspaceSnapshot({
-        canvasElement: canvasRef.current,
-        overlayElement: overlayBoxRef.current,
-        backgroundImageUrl: null,
-        fallbackProductImageUrl: productOverlayImage,
-        hasGeneratedProduct: Boolean(structuralDefinition),
-        activeOcclusionObjects: [],
-        perspectiveCorners,
-        rotateAngle,
-        isFlipped,
-        modelFilter: exportModelFilter,
-        structuralDefinition: structuralDefinition ?? null,
-        yaw,
-        pitch,
-        lighting: effectiveLighting ?? null,
-        glassAppearance,
-        includeSill,
-        widthCm: Number(widthCm),
-        heightCm: Number(heightCm),
-      }),
+  const captureCurrentProductCanvas = useCallback(
+    () => captureWorkspaceCanvas({
+      canvasElement: canvasRef.current,
+      overlayElement: overlayBoxRef.current,
+      backgroundImageUrl: null,
+      fallbackProductImageUrl: productOverlayImage,
+      hasGeneratedProduct: Boolean(structuralDefinition),
+      activeOcclusionObjects: [],
+      perspectiveCorners,
+      rotateAngle,
+      isFlipped,
+      modelFilter: exportModelFilter,
+      structuralDefinition: structuralDefinition ?? null,
+      yaw,
+      pitch,
+      lighting: effectiveLighting ?? null,
+      glassAppearance,
+      includeSill,
+      widthCm: Number(widthCm),
+      heightCm: Number(heightCm),
+    }),
     [
       effectiveLighting,
       exportModelFilter,
@@ -1302,129 +1304,6 @@ export function ProductModelWorkspace({
     ],
   );
 
-  const captureCurrentProductVariationLayers = useCallback(async () => {
-    const variationImageDataUrls: Partial<Record<AluminumFinishKey, string>> = {};
-    const variations = getVariationFinishes(alumFinish).map(getAluminumVariationMetadata);
-
-    if (!structuralDefinition) {
-      const fallbackLayer = await captureCurrentProductLayer();
-      if (!fallbackLayer) {
-        throw new Error(
-          "Unable to capture the product variations. Try Edit Placement and prepare the comparison again.",
-        );
-      }
-      for (const variation of variations) {
-        variationImageDataUrls[variation.key] = fallbackLayer;
-      }
-      return variationImageDataUrls;
-    }
-
-    const width = Number(widthCm) || DEFAULT_PRODUCT_WIDTH_CM;
-    const height = Number(heightCm) || DEFAULT_PRODUCT_HEIGHT_CM;
-
-    for (const variation of variations) {
-      const renderer = new ProductModelRenderer(
-        renderFrameSize.width,
-        renderFrameSize.height,
-      );
-
-      try {
-        const cameraFraming = mvpRendererRef.current?.getCameraFraming();
-        if (cameraFraming !== null && cameraFraming !== undefined) {
-          renderer.setCameraFraming(cameraFraming);
-        }
-        renderer.setSize(renderFrameSize.width, renderFrameSize.height);
-        renderer.applyLighting(effectiveLighting ?? null);
-        await renderer.loadModel(
-          structuralDefinition,
-          {
-            width: width * 10,
-            height: height * 10,
-            pane_count: panelCount,
-            includeSill,
-            include_sill: includeSill,
-          },
-          {
-            aluminumFinish: variation.key,
-            glassAppearance,
-            glassColor,
-            glassThicknessMm,
-            includeSill,
-          },
-        );
-
-        const isPlanar = Boolean(perspectiveCorners);
-        const renderedCanvas = renderer.render(yaw, pitch, isPlanar);
-        if (!renderedCanvas) {
-          throw new Error(
-            `Unable to capture the ${variation.title} product variation. Try Edit Placement and prepare the comparison again.`,
-          );
-        }
-
-        variationImageDataUrls[variation.key] = await captureWorkspaceSnapshot({
-          canvasElement: canvasRef.current,
-          overlayElement: overlayBoxRef.current,
-          backgroundImageUrl: null,
-          fallbackProductImageUrl: productOverlayImage,
-          hasGeneratedProduct: true,
-          activeOcclusionObjects: [],
-          perspectiveCorners,
-          rotateAngle,
-          isFlipped,
-          modelFilter: exportModelFilter,
-          generatedCanvasOverride: cloneCanvas(renderedCanvas, {
-            autoRealism,
-            autoShadow,
-            lighting: effectiveLighting,
-          }),
-          structuralDefinition,
-          yaw,
-          pitch,
-          lighting: effectiveLighting ?? null,
-          glassAppearance,
-          includeSill,
-          widthCm: width,
-          heightCm: height,
-        });
-      } finally {
-        renderer.dispose();
-      }
-    }
-
-    const missingVariation = variations.find(
-      (variation) => !variationImageDataUrls[variation.key],
-    );
-    if (missingVariation) {
-      throw new Error(
-        `Unable to capture the ${missingVariation.title} product variation. Try Edit Placement and prepare the comparison again.`,
-      );
-    }
-
-    return variationImageDataUrls;
-  }, [
-    autoRealism,
-    autoShadow,
-    captureCurrentProductLayer,
-    effectiveLighting,
-    exportModelFilter,
-    alumFinish,
-    glassAppearance,
-    glassColor,
-    glassThicknessMm,
-    heightCm,
-    includeSill,
-    isFlipped,
-    panelCount,
-    perspectiveCorners,
-    pitch,
-    productOverlayImage,
-    renderFrameSize,
-    rotateAngle,
-    structuralDefinition,
-    widthCm,
-    yaw,
-  ]);
-
   const createPlacedOverlay = useCallback(
     async (explicitLayerNumber?: number): Promise<PlacedOverlay> => {
       const overlayElement = overlayBoxRef.current;
@@ -1436,21 +1315,11 @@ export function ProductModelWorkspace({
       const visibleModelBounds = projectedModelBounds
         ? { ...projectedModelBounds }
         : (mvpCanvasRef.current ? getVisibleModelBounds(mvpCanvasRef.current) ?? undefined : undefined);
-      const activeImageDataUrl = await captureCurrentProductLayer();
+      const capturedCanvas = await captureCurrentProductCanvas();
+      const activeImageDataUrl = capturedCanvas.toDataURL("image/png");
       const currentFinish = normalizeAluminumFinish(
         currentConfiguration.aluminumFinish,
       );
-      const variationLayers = await captureCurrentProductVariationLayers();
-      const variationImageDataUrls: Partial<Record<AluminumFinishKey, string>> = {
-        ...variationLayers,
-        [currentFinish]: activeImageDataUrl,
-      };
-      const placedLayer = preserveActivePlacedLayer({
-        activeImageDataUrl,
-        currentFinish,
-        variationImageDataUrls,
-      });
-
       const uniqueOverlayId = crypto.randomUUID();
       const posX = overlayX.get();
       const posY = overlayY.get();
@@ -1466,18 +1335,71 @@ export function ProductModelWorkspace({
         catalogProducts.find((p) => p.id === prodId)?.previewGlbUrl ??
         null;
 
+      const sourceCanvasBounds = canvasRef.current?.getBoundingClientRect();
+      const configuration = {
+        ...currentConfiguration,
+        positionX: posX,
+        positionY: posY,
+      };
+      const variationRenderRecipe = structuralDefinition ? {
+        productId: prodId,
+        templateId: structuralDefinition.template.templateId,
+        structuralDefinition,
+        configuration: {
+          ...configuration,
+          manualOcclusionMaskDataUrl: null,
+        },
+        sourceCanvasWidth: sourceCanvasBounds?.width ?? capturedCanvas.width,
+        sourceCanvasHeight: sourceCanvasBounds?.height ?? capturedCanvas.height,
+        sourceOverlayWidth,
+        sourceOverlayHeight,
+        visibleModelBounds: visibleModelBounds ?? {
+          left: 0,
+          top: 0,
+          width: sourceOverlayWidth,
+          height: sourceOverlayHeight,
+        },
+      } : undefined;
+      const variationAssetRefs = assetSessionId && variationRenderRecipe
+        ? await (async () => {
+            const fingerprint = createVariationRenderFingerprint(
+              variationRenderRecipe,
+              currentFinish,
+            );
+            const captured = await captureTransparentCanvasBlob(capturedCanvas);
+            const asset = await variationAssetStore.put({
+              cacheKey: createVariationCacheKey(
+                assetSessionId,
+                uniqueOverlayId,
+                currentFinish,
+                fingerprint,
+              ),
+              assetSessionId,
+              overlayId: uniqueOverlayId,
+              finish: currentFinish,
+              fingerprint,
+              width: captured.width,
+              height: captured.height,
+              mimeType: captured.mimeType,
+              blob: captured.blob,
+              createdAt: Date.now(),
+              lastAccessedAt: Date.now(),
+              priority: "visible",
+            });
+            return { [currentFinish]: asset };
+          })()
+        : undefined;
+
       return {
         overlayId: uniqueOverlayId,
         productId: prodId,
         productName: overlayName,
         layerNumber: explicitLayerNumber ?? activeLayerNumber,
         templateId: structuralDefinition?.template.templateId ?? "catalog-image",
-        configuration: {
-          ...currentConfiguration,
-          positionX: posX,
-          positionY: posY,
-        },
-        ...placedLayer,
+        configuration,
+        flattenedImageDataUrl: activeImageDataUrl,
+        variationAssetRefs,
+        variationRenderRecipe,
         sourceCanvasWidth: canvasRef.current?.getBoundingClientRect().width,
         sourceCanvasHeight: canvasRef.current?.getBoundingClientRect().height,
         sourceOverlayWidth,
@@ -1491,8 +1413,8 @@ export function ProductModelWorkspace({
     },
     [
       activeLayerNumber,
-      captureCurrentProductLayer,
-      captureCurrentProductVariationLayers,
+      assetSessionId,
+      captureCurrentProductCanvas,
       catalogProducts,
       currentConfiguration,
       currentProductId,
@@ -1571,10 +1493,18 @@ export function ProductModelWorkspace({
   );
 
   const handleDeletePlacedOverlay = useCallback((overlayId: string) => {
+    if (assetSessionId) {
+      variationRenderQueue.cancelNamespace(`${assetSessionId}:${overlayId}`);
+      void variationAssetStore.removeOverlay(assetSessionId, overlayId);
+    }
+    const removedOverlay = placedOverlays.find((overlay) => overlay.overlayId === overlayId);
+    for (const asset of Object.values(removedOverlay?.variationAssetRefs ?? {})) {
+      if (asset) variationAssetRegistry.revoke(asset.cacheKey);
+    }
     onPlacedOverlaysChange?.(
       placedOverlays.filter((overlay) => overlay.overlayId !== overlayId),
     );
-  }, [onPlacedOverlaysChange, placedOverlays]);
+  }, [assetSessionId, onPlacedOverlaysChange, placedOverlays]);
 
   const applyVisualizationSnapshot = useCallback(async () => {
     setIsCapturingSnapshot(true);
@@ -1632,138 +1562,12 @@ export function ProductModelWorkspace({
     }
   }, [captureCurrentSnapshot]);
 
-  const generateVariationSnapshots = useCallback(async () => {
-    if (!structuralDefinition) {
-      onVariationSnapshotsChange?.([]);
-      return [];
-    }
-
-    const snapshots: ProductVariationSnapshot[] = [];
-    const width = Number(widthCm) || DEFAULT_PRODUCT_WIDTH_CM;
-    const height = Number(heightCm) || DEFAULT_PRODUCT_HEIGHT_CM;
-
-    const variations = getVariationFinishes(alumFinish).map(getAluminumVariationMetadata);
-    for (const variation of variations) {
-      const renderer = new ProductModelRenderer(
-        renderFrameSize.width,
-        renderFrameSize.height,
-      );
-
-      try {
-        const cameraFraming = mvpRendererRef.current?.getCameraFraming();
-        if (cameraFraming !== null && cameraFraming !== undefined) {
-          renderer.setCameraFraming(cameraFraming);
-        }
-        renderer.setSize(renderFrameSize.width, renderFrameSize.height);
-        renderer.applyLighting(effectiveLighting ?? null);
-        await renderer.loadModel(
-          structuralDefinition,
-          {
-            width: width * 10,
-            height: height * 10,
-            pane_count: panelCount,
-            includeSill,
-            include_sill: includeSill,
-          },
-          {
-            aluminumFinish: variation.key,
-            glassAppearance,
-            glassColor,
-            glassThicknessMm,
-            includeSill,
-          },
-        );
-
-        const isPlanar = Boolean(perspectiveCorners);
-        const renderedCanvas = renderer.render(yaw, pitch, isPlanar);
-        if (!renderedCanvas) {
-          continue;
-        }
-
-        const generatedCanvasOverride = cloneCanvas(renderedCanvas, {
-          autoRealism,
-          autoShadow,
-          lighting: effectiveLighting,
-        });
-        const imageDataUrl = await captureWorkspaceSnapshot({
-          canvasElement: canvasRef.current,
-          overlayElement: overlayBoxRef.current,
-          backgroundImageUrl: bgImage,
-          fallbackProductImageUrl: productOverlayImage,
-          hasGeneratedProduct: true,
-          activeOcclusionObjects,
-          manualMaskDataUrl,
-          perspectiveCorners,
-          rotateAngle,
-          isFlipped,
-          modelFilter: exportModelFilter,
-          generatedCanvasOverride,
-          structuralDefinition,
-          yaw,
-          pitch,
-          lighting: effectiveLighting ?? null,
-          glassAppearance,
-          includeSill,
-          widthCm: width,
-          heightCm: height,
-          placedLayerImageUrls: getPlacedLayerImageUrls(
-            placedOverlays,
-            variation.key,
-          ),
-        });
-
-        snapshots.push({
-          key: variation.key,
-          title: variation.title,
-          label: variation.label,
-          swatchClassName: variation.swatchClassName,
-          previewHex: variation.previewHex,
-          imageDataUrl,
-        });
-      } finally {
-        renderer.dispose();
-      }
-    }
-
-    onVariationSnapshotsChange?.(snapshots);
-    return snapshots;
-  }, [
-    activeOcclusionObjects,
-    autoRealism,
-    autoShadow,
-    manualMaskDataUrl,
-    perspectiveCorners,
-    bgImage,
-    effectiveLighting,
-    exportModelFilter,
-    alumFinish,
-    glassAppearance,
-    glassColor,
-    glassThicknessMm,
-    heightCm,
-    includeSill,
-    isFlipped,
-    onVariationSnapshotsChange,
-    placedOverlays,
-    panelCount,
-    pitch,
-    productOverlayImage,
-    renderFrameSize,
-    rotateAngle,
-    structuralDefinition,
-    widthCm,
-    yaw,
-  ]);
-
   const handleContinueToComparison = useCallback(async () => {
     setIsCapturingSnapshot(true);
 
     try {
       await captureCurrentSnapshot();
       setIsSnapshotApplied(true);
-      if (!selectedProduct && placedOverlays.length === 0) {
-        await generateVariationSnapshots();
-      }
       const comparisonOverlays = selectedProduct
         ? [
           ...placedOverlays,
@@ -1771,7 +1575,7 @@ export function ProductModelWorkspace({
         ]
         : placedOverlays;
 
-      // Stash complete overlay set with variationImageDataUrls and flattenedImageDataUrl
+      // Publish metadata and the visible finish asset only. Other finishes render on demand.
       pendingComparisonOverlaysRef.current = comparisonOverlays;
 
       const entries = buildMeasurementEntries(
@@ -1800,7 +1604,6 @@ export function ProductModelWorkspace({
     catalogProducts,
     createPlacedOverlay,
     currentConfiguration,
-    generateVariationSnapshots,
     heightCm,
     placedOverlays,
     realtimePricing.totalPrice,
@@ -1826,7 +1629,7 @@ export function ProductModelWorkspace({
         placedOverlays,
       );
 
-      // Use pre-captured overlays that contain genuine variationImageDataUrls and flattenedImageDataUrl
+      // Keep the prepared overlay metadata and visible binary asset reference intact.
       const baseOverlays = pendingComparisonOverlaysRef.current.length > 0
         ? pendingComparisonOverlaysRef.current
         : (selectedProduct ? [...placedOverlays] : placedOverlays);
@@ -3835,34 +3638,6 @@ function clampNumber(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
-function cloneCanvas(
-  source: HTMLCanvasElement,
-  options?: {
-    autoRealism?: boolean;
-    autoShadow?: boolean;
-    lighting?: SpaceImageSession["lighting"] | null;
-  },
-) {
-  const canvas = document.createElement("canvas");
-  canvas.width = source.width;
-  canvas.height = source.height;
-  const context = canvas.getContext("2d");
-  if (context) {
-    context.drawImage(source, 0, 0);
-    if (options?.autoRealism && options?.autoShadow && options?.lighting) {
-      applyContactOcclusionAndReveals(context, canvas.width, canvas.height, {
-        lightDirection: options.lighting.light_direction,
-        shadowOpacity: options.lighting.suggested?.shadow_opacity ?? 0.28,
-      });
-    }
-    if (options?.autoRealism && options?.lighting?.suggested?.grain) {
-      applyNoiseToCanvas(context, canvas.width, canvas.height, options.lighting.suggested.grain);
-    }
-  }
-
-  return canvas;
-}
-
 type SnapshotOcclusionObject = SpaceImageSession["objects"][number];
 
 // Snapshot of the overlay's DOM state captured synchronously: before any async
@@ -3875,29 +3650,7 @@ type OverlayCapture = {
   generatedCanvas: HTMLCanvasElement | null;
 };
 
-async function captureWorkspaceSnapshot({
-  canvasElement,
-  overlayElement,
-  backgroundImageUrl,
-  fallbackProductImageUrl,
-  hasGeneratedProduct,
-  activeOcclusionObjects,
-  manualMaskDataUrl,
-  perspectiveCorners,
-  rotateAngle,
-  isFlipped,
-  modelFilter,
-  generatedCanvasOverride,
-  structuralDefinition: _structuralDefinition,
-  yaw: _yaw,
-  pitch: _pitch,
-  lighting: _lighting,
-  glassAppearance: _glassAppearance,
-  includeSill: _includeSill,
-  widthCm: _widthCm,
-  heightCm: _heightCm,
-  placedLayerImageUrls = [],
-}: {
+type WorkspaceSnapshotOptions = {
   canvasElement: HTMLDivElement | null;
   overlayElement: HTMLDivElement | null;
   backgroundImageUrl: string | null;
@@ -3919,7 +3672,30 @@ async function captureWorkspaceSnapshot({
   widthCm: number;
   heightCm: number;
   placedLayerImageUrls?: string[];
-}) {
+};
+
+async function captureWorkspaceSnapshot(options: WorkspaceSnapshotOptions) {
+  const output = await captureWorkspaceCanvas(options);
+  return options.backgroundImageUrl
+    ? output.toDataURL("image/jpeg", 0.92)
+    : output.toDataURL("image/png");
+}
+
+async function captureWorkspaceCanvas({
+  canvasElement,
+  overlayElement,
+  backgroundImageUrl,
+  fallbackProductImageUrl,
+  hasGeneratedProduct,
+  activeOcclusionObjects,
+  manualMaskDataUrl,
+  perspectiveCorners,
+  rotateAngle,
+  isFlipped,
+  modelFilter,
+  generatedCanvasOverride,
+  placedLayerImageUrls = [],
+}: WorkspaceSnapshotOptions) {
   if (!canvasElement) {
     throw new Error("Visualization canvas is not ready yet.");
   }
@@ -4026,9 +3802,7 @@ async function captureWorkspaceSnapshot({
     }
   }
 
-  return backgroundImageUrl
-    ? output.toDataURL("image/jpeg", 0.92)
-    : output.toDataURL("image/png");
+  return output;
 }
 
 async function drawSnapshotOverlay({

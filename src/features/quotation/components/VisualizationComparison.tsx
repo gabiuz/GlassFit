@@ -4,7 +4,6 @@ import React, { useState } from "react";
 import { Check } from "lucide-react";
 import { useVisualizationSession } from "@/lib/visualization/visualizationSession";
 import {
-  ALUMINUM_COLOR_VARIATIONS,
   getAluminumVariationMetadata,
   normalizeAluminumFinish,
   type AluminumFinishKey,
@@ -30,7 +29,7 @@ export function VisualizationComparison() {
   const afterImage = finalSnapshotDataUrl ?? FALLBACK_AFTER_IMAGE;
   const variationMetadata = variationSnapshots.length > 0
     ? variationSnapshots.map((snapshot) => getAluminumVariationMetadata(snapshot.key))
-    : ALUMINUM_COLOR_VARIATIONS;
+    : [getAluminumVariationMetadata(configuredFinish)];
   const variations = variationMetadata.map((variation) => {
     const snapshot = variationSnapshots.find((item) => item.key === variation.key);
     return {

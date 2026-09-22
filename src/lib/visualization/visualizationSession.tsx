@@ -4,6 +4,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
@@ -22,6 +23,13 @@ import {
   normalizePendingProductConfiguration,
   normalizeProductConfigurationSeed,
 } from "./configurationPropagation";
+import {
+  VARIATION_ASSET_EXPIRY_MS,
+  variationAssetStore,
+} from "./variationAssetStore";
+import { variationAssetRegistry } from "./variationAssetRegistry";
+import { variationRenderQueue } from "./variationRenderQueue";
+import { normalizeAluminumFinish } from "./colorVariations";
 
 export interface TransitionWorkspaceProductOptions {
   nextProductId: string;
@@ -56,6 +64,7 @@ const VisualizationSessionContext =
   createContext<VisualizationSessionContextValue | null>(null);
 
 export const initialState: VisualizationSessionState = {
+  assetSessionId: null,
   selectedProductId: null,
   pendingProductConfiguration: null,
   spaceImageSession: null,
@@ -152,11 +161,74 @@ export function VisualizationSessionProvider({
     readStoredVisualizationSession(),
   );
 
+  useEffect(() => {
+    void variationAssetStore.removeExpired(Date.now() - VARIATION_ASSET_EXPIRY_MS);
+    return () => variationAssetRegistry.revokeAll();
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const hydrate = async (overlays: PlacedOverlay[]) => Promise.all(overlays.map(async (overlay) => {
+      if (overlay.flattenedImageDataUrl) return overlay;
+      const finish = normalizeAluminumFinish(overlay.configuration.aluminumFinish);
+      const asset = overlay.variationAssetRefs?.[finish];
+      if (!asset) return overlay;
+      const blob = await variationAssetStore.get(asset);
+      if (!blob || cancelled) return overlay;
+      const objectUrl = variationAssetRegistry.peek(asset.cacheKey)
+        ?? variationAssetRegistry.acquire(asset.cacheKey, blob);
+      return { ...overlay, flattenedImageDataUrl: objectUrl };
+    }));
+
+    if (
+      state.assetSessionId
+      && [...state.placedOverlays, ...state.comparisonOverlays].some(
+        (overlay) => !overlay.flattenedImageDataUrl,
+      )
+    ) {
+      void Promise.all([
+        hydrate(state.placedOverlays),
+        hydrate(state.comparisonOverlays),
+      ]).then(([placedOverlays, comparisonOverlays]) => {
+        if (cancelled) return;
+        const changed = placedOverlays.some((overlay, index) => (
+          overlay !== state.placedOverlays[index]
+        )) || comparisonOverlays.some((overlay, index) => (
+          overlay !== state.comparisonOverlays[index]
+        ));
+        if (!changed) return;
+        const placedById = new Map(placedOverlays.map((overlay) => [overlay.overlayId, overlay]));
+        const comparisonById = new Map(comparisonOverlays.map((overlay) => [overlay.overlayId, overlay]));
+        setState((current) => ({
+          ...current,
+          placedOverlays: current.placedOverlays.map((overlay) => {
+            const hydrated = placedById.get(overlay.overlayId);
+            return !overlay.flattenedImageDataUrl && hydrated?.flattenedImageDataUrl
+              ? { ...overlay, flattenedImageDataUrl: hydrated.flattenedImageDataUrl }
+              : overlay;
+          }),
+          comparisonOverlays: current.comparisonOverlays.map((overlay) => {
+            const hydrated = comparisonById.get(overlay.overlayId);
+            return !overlay.flattenedImageDataUrl && hydrated?.flattenedImageDataUrl
+              ? { ...overlay, flattenedImageDataUrl: hydrated.flattenedImageDataUrl }
+              : overlay;
+          }),
+        }));
+      });
+    }
+    return () => { cancelled = true; };
+  }, [state.assetSessionId, state.comparisonOverlays, state.placedOverlays]);
+
   const setPreparedSpaceImage = useCallback(
     (productId: string, session: SpaceImageSession) => {
       setState((current) => {
         const nextState = createPreparedSpaceImageState(current, productId, session);
         writeStoredVisualizationSession(nextState);
+        if (current.assetSessionId && current.assetSessionId !== nextState.assetSessionId) {
+          variationRenderQueue.cancelNamespacePrefix(current.assetSessionId);
+          void variationAssetStore.removeSession(current.assetSessionId);
+          variationAssetRegistry.revokeAll();
+        }
         return nextState;
       });
     },
@@ -305,9 +377,14 @@ export function VisualizationSessionProvider({
   }, []);
 
   const resetVisualizationSession = useCallback(() => {
+    if (state.assetSessionId) {
+      variationRenderQueue.cancelNamespacePrefix(state.assetSessionId);
+      void variationAssetStore.removeSession(state.assetSessionId);
+    }
+    variationAssetRegistry.revokeAll();
     clearStoredVisualizationSession();
     setState(initialState);
-  }, []);
+  }, [state.assetSessionId]);
 
   const value = useMemo<VisualizationSessionContextValue>(
     () => ({
@@ -364,6 +441,7 @@ export function readStoredVisualizationSession(): VisualizationSessionState {
 
     const parsed = JSON.parse(stored) as Partial<VisualizationSessionState>;
     return {
+      assetSessionId: typeof parsed.assetSessionId === "string" ? parsed.assetSessionId : null,
       selectedProductId: typeof parsed.selectedProductId === "string" ? parsed.selectedProductId : null,
       pendingProductConfiguration: normalizePendingProductConfiguration(parsed.pendingProductConfiguration),
       spaceImageSession: parsed.spaceImageSession && typeof parsed.spaceImageSession === "object"
@@ -411,25 +489,13 @@ export function writeStoredVisualizationSession(state: VisualizationSessionState
   try {
     window.sessionStorage.setItem(
       SESSION_STORAGE_KEY,
-      JSON.stringify({
-        selectedProductId: state.selectedProductId,
-        pendingProductConfiguration: state.pendingProductConfiguration,
-        spaceImageSession: state.spaceImageSession,
-        workspaceBackgroundDataUrl: state.workspaceBackgroundDataUrl,
-        structuralDefinition: state.structuralDefinition,
-        productConfiguration: state.productConfiguration,
-        variationSnapshots: state.variationSnapshots,
-        placedOverlays: state.placedOverlays,
-        comparisonOverlays: state.comparisonOverlays,
-        finalSnapshotDataUrl: state.finalSnapshotDataUrl,
-      }),
+      JSON.stringify(serializeVisualizationSession(state)),
     );
   } catch {
-    // Quota exceeded: serialize lightweight representations
+    // Metadata can still exceed quota when the room photo itself is an embedded data URL.
     try {
       const lightweightState: VisualizationSessionState = {
         ...state,
-        // Retain space image URL if reasonable, or fallback to relative URL
         spaceImageSession: state.spaceImageSession
           ? {
               ...state.spaceImageSession,
@@ -445,28 +511,13 @@ export function writeStoredVisualizationSession(state: VisualizationSessionState
         workspaceBackgroundDataUrl: null,
         variationSnapshots: [],
         finalSnapshotDataUrl: null,
-        // Retain overlay transforms and pricing BOM, omitting oversized base64 data URLs in storage
-        placedOverlays: state.placedOverlays.map((overlay) => ({
-          ...overlay,
-          flattenedImageDataUrl:
-            overlay.flattenedImageDataUrl.length > 200000
-              ? ""
-              : overlay.flattenedImageDataUrl,
-          variationImageDataUrls: undefined,
-        })),
-        comparisonOverlays: state.comparisonOverlays.map((overlay) => ({
-          ...overlay,
-          flattenedImageDataUrl:
-            overlay.flattenedImageDataUrl.length > 200000
-              ? ""
-              : overlay.flattenedImageDataUrl,
-          variationImageDataUrls: undefined,
-        })),
+        placedOverlays: state.placedOverlays.map(sanitizeOverlayForStorage),
+        comparisonOverlays: state.comparisonOverlays.map(sanitizeOverlayForStorage),
       };
 
       window.sessionStorage.setItem(
         SESSION_STORAGE_KEY,
-        JSON.stringify(lightweightState),
+        JSON.stringify(serializeVisualizationSession(lightweightState)),
       );
     } catch {
       console.warn(
@@ -478,6 +529,7 @@ export function writeStoredVisualizationSession(state: VisualizationSessionState
           SESSION_STORAGE_KEY,
           JSON.stringify({
             selectedProductId: state.selectedProductId,
+            assetSessionId: state.assetSessionId,
             pendingProductConfiguration: state.pendingProductConfiguration,
             spaceImageSession: state.spaceImageSession
               ? {
@@ -489,16 +541,8 @@ export function writeStoredVisualizationSession(state: VisualizationSessionState
             structuralDefinition: state.structuralDefinition,
             productConfiguration: state.productConfiguration,
             variationSnapshots: [],
-            placedOverlays: state.placedOverlays.map((overlay) => ({
-              ...overlay,
-              flattenedImageDataUrl: "",
-              variationImageDataUrls: undefined,
-            })),
-            comparisonOverlays: state.comparisonOverlays.map((overlay) => ({
-              ...overlay,
-              flattenedImageDataUrl: "",
-              variationImageDataUrls: undefined,
-            })),
+            placedOverlays: state.placedOverlays.map(sanitizeOverlayForStorage),
+            comparisonOverlays: state.comparisonOverlays.map(sanitizeOverlayForStorage),
             finalSnapshotDataUrl: null,
           }),
         );
@@ -515,6 +559,7 @@ export function createPreparedSpaceImageState(
   session: SpaceImageSession,
 ): VisualizationSessionState {
   return {
+    assetSessionId: createAssetSessionId(),
     selectedProductId: productId,
     pendingProductConfiguration:
       current.pendingProductConfiguration?.productId === productId
@@ -529,6 +574,66 @@ export function createPreparedSpaceImageState(
     placedOverlays: [],
     comparisonOverlays: [],
     finalSnapshotDataUrl: null,
+  };
+}
+
+function createAssetSessionId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `asset-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
+
+function isPersistableSmallUrl(value: string) {
+  return value.length <= 200_000 && !value.startsWith("data:") && !value.startsWith("blob:");
+}
+
+function sanitizeOverlayForStorage(overlay: PlacedOverlay): PlacedOverlay {
+  return {
+    ...overlay,
+    configuration: sanitizeConfigurationForStorage(overlay.configuration),
+    flattenedImageDataUrl: isPersistableSmallUrl(overlay.flattenedImageDataUrl)
+      ? overlay.flattenedImageDataUrl
+      : "",
+    variationImageDataUrls: undefined,
+    variationRenderRecipe: overlay.variationRenderRecipe
+      ? {
+          ...overlay.variationRenderRecipe,
+          configuration: sanitizeConfigurationForStorage(
+            overlay.variationRenderRecipe.configuration,
+          ),
+        }
+      : undefined,
+  };
+}
+
+function sanitizeConfigurationForStorage(
+  configuration: ProductConfigurationSnapshot,
+): ProductConfigurationSnapshot {
+  return {
+    ...configuration,
+    manualOcclusionMaskDataUrl: null,
+  };
+}
+
+export function serializeVisualizationSession(state: VisualizationSessionState) {
+  return {
+    assetSessionId: state.assetSessionId,
+    selectedProductId: state.selectedProductId,
+    pendingProductConfiguration: state.pendingProductConfiguration,
+    spaceImageSession: state.spaceImageSession,
+    workspaceBackgroundDataUrl: state.workspaceBackgroundDataUrl?.startsWith("data:")
+      || state.workspaceBackgroundDataUrl?.startsWith("blob:")
+      ? null
+      : state.workspaceBackgroundDataUrl,
+    structuralDefinition: state.structuralDefinition,
+    productConfiguration: state.productConfiguration
+      ? sanitizeConfigurationForStorage(state.productConfiguration)
+      : null,
+    variationSnapshots: [],
+    placedOverlays: state.placedOverlays.map(sanitizeOverlayForStorage),
+    comparisonOverlays: state.comparisonOverlays.map(sanitizeOverlayForStorage),
+    finalSnapshotDataUrl: state.finalSnapshotDataUrl,
   };
 }
 

@@ -2,22 +2,22 @@
 
 import {
   useEffect,
+  useCallback,
   useRef,
   useState,
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
-  type ReactNode,
   type RefObject,
 } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronLeft, ChevronRight, Check } from "lucide-react";
+import { ChevronLeft, ChevronRight, Check, LoaderCircle } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 import Button from "@/components/shared/Button";
 import { useVisualizationSession } from "@/lib/visualization/visualizationSession";
 import {
   getAluminumVariationMetadata,
-  getAvailableVariationFinishes,
+  ALUMINUM_COLOR_VARIATIONS,
   getAluminumVariationTitle,
   normalizeAluminumFinish,
   type AluminumFinishKey,
@@ -25,8 +25,7 @@ import {
 import {
   commitProductVariantSelections,
   createProductVariantSelections,
-  getComparisonLayerImageUrls,
-  hasCompleteVariationLayers,
+  hasRenderableVariationLayers,
   reconcileProductVariantSelections,
   swapProductVariantSelections,
   updateProductVariantSelection,
@@ -43,8 +42,17 @@ import {
 } from "@/lib/visualization/overlayHitTesting";
 import type {
   PlacedOverlay,
-  ProductVariationSnapshot,
+  VariationAssetPriority,
+  VariationAssetStatus,
 } from "@/lib/visualization/types";
+import { variationAssetStore } from "@/lib/visualization/variationAssetStore";
+import { variationAssetRegistry } from "@/lib/visualization/variationAssetRegistry";
+import { variationRenderQueue } from "@/lib/visualization/variationRenderQueue";
+import {
+  createVariationCacheKey,
+  createVariationRenderFingerprint,
+} from "@/lib/visualization/variationRenderFingerprint";
+import { VariationLayerRenderer } from "@/lib/visualization/variationLayerRenderer";
 
 const BEFORE_IMAGE = "/comparison_assets/room_without_furniture.png";
 const AFTER_IMAGE = "/comparison_assets/room_with_furniture.png";
@@ -310,34 +318,35 @@ const getVariantLabel = (variant: AluminumFinishKey) => {
 type ComparisonPanelCardProps = {
   title: string;
   label: string;
-  imageSrc: string;
-  preview?: ReactNode;
   swatchClassName: string;
   previewHex?: string;
   isSelected: boolean;
   isDisabled: boolean;
   disabledLabel: string;
   onClick: () => void;
+  status?: VariationAssetStatus;
 };
 
 function ComparisonPanelCard({
   title,
   label,
-  imageSrc,
-  preview,
   swatchClassName,
   previewHex,
   isSelected,
   isDisabled,
   disabledLabel,
   onClick,
+  status,
 }: ComparisonPanelCardProps) {
+  const isPending = status?.state === "queued" || status?.state === "rendering";
+  const hasError = status?.state === "error";
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={isDisabled}
       aria-pressed={isSelected}
+      aria-busy={isPending}
       className={`group relative flex min-h-24 w-full items-center gap-3 rounded-[16px] border p-2.5 text-left outline-none transition-[border-color,background-color,box-shadow,transform] duration-150 ease-out focus-visible:ring-2 focus-visible:ring-[#07b6d3] focus-visible:ring-offset-2 active:scale-[0.98] disabled:active:scale-100 ${isSelected
         ? "border-[#129044] bg-[#edf8f1] shadow-[0_0_0_1px_rgba(18,144,68,0.12)]"
         : isDisabled
@@ -348,8 +357,7 @@ function ComparisonPanelCard({
       <div
         className={`relative size-18 shrink-0 overflow-hidden rounded-[12px] border bg-neutral-100 ${isSelected ? "border-[#129044]" : "border-neutral-200"}`}
       >
-        {preview ?? <AfterState src={imageSrc} />}
-        <span className={`absolute bottom-1.5 left-1.5 size-5 rounded-full border-2 border-white shadow-sm ${swatchClassName}`} style={{ backgroundColor: previewHex }} aria-hidden="true" />
+        <span className={`absolute inset-2 rounded-[9px] border border-black/10 shadow-inner ${swatchClassName}`} style={{ backgroundColor: previewHex }} aria-hidden="true" />
       </div>
 
       <span className="min-w-0 flex-1 leading-[1.35]">
@@ -357,7 +365,13 @@ function ComparisonPanelCard({
           {title}
         </span>
         <span className="mt-1 block line-clamp-2 text-xs font-normal text-black/55">
-          {isDisabled && !isSelected ? disabledLabel : label}
+          {isPending
+            ? "Rendering..."
+            : hasError
+              ? "Retry rendering"
+              : isDisabled && !isSelected
+                ? disabledLabel
+                : label}
         </span>
       </span>
 
@@ -365,7 +379,9 @@ function ComparisonPanelCard({
         ? "border-[#129044] bg-[#129044] text-white"
         : "border-neutral-300 bg-white text-transparent"
         }`} aria-hidden="true">
-        <Check className="size-3.5 stroke-[3]" />
+        {isPending
+          ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" />
+          : <Check className="size-3.5 stroke-[3]" />}
       </span>
     </button>
   );
@@ -542,6 +558,7 @@ async function decodeOverlayAlphaMask(overlayId: string, source: string) {
 export function Comparison() {
   const router = useRouter();
   const {
+    assetSessionId,
     finalSnapshotDataUrl,
     comparisonOverlays,
     placedOverlays,
@@ -574,6 +591,11 @@ export function Comparison() {
   );
   const [isPreparingQuotation, setIsPreparingQuotation] = useState(false);
   const [comparisonError, setComparisonError] = useState<string | null>(null);
+  const [assetStatuses, setAssetStatuses] = useState<Record<string, VariationAssetStatus>>({});
+  const [resolvedAssetUrls, setResolvedAssetUrls] = useState<Record<string, string>>({});
+  const renderersRef = useRef(new Map<string, { fingerprint: string; renderer: VariationLayerRenderer }>());
+  const ownedAssetKeysRef = useRef(new Set<string>());
+  const comparisonOverlaysRef = useRef(comparisonOverlays);
   const selectedComparisonOverlay = comparisonOverlays.find(
     (overlay) => overlay.overlayId === selectedComparisonOverlayId,
   );
@@ -586,10 +608,14 @@ export function Comparison() {
   };
   const leftVariant = selectedProductVariants.left;
   const rightVariant = selectedProductVariants.right;
-  const variantDataComplete = hasCompleteVariationLayers(comparisonOverlays);
-  const comparisonVariations = getAvailableVariationFinishes(
-    comparisonOverlays.map((overlay) => overlay.variationImageDataUrls),
-  ).map(getAluminumVariationMetadata);
+  const variantModeReady = hasRenderableVariationLayers(comparisonOverlays);
+  const comparisonVariations = ALUMINUM_COLOR_VARIATIONS.map((variation) =>
+    getAluminumVariationMetadata(variation.key),
+  );
+
+  useEffect(() => {
+    comparisonOverlaysRef.current = comparisonOverlays;
+  }, [comparisonOverlays]);
 
   if (reconciledOverlayIds !== comparisonOverlayIds) {
     setReconciledOverlayIds(comparisonOverlayIds);
@@ -604,6 +630,230 @@ export function Comparison() {
     }
   }
 
+  const ensureVariationAsset = useCallback(async (
+    overlay: PlacedOverlay,
+    finish: AluminumFinishKey,
+    priority: VariationAssetPriority,
+  ) => {
+    const statusKey = `${overlay.overlayId}:${finish}`;
+    const legacyUrl = overlay.variationImageDataUrls?.[finish];
+    if (legacyUrl) {
+      setResolvedAssetUrls((current) => ({ ...current, [statusKey]: legacyUrl }));
+      setAssetStatuses((current) => ({
+        ...current,
+        [statusKey]: { state: "ready", asset: {
+          cacheKey: `legacy:${statusKey}`,
+          mimeType: "image/png",
+          byteLength: 0,
+          width: 0,
+          height: 0,
+          fingerprint: "legacy",
+        }, objectUrl: legacyUrl },
+      }));
+      if (overlay.variationRenderRecipe && assetSessionId && legacyUrl.startsWith("data:")) {
+        const fingerprint = createVariationRenderFingerprint(overlay.variationRenderRecipe, finish);
+        const cacheKey = createVariationCacheKey(assetSessionId, overlay.overlayId, finish, fingerprint);
+        void fetch(legacyUrl)
+          .then((response) => response.blob())
+          .then(async (blob) => {
+            const mimeType = blob.type === "image/webp" ? "image/webp" : "image/png";
+            const asset = await variationAssetStore.put({
+              cacheKey,
+              assetSessionId,
+              overlayId: overlay.overlayId,
+              finish,
+              fingerprint,
+              width: overlay.variationRenderRecipe!.sourceCanvasWidth,
+              height: overlay.variationRenderRecipe!.sourceCanvasHeight,
+              mimeType,
+              blob,
+              createdAt: Date.now(),
+              lastAccessedAt: Date.now(),
+              priority,
+            });
+            const nextOverlays = comparisonOverlaysRef.current.map((candidate) => (
+              candidate.overlayId === overlay.overlayId
+                ? {
+                    ...candidate,
+                    variationAssetRefs: { ...candidate.variationAssetRefs, [finish]: asset },
+                  }
+                : candidate
+            ));
+            comparisonOverlaysRef.current = nextOverlays;
+            setComparisonOverlays(nextOverlays);
+          })
+          .catch(() => undefined);
+      }
+      return legacyUrl;
+    }
+    const recipe = overlay.variationRenderRecipe;
+    if (!recipe || !assetSessionId) {
+      const currentFinish = normalizeAluminumFinish(overlay.configuration.aluminumFinish);
+      if (finish === currentFinish && overlay.flattenedImageDataUrl) {
+        setResolvedAssetUrls((current) => ({
+          ...current,
+          [statusKey]: overlay.flattenedImageDataUrl,
+        }));
+        return overlay.flattenedImageDataUrl;
+      }
+      throw new Error(`No render recipe is available for ${overlay.productName}.`);
+    }
+
+    const fingerprint = createVariationRenderFingerprint(recipe, finish);
+    const cacheKey = createVariationCacheKey(assetSessionId, overlay.overlayId, finish, fingerprint);
+    const existingUrl = resolvedAssetUrls[statusKey];
+    if (existingUrl && overlay.variationAssetRefs?.[finish]?.fingerprint === fingerprint) {
+      return existingUrl;
+    }
+    if (priority !== "idle") {
+      setAssetStatuses((current) => ({
+        ...current,
+        [statusKey]: { state: "queued", priority },
+      }));
+    }
+
+    try {
+      let asset = overlay.variationAssetRefs?.[finish];
+      let blob = asset?.fingerprint === fingerprint
+        ? await variationAssetStore.get(asset)
+        : null;
+      if (blob && asset && priority !== "idle") {
+        asset = await variationAssetStore.put({
+          cacheKey,
+          assetSessionId,
+          overlayId: overlay.overlayId,
+          finish,
+          fingerprint,
+          width: asset.width,
+          height: asset.height,
+          mimeType: asset.mimeType,
+          blob,
+          createdAt: Date.now(),
+          lastAccessedAt: Date.now(),
+          priority,
+        });
+      }
+      if (!blob) {
+        const namespace = `${assetSessionId}:${overlay.overlayId}`;
+        const recipeFingerprint = createVariationRenderFingerprint(recipe, "white");
+        variationRenderQueue.setFingerprint(namespace, recipeFingerprint);
+        const rendered = await variationRenderQueue.enqueue({
+          cacheKey,
+          namespace,
+          fingerprint: recipeFingerprint,
+          priority,
+          run: async () => {
+            if (priority !== "idle") {
+              setAssetStatuses((current) => ({
+                ...current,
+                [statusKey]: { state: "rendering", finish },
+              }));
+            }
+            let rendererEntry = renderersRef.current.get(overlay.overlayId);
+            if (!rendererEntry || rendererEntry.fingerprint !== recipeFingerprint) {
+              rendererEntry?.renderer.dispose();
+              rendererEntry = {
+                fingerprint: recipeFingerprint,
+                renderer: new VariationLayerRenderer(recipe),
+              };
+              renderersRef.current.set(overlay.overlayId, rendererEntry);
+            }
+            return rendererEntry.renderer.render(finish);
+          },
+        });
+        blob = rendered.blob;
+        asset = await variationAssetStore.put({
+          cacheKey,
+          assetSessionId,
+          overlayId: overlay.overlayId,
+          finish,
+          fingerprint,
+          width: rendered.width,
+          height: rendered.height,
+          mimeType: rendered.mimeType,
+          blob,
+          createdAt: Date.now(),
+          lastAccessedAt: Date.now(),
+          priority,
+        });
+        const nextOverlays = comparisonOverlaysRef.current.map((candidate) => (
+          candidate.overlayId === overlay.overlayId
+            ? {
+                ...candidate,
+                variationAssetRefs: {
+                  ...candidate.variationAssetRefs,
+                  [finish]: asset,
+                },
+              }
+            : candidate
+        ));
+        comparisonOverlaysRef.current = nextOverlays;
+        setComparisonOverlays(nextOverlays);
+      }
+      if (!asset || !blob) throw new Error("The cached finish asset is unavailable.");
+      let objectUrl = variationAssetRegistry.peek(cacheKey);
+      if (!objectUrl) {
+        objectUrl = variationAssetRegistry.acquire(cacheKey, blob);
+        ownedAssetKeysRef.current.add(cacheKey);
+      }
+      try {
+        await decodeComparisonSource(objectUrl);
+      } catch (error) {
+        variationAssetRegistry.revoke(cacheKey);
+        ownedAssetKeysRef.current.delete(cacheKey);
+        await variationAssetStore.remove(cacheKey);
+        throw error;
+      }
+      setResolvedAssetUrls((current) => ({ ...current, [statusKey]: objectUrl! }));
+      setAssetStatuses((current) => ({
+        ...current,
+        [statusKey]: { state: "ready", asset: asset!, objectUrl: objectUrl! },
+      }));
+      return objectUrl;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to render this finish.";
+      if (priority !== "idle") {
+        setAssetStatuses((current) => ({
+          ...current,
+          [statusKey]: { state: "error", message, retryable: true },
+        }));
+      }
+      throw error;
+    }
+  }, [assetSessionId, resolvedAssetUrls, setComparisonOverlays]);
+
+  useEffect(() => {
+    if (!variantModeReady) return;
+    let cancelled = false;
+    const visibleRequests = comparisonOverlays.flatMap((overlay) => {
+      const selection = productVariantSelections[overlay.overlayId];
+      if (!selection) return [];
+      return [...new Set([selection.left, selection.right])].map((finish) =>
+        ensureVariationAsset(overlay, finish, "visible"),
+      );
+    });
+    void Promise.allSettled(visibleRequests).then(() => {
+      if (cancelled) return;
+      for (const overlay of comparisonOverlays) {
+        for (const variation of ALUMINUM_COLOR_VARIATIONS) {
+          const selection = productVariantSelections[overlay.overlayId];
+          if (variation.key === selection?.left || variation.key === selection?.right) continue;
+          void ensureVariationAsset(overlay, variation.key, "idle").catch(() => undefined);
+        }
+      }
+    });
+    return () => { cancelled = true; };
+    // The overlay identity key deliberately prevents asset-ref publication from restarting prewarming.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [comparisonOverlayIds, variantModeReady]);
+
+  useEffect(() => () => {
+    for (const entry of renderersRef.current.values()) entry.renderer.dispose();
+    renderersRef.current.clear();
+    for (const cacheKey of ownedAssetKeysRef.current) variationAssetRegistry.release(cacheKey);
+    ownedAssetKeysRef.current.clear();
+  }, []);
+
   const handleSelectComparisonOverlay = (overlayId: string) => {
     setSelectedComparisonOverlayId(overlayId);
   };
@@ -612,28 +862,35 @@ export function Comparison() {
     setProductVariantSelections(swapProductVariantSelections);
   };
 
+  const requestPanelVariation = async (
+    panel: "left" | "right",
+    variant: AluminumFinishKey,
+  ) => {
+    if (!selectedComparisonOverlay) return;
+    setComparisonError(null);
+    try {
+      await ensureVariationAsset(selectedComparisonOverlay, variant, "user");
+      setProductVariantSelections((current) =>
+        updateProductVariantSelection(
+          current,
+          selectedComparisonOverlay.overlayId,
+          panel,
+          variant,
+        ),
+      );
+    } catch (error) {
+      setComparisonError(
+        error instanceof Error ? error.message : "Unable to render the requested finish.",
+      );
+    }
+  };
+
   const handleLeftVariantChange = (variant: AluminumFinishKey) => {
-    if (!selectedComparisonOverlayId) return;
-    setProductVariantSelections((current) =>
-      updateProductVariantSelection(
-        current,
-        selectedComparisonOverlayId,
-        "left",
-        variant,
-      ),
-    );
+    void requestPanelVariation("left", variant);
   };
 
   const handleRightVariantChange = (variant: AluminumFinishKey) => {
-    if (!selectedComparisonOverlayId) return;
-    setProductVariantSelections((current) =>
-      updateProductVariantSelection(
-        current,
-        selectedComparisonOverlayId,
-        "right",
-        variant,
-      ),
-    );
+    void requestPanelVariation("right", variant);
   };
 
   const handleEditPlacement = () => {
@@ -657,7 +914,7 @@ export function Comparison() {
   const isBeforeAfter = compareMode === "left";
   const alphaMasks = useOverlayAlphaMasks(
     comparisonOverlays,
-    !isBeforeAfter && variantDataComplete,
+    !isBeforeAfter && variantModeReady,
   );
   const selectedComparisonOverlayOrdinal = comparisonOverlays.findIndex(
     (overlay) => overlay.overlayId === selectedComparisonOverlayId,
@@ -676,31 +933,16 @@ export function Comparison() {
     variationSnapshots.find((item) => item.key === finish)?.imageDataUrl ?? afterImage;
   const leftVariantImage = imageForFinish(leftVariant);
   const rightVariantImage = imageForFinish(rightVariant);
-  const leftLayerImageUrls = variantDataComplete
-    ? getComparisonLayerImageUrls(comparisonOverlays, productVariantSelections, "left")
-    : [];
-  const rightLayerImageUrls = variantDataComplete
-    ? getComparisonLayerImageUrls(comparisonOverlays, productVariantSelections, "right")
-    : [];
-  const getVariantPreviewLayerImageUrls = (
-    panel: "left" | "right",
-    variant: AluminumFinishKey,
-  ) => {
-    if (!variantDataComplete || !selectedComparisonOverlayId) {
-      return [];
-    }
-
-    return getComparisonLayerImageUrls(
-      comparisonOverlays,
-      updateProductVariantSelection(
-        productVariantSelections,
-        selectedComparisonOverlayId,
-        panel,
-        variant,
-      ),
-      panel,
-    );
-  };
+  const getPanelLayerImageUrls = (panel: "left" | "right") =>
+    comparisonOverlays.map((overlay) => {
+      const finish = productVariantSelections[overlay.overlayId]?.[panel]
+        ?? normalizeAluminumFinish(overlay.configuration.aluminumFinish);
+      return resolvedAssetUrls[`${overlay.overlayId}:${finish}`]
+        ?? overlay.variationImageDataUrls?.[finish]
+        ?? overlay.flattenedImageDataUrl;
+    });
+  const leftLayerImageUrls = variantModeReady ? getPanelLayerImageUrls("left") : [];
+  const rightLayerImageUrls = variantModeReady ? getPanelLayerImageUrls("right") : [];
 
   // Slider State & Logic
   const [sliderPosition, setSliderPosition] = useState(50);
@@ -773,34 +1015,21 @@ export function Comparison() {
     if (!isBeforeAfter && selectedComparisonOverlay && comparisonOverlays.length > 0) {
       setIsPreparingQuotation(true);
       try {
-        if (!variantDataComplete) {
+        if (!variantModeReady) {
           throw new Error(
-            "Product variation data is incomplete. Return to Edit Placement to regenerate the comparison.",
+            "Product variation data cannot be restored. Return to Edit Placement to regenerate the comparison.",
           );
         }
-        const targetAwareSnapshots = await Promise.all(
-          comparisonVariations.map(async (variation) => ({
-            ...variation,
-            imageDataUrl: await composeComparisonSnapshot(
-              beforeImage,
-              getComparisonLayerImageUrls(
-                comparisonOverlays,
-                updateProductVariantSelection(
-                  productVariantSelections,
-                  selectedComparisonOverlay.overlayId,
-                  "left",
-                  variation.key,
-                ),
-                "left",
-              ),
-            ),
-          } satisfies ProductVariationSnapshot)),
+        const committedLayerUrls = await Promise.all(
+          comparisonOverlays.map((overlay) => {
+            const finish = productVariantSelections[overlay.overlayId]?.left
+              ?? normalizeAluminumFinish(overlay.configuration.aluminumFinish);
+            return ensureVariationAsset(overlay, finish, "user");
+          }),
         );
-        const chosenImage = targetAwareSnapshots.find(
-          (snapshot) => snapshot.key === leftVariant,
-        )?.imageDataUrl;
-        if (chosenImage) setFinalSnapshotDataUrl(chosenImage);
-        setVariationSnapshots(targetAwareSnapshots);
+        const chosenImage = await composeComparisonSnapshot(beforeImage, committedLayerUrls);
+        setFinalSnapshotDataUrl(chosenImage);
+        setVariationSnapshots([]);
 
         const updatedOverlays = commitProductVariantSelections(
           comparisonOverlays,
@@ -947,7 +1176,7 @@ export function Comparison() {
                 /* Variant: Selected Left Finish */
                 <>
                   {comparisonOverlays.length > 0 ? (
-                    variantDataComplete ? (
+                    variantModeReady ? (
                       <>
                         <ProductVariantScene
                           alphaMasks={alphaMasks}
@@ -999,7 +1228,7 @@ export function Comparison() {
                 /* Variant: Selected Right Finish */
                 <>
                   {comparisonOverlays.length > 0 ? (
-                    variantDataComplete ? (
+                    variantModeReady ? (
                       <>
                         <ProductVariantScene
                           alphaMasks={alphaMasks}
@@ -1046,7 +1275,7 @@ export function Comparison() {
               {isBeforeAfter || comparisonOverlays.length === 0 ? (
                 <AfterState src={isBeforeAfter ? afterImage : rightVariantImage} />
               ) : (
-                variantDataComplete ? (
+                variantModeReady ? (
                   <ProductVariantScene
                     alphaMasks={alphaMasks}
                     backgroundImage={beforeImage}
@@ -1075,7 +1304,7 @@ export function Comparison() {
                 <BeforeState src={beforeImage} />
               ) : (
                 comparisonOverlays.length > 0 ? (
-                  variantDataComplete ? (
+                  variantModeReady ? (
                     <ProductVariantScene
                       alphaMasks={alphaMasks}
                       backgroundImage={beforeImage}
@@ -1098,7 +1327,7 @@ export function Comparison() {
               )}
             </div>
 
-            {!isBeforeAfter && comparisonOverlays.length > 0 && variantDataComplete && (
+            {!isBeforeAfter && comparisonOverlays.length > 0 && variantModeReady && (
               <ProductVariantInteractionLayer
                 alphaMasks={alphaMasks}
                 onSelectOverlay={handleSelectComparisonOverlay}
@@ -1145,6 +1374,13 @@ export function Comparison() {
             <p className="text-sm text-black/60">
               Panel A appears on the left and Panel B appears on the right. A finish can only be used on one side at a time.
             </p>
+            <p className="sr-only" aria-live="polite">
+              {Object.values(assetStatuses).some((status) => status.state === "rendering")
+                ? "Rendering the requested finish."
+                : Object.values(assetStatuses).some((status) => status.state === "error")
+                  ? "A finish could not be rendered. Activate its button to retry."
+                  : "Finish assets are ready."}
+            </p>
           </div>
 
           <div className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] lg:gap-5">
@@ -1166,24 +1402,12 @@ export function Comparison() {
                   key={variation.key}
                   title={variation.title}
                   label={variation.label}
-                  imageSrc={imageForFinish(variation.key)}
-                  preview={comparisonOverlays.length > 0 ? (
-                    variantDataComplete ? (
-                      <ProductVariantScene
-                        alphaMasks={EMPTY_ALPHA_MASKS}
-                        backgroundImage={beforeImage}
-                        layerImageUrls={getVariantPreviewLayerImageUrls("left", variation.key)}
-                        overlays={comparisonOverlays}
-                        selectedOverlayId={selectedComparisonOverlayId}
-                        selectionFeedback="none"
-                      />
-                    ) : undefined
-                  ) : undefined}
                   swatchClassName={variation.swatchClassName}
                   previewHex={variation.previewHex}
                   isSelected={leftVariant === variation.key}
-                  isDisabled={(!variantDataComplete && variationSnapshots.length === 0) || rightVariant === variation.key}
+                  isDisabled={!variantModeReady || rightVariant === variation.key}
                   disabledLabel="Selected in Panel B"
+                  status={assetStatuses[`${selectedComparisonOverlayId}:${variation.key}`]}
                   onClick={() => handleLeftVariantChange(variation.key)}
                 />
               ))}
@@ -1226,24 +1450,12 @@ export function Comparison() {
                   key={variation.key}
                   title={variation.title}
                   label={variation.label}
-                  imageSrc={imageForFinish(variation.key)}
-                  preview={comparisonOverlays.length > 0 ? (
-                    variantDataComplete ? (
-                      <ProductVariantScene
-                        alphaMasks={EMPTY_ALPHA_MASKS}
-                        backgroundImage={beforeImage}
-                        layerImageUrls={getVariantPreviewLayerImageUrls("right", variation.key)}
-                        overlays={comparisonOverlays}
-                        selectedOverlayId={selectedComparisonOverlayId}
-                        selectionFeedback="none"
-                      />
-                    ) : undefined
-                  ) : undefined}
                   swatchClassName={variation.swatchClassName}
                   previewHex={variation.previewHex}
                   isSelected={rightVariant === variation.key}
-                  isDisabled={(!variantDataComplete && variationSnapshots.length === 0) || leftVariant === variation.key}
+                  isDisabled={!variantModeReady || leftVariant === variation.key}
                   disabledLabel="Selected in Panel A"
+                  status={assetStatuses[`${selectedComparisonOverlayId}:${variation.key}`]}
                   onClick={() => handleRightVariantChange(variation.key)}
                 />
               ))}
@@ -1338,6 +1550,10 @@ function loadComparisonImage(source: string) {
     image.onerror = () => reject(new Error("Unable to load a comparison image."));
     image.src = source;
   });
+}
+
+async function decodeComparisonSource(source: string) {
+  await loadComparisonImage(source);
 }
 
 function drawContainedImage(

@@ -19,6 +19,7 @@ export function ProductAwareWorkspacePage({
 }) {
   const router = useRouter();
   const {
+    assetSessionId,
     spaceImageSession,
     workspaceBackgroundDataUrl,
     productConfiguration,
@@ -83,6 +84,7 @@ export function ProductAwareWorkspacePage({
 
       <div className="px-6 py-8 md:px-12 md:py-12 lg:px-24.25 lg:py-17.75">
         <ProductModelWorkspace
+          assetSessionId={assetSessionId}
           key={productId}
           uploadedImage={workspaceBackgroundDataUrl ?? spaceImageSession.workspaceImage.url}
           spaceImageSession={spaceImageSession}

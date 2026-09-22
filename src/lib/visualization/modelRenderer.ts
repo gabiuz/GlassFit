@@ -89,6 +89,10 @@ export class ProductModelRenderer {
   private canvas: HTMLCanvasElement;
   private modelGroup: THREE.Group;
   private modelLoadVersion = 0;
+  private materialCapabilities: ProductMaterialCapabilities = {
+    hasAluminum: false,
+    hasGlass: false,
+  };
   private lockedHorizontalFovRadians: number | null = null;
   
   private ambientLight: THREE.AmbientLight;
@@ -232,7 +236,24 @@ export class ProductModelRenderer {
     }
 
     this.modelGroup.add(group);
+    this.materialCapabilities = capabilities;
     return { capabilities };
+  }
+
+  updatePresentation(
+    presentation: ModelPresentationOptions,
+  ): ProductMaterialCapabilities {
+    if (this.modelGroup.children.length === 0) {
+      return this.materialCapabilities;
+    }
+    disposeOwnedModelMaterials(this.modelGroup);
+    applyPresentationMaterials(this.modelGroup, {
+      aluminumFinish: presentation.aluminumFinish,
+      glassAppearance: presentation.glassAppearance,
+      glassColor: presentation.glassColor,
+      glassThicknessMm: presentation.glassThicknessMm,
+    });
+    return this.materialCapabilities;
   }
 
   private async loadParametricModel(
@@ -438,8 +459,17 @@ export class ProductModelRenderer {
   }
 
   dispose() {
+    disposeOwnedModelMaterials(this.modelGroup);
     this.renderer.dispose();
   }
+}
+
+function disposeOwnedModelMaterials(root: THREE.Object3D) {
+  root.traverse((object) => {
+    if (!(object instanceof THREE.Mesh)) return;
+    const materials = Array.isArray(object.material) ? object.material : [object.material];
+    for (const material of materials) material.dispose();
+  });
 }
 
 function normalizeModelForViewer(container: THREE.Group, source: THREE.Object3D) {
