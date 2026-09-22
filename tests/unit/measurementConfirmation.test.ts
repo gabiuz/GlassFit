@@ -14,6 +14,7 @@ import type {
 } from "../../src/lib/visualization/types";
 import type { CatalogProduct } from "../../src/lib/products/types";
 import { hasCompleteVariationLayers } from "../../src/lib/visualization/multiProductPresentation";
+import { ALUMINUM_COLOR_VARIATIONS } from "../../src/lib/visualization/colorVariations";
 
 const mockBaseConfig: ProductConfigurationSnapshot = {
   widthCm: 120,
@@ -313,6 +314,12 @@ describe("MS-08 / PRD-F10 / QAD-TC22: Measurement Confirmation Pre-Comparison Wo
         },
         flattenedImageDataUrl: "data:image/png;base64,mockFlattened",
         variationImageDataUrls: {
+          ...Object.fromEntries(
+            ALUMINUM_COLOR_VARIATIONS.map((variation) => [
+              variation.key,
+              `data:image/png;base64,mock-${variation.key}`,
+            ]),
+          ),
           white: "data:image/png;base64,mockWhite",
           al_1009: "data:image/png;base64,mockBlack",
           analok: "data:image/png;base64,mockAnalok",

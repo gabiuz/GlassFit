@@ -191,6 +191,7 @@ export type ProductVariationSnapshot = {
   title: string;
   label: string;
   swatchClassName: string;
+  previewHex?: string;
   imageDataUrl: string;
 };
 

@@ -164,19 +164,19 @@ describe("IMP-MS12 QAD-TC7 normalization and glass invariants", () => {
 });
 
 describe("IMP-MS12 QAD-TC27 deterministic variation policy", () => {
-  const baseKeys = ["white", "al_1009", "analok", "al_1001", "al_1004", "al_1006", "al_1015", "al_1018"];
+  const finishKeys = ALUMINUM_FINISH_OPTIONS.map((option) => option.id);
 
-  it("defines the exact ordered base set and adds at most one active finish", () => {
-    assert.deepEqual(ALUMINUM_COLOR_VARIATIONS.map((item) => item.key), baseKeys);
-    assert.deepEqual(getVariationFinishes("al_1004"), baseKeys);
-    assert.deepEqual(getVariationFinishes("peacock_blue"), [...baseKeys, "peacock_blue"]);
-    assert.equal(getVariationFinishes("peacock_blue").length, 9);
+  it("defines all 24 catalog finishes as deterministic comparison variations", () => {
+    assert.deepEqual(ALUMINUM_COLOR_VARIATIONS.map((item) => item.key), finishKeys);
+    assert.deepEqual(getVariationFinishes("al_1004"), finishKeys);
+    assert.deepEqual(getVariationFinishes("peacock_blue"), finishKeys);
+    assert.equal(getVariationFinishes("peacock_blue").length, 24);
   });
 
-  it("requires the base set and exposes only the intersection across overlays", () => {
-    const first = Object.fromEntries([...baseKeys, "peacock_blue"].map((key) => [key, `${key}-1`]));
-    const second = Object.fromEntries(baseKeys.map((key) => [key, `${key}-2`]));
-    assert.deepEqual(getAvailableVariationFinishes([first, second]), baseKeys);
+  it("requires all finishes and exposes only the intersection across overlays", () => {
+    const first = Object.fromEntries(finishKeys.map((key) => [key, `${key}-1`]));
+    const second = Object.fromEntries(finishKeys.map((key) => [key, `${key}-2`]));
+    assert.deepEqual(getAvailableVariationFinishes([first, second]), finishKeys);
     const overlay = {
       overlayId: "o1",
       productId: "p1",

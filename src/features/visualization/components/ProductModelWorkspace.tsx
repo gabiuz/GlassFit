@@ -1717,6 +1717,7 @@ export function ProductModelWorkspace({
           title: variation.title,
           label: variation.label,
           swatchClassName: variation.swatchClassName,
+          previewHex: variation.previewHex,
           imageDataUrl,
         });
       } finally {

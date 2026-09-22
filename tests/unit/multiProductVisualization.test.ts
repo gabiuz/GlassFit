@@ -28,6 +28,7 @@ import type {
   PlacedOverlay,
   ProductConfigurationSnapshot,
 } from "../../src/lib/visualization/types";
+import { ALUMINUM_COLOR_VARIATIONS } from "../../src/lib/visualization/colorVariations";
 
 const sourceConfiguration: ProductConfigurationSnapshot = {
   widthCm: 80,
@@ -230,6 +231,12 @@ describe("PRD-F15/PRD-F16: multi-product visualization and comparison", () => {
     const complete = placedOverlay("complete");
     const incomplete = placedOverlay("incomplete");
     complete.variationImageDataUrls = {
+      ...Object.fromEntries(
+        ALUMINUM_COLOR_VARIATIONS.map((variation) => [
+          variation.key,
+          `complete-${variation.key}`,
+        ]),
+      ),
       white: "complete-white",
       al_1009: "complete-black",
       analok: "complete-analok",

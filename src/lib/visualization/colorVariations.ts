@@ -1,3 +1,5 @@
+import { ALUMINUM_FINISH_OPTIONS } from "@/lib/products/materialMapping";
+
 export type RrdAluminumFinishKey =
   | "white"
   | "analok"
@@ -32,56 +34,16 @@ export const ALUMINUM_COLOR_VARIATIONS: Array<{
   title: string;
   label: string;
   swatchClassName: string;
-}> = [
-  {
-    key: "white",
-    title: "White Aluminum",
-    label: "Clean white frame finish",
-    swatchClassName: "bg-white border border-neutral-300",
-  },
-  {
-    key: "al_1009",
-    title: "Black Aluminum",
-    label: "Bold dark frame finish",
-    swatchClassName: "bg-neutral-950",
-  },
-  {
-    key: "analok",
-    title: "Analok Aluminum",
-    label: "Classic anodized frame finish",
-    swatchClassName: "bg-[#6B594A]",
-  },
-  {
-    key: "al_1001",
-    title: "Metallic Silver Aluminum",
-    label: "Metallic silver frame finish",
-    swatchClassName: "bg-[#A8ACB1]",
-  },
-  {
-    key: "al_1004",
-    title: "Champagne Gold Aluminum",
-    label: "Champagne gold frame finish",
-    swatchClassName: "bg-[#C7A75B]",
-  },
-  {
-    key: "al_1006",
-    title: "Jade Silver Aluminum",
-    label: "Jade silver frame finish",
-    swatchClassName: "bg-[#9FAFA5]",
-  },
-  {
-    key: "al_1015",
-    title: "Forest Green Aluminum",
-    label: "Forest green frame finish",
-    swatchClassName: "bg-[#244A36]",
-  },
-  {
-    key: "al_1018",
-    title: "Glossy Blue Aluminum",
-    label: "Glossy blue frame finish",
-    swatchClassName: "bg-[#124C8C]",
-  },
-];
+  previewHex: string;
+}> = ALUMINUM_FINISH_OPTIONS.map((option) => ({
+  key: option.id,
+  title: `${option.label} Aluminum`,
+  label: option.rrdCode === "Standard"
+    ? "Standard R.R.D. frame finish"
+    : `${option.rrdCode} frame finish`,
+  swatchClassName: option.id === "white" ? "border border-neutral-300" : "",
+  previewHex: option.previewHex,
+}));
 
 const RRD_ALUMINUM_FINISHES = new Set<RrdAluminumFinishKey>([
   "white", "analok", "al_1001", "al_1002", "al_1003", "al_1004",
@@ -132,13 +94,12 @@ export function getAluminumVariationMetadata(finish: unknown) {
   const normalized = normalizeAluminumFinish(finish);
   const base = ALUMINUM_COLOR_VARIATIONS.find((item) => item.key === normalized);
   if (base) return base;
-  const catalogOption = ALUMINUM_FINISH_OPTIONS.find((item) => item.id === normalized);
   return {
     key: normalized,
-    title: `${catalogOption?.label ?? normalized.replaceAll("_", " ").toUpperCase()} Aluminum`,
-    label: catalogOption ? `${catalogOption.rrdCode} frame finish` : "Selected R.R.D. frame finish",
+    title: `${normalized.replaceAll("_", " ").toUpperCase()} Aluminum`,
+    label: "Selected R.R.D. frame finish",
     swatchClassName: "bg-neutral-400",
-    previewHex: catalogOption?.previewHex,
+    previewHex: "#A3A3A3",
   };
 }
 
@@ -149,4 +110,3 @@ export function getAluminumVariationTitle(finish: string | null | undefined) {
     "Color Variation"
   );
 }
-import { ALUMINUM_FINISH_OPTIONS } from "@/lib/products/materialMapping";

@@ -313,6 +313,7 @@ type ComparisonPanelCardProps = {
   imageSrc: string;
   preview?: ReactNode;
   swatchClassName: string;
+  previewHex?: string;
   isSelected: boolean;
   isDisabled: boolean;
   disabledLabel: string;
@@ -325,6 +326,7 @@ function ComparisonPanelCard({
   imageSrc,
   preview,
   swatchClassName,
+  previewHex,
   isSelected,
   isDisabled,
   disabledLabel,
@@ -347,7 +349,7 @@ function ComparisonPanelCard({
         className={`relative size-18 shrink-0 overflow-hidden rounded-[12px] border bg-neutral-100 ${isSelected ? "border-[#129044]" : "border-neutral-200"}`}
       >
         {preview ?? <AfterState src={imageSrc} />}
-        <span className={`absolute bottom-1.5 left-1.5 size-5 rounded-full border-2 border-white shadow-sm ${swatchClassName}`} aria-hidden="true" />
+        <span className={`absolute bottom-1.5 left-1.5 size-5 rounded-full border-2 border-white shadow-sm ${swatchClassName}`} style={{ backgroundColor: previewHex }} aria-hidden="true" />
       </div>
 
       <span className="min-w-0 flex-1 leading-[1.35]">
@@ -1178,6 +1180,7 @@ export function Comparison() {
                     ) : undefined
                   ) : undefined}
                   swatchClassName={variation.swatchClassName}
+                  previewHex={variation.previewHex}
                   isSelected={leftVariant === variation.key}
                   isDisabled={(!variantDataComplete && variationSnapshots.length === 0) || rightVariant === variation.key}
                   disabledLabel="Selected in Panel B"
@@ -1237,6 +1240,7 @@ export function Comparison() {
                     ) : undefined
                   ) : undefined}
                   swatchClassName={variation.swatchClassName}
+                  previewHex={variation.previewHex}
                   isSelected={rightVariant === variation.key}
                   isDisabled={(!variantDataComplete && variationSnapshots.length === 0) || leftVariant === variation.key}
                   disabledLabel="Selected in Panel A"
