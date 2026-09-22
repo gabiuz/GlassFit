@@ -86,7 +86,9 @@ describe("Milestone 7: Quotation Summary & Consultation PDF Handoff", () => {
         customerEmail: "juan@example.com",
         siteLocation: "Quezon City, Metro Manila",
         createdAtFormatted: "May 21, 2026 · 3:42 PM",
-        validUntilFormatted: "June 4, 2026",
+        quotationValidityText: "Valid until June 4, 2026",
+        projectName: "Series 798 Sliding Window",
+        brandLogoUrl: "https://glassfit.ph/Logo.svg",
         hasSill: true,
         structuralWaiver: false,
         bomResult,
@@ -108,7 +110,7 @@ describe("Milestone 7: Quotation Summary & Consultation PDF Handoff", () => {
 
       // Check statutory Consumer Act of the Philippines RA 7394 disclaimer
       assert.ok(html.includes("Consumer Act of the Philippines RA 7394"));
-      assert.ok(html.includes("on-site ocular verification"));
+      assert.ok(html.includes("on-site consultation"));
 
       // Check waiver is NOT rendered when structuralWaiver is false
       assert.ok(!html.includes("NSCP 2015 Structural Span Waiver Attached"));
@@ -136,7 +138,9 @@ describe("Milestone 7: Quotation Summary & Consultation PDF Handoff", () => {
         referenceCode: "CF-2026-002",
         customerName: "Maria Santos",
         createdAtFormatted: "May 21, 2026 · 4:00 PM",
-        validUntilFormatted: "June 4, 2026",
+        quotationValidityText: "Valid until June 4, 2026",
+        projectName: "Series 798 Sliding Window",
+        brandLogoUrl: "https://glassfit.ph/Logo.svg",
         hasSill: true,
         structuralWaiver: true,
         bomResult,
@@ -146,7 +150,7 @@ describe("Milestone 7: Quotation Summary & Consultation PDF Handoff", () => {
 
       // Verify structural waiver banner is prominently rendered
       assert.ok(html.includes("NSCP 2015 Structural Span Waiver Attached"));
-      assert.ok(html.includes("exceeds standard Series 798 structural leaf recommendations"));
+      assert.ok(html.includes("exceeds standard Series 798 2-panel structural width recommendations"));
       assert.ok(html.includes("wind-load deflection risks"));
 
       const pdfDoc = createQuotationPdfDocument(metadata);
@@ -166,7 +170,9 @@ describe("Milestone 7: Quotation Summary & Consultation PDF Handoff", () => {
         referenceCode: "CF-2026-003",
         customerName: "Pedro Penduko",
         createdAtFormatted: "May 21, 2026 · 4:15 PM",
-        validUntilFormatted: "June 4, 2026",
+        quotationValidityText: "Valid until June 4, 2026",
+        projectName: "Series 798 Sliding Window",
+        brandLogoUrl: "https://glassfit.ph/Logo.svg",
         hasSill: false,
         structuralWaiver: false,
         bomResult,
@@ -276,4 +282,3 @@ describe("Milestone 7: Quotation Summary & Consultation PDF Handoff", () => {
     });
   });
 });
-

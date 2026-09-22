@@ -12,7 +12,11 @@ import {
   aggregateMultiProductBOM,
 } from "@/lib/pricing/pricingEngine";
 import type { ItemizedProductQuotation } from "@/lib/pricing/types";
-import { generateQuotationPdfHtml } from "@/lib/pricing/quotationPdfGenerator";
+import {
+  generateQuotationPdfHtml,
+  type QuotationPdfMetadata,
+} from "@/lib/pricing/quotationPdfGenerator";
+import { openQuotationPreview } from "@/lib/pricing/quotationPreviewWindow";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { generateSignedBookingLink, recordBookingRequest } from "@/lib/booking/bookingActions";
 import { Stepper } from "./Stepper";
@@ -31,17 +35,16 @@ export function BookingFlow() {
   const [errorMessage, setErrorMessage] = useState("");
 
   // Authenticated user state
-  const [customerName, setCustomerName] = useState("Juan Dela Cruz");
-  const [customerPhone, setCustomerPhone] = useState("+63 (917) 000-0000");
-  const [customerEmail, setCustomerEmail] = useState("client@glassfit.ph");
+  const [customerName, setCustomerName] = useState("GlassFit Customer");
+  const [customerPhone, setCustomerPhone] = useState<string | null>(null);
+  const [customerEmail, setCustomerEmail] = useState<string | null>(null);
 
   // Dynamic booking identifiers
-  const [quotationNumber, setQuotationNumber] = useState("Q-2026-0482");
-  const [referenceCode, setReferenceCode] = useState("CF-2026-001");
-  const [generatedLink, setGeneratedLink] = useState("glassfit.ph/q/cf-2026-001");
+  const [quotationNumber, setQuotationNumber] = useState("DRAFT");
+  const [referenceCode, setReferenceCode] = useState("");
+  const [generatedLink, setGeneratedLink] = useState("");
   const [shareableUrl, setShareableUrl] = useState("");
   const [activeLinkId, setActiveLinkId] = useState<string | null>(null);
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
 
   const {
     productConfiguration,
@@ -61,7 +64,6 @@ export function BookingFlow() {
         } = await supabase.auth.getUser();
 
         if (user) {
-          setIsAuthenticated(true);
           const { data: profile } = await supabase
             .from("profiles")
             .select("full_name, contact_number, email")
@@ -75,12 +77,9 @@ export function BookingFlow() {
           } else if (user.user_metadata?.full_name) {
             setCustomerName(user.user_metadata.full_name);
           }
-        } else {
-          setIsAuthenticated(false);
         }
       } catch (err) {
         console.error("Failed to load user profile in booking flow:", err);
-        setIsAuthenticated(false);
       }
     }
 
@@ -215,7 +214,7 @@ export function BookingFlow() {
       hasAnyStructuralWaiver: anyWaiver,
       hasAnySill: anySill,
     };
-  }, [placedOverlays, comparisonOverlays, structuralDefinition, productConfiguration, bomCalc, hasSill, structuralWaiver, widthMm, heightMm]);
+  }, [placedOverlays, comparisonOverlays, structuralDefinition, productConfiguration, bomCalc, hasSill, structuralWaiver, widthMm, heightMm, finalSnapshotDataUrl, finishType, glassType, panelCount]);
 
   const now = new Date();
   const dateFormatted = new Intl.DateTimeFormat("en-US", {
@@ -235,59 +234,56 @@ export function BookingFlow() {
     year: "numeric",
   }).format(expiresDate);
 
-  const validUntilFormatted = new Intl.DateTimeFormat("en-US", {
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  }).format(expiresDate);
-
-  const handlePreviewPdf = () => {
-    const html = generateQuotationPdfHtml({
-      quotationNumber,
-      referenceCode,
+  const buildQuotationPdfMetadata = (): QuotationPdfMetadata => {
+    const allowedImageOrigins = [window.location.origin];
+    const configuredR2Url = process.env.NEXT_PUBLIC_R2_PUBLIC_URL;
+    if (configuredR2Url) {
+      try {
+        const r2Origin = new URL(configuredR2Url).origin;
+        if (!allowedImageOrigins.includes(r2Origin)) allowedImageOrigins.push(r2Origin);
+      } catch {
+        // An invalid public asset URL is ignored rather than trusted.
+      }
+    }
+    return {
+      quotationNumber: activeLinkId ? quotationNumber : "DRAFT",
+      referenceCode: activeLinkId ? referenceCode : null,
+      shareableUrl: activeLinkId ? shareableUrl : null,
       customerName,
       customerPhone,
       customerEmail,
+      siteLocation: null,
       createdAtFormatted: dateFormatted,
-      validUntilFormatted,
+      quotationValidityText: null,
+      projectName: productNameSummary,
       hasSill: hasAnySill,
       structuralWaiver: hasAnyStructuralWaiver,
       bomResult: bomCalc,
       snapshotImageUrl: finalSnapshotDataUrl,
+      brandLogoUrl: new URL("/Logo.svg", window.location.origin).href,
+      allowedImageOrigins,
       items: quotationItems,
       consolidatedSummary,
-    });
-    const printWindow = window.open("", "_blank");
-    if (printWindow) {
-      printWindow.document.write(html);
-      printWindow.document.close();
+    };
+  };
+
+  const openPreview = (autoPrint: boolean) => {
+    setErrorMessage("");
+    const result = openQuotationPreview(
+      generateQuotationPdfHtml(buildQuotationPdfMetadata()),
+      { autoPrint },
+    );
+    if (!result.ok) {
+      setErrorMessage(
+        result.reason === "POPUP_BLOCKED"
+          ? "The quotation preview was blocked. Allow popups for GlassFit and try again."
+          : "The quotation preview could not be prepared. Please try again.",
+      );
     }
   };
 
-  const handleSavePdf = () => {
-    const html = generateQuotationPdfHtml({
-      quotationNumber,
-      referenceCode,
-      customerName,
-      customerPhone,
-      customerEmail,
-      createdAtFormatted: dateFormatted,
-      validUntilFormatted,
-      hasSill: hasAnySill,
-      structuralWaiver: hasAnyStructuralWaiver,
-      bomResult: bomCalc,
-      snapshotImageUrl: finalSnapshotDataUrl,
-      items: quotationItems,
-      consolidatedSummary,
-    });
-    const blob = new Blob([html], { type: "text/html" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `GlassFit_Quotation_${quotationNumber}.html`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
+  const handlePreviewPdf = () => openPreview(false);
+  const handleSavePdf = () => openPreview(true);
 
   const handleNext = () => {
     if (step < 4) {
@@ -410,7 +406,6 @@ export function BookingFlow() {
             totalEstimatePhp={effectiveTotal}
             quotationNumber={quotationNumber}
             dateFormatted={dateFormatted}
-            fileName="Livingroom.jpeg"
           />
         )}
         {step === 2 && (

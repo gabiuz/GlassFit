@@ -2,7 +2,7 @@
 
 import React from "react";
 import Image from "next/image";
-import { FileText, Download } from "lucide-react";
+import { FileText, Printer } from "lucide-react";
 
 interface Step1ViewPdfProps {
   onPreview: () => void;
@@ -12,16 +12,15 @@ interface Step1ViewPdfProps {
   totalEstimatePhp?: number;
   quotationNumber?: string;
   dateFormatted?: string;
-  fileName?: string;
 }
 
 const listItems = [
   "Itemized 4-Group BOM & Cost Breakdown",
   "Visual output snapshot",
   "Customization details & finish",
-  "Statutory legal disclaimer (RA 7394)",
-  "NSCP 2015 Structural Compliance",
-  "Client & site information",
+  "Preliminary consumer notice",
+  "Structural waiver when applicable",
+  "Ocular inspection checklist",
 ];
 
 export function Step1ViewPdf({
@@ -32,7 +31,6 @@ export function Step1ViewPdf({
   totalEstimatePhp = 4362.93,
   quotationNumber = "Q-2026-0482",
   dateFormatted = "May 21, 2026 · 3:42 PM",
-  fileName = "Livingroom.jpeg",
 }: Step1ViewPdfProps) {
   const formattedEstimate = new Intl.NumberFormat("en-PH", {
     style: "currency",
@@ -55,10 +53,10 @@ export function Step1ViewPdf({
           STEP 1 OF 4
         </p>
         <h2 className="font-medium text-[#0f1422] text-3xl sm:text-4xl lg:text-[48px] tracking-[-0.912px] leading-[1.2]">
-          Check the PDF Quotation
+          Check the Quotation Preview
         </h2>
         <p className="font-normal text-[#0f1422] text-lg sm:text-xl lg:text-[24px] tracking-[-0.456px] leading-[1.2]">
-          Review and save your estimated quotation as PDF before generating a shareable link.
+          Review your estimate, then print it or choose Save as PDF in the native print dialog.
         </p>
       </div>
 
@@ -95,10 +93,10 @@ export function Step1ViewPdf({
           {/* PDF info details */}
           <div className="flex flex-col gap-5 items-start relative select-none text-center md:text-left">
             <p className="font-normal text-[#0f1422] text-base md:text-[20px] tracking-[-0.38px] leading-[1.4]">
-              Generated {dateFormatted} · 248 KB
+              Prepared {dateFormatted}
             </p>
             <p className="font-medium text-[#0f1422] text-xl sm:text-[32px] tracking-[-0.608px] leading-[1.2]">
-              GlassFit_Quotation_{quotationNumber}.pdf
+              Quotation {quotationNumber}
             </p>
             {/* Tags row */}
             <div className="flex flex-wrap gap-3.5 items-center justify-center md:justify-start">
@@ -144,7 +142,7 @@ export function Step1ViewPdf({
             className="w-full sm:w-auto bg-[#0f1422] hover:bg-black transition-colors px-5 py-3.5 rounded-[25px] flex items-center justify-center gap-3.5 cursor-pointer text-white font-normal text-base sm:text-[20px] tracking-[-0.38px] leading-[1.4] shadow-sm"
           >
             <FileText className="w-[25px] h-[25px] text-white" />
-            <span>Preview PDF</span>
+            <span>Preview quotation</span>
           </button>
 
           {/* Save button */}
@@ -152,8 +150,8 @@ export function Step1ViewPdf({
             onClick={onSave}
             className="w-full sm:w-auto border border-[#0f1422] bg-white hover:bg-neutral-50 transition-colors px-5 py-3.5 rounded-[25px] flex items-center justify-center gap-3.5 cursor-pointer text-[#0f1422] font-normal text-base sm:text-[20px] tracking-[-0.38px] leading-[1.4] shadow-sm"
           >
-            <Download className="w-[25px] h-[25px] text-[#0f1422]" />
-            <span>Save to Device</span>
+            <Printer className="w-[25px] h-[25px] text-[#0f1422]" />
+            <span>Print / Save as PDF</span>
           </button>
         </div>
       </div>
