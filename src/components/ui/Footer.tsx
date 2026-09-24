@@ -93,7 +93,6 @@ export default function Footer({ className = "" }: FooterProps) {
                   Company
                 </h3>
               </li>
-              <li><Link href="/#about" className="hover:text-green transition-colors">About</Link></li>
               <li><Link href="/product" className="hover:text-green transition-colors">Product Catalog</Link></li>
               <li><Link href="/visualization" className="hover:text-green transition-colors">Visualization Workspace</Link></li>
             </ul>
