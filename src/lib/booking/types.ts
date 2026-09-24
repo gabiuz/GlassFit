@@ -187,3 +187,51 @@ export const UpdateBookingStatusInputSchema = z.object({
   status: z.enum(["Pending", "Ongoing", "Done", "Cancelled"]),
 });
 export type UpdateBookingStatusInput = z.infer<typeof UpdateBookingStatusInputSchema>;
+
+// ----------------------------------------------------------------------------
+// 6. Admin relational query contracts (IMP-MS15, QAD-TC29)
+// ----------------------------------------------------------------------------
+
+export type BookingDatabaseStatus = z.infer<typeof BookingRequestStatusSchema>;
+
+export interface RawQuotationItemRecord {
+  item_name: string;
+  pricing_details: Record<string, unknown> | null;
+}
+
+export interface RawQuotationEstimateRecord {
+  quotation_number: string;
+  pdf_r2_object_key: string | null;
+  created_at: string;
+  quotation_items: RawQuotationItemRecord[];
+}
+
+export interface RawSignedBookingLinkRecord {
+  quotation: RawQuotationEstimateRecord | null;
+}
+
+export interface RawProfileRecord {
+  full_name: string | null;
+  email: string | null;
+  contact_number: string | null;
+}
+
+export interface BookingRequestWithRelationsRow {
+  booking_request_id: string;
+  status: BookingDatabaseStatus;
+  created_at: string;
+  selected_platform: BookingPlatform;
+  booking_link: RawSignedBookingLinkRecord | null;
+  customer: RawProfileRecord | null;
+}
+
+export interface DashboardRecentBookingRow {
+  booking_request_id: string;
+  status: BookingDatabaseStatus;
+  customer: { full_name: string | null } | null;
+  booking_link: {
+    quotation: {
+      quotation_items: RawQuotationItemRecord[];
+    } | null;
+  } | null;
+}

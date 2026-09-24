@@ -1,13 +1,17 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useReducer, useState, useTransition } from "react";
 import Image from "next/image";
+import { RefreshCw } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { SearchBar } from "@/components/shared/SearchBar";
 import {
   type AdminBookingItem,
   type BookingStatus,
 } from "./bookingData";
+import { bookingStateReducer, createBookingState } from "./bookingState";
+import { updateBookingRequestStatus } from "@/lib/booking/bookingActions";
 
 const statusBg: Record<BookingStatus, string> = {
   Confirmed: "bg-[#05b64b]",
@@ -24,17 +28,27 @@ const filterTabs: Array<{ label: string; value: BookingStatus | "All" }> = [
   { label: "Cancelled", value: "Cancelled" },
 ];
 
-import { updateBookingRequestStatus } from "@/lib/booking/bookingActions";
+type BookingsContentProps = {
+  initialBookings: AdminBookingItem[];
+  loadError?: string | null;
+};
 
-export function BookingsContent({ initialBookings }: { initialBookings: AdminBookingItem[] }) {
-  const [bookings, setBookings] = useState<AdminBookingItem[]>(initialBookings);
-  const [selectedBookingId, setSelectedBookingId] = useState<string>(
-    initialBookings[0]?.id || ""
+export function BookingsContent({ initialBookings, loadError = null }: BookingsContentProps) {
+  const router = useRouter();
+  const [state, dispatch] = useReducer(
+    bookingStateReducer,
+    createBookingState(initialBookings, loadError)
   );
+  const [isRefreshing, startRefreshTransition] = useTransition();
   const [activeTab, setActiveTab] = useState<BookingStatus | "All">("All");
   const [searchQuery, setSearchQuery] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [feedbackToast, setFeedbackToast] = useState<string | null>(null);
+  const { bookings, selectedBookingId, currentStatus } = state;
+
+  useEffect(() => {
+    dispatch({ type: "server-refresh", bookings: initialBookings, loadError });
+  }, [initialBookings, loadError]);
 
   const counts = useMemo(() => {
     return {
@@ -68,17 +82,16 @@ export function BookingsContent({ initialBookings }: { initialBookings: AdminBoo
     );
   }, [bookings, selectedBookingId, filteredBookings]);
 
-  const [currentStatus, setCurrentStatus] = useState<BookingStatus>(
-    selectedBooking?.status || "Pending"
-  );
-
   const handleSelectBooking = (booking: AdminBookingItem) => {
-    setSelectedBookingId(booking.id);
-    setCurrentStatus(booking.status);
+    dispatch({ type: "select", bookingId: booking.id });
   };
 
   const handleStatusChange = (newStatus: BookingStatus) => {
-    setCurrentStatus(newStatus);
+    dispatch({ type: "edit-status", status: newStatus });
+  };
+
+  const handleManualRefresh = () => {
+    startRefreshTransition(() => router.refresh());
   };
 
   const handleSaveChanges = async () => {
@@ -96,11 +109,12 @@ export function BookingsContent({ initialBookings }: { initialBookings: AdminBoo
         status: dbStatus,
       });
 
-      setBookings((prev) =>
-        prev.map((b) =>
-          b.id === selectedBooking.id ? { ...b, status: currentStatus } : b
-        )
-      );
+      dispatch({
+        type: "status-saved",
+        bookingId: selectedBooking.id,
+        status: currentStatus,
+      });
+      startRefreshTransition(() => router.refresh());
 
       setFeedbackToast(`Status updated to ${currentStatus} successfully`);
       setTimeout(() => setFeedbackToast(null), 3000);
@@ -114,9 +128,7 @@ export function BookingsContent({ initialBookings }: { initialBookings: AdminBoo
   };
 
   const handleDiscardChanges = () => {
-    if (selectedBooking) {
-      setCurrentStatus(selectedBooking.status);
-    }
+    dispatch({ type: "discard-status" });
   };
 
   return (
@@ -131,15 +143,40 @@ export function BookingsContent({ initialBookings }: { initialBookings: AdminBoo
           </p>
         </div>
 
-        <div className="w-full md:w-auto">
-          <SearchBar
-            value={searchQuery}
-            onChange={setSearchQuery}
-            placeholder="Search booking"
-            inputClassName="w-full md:w-[320px] lg:w-[340px]"
-          />
+        <div className="w-full md:w-auto flex items-center gap-2">
+          <div className="flex-1 md:flex-none">
+            <SearchBar
+              value={searchQuery}
+              onChange={setSearchQuery}
+              placeholder="Search booking"
+              inputClassName="w-full md:w-[320px] lg:w-[340px]"
+            />
+          </div>
+          <button
+            type="button"
+            aria-label="Refresh booking requests"
+            aria-busy={isRefreshing}
+            disabled={isRefreshing}
+            onClick={handleManualRefresh}
+            className="size-11 shrink-0 rounded-[12px] bg-[#07b6d3] text-white flex items-center justify-center shadow-xs transition-colors hover:bg-cyan-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3] disabled:cursor-wait disabled:opacity-60"
+          >
+            <RefreshCw
+              aria-hidden="true"
+              className={cn("size-5", isRefreshing && "animate-spin motion-reduce:animate-none")}
+            />
+            <span className="sr-only">{isRefreshing ? "Refreshing" : "Refresh"}</span>
+          </button>
         </div>
       </div>
+
+      {state.loadError && (
+        <div
+          role="alert"
+          className="w-full rounded-[16px] border border-red-200 bg-red-50 px-4 py-3 text-sm text-[#c50000]"
+        >
+          {state.loadError}
+        </div>
+      )}
 
       <div className="w-full overflow-x-auto pb-1 -mx-1 px-1">
         <div className="flex items-center gap-2 sm:gap-3 min-w-max">
@@ -172,7 +209,7 @@ export function BookingsContent({ initialBookings }: { initialBookings: AdminBoo
 
       <div className="w-full flex flex-col xl:flex-row items-start gap-6">
         <div className="w-full xl:w-[420px] 2xl:w-[480px] shrink-0 flex flex-col gap-4">
-          {filteredBookings.length === 0 ? (
+          {!state.loadError && filteredBookings.length === 0 ? (
             <div className="bg-white rounded-[20px] p-6 flex items-center justify-center text-[#c3c3c3] text-base">
               No bookings found
             </div>

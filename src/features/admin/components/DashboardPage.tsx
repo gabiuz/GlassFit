@@ -1,10 +1,28 @@
+import type { DashboardRecentBookingRow } from "@/lib/booking/types";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { mapDashboardBookingRow } from "../bookings/adminBookingMapper";
+import { DASHBOARD_RECENT_BOOKINGS_SELECT } from "../bookings/adminBookingQueries";
+import type {
+  BookingRequest,
+  DashboardMetric,
+  DashboardSummary,
+  ProductUpdate,
+} from "../data";
 import { DashboardContent } from "./DashboardContent";
-import type { DashboardSummary, DashboardMetric, BookingRequest, ProductUpdate, BookingStatus } from "../data";
+
+interface RecentProductRow {
+  product_name: string;
+  updated_at: string;
+}
+
+function metricValue(count: number | null, hasError: boolean): string {
+  return hasError ? "Unavailable" : String(count ?? 0);
+}
 
 export async function DashboardPage() {
   const supabase = await createSupabaseServerClient();
   const { data: { user } } = await supabase.auth.getUser();
+  const renderedAt = new Date();
 
   let userFullName = "Admin";
   if (user) {
@@ -13,134 +31,69 @@ export async function DashboardPage() {
       .select("full_name")
       .eq("profile_id", user.id)
       .single();
-    if (profile?.full_name) {
-      userFullName = profile.full_name;
-    }
+    if (profile?.full_name) userFullName = profile.full_name;
   }
-
-  const currentDate = new Intl.DateTimeFormat("en-US", {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  }).format(new Date());
 
   const summary: DashboardSummary = {
     title: "Dashboard",
-    date: currentDate,
+    date: new Intl.DateTimeFormat("en-US", {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+    }).format(renderedAt),
     greeting: `Welcome, ${userFullName}!`,
     description: "Here's the summary of Glassfit activity.",
   };
 
-  // Queries for Metrics
-  const { count: productsCount } = await supabase
-    .from("products")
-    .select("*", { count: "exact", head: true })
-    .eq("status", "Active");
+  const [productsResult, pendingResult, ongoingResult, doneResult] = await Promise.all([
+    supabase.from("products").select("*", { count: "exact", head: true }).eq("status", "Active"),
+    supabase.from("booking_requests").select("*", { count: "exact", head: true }).eq("status", "Pending"),
+    supabase.from("booking_requests").select("*", { count: "exact", head: true }).eq("status", "Ongoing"),
+    supabase.from("booking_requests").select("*", { count: "exact", head: true }).eq("status", "Done"),
+  ]);
 
-  const { count: pendingBookingsCount } = await supabase
-    .from("booking_requests")
-    .select("*", { count: "exact", head: true })
-    .eq("status", "Pending");
-
-  // In DB, 'Ongoing' maps to 'Reviewing'/'Pending booking' UI state
-  const { count: ongoingBookingsCount } = await supabase
-    .from("booking_requests")
-    .select("*", { count: "exact", head: true })
-    .eq("status", "Ongoing");
-
-  // 'Done' maps to 'Approved/Confirmed' UI state
-  const { count: doneBookingsCount } = await supabase
-    .from("booking_requests")
-    .select("*", { count: "exact", head: true })
-    .eq("status", "Done");
+  for (const [index, result] of [productsResult, pendingResult, ongoingResult, doneResult].entries()) {
+    if (result.error) {
+      console.error(`[DashboardPage] Metric query ${index + 1} failed:`, result.error);
+    }
+  }
 
   const metrics: DashboardMetric[] = [
-    {
-      label: "All Products",
-      value: String(productsCount || 0),
-      iconSrc: "/admin/all-product.svg",
-      variant: "dark",
-    },
-    {
-      label: "New Booking",
-      value: String(pendingBookingsCount || 0),
-      iconSrc: "/admin/new-booking.svg",
-    },
-    {
-      label: "Pending booking",
-      value: String(ongoingBookingsCount || 0),
-      iconSrc: "/admin/pending-booking.svg",
-    },
-    {
-      label: "Approved Booking",
-      value: String(doneBookingsCount || 0),
-      iconSrc: "/admin/approved-booking.svg",
-    },
+    { label: "All Products", value: metricValue(productsResult.count, Boolean(productsResult.error)), iconSrc: "/admin/all-product.svg", variant: "dark" },
+    { label: "New Booking", value: metricValue(pendingResult.count, Boolean(pendingResult.error)), iconSrc: "/admin/new-booking.svg" },
+    { label: "Pending booking", value: metricValue(ongoingResult.count, Boolean(ongoingResult.error)), iconSrc: "/admin/pending-booking.svg" },
+    { label: "Approved Booking", value: metricValue(doneResult.count, Boolean(doneResult.error)), iconSrc: "/admin/approved-booking.svg" },
   ];
 
-  // Recent Bookings
-  const { data: recentBookingsData } = await supabase
+  const { data: recentBookingsData, error: recentError } = await supabase
     .from("booking_requests")
-    .select(`
-      booking_request_id,
-      status,
-      profiles!inner(full_name),
-      signed_booking_links!inner(
-        quotation_estimates!inner(
-          quotation_items(item_name)
-        )
-      )
-    `)
+    .select(DASHBOARD_RECENT_BOOKINGS_SELECT)
     .order("created_at", { ascending: false })
-    .limit(5);
+    .limit(5)
+    .overrideTypes<DashboardRecentBookingRow[], { merge: false }>();
 
-  const recentBookings: BookingRequest[] = (recentBookingsData || []).map((b: any) => {
-    const profile = b.profiles;
-    const link = Array.isArray(b.signed_booking_links) ? b.signed_booking_links[0] : b.signed_booking_links;
-    const quotation = link?.quotation_estimates;
-    const items = quotation?.quotation_items || [];
-    const productName = items.length > 0 ? items[0].item_name : "Unknown Product";
+  if (recentError) {
+    console.error("[DashboardPage] Failed to fetch recent bookings from Supabase:", recentError);
+  }
+  const recentBookings: BookingRequest[] = (recentBookingsData ?? []).map(mapDashboardBookingRow);
 
-    let status = b.status;
-    if (status === "Ongoing") status = "Pending"; // Mapped for UI colors
-    if (status === "Done") status = "Confirmed"; // Mapped for UI colors
-
-    return {
-      id: b.booking_request_id,
-      customer: profile?.full_name || "Unknown",
-      productName,
-      status: status as BookingStatus,
-    };
-  });
-
-  // Recent Product Updates
   const { data: recentProductsData } = await supabase
     .from("products")
     .select("product_name, updated_at")
     .order("updated_at", { ascending: false })
-    .limit(5);
+    .limit(5)
+    .overrideTypes<RecentProductRow[], { merge: false }>();
 
-  const productUpdatesList: ProductUpdate[] = (recentProductsData || []).map((p: any) => {
-    const updatedDate = new Date(p.updated_at);
-    const diffMs = new Date().getTime() - updatedDate.getTime();
-    const diffMins = Math.round(diffMs / 60000);
+  const productUpdatesList: ProductUpdate[] = (recentProductsData ?? []).map((product) => {
+    const diffMins = Math.round((renderedAt.getTime() - new Date(product.updated_at).getTime()) / 60000);
     const diffHrs = Math.round(diffMins / 60);
     const diffDays = Math.round(diffHrs / 24);
-
     let timeAgo = "Just now";
-    if (diffDays > 0) {
-      timeAgo = diffDays === 1 ? "Yesterday" : `${diffDays}d ago`;
-    } else if (diffHrs > 0) {
-      timeAgo = `${diffHrs}h ago`;
-    } else if (diffMins > 0) {
-      timeAgo = `${diffMins}m ago`;
-    }
-
-    return {
-      productName: p.product_name,
-      description: `Updated -- ${timeAgo}`,
-    };
+    if (diffDays > 0) timeAgo = diffDays === 1 ? "Yesterday" : `${diffDays}d ago`;
+    else if (diffHrs > 0) timeAgo = `${diffHrs}h ago`;
+    else if (diffMins > 0) timeAgo = `${diffMins}m ago`;
+    return { productName: product.product_name, description: `Updated -- ${timeAgo}` };
   });
 
   return (
@@ -148,6 +101,7 @@ export async function DashboardPage() {
       summary={summary}
       metrics={metrics}
       recentBookings={recentBookings}
+      recentBookingsError={recentError ? "Unable to load recent booking requests." : null}
       productUpdatesList={productUpdatesList}
     />
   );

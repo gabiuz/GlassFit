@@ -2,10 +2,10 @@
 
 **Project:** GlassFit (Web-Based Client-Space Visualization System for Customized Glass & Aluminum)  
 **Date:** September 9, 2026  
-**Version:** 1.1 (Capstone Production Release)
+**Version:** 1.2 (Capstone Production Release)
 **Owner:** Jedia Nicole I. Sagun (Quality Assurance Lead) & GlassFit Capstone Team (PUP CCIS)  
 **Status:** Locked  
-**Last reconciled:** September 22, 2026 (Added QAD-TC28 for bounded Product Variant asset rendering)
+**Last reconciled:** September 24, 2026 (Added QAD-TC29 for admin booking reflection and relational query integrity)
 **PRD:** docs/prd-glassfit.md
 
 ---
@@ -46,6 +46,7 @@
 | QAD-TC19 | PRD-F14 | Admin Setup Wizard Step Switching & Component Persistence | Configured product draft in `/admin/products/[id]/setup` | 1. Upload components in Step 4<br>2. Navigate to Step 5 (Parameters)<br>3. Return to Step 4 (Components) | Uploaded parts, dimension bindings, and 3D preview meshes persist seamlessly without component loss or page reload | P0 |
 | QAD-TC27 | PRD-F15, PRD-F16 | Alpha-aware direct model selection in Product Variant comparison | Two or more complete placed overlays in Product Variant mode | 1. Select overlapping products from both side-by-side panels<br>2. Select a product from slider mode away from the divider<br>3. Select each product using the keyboard-accessible button group<br>4. Resize through mobile and desktop breakpoints<br>5. Enable reduced motion | Topmost visible product is selected without coordinate drift; both panels and selector buttons remain synchronized; saved left/right finishes remain unchanged; divider drag remains isolated; reduced motion removes decorative movement | P1 |
 | QAD-TC28 | PRD-F6, PRD-F9, PRD-F15, PRD-F16 | Bounded 24-finish comparison rendering and persistence | One or more configured overlays with render recipes | 1. Open Product Variant comparison<br>2. Select uncached finishes rapidly<br>3. Refresh the route<br>4. Simulate storage pressure<br>5. Proceed to quotation | All 24 choices remain available; requested work is prioritized; panels retain their last ready image; metadata restores from session storage; binary storage stays bounded; only the committed output is composed | P0 |
+| QAD-TC29 | PRD-F13, PRD-F14 | Admin booking reflection and relational query integrity | Authenticated customer quotation and authorized admin account | 1. Submit a Messenger or Viber booking<br>2. Navigate to `/admin` and `/admin/bookings`<br>3. Refresh both views<br>4. Update status<br>5. Simulate a relational query failure | Both admin views show the correct customer and deduplicated fixture summary; status persists; refresh retrieves current data; query failure displays an error, retains the last successful rows when available, and never appears as an empty success | P0 |
 
 ---
 

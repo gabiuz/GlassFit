@@ -7,6 +7,7 @@ import type { BookingRequest, BookingStatus } from "../data";
 
 type RecentBookingsTableProps = {
   bookings: BookingRequest[];
+  loadError?: string | null;
 };
 
 const statusStyles: Record<BookingStatus, string> = {
@@ -17,7 +18,7 @@ const statusStyles: Record<BookingStatus, string> = {
 
 const BOOKINGS_PER_PAGE = 5;
 
-export function RecentBookingsTable({ bookings }: RecentBookingsTableProps) {
+export function RecentBookingsTable({ bookings, loadError }: RecentBookingsTableProps) {
   const [currentPage, setCurrentPage] = useState(1);
   const totalPages = Math.max(1, Math.ceil(bookings.length / BOOKINGS_PER_PAGE));
   const canGoPrevious = currentPage > 1;
@@ -53,9 +54,19 @@ export function RecentBookingsTable({ bookings }: RecentBookingsTableProps) {
         <div className="w-full min-w-[380px] sm:min-w-0 flex flex-col items-start gap-2.5">
           <BookingTableHeader />
           <div className="w-full h-0 border-b border-[#e5e5e5]" />
-          {visibleBookings.map((booking) => (
-            <BookingTableRow key={booking.id} booking={booking} />
-          ))}
+          {loadError ? (
+            <p role="alert" className="w-full py-5 text-center text-sm text-[#c50000]">
+              {loadError}
+            </p>
+          ) : visibleBookings.length === 0 ? (
+            <p className="w-full py-5 text-center text-sm text-[#c3c3c3]">
+              No recent bookings found
+            </p>
+          ) : (
+            visibleBookings.map((booking) => (
+              <BookingTableRow key={booking.id} booking={booking} />
+            ))
+          )}
         </div>
       </div>
 
@@ -157,4 +168,3 @@ function TableCell({
     </div>
   );
 }
-

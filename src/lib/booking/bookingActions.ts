@@ -19,6 +19,7 @@ import { requirePermission } from "@/lib/auth/admin";
 import { calculateStandardSeries798, generateQuotationSnapshot } from "@/lib/pricing/pricingEngine";
 import { getServerBaseUrl, generateBookingUrls } from "./urlResolver";
 import { uploadSnapshotImage, resolveSnapshotUrl } from "./snapshotStorage";
+import { BOOKING_REVALIDATION_PATHS } from "./bookingRevalidationPaths";
 import {
   GenerateBookingLinkInputSchema,
   RecordBookingRequestInputSchema,
@@ -30,6 +31,10 @@ import {
   type PublicQuotationSummary,
   type UpdateBookingStatusInput,
 } from "./types";
+
+function revalidateBookingPaths(): void {
+  for (const path of BOOKING_REVALIDATION_PATHS) revalidatePath(path);
+}
 
 /**
  * Generates a signed consultation booking reference link backed by public.signed_booking_links.
@@ -366,8 +371,7 @@ export async function recordBookingRequest(
       throw new Error(`Failed to update booking request: ${updateError?.message}`);
     }
 
-    revalidatePath("/admin/bookings");
-    revalidatePath("/dashboard");
+    revalidateBookingPaths();
 
     return {
       bookingRequestId: updated.booking_request_id,
@@ -394,8 +398,7 @@ export async function recordBookingRequest(
     throw new Error(`Failed to record booking request: ${insertError?.message}`);
   }
 
-  revalidatePath("/admin/bookings");
-  revalidatePath("/dashboard");
+  revalidateBookingPaths();
 
   return {
     bookingRequestId: created.booking_request_id,
@@ -718,8 +721,7 @@ export async function updateBookingRequestStatus(
     throw new Error(`Failed to update booking status: ${error.message}`);
   }
 
-  revalidatePath("/admin/bookings");
-  revalidatePath("/dashboard");
+  revalidateBookingPaths();
 
   return { success: true, status: validated.status };
 }
