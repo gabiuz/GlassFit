@@ -59,6 +59,27 @@ describe("IMP-MS14 quotation preview", () => {
     assert.ok(!html.includes(".item-card { break-inside:avoid"));
   });
 
+  it("renders a preliminary terms and accessory warranty appendix without payment content", () => {
+    for (const metadata of [base, { ...base, quotationNumber: "GF-2026-001", referenceCode: "GF-2026-001" }]) {
+      const html = generateQuotationPdfHtml(metadata);
+      for (const text of [
+        'class="terms-appendix"',
+        "TERMS AND CONDITIONS",
+        "does not by itself create a binding contract",
+        "final written quotation or agreement accepted by both parties",
+        "WARRANTY",
+        "six (6)-month warranty on defective accessories",
+        "subject to inspection and repair",
+        "normal wear and tear",
+        ".terms-appendix { break-before:page; page-break-before:always;",
+        ".terms-section { break-inside:avoid; page-break-inside:avoid;",
+      ]) assert.ok(html.includes(text), text);
+      for (const prohibited of ["BANK DETAILS", "GCash", "BDO Account", "Checking Account", "payment instruction"]) {
+        assert.ok(!html.includes(prohibited), prohibited);
+      }
+    }
+  });
+
   it("handles popup failure and keeps preview mode print-free", () => {
     assert.deepStrictEqual(openQuotationPreview("<p>x</p>", { autoPrint: false }, () => null), { ok: false, reason: "POPUP_BLOCKED" });
     let prints = 0;

@@ -1,5 +1,6 @@
 /** Browser quotation preview. Traceability: IMP-MS14, PRD-F9, PRD-F10, partial PRD-F11, SDD-C6, SDD-C7, QAD-TC10. */
 import type { CalculatedBOMResult } from "@/lib/pricing/pricingEngine";
+import { QUOTATION_TERMS_CONTENT } from "@/lib/pricing/quotationPdfContent";
 import type { ConsolidatedQuotationSummary, ItemizedProductQuotation } from "@/lib/pricing/types";
 import { SNAPSHOT_FALLBACK_DATA_URL } from "@/lib/pricing/pdfAssets";
 
@@ -58,6 +59,11 @@ function snapshot(source: string | null, alt: string): string {
     : `<div class="snapshot-fallback"><img src="${SNAPSHOT_FALLBACK_DATA_URL}" alt=""><p>Visualization preview not available. Product specifications and preliminary dimensions remain subject to on-site verification.</p></div>`;
 }
 
+function termsAppendix(): string {
+  const paragraphs = (values: readonly string[]) => values.map((value) => `<p>${escapeHtml(value)}</p>`).join("");
+  return `<section class="terms-appendix" aria-label="Quotation terms and warranty"><div class="terms-section"><h2>TERMS AND CONDITIONS</h2>${paragraphs(QUOTATION_TERMS_CONTENT.terms)}</div><div class="terms-section"><h2>WARRANTY</h2>${paragraphs(QUOTATION_TERMS_CONTENT.warranty)}</div></section>`;
+}
+
 export function generateQuotationPdfHtml(metadata: QuotationPdfMetadata): string {
   const items = metadata.items ?? [];
   const isMulti = items.length > 1 && Boolean(metadata.consolidatedSummary);
@@ -87,6 +93,7 @@ export function generateQuotationPdfHtml(metadata: QuotationPdfMetadata): string
 .item-subtotal { display:flex; flex-wrap:wrap; justify-content:space-between; gap:8px; padding:12px; background:#f1f5f9; } .total-table { width:min(100%,390px); margin-left:auto; border-collapse:collapse; } .total-table td { padding:7px; } .total-table td:last-child { text-align:right; font-weight:700; } .grand-total-row { background:#07b6d3; color:#fff; font-size:15px; }
 .ocular-card,.consumer-notice { margin-top:24px; padding:16px; border:1px solid #cbd5e1; border-radius:8px; } .checklist { padding-left:20px; } .checklist li { margin:7px 0; list-style:"☐  "; } .signature-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:28px; margin-top:32px; } .signature-block .line { height:30px; border-bottom:1px solid #64748b; } .consumer-notice { background:#f8fafc; color:#475569; font-size:11px; }
 @media screen and (max-width:640px) { body { padding:12px 8px 32px; } .document-header,.preview-toolbar { align-items:flex-start; flex-direction:column; } .meta-grid,.fixture-specs,.signature-grid { grid-template-columns:1fr; } .items-table { font-size:10px; } .items-table th,.items-table td { padding:5px 3px; } }
+.terms-appendix { margin-top:32px; padding-top:24px; border-top:2px solid #07b6d3; } .terms-section + .terms-section { margin-top:28px; } .terms-section h2 { color:#0f1422; letter-spacing:.02em; } .terms-section p { margin:0 0 14px; }
 @media print {
   html,body { width:100%; margin:0; padding:0; background:transparent; font-size:9pt; print-color-adjust:exact; -webkit-print-color-adjust:exact; }
   .no-print { display:none !important; }
@@ -105,6 +112,11 @@ export function generateQuotationPdfHtml(metadata: QuotationPdfMetadata): string
   .snapshot img { width:100%; height:auto; max-height:82mm; object-fit:contain; }
   .item-card .snapshot img { max-height:58mm; }
   .snapshot-fallback { break-inside:avoid; page-break-inside:avoid; margin:4mm 0; padding:6mm; }
+  .terms-appendix { break-before:page; page-break-before:always; margin:0; padding:0; border:0; }
+  .terms-section { break-inside:avoid; page-break-inside:avoid; }
+  .terms-section + .terms-section { margin-top:7mm; }
+  .terms-section h2 { margin-top:0; }
+  .terms-section p { margin:0 0 4mm; }
   tr { break-inside:avoid; page-break-inside:avoid; }
   thead { display:table-header-group; }
   p,li { orphans:3; widows:3; }
@@ -115,7 +127,7 @@ export function generateQuotationPdfHtml(metadata: QuotationPdfMetadata): string
 <section class="summary-card"><span>${escapeHtml(metadata.projectName)}</span><strong>${money(total)}</strong><span>Preliminary estimated total</span></section><h2>${isMulti ? `ITEMIZED FIXTURE BREAKDOWN (${items.length} FIXTURES)` : "Itemized quotation breakdown"}</h2>${fixtures}
 <table class="total-table"><tr><td>Direct materials subtotal</td><td>${money(materials)}</td></tr><tr><td>Shop floor labor subtotal</td><td>${money(labor)}</td></tr><tr><td>Contractor overhead &amp; margin (25%)</td><td>${money(margin)}</td></tr><tr class="grand-total-row"><td>${isMulti ? "Consolidated Total:" : "Estimated Total:"}</td><td>${money(total)}</td></tr></table>
 <section class="ocular-card"><h2>Ocular inspection checklist</h2><ul class="checklist"><li>Aperture dimensions physically measured.</li><li>Opening checked for square, plumb, and level.</li><li>Perimeter substrate inspected.</li><li>Access and work area reviewed.</li><li>Final specifications reviewed with customer.</li></ul><div class="signature-grid"><div class="signature-block"><div class="line"></div><p>Customer signature / Printed name / Date</p></div><div class="signature-block"><div class="line"></div><p>Estimator signature / Printed name / Date</p></div></div></section>
-<footer class="consumer-notice"><strong>Preliminary Estimate and Consumer Notice</strong><p>This is a preliminary computer-generated estimate based on customer-provided inputs and current configured material rates. It is not a final binding contract. Dimensions, site conditions, access requirements, structural conditions, accessories, and final pricing must be verified during the on-site consultation before material cutting or fabrication.</p><small>Project traceability reference: Consumer Act of the Philippines RA 7394.</small></footer></main></body></html>`;
+<footer class="consumer-notice"><strong>Preliminary Estimate and Consumer Notice</strong><p>This is a preliminary computer-generated estimate based on customer-provided inputs and current configured material rates. It is not a final binding contract. Dimensions, site conditions, access requirements, structural conditions, accessories, and final pricing must be verified during the on-site consultation before material cutting or fabrication.</p><small>Project traceability reference: Consumer Act of the Philippines RA 7394.</small></footer>${termsAppendix()}</main></body></html>`;
 }
 
 export function createQuotationPdfDocument(metadata: QuotationPdfMetadata): GeneratedPdfDocument {

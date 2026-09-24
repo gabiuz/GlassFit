@@ -2,10 +2,10 @@
 
 **Project:** GlassFit (Web-Based Client-Space Visualization System for Customized Glass & Aluminum)  
 **Document Function:** Bug Fix Specification for Mobile Print Pagination, Asset Readiness, and Saved PDF Layout Integrity  
-**Version:** 1.0.0  
+**Version:** 1.1.0
 **Date:** September 22, 2026  
 **Owner:** Reynard John B. Rabanal (Lead Product / Systems Architect) & GlassFit Capstone Team (PUP CCIS)  
-**Status:** Ready for Implementation  
+**Status:** Implemented
 **Upstream Specifications:** `docs/implementation/ms14.md`, `docs/prd-glassfit.md`, `docs/sdd-glassfit.md`, `docs/dsd-glassfit.md`, `docs/erd-glassfit.md`, `docs/qad-glassfit.md`, `docs/build-glassfit.md`
 
 ---
@@ -91,6 +91,7 @@ No root cause shall be marked confirmed until changing one variable makes the re
 | Layer | Component | Planned Modification |
 |---|---|---|
 | `src/lib/pricing/` | `quotationPdfGenerator.ts` | Separate screen responsiveness from print layout, add print-safe fragmentation rules, bound printable snapshots, and remove print-time overflow clipping |
+| `src/lib/pricing/` | `quotationPdfContent.ts` | Centralize the approved preliminary terms and accessory warranty copy |
 | `src/lib/pricing/` | `quotationPreviewWindow.ts` | Wait for document readiness, decode all images, and cross a stable layout and paint barrier before auto-printing |
 | `tests/unit/` | `quotationPdfGenerator.test.ts` | Add deterministic regression assertions for media scoping, print resets, fragmentation, and readiness ordering |
 | Manual QA | Mobile browser print flows | Verify Android Chrome and iOS Safari or the available equivalent across narrow viewports and representative quotation shapes |
@@ -105,7 +106,7 @@ No root cause shall be marked confirmed until changing one variable makes the re
 | R2 PDF persistence | No `pdf_r2_object_key` update is authorized by this fix |
 | Database schema or RLS | No persistence contract changes are required |
 | Snapshot capture or Three.js compositing | The fix consumes the existing committed snapshot and does not regenerate it |
-| Quotation copy or legal claims | Existing approved wording remains unchanged |
+| Other quotation copy or legal claims | Only the preliminary terms and accessory warranty in Section 4.7 are approved for this increment |
 | New browser or PDF dependency | Existing browser print support, Node tests, and available Poppler tools are sufficient |
 | User-agent-specific CSS | The fix must rely on media types and paged-media behavior, not browser sniffing |
 
@@ -204,7 +205,26 @@ The fix must not alter:
 6. Booking share-message exports.
 7. The browser-preview boundary documented by IMP-MS14.
 
-Only structural markup classes needed for reliable pagination may be added.
+Except for the approved appendix in Section 4.7, only structural markup classes needed for reliable pagination may be added.
+
+### 4.7 Add a Preliminary Terms and Warranty Appendix
+
+Add a dedicated appendix after the consumer notice with the headings `TERMS AND CONDITIONS` and `WARRANTY`.
+
+Required behavior:
+
+1. Start the appendix on a new printed page.
+2. State that the preliminary estimate does not by itself create a binding contract.
+3. State that the terms apply only when incorporated into a final written quotation or agreement accepted by both parties.
+4. Require amendments to be agreed upon in writing by both the Customer and R.R.D. Aluminum and Glass Works.
+5. Define the final contract as the final quotation and other written documents signed or expressly accepted by both parties.
+6. Provide a six-month warranty on defective accessories beginning at project completion or turnover.
+7. Make warranty coverage subject to inspection and repair by R.R.D. Aluminum and Glass Works.
+8. Exclude misuse, improper handling, accidents, unauthorized repairs or modifications, normal wear and tear, and circumstances beyond the control of R.R.D. Aluminum and Glass Works.
+9. Keep the approved copy in one typed internal module and escape it during HTML generation.
+10. Render the appendix in draft and signed-reference quotations.
+11. Do not include bank details, payment instructions, payment links, QR codes, or claims that payment was requested or received.
+12. Do not change `QuotationPdfMetadata`, pricing, persistence, or the browser-preview boundary.
 
 ---
 
@@ -241,6 +261,8 @@ Only structural markup classes needed for reliable pagination may be added.
 | TC-fix-MS14-12 | Multi-fixture HTML retains every fixture, per-item BOM, waiver, and consolidated total |
 | TC-fix-MS14-13 | Invalid or missing snapshots retain the neutral fallback and do not create an empty print region |
 | TC-fix-MS14-14 | HTML escaping, trusted image origins, popup failure, and public generator contracts remain unchanged |
+| TC-fix-MS14-15 | Draft and signed-reference quotations render the preliminary terms and accessory warranty appendix on a dedicated print page |
+| TC-fix-MS14-16 | The appendix contains no bank details, payment instructions, or payment-status claims |
 
 The existing `node:test`, `node:assert`, and `tsx --test` stack must be used. Do not add Jest, Vitest, Playwright, Puppeteer, or another production dependency.
 
@@ -290,6 +312,8 @@ For every release candidate PDF:
 16. No em dashes are introduced in code comments or documentation.
 17. No `any` types or new dependencies are introduced.
 18. Release notes continue to state that server-rendered and R2-persisted PDF completion remains outside IMP-MS14 and fix-MS14.
+19. Every quotation includes the approved preliminary terms and accessory warranty on a dedicated appendix page.
+20. No bank details or payment instructions appear in the generated quotation.
 
 ---
 
@@ -315,7 +339,7 @@ For every release candidate PDF:
 - [x] Requires a red-capable mobile PDF reproduction before production changes
 - [x] Maps the fix to PRD-F9, PRD-F10, PRD-F11, SDD-C6, SDD-C7, ERD-E10, ERD-E13, ERD-E14, QAD-TC10, and QAD-TC11
 - [x] Preserves the IMP-MS14 browser print boundary and does not claim server PDF or R2 completion
-- [x] Changes only print layout, pagination, readiness, tests, and verification behavior
+- [x] Changes print layout, pagination, readiness, approved appendix copy, tests, and verification behavior
 - [x] Introduces no database migration, pricing change, new dependency, hardcoded secret, or RLS bypass
 - [x] Contains no em dash, no box diagram, and no authorization for TypeScript `any`
-- [x] Status remains Ready for Implementation and no production code has been changed
+- [x] Status reflects the implemented production and regression-test changes
