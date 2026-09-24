@@ -27,6 +27,12 @@ describe("QAD-TC28 metadata-only session persistence", () => {
         rotateAngle: 0,
         isFlipped: false,
         visualParameterValues: {},
+        perspectiveFitCorners: [
+          { x: 0.1, y: 0.2 },
+          { x: 0.9, y: 0.2 },
+          { x: 0.8, y: 0.85 },
+          { x: 0.2, y: 0.85 },
+        ],
       },
       flattenedImageDataUrl: "blob:runtime",
       variationImageDataUrls: { white: "data:image/png;base64,pixels" },
@@ -53,5 +59,9 @@ describe("QAD-TC28 metadata-only session persistence", () => {
     assert.doesNotMatch(json, /blob:runtime/);
     assert.match(json, /session:overlay:white:fingerprint/);
     assert.equal(serialized.assetSessionId, "session");
+    assert.deepEqual(
+      serialized.placedOverlays[0]?.configuration.perspectiveFitCorners,
+      overlay.configuration.perspectiveFitCorners,
+    );
   });
 });
