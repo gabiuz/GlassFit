@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { calculateStandardSeries798 } from "../../src/lib/pricing/pricingEngine.js";
-import { createQuotationDocumentSnapshotV1, createQuotationDocumentViewModel, deriveQuotationPricing, QuotationDocumentSnapshotV1Schema } from "../../src/lib/pricing/quotationDocument.js";
+import { createQuotationDocumentSnapshotV1, createQuotationDocumentViewModel, deriveQuotationPricing, QuotationDocumentSnapshotV1Schema, reconstructLegacyQuotationDocument } from "../../src/lib/pricing/quotationDocument.js";
 import { generateQuotationPdfHtml } from "../../src/lib/pricing/quotationPdfGenerator.js";
 
 describe("IMP-MS16 canonical quotation document", () => {
@@ -22,4 +22,56 @@ describe("IMP-MS16 canonical quotation document", () => {
     assert.match(html, /Final price adjusted by an authorized administrator/);
     assert.ok(html.includes(bom.framingItems[0].description));
   });
+
+  it("parses createdAt with timezone offsets and normalizes PostgreSQL timestamps", () => {
+    const snapshotWithOffset = QuotationDocumentSnapshotV1Schema.parse({
+      ...snapshot,
+      createdAt: "2026-09-21T17:52:27.857527+00:00",
+    });
+    assert.equal(snapshotWithOffset.createdAt, "2026-09-21T17:52:27.857527+00:00");
+
+    const reconstructed = reconstructLegacyQuotationDocument({
+      quotationNumber: "Q-2026-5329",
+      referenceCode: "CF-2026-5329",
+      createdAt: "2026-09-21 17:52:27.857527+00",
+      customer: { name: "Client", phone: null, email: null, siteLocation: null },
+      totalEstimatedAmount: 2054.21,
+      snapshotObjectKey: null,
+      rows: [
+        {
+          item_name: "Screen Door (Aluminum Framing)",
+          item_group_name: "Aluminum Framing",
+          quantity: 8.76,
+          unit: "m",
+          unit_price: 86.5,
+          estimated_subtotal: 757.75,
+          pricing_details: {
+            product_name: "Screen Door",
+            item_id: "item-1",
+            item_quantity: 1,
+            item_total_price: 2054.21,
+            width_mm: 390,
+            height_mm: 1200,
+          },
+        },
+      ],
+    });
+    assert.ok(reconstructed !== null);
+    assert.equal(reconstructed.createdAt, "2026-09-21T17:52:27.857Z");
+    assert.equal(reconstructed.quotationNumber, "Q-2026-5329");
+  });
+
+  it("safely returns null when legacy rows cannot be reconstructed", () => {
+    const invalid = reconstructLegacyQuotationDocument({
+      quotationNumber: "Q-2026-0000",
+      referenceCode: "CF-2026-0000",
+      createdAt: "invalid-date",
+      customer: { name: "Client", phone: null, email: null, siteLocation: null },
+      totalEstimatedAmount: 100,
+      snapshotObjectKey: null,
+      rows: [],
+    });
+    assert.equal(invalid, null);
+  });
 });
+

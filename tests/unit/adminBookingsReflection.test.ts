@@ -133,6 +133,54 @@ describe("IMP-MS15 admin booking reflection", () => {
       productName: "Product details unavailable",
       status: "Confirmed",
     });
+
+    const rowWithLegacyQuotation: BookingRequestWithRelationsRow = {
+      booking_request_id: "booking-legacy",
+      status: "Pending",
+      created_at: "2026-09-21 17:52:27.857527+00",
+      selected_platform: "Messenger",
+      customer: {
+        full_name: "Legacy User",
+        email: "legacy@example.com",
+        contact_number: "09123456789",
+      },
+      booking_link: {
+        quotation: {
+          quotation_id: "q-legacy-1",
+          quotation_number: "Q-2026-5329",
+          pdf_r2_object_key: "quotations/Q-2026-5329/GlassFit_Quotation_Q-2026-5329.pdf",
+          created_at: "2026-09-21 17:52:27.857527+00",
+          updated_at: "2026-09-21 17:52:27.857527+00",
+          total_estimated_amount: 2054.21,
+          negotiated_amount: null,
+          negotiated_by: null,
+          negotiated_at: null,
+          quotation_document_snapshot: null,
+          quotation_items: [
+            {
+              item_name: "Screen Door (Aluminum Framing)",
+              item_group_name: "Aluminum Framing",
+              quantity: 8.76,
+              unit: "m",
+              unit_price: 86.5,
+              estimated_subtotal: 757.75,
+              pricing_details: {
+                product_name: "Screen Door",
+                item_id: "item-1",
+                item_quantity: 1,
+                item_total_price: 2054.21,
+                width_mm: 390,
+                height_mm: 1200,
+              },
+            },
+          ],
+        },
+      },
+    };
+    const mappedLegacy = mapAdminBookingRow(rowWithLegacyQuotation);
+    assert.strictEqual(mappedLegacy.referenceNo, "Q-2026-5329");
+    assert.ok(mappedLegacy.quotation.document !== null);
+    assert.strictEqual(mappedLegacy.quotation.document?.createdAt, "2026-09-21T17:52:27.857Z");
   });
 
   it("reconciles selection atomically and retains rows on failed refresh", () => {

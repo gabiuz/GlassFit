@@ -44,12 +44,22 @@ export const QuotationDocumentItemSchema = z.object({
   }
 });
 
+export function toIsoDateTimeString(value: unknown): string {
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed.toISOString();
+    }
+  }
+  return new Date().toISOString();
+}
+
 const snapshotShape = {
   schemaVersion: z.literal(1),
   quotationNumber: required,
   referenceCode: required,
   shareablePath: required,
-  createdAt: z.string().datetime(),
+  createdAt: z.string().datetime({ offset: true }),
   customer: z.object({
     name: required,
     phone: z.string().nullable(),
@@ -170,7 +180,15 @@ export function createQuotationDocumentViewModel(snapshot: QuotationDocumentSnap
 
 export interface LegacyQuotationRow { item_name: string; item_group_name?: string; quantity: number; unit: string; unit_price: number; estimated_subtotal: number; pricing_details: Record<string, unknown> | null; }
 
-export function reconstructLegacyQuotationDocument(input: { quotationNumber: string; referenceCode: string; createdAt: string; customer: QuotationDocumentSnapshotV1["customer"]; totalEstimatedAmount: number; snapshotObjectKey: string | null; rows: LegacyQuotationRow[]; }): QuotationDocumentSnapshotV1 | null {
+export function reconstructLegacyQuotationDocument(input: {
+  quotationNumber: string;
+  referenceCode: string;
+  createdAt: string;
+  customer: QuotationDocumentSnapshotV1["customer"];
+  totalEstimatedAmount: number;
+  snapshotObjectKey: string | null;
+  rows: LegacyQuotationRow[];
+}): QuotationDocumentSnapshotV1 | null {
   const usable = input.rows.filter((row) => row.pricing_details && typeof row.pricing_details.product_name === "string");
   if (usable.length === 0) return null;
   const grouped = new Map<string, LegacyQuotationRow[]>();
@@ -181,10 +199,65 @@ export function reconstructLegacyQuotationDocument(input: { quotationNumber: str
   }
   const items = [...grouped.entries()].map(([itemId, rows]) => {
     const details = rows[0].pricing_details ?? {};
-    const quantity = Number(details.item_quantity) || 1;
-    const subtotal = Number(details.item_total_price) || input.totalEstimatedAmount / grouped.size;
-    return { itemId, productId: typeof details.product_id === "string" ? details.product_id : null, productName: String(details.product_name), productType: String(details.product_type || "Window & Door"), variantName: String(details.variant_name || "Standard Configuration"), specificationSummary: String(details.spec_summary || "Legacy quotation item"), dimensionsFormatted: String(details.dimensions_formatted || "Dimensions unavailable"), widthMm: Number(details.width_mm || 1), heightMm: Number(details.height_mm || 1), panelCount: Number(details.panel_count || 1), hasSill: details.has_sill !== false, structuralWaiver: Boolean(details.structural_waiver), finishLabel: String(details.finish_type || "Not recorded"), glassLabel: String(details.glass_type || "Not recorded"), quantity, unitPrice: subtotal / quantity, calculatedSubtotal: subtotal, imageSource: typeof details.image_url === "string" ? details.image_url : null, groups: rows.map((row) => ({ groupName: row.item_group_name || row.item_name, description: row.item_name, quantity: Number(row.quantity), unit: row.unit, unitPrice: Number(row.unit_price), subtotal: Number(row.estimated_subtotal) })) };
+    const quantity = Math.max(1, Math.round(Number(details.item_quantity) || 1));
+    const rawSubtotal = Number(details.item_total_price) || (input.totalEstimatedAmount / grouped.size);
+    const unitPrice = Math.round((rawSubtotal / quantity) * 100) / 100;
+    const calculatedSubtotal = Math.round(unitPrice * quantity * 100) / 100;
+    const widthMm = Math.max(1, Number(details.width_mm) || (Number(details.width_m) ? Number(details.width_m) * 1000 : 1));
+    const heightMm = Math.max(1, Number(details.height_mm) || (Number(details.height_m) ? Number(details.height_m) * 1000 : 1));
+    return {
+      itemId,
+      productId: typeof details.product_id === "string" ? details.product_id : null,
+      productName: String(details.product_name),
+      productType: String(details.product_type || "Window & Door"),
+      variantName: String(details.variant_name || "Standard Configuration"),
+      specificationSummary: String(details.spec_summary || `${details.finish_type || "Standard"} | ${details.glass_type || "Glass"}` || "Legacy quotation item"),
+      dimensionsFormatted: String(details.dimensions_formatted || `${Math.round(widthMm / 10)}cm × ${Math.round(heightMm / 10)}cm`),
+      widthMm,
+      heightMm,
+      panelCount: Math.max(1, Math.round(Number(details.panel_count) || 1)),
+      hasSill: details.has_sill !== false,
+      structuralWaiver: Boolean(details.structural_waiver),
+      finishLabel: String(details.finish_type || "Standard Finish"),
+      glassLabel: String(details.glass_type || "Standard Glass"),
+      quantity,
+      unitPrice,
+      calculatedSubtotal,
+      imageSource: typeof details.image_url === "string" ? details.image_url : null,
+      groups: rows.map((row) => ({
+        groupName: String(row.item_group_name || row.item_name || "Component Group"),
+        description: String(row.item_name || "Component Description"),
+        quantity: Math.max(0, Number(row.quantity) || 0),
+        unit: String(row.unit || "item"),
+        unitPrice: Math.round(Number(row.unit_price) * 100) / 100,
+        subtotal: Math.round(Number(row.estimated_subtotal) * 100) / 100,
+      })),
+    };
   });
-  const pricing = { directMaterialsSubtotal: usable.filter((r) => !r.item_name.includes("Labor")).reduce((s, r) => s + Number(r.estimated_subtotal), 0), laborSubtotal: usable.filter((r) => r.item_name.includes("Labor")).reduce((s, r) => s + Number(r.estimated_subtotal), 0), contractorMargin: 0, calculatedFinalPrice: input.totalEstimatedAmount };
-  return QuotationDocumentSnapshotV1Schema.parse({ schemaVersion: 1, quotationNumber: input.quotationNumber, referenceCode: input.referenceCode, shareablePath: `/q/${input.referenceCode}`, createdAt: input.createdAt, customer: input.customer, projectName: items.length > 1 ? `${items.length} Architectural Fixtures` : items[0].productName, snapshotObjectKey: input.snapshotObjectKey, hasSill: items.some((item) => item.hasSill), structuralWaiver: items.some((item) => item.structuralWaiver), items, pricing });
+  const itemTotalCents = items.reduce((sum, item) => sum + Math.round(item.calculatedSubtotal * 100), 0);
+  const pricing = {
+    directMaterialsSubtotal: Math.round(usable.filter((r) => !r.item_name.includes("Labor")).reduce((s, r) => s + Number(r.estimated_subtotal), 0) * 100) / 100,
+    laborSubtotal: Math.round(usable.filter((r) => r.item_name.includes("Labor")).reduce((s, r) => s + Number(r.estimated_subtotal), 0) * 100) / 100,
+    contractorMargin: 0,
+    calculatedFinalPrice: itemTotalCents / 100,
+  };
+  const parsed = QuotationDocumentSnapshotV1Schema.safeParse({
+    schemaVersion: 1,
+    quotationNumber: input.quotationNumber,
+    referenceCode: input.referenceCode,
+    shareablePath: `/q/${input.referenceCode}`,
+    createdAt: toIsoDateTimeString(input.createdAt),
+    customer: input.customer,
+    projectName: items.length > 1 ? `${items.length} Architectural Fixtures` : items[0].productName,
+    snapshotObjectKey: input.snapshotObjectKey,
+    hasSill: items.some((item) => item.hasSill),
+    structuralWaiver: items.some((item) => item.structuralWaiver),
+    items,
+    pricing,
+  });
+  if (!parsed.success) {
+    console.warn("[reconstructLegacyQuotationDocument] Legacy quotation validation failed:", parsed.error.issues);
+    return null;
+  }
+  return parsed.data;
 }
