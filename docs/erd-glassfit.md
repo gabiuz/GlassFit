@@ -264,6 +264,8 @@ Row-Level Security (RLS) applied across all 16 database tables:
 | `created_at` | TIMESTAMPTZ | No | None | `now()` | System creation timestamp |
 
 #### Entity: QuotationEstimates (`ERD-E13`)
+
+MS17 adds nullable `item_price_overrides jsonb`. Null represents no canonical overrides. A non-null object has `schemaVersion: 1` and snapshot-ordered entries containing nonblank `itemId`, two-decimal `negotiatedSubtotal`, UUID `negotiatedBy`, and offset-aware `negotiatedAt`. The immutable `quotation_document_snapshot` retains calculated values only. `negotiated_amount`, `negotiated_by`, and `negotiated_at` are compatibility summary fields updated atomically from the override document; clearing the final override clears all four mutable fields. Customer and public read models omit entry audit identities.
 - Table Name: `public.quotation_estimates`
 - Purpose: Aggregate budgetary quotation record associated with a visual snapshot.
 

@@ -815,6 +815,7 @@ CREATE TABLE IF NOT EXISTS "public"."quotation_estimates" (
     "negotiated_amount" numeric(12,2),
     "negotiated_by" uuid,
     "negotiated_at" timestamp with time zone,
+    "item_price_overrides" jsonb,
     "currency" character(3) DEFAULT 'PHP'::"bpchar" NOT NULL,
     "quotation_note" "text",
     "pdf_r2_object_key" "text",
@@ -826,7 +827,8 @@ CREATE TABLE IF NOT EXISTS "public"."quotation_estimates" (
     CONSTRAINT "quotation_estimates_total_nonnegative" CHECK (("total_estimated_amount" >= (0)::numeric)),
     CONSTRAINT "quotation_document_snapshot_object_check" CHECK (("quotation_document_snapshot" IS NULL) OR (jsonb_typeof("quotation_document_snapshot") = 'object'::text)),
     CONSTRAINT "quotation_negotiated_amount_range_check" CHECK (("negotiated_amount" IS NULL) OR (("negotiated_amount" >= 0) AND ("negotiated_amount" <= 9999999999.99))),
-    CONSTRAINT "quotation_negotiation_audit_check" CHECK ((("negotiated_amount" IS NULL) AND ("negotiated_by" IS NULL) AND ("negotiated_at" IS NULL)) OR (("negotiated_amount" IS NOT NULL) AND ("negotiated_by" IS NOT NULL) AND ("negotiated_at" IS NOT NULL)))
+    CONSTRAINT "quotation_negotiation_audit_check" CHECK ((("negotiated_amount" IS NULL) AND ("negotiated_by" IS NULL) AND ("negotiated_at" IS NULL)) OR (("negotiated_amount" IS NOT NULL) AND ("negotiated_by" IS NOT NULL) AND ("negotiated_at" IS NOT NULL))),
+    CONSTRAINT "quotation_item_price_overrides_object_check" CHECK (("item_price_overrides" IS NULL) OR (jsonb_typeof("item_price_overrides") = 'object'::text))
 );
 
 

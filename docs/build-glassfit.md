@@ -12,6 +12,8 @@
 
 > MS16 deployment order: apply `006_canonical_quotation_and_negotiated_price.sql` before deploying application code that selects the new quotation columns. Local migration and RLS checks use the committed `supabase/config.toml` and an isolated Supabase database.
 
+> MS17 deployment order: apply `007_per_item_negotiation.sql` before application code selects `item_price_overrides`, then run `npm run test:integration:ms17`. Application rollback is compatibility-first: keep migration 007 and its audit data in place, continue maintaining `negotiated_amount`, and do not drop the additive JSONB column.
+
 ## 1. Toolchain Prerequisites & Runtimes
 
 | Tool / Runtime | Pinned Version | Verification Command | Operational Role |

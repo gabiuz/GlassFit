@@ -17,6 +17,10 @@ export type BookingQuotation = {
   negotiatedFinalPrice?: number | null;
   effectiveFinalPrice?: number;
   isPriceModified?: boolean;
+  itemPricing?: import("@/lib/pricing/quotationDocument").ItemPricingView[];
+  itemPriceOverrides?: import("@/lib/pricing/quotationDocument").QuotationItemPriceOverridesV1 | null;
+  quotationSource?: "canonical-v1" | "legacy-reconstructed";
+  supportsItemNegotiation?: boolean;
   negotiatedBy?: string | null;
   negotiatedAt?: string | null;
   updatedAt?: string;

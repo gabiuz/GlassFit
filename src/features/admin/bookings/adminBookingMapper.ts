@@ -6,7 +6,7 @@ import type {
 } from "@/lib/booking/types";
 import type { BookingRequest } from "../data";
 import type { AdminBookingItem, BookingStatus } from "./bookingData";
-import { deriveQuotationPricing, QuotationDocumentSnapshotV1Schema, reconstructLegacyQuotationDocument } from "@/lib/pricing/quotationDocument";
+import { deriveQuotationPricing, deriveQuotationPricingFromItems, QuotationDocumentSnapshotV1Schema, QuotationItemPriceOverridesV1Schema, reconstructLegacyQuotationDocument } from "@/lib/pricing/quotationDocument";
 
 type Fixture = { name: string; quantity: number };
 
@@ -135,7 +135,11 @@ export function mapAdminBookingRow(
     customer: { name: row.customer?.full_name ?? "Unknown", email: row.customer?.email ?? null, phone: row.customer?.contact_number ?? null, siteLocation: null },
     totalEstimatedAmount: Number(quotation.total_estimated_amount), snapshotObjectKey: null, rows: quotation.quotation_items.map((item) => ({ ...item, quantity: item.quantity ?? 0, unit: item.unit ?? "item", unit_price: item.unit_price ?? 0, estimated_subtotal: item.estimated_subtotal ?? 0 })),
   }) : null;
-  const pricing = deriveQuotationPricing(Number(quotation?.total_estimated_amount ?? 0), quotation?.negotiated_amount === null || quotation?.negotiated_amount === undefined ? null : Number(quotation.negotiated_amount));
+  const overrideResult = QuotationItemPriceOverridesV1Schema.safeParse(quotation?.item_price_overrides);
+  const itemPriceOverrides = overrideResult.success ? overrideResult.data : null;
+  const pricing = parsedDocument.success
+    ? deriveQuotationPricingFromItems(parsedDocument.data, itemPriceOverrides)
+    : deriveQuotationPricing(Number(quotation?.total_estimated_amount ?? 0), quotation?.negotiated_amount === null || quotation?.negotiated_amount === undefined ? null : Number(quotation.negotiated_amount));
 
   return {
     id: row.booking_request_id,
@@ -155,6 +159,9 @@ export function mapAdminBookingRow(
       generatedDate: `Generated ${generated}`,
       size: "N/A",
       document,
+      quotationSource: parsedDocument.success ? "canonical-v1" : "legacy-reconstructed",
+      supportsItemNegotiation: parsedDocument.success,
+      itemPriceOverrides,
       ...pricing,
       negotiatedBy: quotation?.negotiated_by ?? null,
       negotiatedAt: quotation?.negotiated_at ?? null,

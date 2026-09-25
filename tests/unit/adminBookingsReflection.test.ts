@@ -209,7 +209,7 @@ describe("IMP-MS15 admin booking reflection", () => {
   it("invalidates every booking consumer in each mutation success branch", () => {
     assert.deepStrictEqual([...BOOKING_REVALIDATION_PATHS], ["/admin", "/admin/bookings", "/dashboard"]);
     const actions = source("src/lib/booking/bookingActions.ts");
-    assert.strictEqual((actions.match(/revalidateBookingPaths\(\);/g) ?? []).length, 3);
+    assert.strictEqual((actions.match(/revalidateBookingPaths\(\);/g) ?? []).length, 4);
   });
 
   it("preserves request-time rendering and wires error and refresh accessibility", () => {

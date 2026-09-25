@@ -46,12 +46,7 @@ export function sanitizeImageSource(value: string | null | undefined, allowedOri
 const money = (value: number) => new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", minimumFractionDigits: 2 }).format(value);
 
 function bomTable(result: CalculatedBOMResult, hasSill: boolean): string {
-  const hardware = result.hardwareSubtotal + result.consumablesSubtotal;
-  return `<table class="items-table"><thead><tr><th>Component group</th><th>Qty / extent</th><th>Unit rate</th><th>Subtotal</th></tr></thead><tbody>
-<tr><td><strong>1. Aluminum Framing Members</strong><br>Head, ${hasSill ? "Sill, " : ""}Jambs, Sash Rails, Interlockers</td><td>${result.totalLinearMetersFraming.toFixed(2)} m</td><td>${money(result.effectiveFramingCost / (result.totalLinearMetersFraming || 1))}</td><td>${money(result.effectiveFramingCost)}</td></tr>
-<tr><td><strong>2. Glazing Infill Inset</strong><br>${escapeHtml(result.frozenDetails.glass_type)}</td><td>${result.glazingAreaSqm.toFixed(2)} sqm</td><td>${money(result.effectiveGlazingCost / (result.glazingAreaSqm || 1))}</td><td>${money(result.effectiveGlazingCost)}</td></tr>
-<tr><td><strong>3. Hardware, Fasteners &amp; Weatherseals</strong></td><td>1 lot</td><td>${money(hardware)}</td><td>${money(hardware)}</td></tr>
-<tr><td><strong>4. Workshop Fabrication &amp; Direct Labor</strong></td><td>1 lot</td><td>${money(result.fabricationLaborCost)}</td><td>${money(result.fabricationLaborCost)}</td></tr></tbody></table>`;
+  return `<section class="item-card"><header><h3>Legacy quotation</h3><span>Qty: 1</span></header><div class="fixture-specs"><span><b>Dimensions:</b> ${Math.round(result.widthM * 1000)}mm × ${Math.round(result.heightM * 1000)}mm</span><span><b>Panels:</b> ${result.panelCount}</span><span><b>Finish:</b> ${escapeHtml(result.finishType)}</span><span><b>Glass:</b> ${escapeHtml(result.glassType)}</span><span><b>Sill:</b> ${hasSill ? "Standard sill" : "Flush sill omitted"}</span></div><div class="item-subtotal"><span>Final item price</span><strong>${money(result.finalQuotation)}</strong></div></section>`;
 }
 
 function snapshot(source: string | null, alt: string): string {
@@ -65,9 +60,8 @@ function termsAppendix(): string {
   return `<section class="terms-appendix" aria-label="Quotation terms and warranty"><div class="terms-section"><h2>TERMS AND CONDITIONS</h2>${paragraphs(QUOTATION_TERMS_CONTENT.terms)}</div><div class="terms-section"><h2>WARRANTY</h2>${paragraphs(QUOTATION_TERMS_CONTENT.warranty)}</div></section>`;
 }
 
-function canonicalGroupsTable(item: QuotationDocumentViewModel["items"][number]): string {
-  const rows = item.groups.map((group) => `<tr><td><strong>${escapeHtml(group.groupName)}</strong><br>${escapeHtml(group.description)}</td><td>${group.quantity} ${escapeHtml(group.unit)}</td><td>${money(group.unitPrice)}</td><td>${money(group.subtotal)}</td></tr>`).join("");
-  return `<section class="item-card"><header><h3>${escapeHtml(item.productName)}</h3><span>Qty: ${item.quantity}</span></header><div class="fixture-specs"><span><b>Dimensions:</b> ${escapeHtml(item.dimensionsFormatted)}</span><span><b>Panels:</b> ${item.panelCount}</span><span><b>Finish:</b> ${escapeHtml(item.finishLabel)}</span><span><b>Glass:</b> ${escapeHtml(item.glassLabel)}</span></div><table class="items-table"><thead><tr><th>Component group</th><th>Qty / extent</th><th>Unit rate</th><th>Subtotal</th></tr></thead><tbody>${rows}</tbody></table><div class="item-subtotal"><span>Unit price: ${money(item.unitPrice)} × ${item.quantity}</span><strong>Fixture subtotal: ${money(item.calculatedSubtotal)}</strong></div></section>`;
+function canonicalGroupsTable(item: QuotationDocumentViewModel["items"][number], finalPrice: number): string {
+  return `<section class="item-card"><header><h3>${escapeHtml(item.productName)}</h3><span>Qty: ${item.quantity}</span></header><div class="fixture-specs"><span><b>Dimensions:</b> ${escapeHtml(item.dimensionsFormatted)}</span><span><b>Panels:</b> ${item.panelCount}</span><span><b>Finish:</b> ${escapeHtml(item.finishLabel)}</span><span><b>Glass:</b> ${escapeHtml(item.glassLabel)}</span><span><b>Sill:</b> ${item.hasSill ? "Standard sill" : "Flush sill omitted"}</span></div>${item.structuralWaiver ? `<p class="item-waiver">Structural waiver attached for this fixture.</p>` : ""}<div class="item-subtotal"><span>Final item price</span><strong>${money(finalPrice)}</strong></div></section>`;
 }
 
 function canonicalToLegacy(view: QuotationDocumentViewModel): QuotationPdfMetadata {
@@ -91,12 +85,10 @@ function canonicalToLegacy(view: QuotationDocumentViewModel): QuotationPdfMetada
 export function generateQuotationPdfHtml(metadata: QuotationPdfMetadata | QuotationDocumentViewModel): string {
   if ("schemaVersion" in metadata) {
     const legacyHtml = generateQuotationPdfHtml(canonicalToLegacy(metadata));
-    const fixtures = metadata.items.map(canonicalGroupsTable).join("");
-    const originalPrice = metadata.isPriceModified ? `<tr><td>Original system-calculated estimate</td><td>${money(metadata.calculatedFinalPrice)}</td></tr>` : "";
-    const note = metadata.isPriceModified ? `<p class="price-adjustment-note">Final price adjusted by an authorized administrator for negotiation. The original system-calculated estimate is shown for transparency.</p>` : "";
+    const priceByItem = new Map(metadata.itemPricing.map((item) => [item.itemId, item.effectiveSubtotal]));
+    const fixtures = metadata.items.map((item) => canonicalGroupsTable(item, priceByItem.get(item.itemId) ?? item.calculatedSubtotal)).join("");
     return legacyHtml
-      .replace(/<h2>Itemized quotation breakdown<\/h2>[\s\S]*?<table class="total-table">/, `<h2>Itemized quotation breakdown</h2>${fixtures}<table class="total-table">${originalPrice}`)
-      .replace(/<\/table>\n<section class="ocular-card">/, `</table>${note}\n<section class="ocular-card">`);
+      .replace(/<h2>Itemized quotation breakdown<\/h2>[\s\S]*?<table class="total-table">[\s\S]*?<\/table>/, `<h2>Configuration and final prices</h2>${fixtures}<table class="total-table"><tr class="grand-total-row"><td>Grand total</td><td>${money(metadata.effectiveFinalPrice)}</td></tr></table>`);
   }
   const items = metadata.items ?? [];
   const isMulti = items.length > 1 && Boolean(metadata.consolidatedSummary);
@@ -104,9 +96,6 @@ export function generateQuotationPdfHtml(metadata: QuotationPdfMetadata | Quotat
   const origins = metadata.allowedImageOrigins ?? [];
   const anyWaiver = isMulti ? items.some((item) => item.structuralWaiver) : metadata.structuralWaiver;
   const total = isMulti && summary ? summary.finalGrandTotal : metadata.bomResult.finalQuotation;
-  const materials = isMulti && summary ? summary.totalDirectMaterialsCost : metadata.bomResult.directMaterialsSubtotal;
-  const labor = isMulti && summary ? summary.totalLaborCost : metadata.bomResult.fabricationLaborCost;
-  const margin = isMulti && summary ? summary.totalContractorMargin : metadata.bomResult.contractorMargin;
   const field = (label: string, value?: string | null) => value ? `<div><span>${label}</span><strong>${escapeHtml(value)}</strong></div>` : "";
   const reference = metadata.referenceCode ? `<div>Reference: ${escapeHtml(metadata.referenceCode)}${metadata.shareableUrl ? ` · <a href="${escapeHtml(metadata.shareableUrl)}">${escapeHtml(metadata.shareableUrl)}</a>` : ""}</div>` : "";
   const waiver = anyWaiver ? `<aside class="waiver-banner"><strong>Notice: NSCP 2015 Structural Span Waiver Attached</strong><p>This configuration exceeds standard Series 798 2-panel structural width recommendations (W &gt;= 2400mm). The customer has acknowledged potential operational stiffness and wind-load deflection risks.</p></aside>` : "";
@@ -158,7 +147,7 @@ export function generateQuotationPdfHtml(metadata: QuotationPdfMetadata | Quotat
 <main class="document-sheet"><header class="document-header"><div><img class="brand-logo" src="${escapeHtml(metadata.brandLogoUrl)}" alt="GlassFit"><p>Consultation Partner: R.R.D. Aluminum &amp; Glass Works</p></div><div><h1>PRELIMINARY CONSULTATION ESTIMATE</h1><strong>No. ${escapeHtml(metadata.quotationNumber)}</strong><div>${escapeHtml(metadata.createdAtFormatted)}</div>${reference}${metadata.quotationValidityText ? `<div>${escapeHtml(metadata.quotationValidityText)}</div>` : ""}</div></header>
 <section class="meta-grid"><div><span>Customer</span><strong>${escapeHtml(metadata.customerName)}</strong></div>${field("Phone",metadata.customerPhone)}${field("Email",metadata.customerEmail)}${field("Site location",metadata.siteLocation)}<div><span>Project</span><strong>${escapeHtml(metadata.projectName)}</strong></div></section>${waiver}${snapshot(sanitizeImageSource(metadata.snapshotImageUrl,origins),"Client-space visualization preview")}${!isMulti ? `<div class="fixture-specs"><span><b>Dimensions:</b> W: ${Math.round(metadata.bomResult.widthM * 1000)} mm × H: ${Math.round(metadata.bomResult.heightM * 1000)} mm</span><span><b>Panels:</b> ${metadata.bomResult.panelCount}</span><span><b>Finish:</b> ${escapeHtml(metadata.bomResult.frozenDetails.finish_type)}</span><span><b>Glass:</b> ${escapeHtml(metadata.bomResult.frozenDetails.glass_type)}</span><span><b>Sill:</b> ${metadata.hasSill ? "Standard sill" : "Bottom Sill Omitted. Net material reduction applied."}</span></div>` : ""}
 <section class="summary-card"><span>${escapeHtml(metadata.projectName)}</span><strong>${money(total)}</strong><span>Preliminary estimated total</span></section><h2>${isMulti ? `ITEMIZED FIXTURE BREAKDOWN (${items.length} FIXTURES)` : "Itemized quotation breakdown"}</h2>${fixtures}
-<table class="total-table"><tr><td>Direct materials subtotal</td><td>${money(materials)}</td></tr><tr><td>Shop floor labor subtotal</td><td>${money(labor)}</td></tr><tr><td>Contractor overhead &amp; margin (25%)</td><td>${money(margin)}</td></tr><tr class="grand-total-row"><td>${isMulti ? "Consolidated Total:" : "Estimated Total:"}</td><td>${money(total)}</td></tr></table>
+<table class="total-table"><tr class="grand-total-row"><td>Grand total</td><td>${money(total)}</td></tr></table>
 <section class="ocular-card"><h2>Ocular inspection checklist</h2><ul class="checklist"><li>Aperture dimensions physically measured.</li><li>Opening checked for square, plumb, and level.</li><li>Perimeter substrate inspected.</li><li>Access and work area reviewed.</li><li>Final specifications reviewed with customer.</li></ul><div class="signature-grid"><div class="signature-block"><div class="line"></div><p>Customer signature / Printed name / Date</p></div><div class="signature-block"><div class="line"></div><p>Estimator signature / Printed name / Date</p></div></div></section>
 <footer class="consumer-notice"><strong>Preliminary Estimate and Consumer Notice</strong><p>This is a preliminary computer-generated estimate based on customer-provided inputs and current configured material rates. It is not a final binding contract. Dimensions, site conditions, access requirements, structural conditions, accessories, and final pricing must be verified during the on-site consultation before material cutting or fabrication.</p><small>Project traceability reference: Consumer Act of the Philippines RA 7394.</small></footer>${termsAppendix()}</main></body></html>`;
 }

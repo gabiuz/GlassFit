@@ -1,4 +1,4 @@
-/** Canonical quotation document domain. Traceability: IMP-MS16, PRD-F10, PRD-F11, SDD-C7. */
+/** Canonical quotation document domain. Traceability: IMP-MS17, PRD-F10, PRD-F11, SDD-C7. */
 import { z } from "zod";
 import type { CalculatedBOMResult, ItemizedProductQuotation } from "./types";
 
@@ -8,6 +8,15 @@ const money = z.number().finite().min(0).max(MONEY_MAX).refine(
   "Money must have at most two decimal places",
 );
 const required = z.string().trim().min(1);
+
+function validateUniqueItemIds(items: Array<{ itemId: string }>, context: z.RefinementCtx) {
+  const seen = new Set<string>();
+  items.forEach((item, index) => {
+    const id = item.itemId.trim();
+    if (seen.has(id)) context.addIssue({ code: "custom", path: ["items", index, "itemId"], message: "Quotation item IDs must be unique" });
+    seen.add(id);
+  });
+}
 
 export const QuotationDocumentGroupSchema = z.object({
   groupName: required,
@@ -80,6 +89,7 @@ const snapshotShape = {
 };
 
 export const QuotationDocumentSnapshotV1Schema = z.object(snapshotShape).superRefine((document, context) => {
+  validateUniqueItemIds(document.items, context);
   const itemTotal = document.items.reduce((sum, item) => sum + Math.round(item.calculatedSubtotal * 100), 0);
   if (itemTotal !== Math.round(document.pricing.calculatedFinalPrice * 100)) {
     context.addIssue({ code: "custom", path: ["pricing", "calculatedFinalPrice"], message: "Project total mismatch" });
@@ -96,12 +106,42 @@ export const QuotationDocumentDraftV1Schema = z.object({
   items: z.array(QuotationDocumentItemSchema).min(1),
   pricing: snapshotShape.pricing,
 }).superRefine((document, context) => {
+  validateUniqueItemIds(document.items, context);
   const total = document.items.reduce((sum, item) => sum + Math.round(item.calculatedSubtotal * 100), 0);
   if (total !== Math.round(document.pricing.calculatedFinalPrice * 100)) {
     context.addIssue({ code: "custom", path: ["pricing", "calculatedFinalPrice"], message: "Project total mismatch" });
   }
 });
 export type QuotationDocumentDraftV1 = z.infer<typeof QuotationDocumentDraftV1Schema>;
+
+export const QuotationItemPriceOverrideEntrySchema = z.object({
+  itemId: required,
+  negotiatedSubtotal: money,
+  negotiatedBy: z.string().uuid(),
+  negotiatedAt: z.string().datetime({ offset: true }),
+});
+
+export const QuotationItemPriceOverridesV1Schema = z.object({
+  schemaVersion: z.literal(1),
+  entries: z.array(QuotationItemPriceOverrideEntrySchema),
+}).superRefine((document, context) => {
+  const seen = new Set<string>();
+  document.entries.forEach((entry, index) => {
+    if (seen.has(entry.itemId)) context.addIssue({ code: "custom", path: ["entries", index, "itemId"], message: "Override item IDs must be unique" });
+    seen.add(entry.itemId);
+  });
+});
+export type QuotationItemPriceOverride = z.infer<typeof QuotationItemPriceOverrideEntrySchema>;
+export type QuotationItemPriceOverridesV1 = z.infer<typeof QuotationItemPriceOverridesV1Schema>;
+
+export type ItemPricingView = {
+  itemId: string; productName: string; quantity: number; calculatedSubtotal: number;
+  negotiatedSubtotal: number | null; effectiveSubtotal: number; isPriceModified: boolean;
+};
+export type QuotationPricingView = {
+  itemPricing: ItemPricingView[]; calculatedFinalPrice: number; negotiatedFinalPrice: number | null;
+  effectiveFinalPrice: number; isPriceModified: boolean;
+};
 
 function groupsFromBom(bom: CalculatedBOMResult) {
   const map = (groupName: string, rows: CalculatedBOMResult["framingItems"]) => rows.map((row) => ({
@@ -161,6 +201,34 @@ export function deriveQuotationPricing(calculatedFinalPrice: number, negotiatedF
   return { calculatedFinalPrice: calculatedCents / 100, negotiatedFinalPrice: isPriceModified ? negotiatedCents / 100 : null, effectiveFinalPrice: (isPriceModified ? negotiatedCents : calculatedCents) / 100, isPriceModified };
 }
 
+export function deriveItemPricing(
+  item: QuotationDocumentSnapshotV1["items"][number],
+  override?: QuotationItemPriceOverride,
+): ItemPricingView {
+  const calculatedCents = Math.round(item.calculatedSubtotal * 100);
+  const overrideCents = override ? Math.round(override.negotiatedSubtotal * 100) : null;
+  const modified = overrideCents !== null && overrideCents !== calculatedCents;
+  return {
+    itemId: item.itemId, productName: item.productName, quantity: item.quantity,
+    calculatedSubtotal: calculatedCents / 100,
+    negotiatedSubtotal: modified ? overrideCents / 100 : null,
+    effectiveSubtotal: (modified ? overrideCents : calculatedCents) / 100,
+    isPriceModified: modified,
+  };
+}
+
+export function deriveQuotationPricingFromItems(
+  snapshot: QuotationDocumentSnapshotV1,
+  overrides: QuotationItemPriceOverridesV1 | null,
+): QuotationPricingView {
+  const overrideMap = new Map((overrides?.entries ?? []).map((entry) => [entry.itemId, entry]));
+  const itemPricing = snapshot.items.map((item) => deriveItemPricing(item, overrideMap.get(item.itemId)));
+  const calculatedCents = itemPricing.reduce((sum, item) => sum + Math.round(item.calculatedSubtotal * 100), 0);
+  const effectiveCents = itemPricing.reduce((sum, item) => sum + Math.round(item.effectiveSubtotal * 100), 0);
+  const isPriceModified = itemPricing.some((item) => item.isPriceModified);
+  return { itemPricing, calculatedFinalPrice: calculatedCents / 100, negotiatedFinalPrice: isPriceModified ? effectiveCents / 100 : null, effectiveFinalPrice: effectiveCents / 100, isPriceModified };
+}
+
 export interface QuotationDocumentViewModel extends QuotationDocumentSnapshotV1 {
   brandLogoUrl: string;
   shareableUrl: string;
@@ -170,12 +238,14 @@ export interface QuotationDocumentViewModel extends QuotationDocumentSnapshotV1 
   negotiatedFinalPrice: number | null;
   effectiveFinalPrice: number;
   isPriceModified: boolean;
+  itemPricing: ItemPricingView[];
 }
 
 export function createQuotationDocumentViewModel(snapshot: QuotationDocumentSnapshotV1, runtime: {
-  brandLogoUrl: string; shareableUrl: string; snapshotImageUrl: string | null; allowedImageOrigins: string[]; negotiatedAmount: number | null;
+  brandLogoUrl: string; shareableUrl: string; snapshotImageUrl: string | null; allowedImageOrigins: string[]; negotiatedAmount: number | null; itemPriceOverrides?: QuotationItemPriceOverridesV1 | null;
 }): QuotationDocumentViewModel {
-  return { ...snapshot, ...runtime, ...deriveQuotationPricing(snapshot.pricing.calculatedFinalPrice, runtime.negotiatedAmount) };
+  const pricing = deriveQuotationPricingFromItems(snapshot, runtime.itemPriceOverrides ?? null);
+  return { ...snapshot, ...runtime, ...pricing };
 }
 
 export interface LegacyQuotationRow { item_name: string; item_group_name?: string; quantity: number; unit: string; unit_price: number; estimated_subtotal: number; pricing_details: Record<string, unknown> | null; }

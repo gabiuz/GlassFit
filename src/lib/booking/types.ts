@@ -206,7 +206,20 @@ export const UpdateNegotiatedPriceInputSchema = z.object({
 export type UpdateNegotiatedPriceInput = z.infer<typeof UpdateNegotiatedPriceInputSchema>;
 export type UpdateNegotiatedPriceResult =
   | { ok: true; quotationId: string; calculatedFinalPrice: number; negotiatedFinalPrice: number | null; effectiveFinalPrice: number; isPriceModified: boolean; negotiatedBy: string | null; negotiatedAt: string | null; updatedAt: string }
-  | { ok: false; code: "VALIDATION_ERROR" | "NOT_FOUND" | "CONFLICT" | "PERSISTENCE_ERROR"; message: string };
+  | { ok: false; code: "VALIDATION_ERROR" | "NOT_FOUND" | "UNSUPPORTED_QUOTATION" | "CONFLICT" | "PERSISTENCE_ERROR"; message: string };
+
+export const UpdateItemNegotiatedPriceInputSchema = z.object({
+  quotationId: z.string().uuid(), itemId: z.string().trim().min(1),
+  negotiatedSubtotal: z.number().finite().min(0).max(9_999_999_999.99).nullable().refine(
+    (value) => value === null || Math.abs(value * 100 - Math.round(value * 100)) < 1e-7,
+    "Negotiated subtotal must have at most two decimal places",
+  ),
+  expectedUpdatedAt: z.string().datetime({ offset: true }),
+});
+export type UpdateItemNegotiatedPriceInput = z.infer<typeof UpdateItemNegotiatedPriceInputSchema>;
+export type UpdateItemNegotiatedPriceResult =
+  | { ok: true; quotationId: string; item: import("@/lib/pricing/quotationDocument").ItemPricingView; pricing: import("@/lib/pricing/quotationDocument").QuotationPricingView; negotiatedBy: string | null; negotiatedAt: string | null; updatedAt: string }
+  | { ok: false; code: "VALIDATION_ERROR" | "NOT_FOUND" | "ITEM_NOT_FOUND" | "UNSUPPORTED_QUOTATION" | "CONFLICT" | "PERSISTENCE_ERROR"; message: string };
 
 // ----------------------------------------------------------------------------
 // 6. Admin relational query contracts (IMP-MS15, QAD-TC29)
@@ -234,6 +247,7 @@ export interface RawQuotationEstimateRecord {
   negotiated_amount: number | null;
   negotiated_by: string | null;
   negotiated_at: string | null;
+  item_price_overrides?: unknown | null;
   quotation_document_snapshot: unknown | null;
   quotation_items: RawQuotationItemRecord[];
 }

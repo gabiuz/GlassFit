@@ -13,7 +13,7 @@ import {
 } from "@/lib/pricing/pricingEngine";
 import type { ItemizedProductQuotation } from "@/lib/pricing/types";
 import { generateQuotationPdfHtml } from "@/lib/pricing/quotationPdfGenerator";
-import { createQuotationDocumentSnapshotV1, createQuotationDocumentViewModel, QuotationDocumentSnapshotV1Schema, type QuotationDocumentSnapshotV1 } from "@/lib/pricing/quotationDocument";
+import { createQuotationDocumentSnapshotV1, createQuotationDocumentViewModel, QuotationDocumentSnapshotV1Schema, type QuotationDocumentSnapshotV1, type QuotationItemPriceOverridesV1 } from "@/lib/pricing/quotationDocument";
 import { getR2AssetUrl } from "@/lib/r2";
 import { openQuotationPreview } from "@/lib/pricing/quotationPreviewWindow";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -47,6 +47,7 @@ export function BookingFlow() {
   const [quotationId, setQuotationId] = useState<string | null>(null);
   const [savedDocument, setSavedDocument] = useState<QuotationDocumentSnapshotV1 | null>(null);
   const [negotiatedAmount, setNegotiatedAmount] = useState<number | null>(null);
+  const [itemPriceOverrides, setItemPriceOverrides] = useState<QuotationItemPriceOverridesV1 | null>(null);
   const [createdAt] = useState(() => new Date().toISOString());
 
   const {
@@ -242,8 +243,9 @@ export function BookingFlow() {
       snapshotImageUrl: finalSnapshotDataUrl || getR2AssetUrl(documentSnapshot.snapshotObjectKey),
       allowedImageOrigins,
       negotiatedAmount,
+      itemPriceOverrides,
     });
-  }, [documentSnapshot, shareableUrl, finalSnapshotDataUrl, negotiatedAmount]);
+  }, [documentSnapshot, shareableUrl, finalSnapshotDataUrl, negotiatedAmount, itemPriceOverrides]);
   const displayedTotal = quotationViewModel.effectiveFinalPrice;
 
   useEffect(() => {
@@ -251,7 +253,7 @@ export function BookingFlow() {
     const refresh = async () => {
       try {
         const latest = await getOwnQuotationDocument(quotationId);
-        if (latest) { setSavedDocument(latest.quotationDocument); setNegotiatedAmount(latest.negotiatedFinalPrice); }
+        if (latest) { setSavedDocument(latest.quotationDocument); setNegotiatedAmount(latest.negotiatedFinalPrice); setItemPriceOverrides(latest.itemPriceOverrides); }
       } catch { setErrorMessage("The latest saved price could not be loaded. Showing the last available quotation."); }
     };
     const onVisibility = () => { if (document.visibilityState === "visible") void refresh(); };

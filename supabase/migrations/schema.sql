@@ -15,9 +15,6 @@ CREATE TABLE admin_roles (
     status VARCHAR(20) NOT NULL DEFAULT 'Active',
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT quotation_document_snapshot_object_check CHECK (quotation_document_snapshot IS NULL OR jsonb_typeof(quotation_document_snapshot) = 'object'),
-    CONSTRAINT quotation_negotiated_amount_range_check CHECK (negotiated_amount IS NULL OR negotiated_amount BETWEEN 0 AND 9999999999.99),
-    CONSTRAINT quotation_negotiation_audit_check CHECK ((negotiated_amount IS NULL AND negotiated_by IS NULL AND negotiated_at IS NULL) OR (negotiated_amount IS NOT NULL AND negotiated_by IS NOT NULL AND negotiated_at IS NOT NULL))
 );
 
 -- --------------------------------------------------------------------------
@@ -255,12 +252,17 @@ CREATE TABLE quotation_estimates (
     negotiated_amount NUMERIC(12,2),
     negotiated_by UUID REFERENCES profiles(profile_id) ON DELETE SET NULL,
     negotiated_at TIMESTAMPTZ,
+    item_price_overrides JSONB,
     currency CHAR(3) NOT NULL DEFAULT 'PHP',
     quotation_note TEXT,
     pdf_r2_object_key TEXT UNIQUE,
     status VARCHAR(20) NOT NULL DEFAULT 'Draft',
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    CONSTRAINT quotation_document_snapshot_object_check CHECK (quotation_document_snapshot IS NULL OR jsonb_typeof(quotation_document_snapshot) = 'object'),
+    CONSTRAINT quotation_negotiated_amount_range_check CHECK (negotiated_amount IS NULL OR negotiated_amount BETWEEN 0 AND 9999999999.99),
+    CONSTRAINT quotation_negotiation_audit_check CHECK ((negotiated_amount IS NULL AND negotiated_by IS NULL AND negotiated_at IS NULL) OR (negotiated_amount IS NOT NULL AND negotiated_by IS NOT NULL AND negotiated_at IS NOT NULL)),
+    CONSTRAINT quotation_item_price_overrides_object_check CHECK (item_price_overrides IS NULL OR jsonb_typeof(item_price_overrides) = 'object')
 );
 
 -- --------------------------------------------------------------------------

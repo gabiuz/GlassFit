@@ -102,11 +102,11 @@ describe("Milestone 7: Quotation Summary & Consultation PDF Handoff", () => {
       assert.ok(html.includes("CF-2026-001"));
       assert.ok(html.includes("W: 1800 mm × H: 1200 mm"));
 
-      // Check 4 BOM items in HTML
-      assert.ok(html.includes("1. Aluminum Framing Members"));
-      assert.ok(html.includes("2. Glazing Infill Inset"));
-      assert.ok(html.includes("3. Hardware, Fasteners &amp; Weatherseals") || html.includes("3. Hardware, Fasteners & Weatherseals"));
-      assert.ok(html.includes("4. Workshop Fabrication &amp; Direct Labor") || html.includes("4. Workshop Fabrication & Direct Labor"));
+      // MS17 keeps internal BOM costs out of the customer document.
+      assert.ok(html.includes("Final item price"));
+      assert.ok(html.includes("Grand total"));
+      assert.ok(!html.includes("Aluminum Framing Members"));
+      assert.ok(!html.includes("Direct Labor"));
 
       // Check statutory Consumer Act of the Philippines RA 7394 disclaimer
       assert.ok(html.includes("Consumer Act of the Philippines RA 7394"));

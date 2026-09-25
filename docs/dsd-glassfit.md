@@ -125,3 +125,6 @@ Modern architectural precision engineered for clarity, spatial focus, and techni
 - [x] Accessibility rules define keyboard focus behavior, contrast ratios, and ARIA attributes
 - [x] No interface wireframes or component trees use box-drawing characters in code blocks
 - [x] AGENTS hard bans applied; VOICE polish pass completed without em-dashes
+## DSD-UI11: Admin Per-Item Negotiation Card
+
+The existing admin booking quotation card lists canonical snapshot items with product identity, quantity, calculated line price, effective final line price, and a Negotiated badge when overridden. One inline decimal editor may be open at a time. Edit, save, reset, cancel, PDF, keyboard labels, focus-visible treatment, pending disablement, validation errors, conflict feedback, and zero confirmation reuse existing admin tokens, buttons, radii, typography, error styling, and toast behavior. The calculated and effective grand totals are read-only. Legacy reconstructed quotations display a per-item-unavailable notice and retain the total-level editor.

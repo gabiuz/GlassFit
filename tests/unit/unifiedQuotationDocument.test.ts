@@ -15,12 +15,13 @@ describe("IMP-MS16 canonical quotation document", () => {
     assert.equal(deriveQuotationPricing(100.1, 100.1).negotiatedFinalPrice, null);
   });
 
-  it("renders groups and negotiation transparency", () => {
+  it("renders simplified final item prices without internal cost disclosure", () => {
     const view = createQuotationDocumentViewModel(snapshot, { brandLogoUrl: "https://glassfit.test/Logo.svg", shareableUrl: "https://glassfit.test/q/CF-2026-1000", snapshotImageUrl: null, allowedImageOrigins: ["https://glassfit.test"], negotiatedAmount: snapshot.pricing.calculatedFinalPrice - 100 });
     const html = generateQuotationPdfHtml(view);
-    assert.match(html, /Original system-calculated estimate/);
-    assert.match(html, /Final price adjusted by an authorized administrator/);
-    assert.ok(html.includes(bom.framingItems[0].description));
+    assert.match(html, /Final item price/);
+    assert.match(html, /Grand total/);
+    assert.doesNotMatch(html, /Original system-calculated estimate|Final price adjusted|Component group|Unit rate/);
+    assert.ok(!html.includes(bom.framingItems[0].description));
   });
 
   it("parses createdAt with timezone offsets and normalizes PostgreSQL timestamps", () => {

@@ -15,6 +15,7 @@ export const ADMIN_BOOKINGS_SELECT = `
       negotiated_amount,
       negotiated_by,
       negotiated_at,
+      item_price_overrides,
       quotation_document_snapshot,
       quotation_items (
         item_name,

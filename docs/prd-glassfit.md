@@ -48,7 +48,7 @@ GlassFit bridges this gap through an accessible, asynchronous **"Photo-Based Sim
 | **PRD-F8** | Object-Aware Foreground Occlusion | Per-overlay toggle allowing product models to be visually layered behind detected foreground objects (e.g., couches, desks, pillars) using YOLOv8 segmentation masks. | Must-Have |
 | **PRD-F9** | Canvas Compositing & Lean Snapshot Capture | Merging background photo, product overlays, shadows, and occlusion cutouts into a single flattened high-resolution image saved to Cloudflare R2 and Supabase `visualization_snapshots`. | Must-Have |
 | **PRD-F10** | Quotation Measurement Modal & Parametric BOM Engine | Dedicated dimension confirmation modal allowing clients to verify real-world dimensions to compute decoupled 1D/2D/O(1) mathematical BOM pricing, scrap allowances, and frozen itemized estimates. | Must-Have |
-| **PRD-F11** | Consultation PDF Reference Generation | Server-side generation of a downloadable consultation reference PDF containing the visual snapshot, itemized configuration breakdown, preliminary estimate, and disclaimer terms. | Must-Have |
+| **PRD-F11** | Consultation PDF Reference Generation | Server-side generation of a downloadable consultation reference PDF containing the visual snapshot, customer details, an itemized configuration summary with one final line price per product item, a reconciling grand total, and disclaimer terms. Component costs, BOM rates, labor, margin, original calculated prices, and negotiation notes are internal and are not disclosed in the customer document. | Must-Have |
 | **PRD-F12** | Customer Authentication & Account Binding | Supabase Auth (Email/Password and Google OAuth) with Philippine mobile number validation (+63) required prior to finalizing snapshots, quotations, and booking links. | Must-Have |
 | **PRD-F13** | Signed Booking Link & Messaging Handoff | Tamper-proof token-hashed consultation reference link (`signed_booking_links`) with one-click deep-link handoff to business Facebook Messenger or Viber. | Must-Have |
 | **PRD-F14** | Role-Based Admin Portal & Part Inspector | Protected administrative back-office (`/admin`) for catalog management, 3D GLB uploads, split-screen Part Inspector component binding, and booking triage. | Must-Have |
@@ -145,6 +145,8 @@ GlassFit bridges this gap through an accessible, asynchronous **"Photo-Based Sim
 - Given the calculated quote, then an immutable record is inserted into `quotation_estimates` and line items into `quotation_items`, accompanied by an explicit disclaimer: *"Approximate estimate only; subject to professional on-site validation and negotiation."*
 
 ### US-12: Consultation Reference PDF Generation (traces to PRD-F11)
+
+The customer quotation document presents configuration details, quantity, one final price for each product item, the grand total, snapshot, customer details, and disclaimer terms. The frozen internal BOM remains persisted for audit and calculation but is not rendered in the customer PDF. The generated document remains eligible for Cloudflare R2 persistence.
 > As a customer or estimator, I want to download a clean PDF summary containing the composite photo, dimensions, and itemized estimate so that I can store or print it.
 
 **Acceptance Criteria:**

@@ -16,7 +16,7 @@ import { revalidatePath } from "next/cache";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import { requirePermission } from "@/lib/auth/admin";
-import { deriveQuotationPricing, QuotationDocumentSnapshotV1Schema } from "@/lib/pricing/quotationDocument";
+import { deriveQuotationPricing, deriveQuotationPricingFromItems, QuotationDocumentSnapshotV1Schema, QuotationItemPriceOverridesV1Schema, type QuotationItemPriceOverride } from "@/lib/pricing/quotationDocument";
 import { getServerBaseUrl, generateBookingUrls } from "./urlResolver";
 import { uploadSnapshotImage, resolveSnapshotUrl } from "./snapshotStorage";
 import { BOOKING_REVALIDATION_PATHS } from "./bookingRevalidationPaths";
@@ -25,6 +25,7 @@ import {
   RecordBookingRequestInputSchema,
   UpdateBookingStatusInputSchema,
   UpdateNegotiatedPriceInputSchema,
+  UpdateItemNegotiatedPriceInputSchema,
   type GenerateBookingLinkInput,
   type GeneratedBookingLinkResult,
   type RecordBookingRequestInput,
@@ -33,6 +34,8 @@ import {
   type UpdateBookingStatusInput,
   type UpdateNegotiatedPriceInput,
   type UpdateNegotiatedPriceResult,
+  type UpdateItemNegotiatedPriceInput,
+  type UpdateItemNegotiatedPriceResult,
 } from "./types";
 
 function revalidateBookingPaths(): void {
@@ -374,6 +377,7 @@ export async function getPublicBookingReference(
         quotation_number,
         total_estimated_amount,
         negotiated_amount,
+        item_price_overrides,
         quotation_document_snapshot,
         created_at,
         quotation_items (
@@ -589,7 +593,12 @@ export async function getPublicBookingReference(
     glassType: itemsList[0]?.glassType || glassType,
     structuralWaiver,
     totalEstimatedAmount: Number(quote.total_estimated_amount),
-    ...deriveQuotationPricing(Number(quote.total_estimated_amount), quote.negotiated_amount === null ? null : Number(quote.negotiated_amount)),
+    ...(QuotationDocumentSnapshotV1Schema.safeParse(quote.quotation_document_snapshot).success
+      ? deriveQuotationPricingFromItems(
+          QuotationDocumentSnapshotV1Schema.parse(quote.quotation_document_snapshot),
+          QuotationItemPriceOverridesV1Schema.safeParse(quote.item_price_overrides).success ? QuotationItemPriceOverridesV1Schema.parse(quote.item_price_overrides) : null,
+        )
+      : deriveQuotationPricing(Number(quote.total_estimated_amount), quote.negotiated_amount === null ? null : Number(quote.negotiated_amount))),
     createdAtFormatted,
     expiresAtFormatted,
     isExpired,
@@ -635,12 +644,13 @@ export async function getOwnQuotationDocument(quotationId: string) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
   const { data, error } = await supabase.from("quotation_estimates")
-    .select("quotation_id, quotation_document_snapshot, total_estimated_amount, negotiated_amount, updated_at")
+    .select("quotation_id, quotation_document_snapshot, total_estimated_amount, negotiated_amount, item_price_overrides, updated_at")
     .eq("quotation_id", quotationId).eq("profile_id", user.id).maybeSingle();
   if (error || !data?.quotation_document_snapshot) return null;
   const document = QuotationDocumentSnapshotV1Schema.safeParse(data.quotation_document_snapshot);
   if (!document.success) return null;
-  return { quotationId: data.quotation_id, quotationDocument: document.data, updatedAt: data.updated_at, ...deriveQuotationPricing(Number(data.total_estimated_amount), data.negotiated_amount === null ? null : Number(data.negotiated_amount)) };
+  const overrides = QuotationItemPriceOverridesV1Schema.safeParse(data.item_price_overrides);
+  return { quotationId: data.quotation_id, quotationDocument: document.data, itemPriceOverrides: overrides.success ? overrides.data : null, updatedAt: data.updated_at, ...deriveQuotationPricingFromItems(document.data, overrides.success ? overrides.data : null) };
 }
 
 function zUuid(value: string): boolean {
@@ -653,9 +663,10 @@ export async function updateNegotiatedPrice(input: UpdateNegotiatedPriceInput): 
   if (!parsed.success) return { ok: false, code: "VALIDATION_ERROR", message: parsed.error.issues[0]?.message ?? "Invalid negotiated price" };
   const supabase = await createSupabaseServerClient();
   const { data: current, error: readError } = await supabase.from("quotation_estimates")
-    .select("quotation_id, total_estimated_amount, updated_at").eq("quotation_id", parsed.data.quotationId).maybeSingle();
+    .select("quotation_id, total_estimated_amount, quotation_document_snapshot, updated_at").eq("quotation_id", parsed.data.quotationId).maybeSingle();
   if (readError) return { ok: false, code: "PERSISTENCE_ERROR", message: "Unable to read quotation" };
   if (!current) return { ok: false, code: "NOT_FOUND", message: "Quotation not found" };
+  if (current.quotation_document_snapshot !== null) return { ok: false, code: "UNSUPPORTED_QUOTATION", message: "Canonical quotations require per-item price editing." };
   if (current.updated_at !== parsed.data.expectedUpdatedAt) return { ok: false, code: "CONFLICT", message: "This quotation was updated in another session. Review the latest values and try again." };
   const calculated = Number(current.total_estimated_amount);
   const pricing = deriveQuotationPricing(calculated, parsed.data.negotiatedAmount);
@@ -668,6 +679,49 @@ export async function updateNegotiatedPrice(input: UpdateNegotiatedPriceInput): 
   if (!updated) return { ok: false, code: "CONFLICT", message: "This quotation changed before the price could be saved." };
   revalidateBookingPaths();
   return { ok: true, quotationId: parsed.data.quotationId, ...pricing, negotiatedBy, negotiatedAt, updatedAt: updated.updated_at };
+}
+
+export async function updateItemNegotiatedPrice(input: UpdateItemNegotiatedPriceInput): Promise<UpdateItemNegotiatedPriceResult> {
+  const admin = await requirePermission("manage_bookings");
+  const parsed = UpdateItemNegotiatedPriceInputSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, code: "VALIDATION_ERROR", message: parsed.error.issues[0]?.message ?? "Invalid item price" };
+  const supabase = await createSupabaseServerClient();
+  const { data: current, error: readError } = await supabase.from("quotation_estimates")
+    .select("quotation_id, quotation_document_snapshot, item_price_overrides, updated_at")
+    .eq("quotation_id", parsed.data.quotationId).maybeSingle();
+  if (readError) return { ok: false, code: "PERSISTENCE_ERROR", message: "Unable to read quotation" };
+  if (!current) return { ok: false, code: "NOT_FOUND", message: "Quotation not found" };
+  if (current.updated_at !== parsed.data.expectedUpdatedAt) return { ok: false, code: "CONFLICT", message: "This quotation was updated in another session. Review the latest values and try again." };
+  const snapshotResult = QuotationDocumentSnapshotV1Schema.safeParse(current.quotation_document_snapshot);
+  if (!snapshotResult.success) return { ok: false, code: "UNSUPPORTED_QUOTATION", message: "Per-item editing requires a valid canonical quotation." };
+  const matches = snapshotResult.data.items.filter((item) => item.itemId === parsed.data.itemId);
+  if (matches.length === 0) return { ok: false, code: "ITEM_NOT_FOUND", message: "Quotation item not found" };
+  if (matches.length !== 1) return { ok: false, code: "UNSUPPORTED_QUOTATION", message: "Quotation item identity is ambiguous" };
+  const existingResult = QuotationItemPriceOverridesV1Schema.safeParse(current.item_price_overrides);
+  if (current.item_price_overrides !== null && !existingResult.success) return { ok: false, code: "UNSUPPORTED_QUOTATION", message: "Stored item overrides are invalid" };
+  const now = new Date().toISOString();
+  const calculatedCents = Math.round(matches[0].calculatedSubtotal * 100);
+  const requestedCents = parsed.data.negotiatedSubtotal === null ? null : Math.round(parsed.data.negotiatedSubtotal * 100);
+  const nextEntry = requestedCents === null || requestedCents === calculatedCents ? null : {
+    itemId: parsed.data.itemId, negotiatedSubtotal: requestedCents / 100, negotiatedBy: admin.profileId, negotiatedAt: now,
+  } satisfies QuotationItemPriceOverride;
+  const prior = new Map((existingResult.success ? existingResult.data.entries : []).map((entry) => [entry.itemId, entry]));
+  if (nextEntry) prior.set(nextEntry.itemId, nextEntry); else prior.delete(parsed.data.itemId);
+  const entries = snapshotResult.data.items.flatMap((item) => { const entry = prior.get(item.itemId); return entry ? [entry] : []; });
+  const overrideDocument = entries.length ? { schemaVersion: 1 as const, entries } : null;
+  const pricing = deriveQuotationPricingFromItems(snapshotResult.data, overrideDocument);
+  if (pricing.effectiveFinalPrice > 9_999_999_999.99) return { ok: false, code: "VALIDATION_ERROR", message: "Effective quotation total exceeds the supported range" };
+  const negotiatedBy = entries.length ? admin.profileId : null;
+  const negotiatedAt = entries.length ? now : null;
+  const { data: updated, error } = await supabase.from("quotation_estimates").update({
+    item_price_overrides: overrideDocument, negotiated_amount: pricing.negotiatedFinalPrice, negotiated_by: negotiatedBy, negotiated_at: negotiatedAt,
+  }).eq("quotation_id", parsed.data.quotationId).eq("updated_at", parsed.data.expectedUpdatedAt).select("updated_at").maybeSingle();
+  if (error) return { ok: false, code: "PERSISTENCE_ERROR", message: "Unable to save item price" };
+  if (!updated) return { ok: false, code: "CONFLICT", message: "This quotation changed before the price could be saved." };
+  revalidateBookingPaths();
+  const item = pricing.itemPricing.find((candidate) => candidate.itemId === parsed.data.itemId);
+  if (!item) return { ok: false, code: "ITEM_NOT_FOUND", message: "Quotation item not found" };
+  return { ok: true, quotationId: parsed.data.quotationId, item, pricing, negotiatedBy, negotiatedAt, updatedAt: updated.updated_at };
 }
 
 /**
