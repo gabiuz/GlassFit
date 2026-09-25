@@ -5,7 +5,7 @@
 **Version:** 1.0 (Capstone Production Release)  
 **Owner:** Reynard John B. Rabanal (Lead Product / Systems Architect) & GlassFit Capstone Team (PUP CCIS)  
 **Status:** Locked  
-**Last reconciled:** September 24, 2026 (Added IMP-MS15 admin booking reflection traceability)
+**Last reconciled:** September 25, 2026 (Added IMP-MS16 canonical quotation and negotiated price traceability)
 
 ---
 
@@ -78,6 +78,7 @@ GlassFit is a responsive, web-based photo-simulation and consultation-support pl
 | September 9, 2026 | `docs/milestone.md` | Reynard John B. Rabanal | Specification of Milestone 10 for admin product setup wizard state persistence and smooth component lifecycle | PR #10 |
 | September 19, 2026 | `docs/qad-glassfit.md` | Jedia Nicole I. Sagun | Added QAD-TC27 for alpha-aware Product Variant comparison model selection | Pending |
 | September 24, 2026 | `docs/qad-glassfit.md`, `docs/index.md` | GlassFit Capstone Team | Added QAD-TC29 and IMP-MS15 traceability for admin booking reflection, relational query integrity, and route freshness | Pending |
+| September 25, 2026 | `docs/erd-glassfit.md`, `docs/build-glassfit.md`, `docs/qad-glassfit.md`, `docs/index.md` | GlassFit Capstone Team | Added IMP-MS16 canonical quotation snapshots, negotiated-price auditability, deployment order, and QAD-TC30 | Pending |
 
 ---
 

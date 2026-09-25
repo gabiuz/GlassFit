@@ -6,6 +6,7 @@ import type {
 } from "@/lib/booking/types";
 import type { BookingRequest } from "../data";
 import type { AdminBookingItem, BookingStatus } from "./bookingData";
+import { deriveQuotationPricing, QuotationDocumentSnapshotV1Schema, reconstructLegacyQuotationDocument } from "@/lib/pricing/quotationDocument";
 
 type Fixture = { name: string; quantity: number };
 
@@ -126,6 +127,15 @@ export function mapAdminBookingRow(
     minute: "2-digit",
     hour12: true,
   }).replace(",", " ·");
+  const parsedDocument = QuotationDocumentSnapshotV1Schema.safeParse(quotation?.quotation_document_snapshot);
+  const document = parsedDocument.success ? parsedDocument.data : quotation ? reconstructLegacyQuotationDocument({
+    quotationNumber: quotation.quotation_number,
+    referenceCode: quotation.quotation_number.replace("Q-", "CF-"),
+    createdAt: quotation.created_at,
+    customer: { name: row.customer?.full_name ?? "Unknown", email: row.customer?.email ?? null, phone: row.customer?.contact_number ?? null, siteLocation: null },
+    totalEstimatedAmount: Number(quotation.total_estimated_amount), snapshotObjectKey: null, rows: quotation.quotation_items.map((item) => ({ ...item, quantity: item.quantity ?? 0, unit: item.unit ?? "item", unit_price: item.unit_price ?? 0, estimated_subtotal: item.estimated_subtotal ?? 0 })),
+  }) : null;
+  const pricing = deriveQuotationPricing(Number(quotation?.total_estimated_amount ?? 0), quotation?.negotiated_amount === null || quotation?.negotiated_amount === undefined ? null : Number(quotation.negotiated_amount));
 
   return {
     id: row.booking_request_id,
@@ -140,9 +150,15 @@ export function mapAdminBookingRow(
     receivedDate: `Received ${fullDate} at ${time} via ${row.selected_platform}`,
     status: mapAdminBookingStatus(row.status),
     quotation: {
+      id: quotation?.quotation_id ?? "",
       filename: quotation?.pdf_r2_object_key?.split("/").pop() ?? "Quotation.pdf",
       generatedDate: `Generated ${generated}`,
       size: "N/A",
+      document,
+      ...pricing,
+      negotiatedBy: quotation?.negotiated_by ?? null,
+      negotiatedAt: quotation?.negotiated_at ?? null,
+      updatedAt: quotation?.updated_at ?? quotation?.created_at ?? row.created_at,
     },
   };
 }

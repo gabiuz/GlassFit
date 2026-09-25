@@ -10,6 +10,8 @@
 
 ---
 
+> MS16 deployment order: apply `006_canonical_quotation_and_negotiated_price.sql` before deploying application code that selects the new quotation columns. Local migration and RLS checks use the committed `supabase/config.toml` and an isolated Supabase database.
+
 ## 1. Toolchain Prerequisites & Runtimes
 
 | Tool / Runtime | Pinned Version | Verification Command | Operational Role |

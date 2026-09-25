@@ -12,6 +12,7 @@ export type BookingStateAction =
   | { type: "edit-status"; status: BookingStatus }
   | { type: "discard-status" }
   | { type: "status-saved"; bookingId: string; status: BookingStatus }
+  | { type: "quotation-price-saved"; bookingId: string; quotation: AdminBookingItem["quotation"] }
   | { type: "server-refresh"; bookings: AdminBookingItem[]; loadError: string | null };
 
 export function createBookingState(
@@ -73,6 +74,8 @@ export function bookingStateReducer(
         ),
         currentStatus: action.status,
       };
+    case "quotation-price-saved":
+      return { ...state, bookings: state.bookings.map((booking) => booking.id === action.bookingId ? { ...booking, quotation: action.quotation } : booking) };
     case "server-refresh":
       return reconcileBookingState(state, action.bookings, action.loadError);
   }

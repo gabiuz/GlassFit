@@ -274,6 +274,10 @@ Row-Level Security (RLS) applied across all 16 database tables:
 | `profile_id` | UUID | No | Foreign Key | None | References `profiles(profile_id)` ON DELETE RESTRICT |
 | `quotation_number`| VARCHAR(50)| No | Unique | None | Human-readable identifier (e.g., Q-20260909-001) |
 | `total_estimated_amount`| NUMERIC(12,2)| No | None | None | Total price >= 0 |
+| `quotation_document_snapshot` | JSONB | Yes | None | None | Canonical versioned document object for post-MS16 quotations |
+| `negotiated_amount` | NUMERIC(12,2) | Yes | None | None | Optional final price from 0 through 9,999,999,999.99 |
+| `negotiated_by` | UUID | Yes | Foreign Key | None | References `profiles(profile_id)` ON DELETE SET NULL |
+| `negotiated_at` | TIMESTAMPTZ | Yes | None | None | Populated with the negotiated amount and administrator |
 | `currency` | CHAR(3) | No | None | `'PHP'` | Valid 3-letter currency code |
 | `quotation_note`| TEXT | Yes | None | None | Special notes or fabricator disclaimers |
 | `pdf_r2_object_key`| TEXT | Yes | Unique | None | Storage key for generated PDF document |

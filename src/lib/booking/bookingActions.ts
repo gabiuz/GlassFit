@@ -16,7 +16,7 @@ import { revalidatePath } from "next/cache";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import { requirePermission } from "@/lib/auth/admin";
-import { calculateStandardSeries798, generateQuotationSnapshot } from "@/lib/pricing/pricingEngine";
+import { deriveQuotationPricing, QuotationDocumentSnapshotV1Schema } from "@/lib/pricing/quotationDocument";
 import { getServerBaseUrl, generateBookingUrls } from "./urlResolver";
 import { uploadSnapshotImage, resolveSnapshotUrl } from "./snapshotStorage";
 import { BOOKING_REVALIDATION_PATHS } from "./bookingRevalidationPaths";
@@ -24,12 +24,15 @@ import {
   GenerateBookingLinkInputSchema,
   RecordBookingRequestInputSchema,
   UpdateBookingStatusInputSchema,
+  UpdateNegotiatedPriceInputSchema,
   type GenerateBookingLinkInput,
   type GeneratedBookingLinkResult,
   type RecordBookingRequestInput,
   type RecordBookingRequestResult,
   type PublicQuotationSummary,
   type UpdateBookingStatusInput,
+  type UpdateNegotiatedPriceInput,
+  type UpdateNegotiatedPriceResult,
 } from "./types";
 
 function revalidateBookingPaths(): void {
@@ -58,9 +61,6 @@ export async function generateSignedBookingLink(
   }
 
   const profileId = user.id;
-
-  const isMultiProduct = Boolean(validated.items && validated.items.length > 1);
-  const items = validated.items && validated.items.length > 0 ? validated.items : null;
 
   // Use service client for atomic database operations
   const serviceClient = createSupabaseServiceClient();
@@ -100,9 +100,23 @@ export async function generateSignedBookingLink(
   const pdfObjectKey = `quotations/${quotationNumber}/GlassFit_Quotation_${quotationNumber}.pdf`;
   const quotationId = crypto.randomUUID();
 
-  let totalEstimatedAmount: number;
-  let hasAnyStructuralWaiver = validated.structuralWaiver;
-  let quotationNote = "";
+  if (!validated.quotationDocument) {
+    throw new Error("A canonical quotation document is required.");
+  }
+
+  const quotationDocument = QuotationDocumentSnapshotV1Schema.parse({
+    ...validated.quotationDocument,
+    quotationNumber,
+    referenceCode,
+    shareablePath: `/q/${referenceCode}`,
+    createdAt: new Date().toISOString(),
+    snapshotObjectKey,
+  });
+  const totalEstimatedAmount = quotationDocument.pricing.calculatedFinalPrice;
+  const hasAnyStructuralWaiver = quotationDocument.structuralWaiver;
+  const quotationNote = hasAnyStructuralWaiver
+    ? "Customer acknowledged structural span waiver"
+    : "Standard compliant consultation estimate";
   const quotationItemRows: Array<{
     quotation_id: string;
     item_name: string;
@@ -116,131 +130,43 @@ export async function generateSignedBookingLink(
     structural_waiver: boolean;
   }> = [];
 
-  if (items && items.length > 0) {
-    // Multi-product parametric computation
-    hasAnyStructuralWaiver = items.some((it) => it.structuralWaiver);
-    totalEstimatedAmount = items.reduce(
-      (sum, it) => sum + (it.totalPrice || it.unitPrice * (it.quantity || 1)),
-      0
-    );
-
-    const fixtureNames = items.map((it) => `${it.quantity}x ${it.productName}`).join(", ");
-    quotationNote = isMultiProduct
-      ? `Multi-product consultation estimate (${items.length} Fixtures: ${fixtureNames})${
-          hasAnyStructuralWaiver ? " (Structural Waiver Attached)" : ""
-        }`
-      : hasAnyStructuralWaiver
-      ? "Customer acknowledged NSCP 2015 Structural Span Waiver (Aperture >= 2400mm)"
-      : "Standard compliant consultation estimate";
-
-    let displayOrder = 1;
-    for (const [idx, item] of items.entries()) {
-      const itemFinish =
-        item.finishType === "white" || item.finishType === "PowderCoatedWhite"
-          ? "PowderCoatedWhite"
-          : "Analok";
-      const itemGlass = item.glassType === "6mm_clear" ? "6mm_clear" : "6mm_bronze";
-      const itemQty = Math.max(1, item.quantity);
-
-      const itemBom = calculateStandardSeries798({
-        widthMm: item.widthMm,
-        heightMm: item.heightMm,
-        panelCount: item.panelCount,
-        hasSill: item.hasSill,
-        finishType: itemFinish,
-        glassType: itemGlass,
-        structuralWaiver: item.structuralWaiver,
-      });
-
-      const snapshotSummary = generateQuotationSnapshot(quotationId, itemBom, {
-        structuralWaiver: item.structuralWaiver,
-      });
-
-      for (const group of snapshotSummary.groups) {
+  let displayOrder = 1;
+  for (const [idx, item] of quotationDocument.items.entries()) {
+    for (const group of item.groups) {
         quotationItemRows.push({
           quotation_id: quotationId,
-          item_name: isMultiProduct
-            ? `${item.productName} (${group.item_group_name})`
-            : group.item_group_name,
-          item_group_name: group.item_group_name,
-          quantity: group.quantity * itemQty,
-          unit: group.unit_label,
-          unit_price: group.unit_price,
-          estimated_subtotal: group.estimated_subtotal * itemQty,
+          item_name: `${item.productName} (${group.description})`,
+          item_group_name: group.groupName,
+          quantity: group.quantity * item.quantity,
+          unit: group.unit,
+          unit_price: group.unitPrice,
+          estimated_subtotal: group.subtotal * item.quantity,
           structural_waiver: item.structuralWaiver,
           pricing_details: {
-            ...group.pricing_details,
             item_index: idx + 1,
             item_id: item.itemId,
             product_id: item.productId,
             product_name: item.productName,
             product_type: item.productType,
             variant_name: item.variantName,
-            spec_summary: item.specSummary,
+            spec_summary: item.specificationSummary,
             dimensions_formatted: item.dimensionsFormatted,
             width_mm: item.widthMm,
             height_mm: item.heightMm,
             panel_count: item.panelCount,
             has_sill: item.hasSill,
-            finish_type: item.finishType,
-            glass_type: item.glassType,
-            item_quantity: itemQty,
+            finish_type: item.finishLabel,
+            glass_type: item.glassLabel,
+            item_quantity: item.quantity,
             item_unit_price: item.unitPrice,
-            item_total_price: item.totalPrice,
+            item_total_price: item.calculatedSubtotal,
             structural_waiver: item.structuralWaiver,
-            image_url: item.imageUrl || null,
-            is_multi_product: isMultiProduct,
+            image_url: item.imageSource,
+            is_multi_product: quotationDocument.items.length > 1,
           },
           display_order: displayOrder++,
         });
-      }
     }
-  } else {
-    // Single-product fallback
-    const finishType =
-      validated.finishType === "white" || validated.finishType === "PowderCoatedWhite"
-        ? "PowderCoatedWhite"
-        : "Analok";
-    const glassType = validated.glassType === "6mm_clear" ? "6mm_clear" : "6mm_bronze";
-
-    const bomResult = calculateStandardSeries798({
-      widthMm: validated.widthMm,
-      heightMm: validated.heightMm,
-      panelCount: validated.panelCount,
-      hasSill: validated.hasSill,
-      finishType,
-      glassType,
-      structuralWaiver: validated.structuralWaiver,
-    });
-
-    totalEstimatedAmount = bomResult.finalQuotation;
-    quotationNote = validated.structuralWaiver
-      ? "Customer acknowledged NSCP 2015 Structural Span Waiver (Aperture >= 2400mm)"
-      : "Standard compliant consultation estimate";
-
-    const snapshotSummary = generateQuotationSnapshot(quotationId, bomResult, {
-      structuralWaiver: validated.structuralWaiver,
-    });
-
-    quotationItemRows.push(
-      ...snapshotSummary.groups.map((group, idx) => ({
-        quotation_id: quotationId,
-        item_name: group.item_group_name,
-        item_group_name: group.item_group_name,
-        quantity: group.quantity,
-        unit: group.unit_label,
-        unit_price: group.unit_price,
-        estimated_subtotal: group.estimated_subtotal,
-        structural_waiver: validated.structuralWaiver,
-        pricing_details: {
-          ...group.pricing_details,
-          product_name: validated.productName,
-          product_type: validated.productType,
-          is_multi_product: false,
-        },
-        display_order: idx + 1,
-      }))
-    );
   }
 
   // 4. Insert quotation_estimates row
@@ -256,6 +182,7 @@ export async function generateSignedBookingLink(
       quotation_note: quotationNote,
       pdf_r2_object_key: pdfObjectKey,
       status: "Generated",
+      quotation_document_snapshot: quotationDocument,
     })
     .select("quotation_id")
     .single();
@@ -322,6 +249,7 @@ export async function generateSignedBookingLink(
     expiresAt,
     totalEstimatedAmount,
     hasStructuralWaiver: hasAnyStructuralWaiver,
+    quotationDocument,
   };
 }
 
@@ -398,7 +326,7 @@ export async function recordBookingRequest(
     throw new Error(`Failed to record booking request: ${insertError?.message}`);
   }
 
-  revalidateBookingPaths();
+  for (const path of BOOKING_REVALIDATION_PATHS) revalidatePath(path);
 
   return {
     bookingRequestId: created.booking_request_id,
@@ -445,6 +373,8 @@ export async function getPublicBookingReference(
         quotation_id,
         quotation_number,
         total_estimated_amount,
+        negotiated_amount,
+        quotation_document_snapshot,
         created_at,
         quotation_items (
           item_name,
@@ -659,6 +589,7 @@ export async function getPublicBookingReference(
     glassType: itemsList[0]?.glassType || glassType,
     structuralWaiver,
     totalEstimatedAmount: Number(quote.total_estimated_amount),
+    ...deriveQuotationPricing(Number(quote.total_estimated_amount), quote.negotiated_amount === null ? null : Number(quote.negotiated_amount)),
     createdAtFormatted,
     expiresAtFormatted,
     isExpired,
@@ -695,6 +626,48 @@ export async function getPublicBookingReference(
       }
     ),
   };
+}
+
+/** Authenticated owner read used to refresh an already-saved client quotation. */
+export async function getOwnQuotationDocument(quotationId: string) {
+  if (!zUuid(quotationId)) return null;
+  const supabase = await createSupabaseServerClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+  const { data, error } = await supabase.from("quotation_estimates")
+    .select("quotation_id, quotation_document_snapshot, total_estimated_amount, negotiated_amount, updated_at")
+    .eq("quotation_id", quotationId).eq("profile_id", user.id).maybeSingle();
+  if (error || !data?.quotation_document_snapshot) return null;
+  const document = QuotationDocumentSnapshotV1Schema.safeParse(data.quotation_document_snapshot);
+  if (!document.success) return null;
+  return { quotationId: data.quotation_id, quotationDocument: document.data, updatedAt: data.updated_at, ...deriveQuotationPricing(Number(data.total_estimated_amount), data.negotiated_amount === null ? null : Number(data.negotiated_amount)) };
+}
+
+function zUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+export async function updateNegotiatedPrice(input: UpdateNegotiatedPriceInput): Promise<UpdateNegotiatedPriceResult> {
+  const admin = await requirePermission("manage_bookings");
+  const parsed = UpdateNegotiatedPriceInputSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, code: "VALIDATION_ERROR", message: parsed.error.issues[0]?.message ?? "Invalid negotiated price" };
+  const supabase = await createSupabaseServerClient();
+  const { data: current, error: readError } = await supabase.from("quotation_estimates")
+    .select("quotation_id, total_estimated_amount, updated_at").eq("quotation_id", parsed.data.quotationId).maybeSingle();
+  if (readError) return { ok: false, code: "PERSISTENCE_ERROR", message: "Unable to read quotation" };
+  if (!current) return { ok: false, code: "NOT_FOUND", message: "Quotation not found" };
+  if (current.updated_at !== parsed.data.expectedUpdatedAt) return { ok: false, code: "CONFLICT", message: "This quotation was updated in another session. Review the latest values and try again." };
+  const calculated = Number(current.total_estimated_amount);
+  const pricing = deriveQuotationPricing(calculated, parsed.data.negotiatedAmount);
+  const negotiatedAt = pricing.negotiatedFinalPrice === null ? null : new Date().toISOString();
+  const negotiatedBy = pricing.negotiatedFinalPrice === null ? null : admin.profileId;
+  const { data: updated, error } = await supabase.from("quotation_estimates").update({ negotiated_amount: pricing.negotiatedFinalPrice, negotiated_by: negotiatedBy, negotiated_at: negotiatedAt })
+    .eq("quotation_id", parsed.data.quotationId).eq("updated_at", parsed.data.expectedUpdatedAt)
+    .select("updated_at").maybeSingle();
+  if (error) return { ok: false, code: "PERSISTENCE_ERROR", message: "Unable to save negotiated price" };
+  if (!updated) return { ok: false, code: "CONFLICT", message: "This quotation changed before the price could be saved." };
+  revalidateBookingPaths();
+  return { ok: true, quotationId: parsed.data.quotationId, ...pricing, negotiatedBy, negotiatedAt, updatedAt: updated.updated_at };
 }
 
 /**

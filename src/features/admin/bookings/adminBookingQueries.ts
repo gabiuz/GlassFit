@@ -6,11 +6,23 @@ export const ADMIN_BOOKINGS_SELECT = `
   selected_platform,
   booking_link:signed_booking_links!booking_requests_link_fk (
     quotation:quotation_estimates!signed_booking_links_quotation_fk (
+      quotation_id,
       quotation_number,
       pdf_r2_object_key,
       created_at,
+      updated_at,
+      total_estimated_amount,
+      negotiated_amount,
+      negotiated_by,
+      negotiated_at,
+      quotation_document_snapshot,
       quotation_items (
         item_name,
+        item_group_name,
+        quantity,
+        unit,
+        unit_price,
+        estimated_subtotal,
         pricing_details
       )
     )

@@ -11,7 +11,11 @@ import {
   type BookingStatus,
 } from "./bookingData";
 import { bookingStateReducer, createBookingState } from "./bookingState";
-import { updateBookingRequestStatus } from "@/lib/booking/bookingActions";
+import { updateBookingRequestStatus, updateNegotiatedPrice } from "@/lib/booking/bookingActions";
+import { createQuotationDocumentViewModel } from "@/lib/pricing/quotationDocument";
+import { generateQuotationPdfHtml } from "@/lib/pricing/quotationPdfGenerator";
+import { openQuotationPreview } from "@/lib/pricing/quotationPreviewWindow";
+import { getR2AssetUrl } from "@/lib/r2";
 
 const statusBg: Record<BookingStatus, string> = {
   Confirmed: "bg-[#05b64b]",
@@ -44,6 +48,11 @@ export function BookingsContent({ initialBookings, loadError = null }: BookingsC
   const [searchQuery, setSearchQuery] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [feedbackToast, setFeedbackToast] = useState<string | null>(null);
+  const [isEditingPrice, setIsEditingPrice] = useState(false);
+  const [priceInput, setPriceInput] = useState("");
+  const [priceError, setPriceError] = useState<string | null>(null);
+  const [isSavingPrice, setIsSavingPrice] = useState(false);
+  const [zeroConfirmed, setZeroConfirmed] = useState(false);
   const { bookings, selectedBookingId, currentStatus } = state;
 
   useEffect(() => {
@@ -84,6 +93,44 @@ export function BookingsContent({ initialBookings, loadError = null }: BookingsC
 
   const handleSelectBooking = (booking: AdminBookingItem) => {
     dispatch({ type: "select", bookingId: booking.id });
+    setIsEditingPrice(false); setPriceError(null); setZeroConfirmed(false);
+  };
+
+  const buildSelectedQuotationHtml = () => {
+    if (!selectedBooking?.quotation.document) return null;
+    const base = process.env.NEXT_PUBLIC_R2_ASSET_BASE_URL;
+    const origins = [window.location.origin];
+    if (base) try { origins.push(new URL(base).origin); } catch { /* Ignore invalid asset origin. */ }
+    const view = createQuotationDocumentViewModel(selectedBooking.quotation.document, { brandLogoUrl: new URL("/Logo.svg", window.location.origin).href, shareableUrl: new URL(selectedBooking.quotation.document.shareablePath, window.location.origin).href, snapshotImageUrl: getR2AssetUrl(selectedBooking.quotation.document.snapshotObjectKey), allowedImageOrigins: origins, negotiatedAmount: selectedBooking.quotation.negotiatedFinalPrice ?? null });
+    return generateQuotationPdfHtml(view);
+  };
+
+  const handleQuotationPreview = (autoPrint: boolean) => {
+    setPriceError(null);
+    const html = buildSelectedQuotationHtml();
+    if (!html) { setPriceError("Quotation data unavailable."); return; }
+    const result = openQuotationPreview(html, { autoPrint });
+    if (!result.ok) setPriceError(result.reason === "POPUP_BLOCKED" ? "Allow popups to open the quotation." : "The quotation could not be prepared.");
+  };
+
+  const saveNegotiatedPrice = async (amount: number | null) => {
+    if (!selectedBooking) return;
+    setIsSavingPrice(true); setPriceError(null);
+    if (!selectedBooking.quotation.id || !selectedBooking.quotation.updatedAt) { setPriceError("Quotation data unavailable."); setIsSavingPrice(false); return; }
+    const result = await updateNegotiatedPrice({ quotationId: selectedBooking.quotation.id, negotiatedAmount: amount, expectedUpdatedAt: selectedBooking.quotation.updatedAt });
+    if (!result.ok) { setPriceError(result.message); if (result.code === "CONFLICT") startRefreshTransition(() => router.refresh()); setIsSavingPrice(false); return; }
+    dispatch({ type: "quotation-price-saved", bookingId: selectedBooking.id, quotation: { ...selectedBooking.quotation, ...result } });
+    setIsEditingPrice(false); setZeroConfirmed(false); setIsSavingPrice(false); setFeedbackToast("Final price updated successfully");
+    startRefreshTransition(() => router.refresh());
+  };
+
+  const handlePriceSave = async () => {
+    if (!priceInput.trim()) { setPriceError("Enter a final price. Blank does not reset the price."); return; }
+    if (!/^\d+(?:\.\d{1,2})?$/.test(priceInput)) { setPriceError("Enter a nonnegative amount with at most two decimal places."); return; }
+    const value = Number(priceInput);
+    if (!Number.isFinite(value) || value > 9_999_999_999.99) { setPriceError("Enter an amount within the supported range."); return; }
+    if (value === 0 && !zeroConfirmed) { setZeroConfirmed(true); setPriceError("Zero is allowed. Select Save again to confirm a final price of ₱0.00."); return; }
+    await saveNegotiatedPrice(value);
   };
 
   const handleStatusChange = (newStatus: BookingStatus) => {
@@ -347,6 +394,14 @@ export function BookingsContent({ initialBookings, loadError = null }: BookingsC
               </div>
 
               <div className="bg-[#f5f5f5] p-4 sm:p-5 rounded-[20px] flex flex-col gap-4 w-full">
+                <div aria-busy={isSavingPrice} className="rounded-[16px] bg-white p-4 flex flex-col gap-3">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div><p className="text-xs text-[#c3c3c3]">Calculated price</p><p className="font-medium text-[#0f1422]">₱{(selectedBooking.quotation.calculatedFinalPrice ?? 0).toLocaleString("en-PH", { minimumFractionDigits: 2 })}</p></div>
+                    <div className="text-right"><p className="text-xs text-[#c3c3c3]">Final price</p><p className="text-xl font-semibold text-emerald-700">₱{(selectedBooking.quotation.effectiveFinalPrice ?? 0).toLocaleString("en-PH", { minimumFractionDigits: 2 })}</p>{selectedBooking.quotation.isPriceModified && <span className="text-[11px] text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full">Negotiated</span>}</div>
+                  </div>
+                  {isEditingPrice ? <div className="flex flex-col gap-2"><label className="text-xs font-medium text-[#0f1422]" htmlFor="negotiated-price">Negotiated final price</label><input id="negotiated-price" inputMode="decimal" step="0.01" value={priceInput} onChange={(event) => { setPriceInput(event.target.value); setZeroConfirmed(false); }} disabled={isSavingPrice} className="rounded-[10px] border border-neutral-300 px-3 py-2 text-sm" /><div className="flex flex-wrap gap-2"><button type="button" disabled={isSavingPrice} onClick={() => void handlePriceSave()} className="bg-[#05b64b] text-white text-xs px-3 py-2 rounded-[10px] disabled:opacity-50">{isSavingPrice ? "Saving..." : "Save Final Price"}</button><button type="button" disabled={isSavingPrice} onClick={() => { setIsEditingPrice(false); setPriceError(null); setZeroConfirmed(false); }} className="bg-neutral-200 text-[#0f1422] text-xs px-3 py-2 rounded-[10px]">Cancel</button><button type="button" disabled={isSavingPrice || !selectedBooking.quotation.isPriceModified} onClick={() => void saveNegotiatedPrice(null)} className="bg-[#c50000] text-white text-xs px-3 py-2 rounded-[10px] disabled:opacity-40">Reset</button></div></div> : <button type="button" disabled={isSavingPrice} onClick={() => { setPriceInput((selectedBooking.quotation.effectiveFinalPrice ?? 0).toFixed(2)); setIsEditingPrice(true); }} className="self-start bg-[#0f1422] text-white text-xs px-3.5 py-2 rounded-[10px]">Edit Final Price</button>}
+                  {priceError && <p role="alert" className="text-xs text-[#c50000]">{priceError}</p>}
+                </div>
                 <div className="flex flex-col gap-1 items-start">
                   <p className="text-[#07b6d3] text-lg sm:text-xl font-medium leading-snug">
                     Customer Quotation PDF
@@ -380,16 +435,21 @@ export function BookingsContent({ initialBookings, loadError = null }: BookingsC
                     <div className="flex flex-wrap gap-2.5 items-start">
                       <button
                         type="button"
+                        onClick={() => handleQuotationPreview(false)}
+                        disabled={isSavingPrice || !selectedBooking.quotation.document}
                         className="bg-[#0f1422] text-white text-xs font-normal px-3.5 py-1.5 rounded-[10px] cursor-pointer hover:bg-black transition-colors whitespace-nowrap"
                       >
                         View PDF
                       </button>
                       <button
                         type="button"
+                        onClick={() => handleQuotationPreview(true)}
+                        disabled={isSavingPrice || !selectedBooking.quotation.document}
                         className="bg-[#07b6d3] text-white text-xs font-normal px-3.5 py-1.5 rounded-[10px] cursor-pointer hover:bg-cyan-600 transition-colors whitespace-nowrap"
                       >
                         Download PDF
                       </button>
+                      <span className="w-full text-[11px] text-[#c3c3c3]">Download opens Print / Save as PDF.</span>
                     </div>
                   </div>
                 </div>

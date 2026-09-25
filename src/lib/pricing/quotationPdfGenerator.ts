@@ -3,6 +3,7 @@ import type { CalculatedBOMResult } from "@/lib/pricing/pricingEngine";
 import { QUOTATION_TERMS_CONTENT } from "@/lib/pricing/quotationPdfContent";
 import type { ConsolidatedQuotationSummary, ItemizedProductQuotation } from "@/lib/pricing/types";
 import { SNAPSHOT_FALLBACK_DATA_URL } from "@/lib/pricing/pdfAssets";
+import type { QuotationDocumentViewModel } from "@/lib/pricing/quotationDocument";
 
 export interface QuotationPdfMetadata {
   quotationNumber: string;
@@ -64,7 +65,39 @@ function termsAppendix(): string {
   return `<section class="terms-appendix" aria-label="Quotation terms and warranty"><div class="terms-section"><h2>TERMS AND CONDITIONS</h2>${paragraphs(QUOTATION_TERMS_CONTENT.terms)}</div><div class="terms-section"><h2>WARRANTY</h2>${paragraphs(QUOTATION_TERMS_CONTENT.warranty)}</div></section>`;
 }
 
-export function generateQuotationPdfHtml(metadata: QuotationPdfMetadata): string {
+function canonicalGroupsTable(item: QuotationDocumentViewModel["items"][number]): string {
+  const rows = item.groups.map((group) => `<tr><td><strong>${escapeHtml(group.groupName)}</strong><br>${escapeHtml(group.description)}</td><td>${group.quantity} ${escapeHtml(group.unit)}</td><td>${money(group.unitPrice)}</td><td>${money(group.subtotal)}</td></tr>`).join("");
+  return `<section class="item-card"><header><h3>${escapeHtml(item.productName)}</h3><span>Qty: ${item.quantity}</span></header><div class="fixture-specs"><span><b>Dimensions:</b> ${escapeHtml(item.dimensionsFormatted)}</span><span><b>Panels:</b> ${item.panelCount}</span><span><b>Finish:</b> ${escapeHtml(item.finishLabel)}</span><span><b>Glass:</b> ${escapeHtml(item.glassLabel)}</span></div><table class="items-table"><thead><tr><th>Component group</th><th>Qty / extent</th><th>Unit rate</th><th>Subtotal</th></tr></thead><tbody>${rows}</tbody></table><div class="item-subtotal"><span>Unit price: ${money(item.unitPrice)} × ${item.quantity}</span><strong>Fixture subtotal: ${money(item.calculatedSubtotal)}</strong></div></section>`;
+}
+
+function canonicalToLegacy(view: QuotationDocumentViewModel): QuotationPdfMetadata {
+  const item = view.items[0];
+  const materials = view.pricing.directMaterialsSubtotal;
+  const labor = view.pricing.laborSubtotal;
+  const margin = view.pricing.contractorMargin;
+  const placeholder = {
+    widthM: item.widthMm / 1000, heightM: item.heightMm / 1000, panelCount: item.panelCount, hasSill: item.hasSill,
+    finishType: item.finishLabel, glassType: item.glassLabel, leafWidthM: 0, aspectRatio: 0, isCrabbingRisk: false,
+    isSpanLimitExceeded: false, totalLinearMetersFraming: 0, glazingAreaSqm: 0, framingItems: [], glazingItems: [],
+    hardwareItems: [], consumableItems: [], rawFramingSubtotal: 0, scrapFramingSubtotal: 0, effectiveFramingCost: materials,
+    rawGlazingSubtotal: 0, scrapGlazingSubtotal: 0, effectiveGlazingCost: 0, hardwareSubtotal: 0, consumablesSubtotal: 0,
+    directMaterialsSubtotal: materials, fabricationLaborCost: labor, totalDirectCost: materials + labor, contractorMargin: margin,
+    finalQuotation: view.effectiveFinalPrice, frozenDetails: { width_m: item.widthMm / 1000, height_m: item.heightMm / 1000, panel_count: item.panelCount, has_sill: item.hasSill, finish_type: item.finishLabel, glass_type: item.glassLabel, items_breakdown: [], raw_material_subtotal: materials, waste_allowance_subtotal: 0, direct_material_subtotal: materials, labor_cost: labor, contractor_margin: margin, margin_rate: .25, total_estimate: view.effectiveFinalPrice },
+    bomSummary: { total_estimated_amount: view.effectiveFinalPrice, currency: "PHP" as const, has_sill: item.hasSill, structural_waiver: item.structuralWaiver, groups: [] },
+  } satisfies CalculatedBOMResult;
+  return { quotationNumber: view.quotationNumber, referenceCode: view.referenceCode, shareableUrl: view.shareableUrl, customerName: view.customer.name, customerPhone: view.customer.phone, customerEmail: view.customer.email, siteLocation: view.customer.siteLocation, createdAtFormatted: new Intl.DateTimeFormat("en-US", { dateStyle: "long" }).format(new Date(view.createdAt)), projectName: view.projectName, snapshotImageUrl: view.snapshotImageUrl, brandLogoUrl: view.brandLogoUrl, allowedImageOrigins: view.allowedImageOrigins, hasSill: view.hasSill, structuralWaiver: view.structuralWaiver, bomResult: placeholder };
+}
+
+export function generateQuotationPdfHtml(metadata: QuotationPdfMetadata | QuotationDocumentViewModel): string {
+  if ("schemaVersion" in metadata) {
+    const legacyHtml = generateQuotationPdfHtml(canonicalToLegacy(metadata));
+    const fixtures = metadata.items.map(canonicalGroupsTable).join("");
+    const originalPrice = metadata.isPriceModified ? `<tr><td>Original system-calculated estimate</td><td>${money(metadata.calculatedFinalPrice)}</td></tr>` : "";
+    const note = metadata.isPriceModified ? `<p class="price-adjustment-note">Final price adjusted by an authorized administrator for negotiation. The original system-calculated estimate is shown for transparency.</p>` : "";
+    return legacyHtml
+      .replace(/<h2>Itemized quotation breakdown<\/h2>[\s\S]*?<table class="total-table">/, `<h2>Itemized quotation breakdown</h2>${fixtures}<table class="total-table">${originalPrice}`)
+      .replace(/<\/table>\n<section class="ocular-card">/, `</table>${note}\n<section class="ocular-card">`);
+  }
   const items = metadata.items ?? [];
   const isMulti = items.length > 1 && Boolean(metadata.consolidatedSummary);
   const summary = metadata.consolidatedSummary;
