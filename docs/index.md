@@ -5,7 +5,7 @@
 **Version:** 1.0 (Capstone Production Release)  
 **Owner:** Reynard John B. Rabanal (Lead Product / Systems Architect) & GlassFit Capstone Team (PUP CCIS)  
 **Status:** Locked  
-**Last reconciled:** September 9, 2026 (Reconciled across all 7 GlassFit specification documents and active codebase)
+**Last reconciled:** September 26, 2026 (Added IMP-MS17 simplified customer quotation and per-item negotiation traceability)
 
 ---
 
@@ -44,7 +44,7 @@ GlassFit is a responsive, web-based photo-simulation and consultation-support pl
 | BRD-M2 (Reduce Design Revisions) | PRD-F5 (Parametric 3D Assembly), PRD-F6 (Visualization Workspace) | SDD-C4 (Parametric 3D Assembly Engine), SDD-C5 (Visualization Canvas) | ERD-E4 (product_templates), ERD-E5 (product_parameters), ERD-E6 (product_components), ERD-E7 (structural_rules) | QAD-TC5, QAD-TC6, QAD-TC16, QAD-TC17 | Verified |
 | BRD-M3 (Elevate Conversion to Ocular) | PRD-F9 (Compositing & Snapshot), PRD-F13 (Signed Booking Link) | SDD-C6 (Canvas Compositor), SDD-C8 (Signed Booking Link) | ERD-E10 (visualization_snapshots), ERD-E15 (signed_booking_links) | QAD-TC9, QAD-TC13 | Verified |
 | BRD-M4 (Achieve High Usability) | PRD-F1 (Public Catalog), PRD-F2 (3D Inspector), PRD-F7 (Environmental Realism) | SDD-C1 (Public Catalog), SDD-C5 (Visualization Canvas) | ERD-E3 (products), ERD-E8 (product_assets), ERD-E9 (product_variations) | QAD-TC1, QAD-TC2, QAD-TC7 | Verified |
-| BRD-M5 (Minimize Estimator Overhead) | PRD-F10 (Quotation Measurement Modal), PRD-F11 (Consultation PDF), PRD-F14 (Admin Catalog), PRD-F19 (Batch Pricing) | SDD-C7 (Quotation Engine & PDF Generator), SDD-C9 (Admin Portal) | ERD-E11 (product_configurations), ERD-E13 (quotation_estimates), ERD-E14 (quotation_items), ERD-E17 (raw_materials) | QAD-TC10, QAD-TC11, QAD-TC15, QAD-TC18, QAD-TC19 | Verified |
+| BRD-M5 (Minimize Estimator Overhead) | PRD-F10 (Quotation Measurement Modal), PRD-F11 (Consultation PDF), PRD-F14 (Admin Catalog), PRD-F19 (Batch Pricing) | SDD-C7 (Quotation Engine & PDF Generator), SDD-C9 (Admin Portal) | ERD-E11 (product_configurations), ERD-E13 (quotation_estimates), ERD-E14 (quotation_items), ERD-E15 (signed_booking_links), ERD-E16 (booking_requests), ERD-E17 (raw_materials) | QAD-TC10, QAD-TC11, QAD-TC15, QAD-TC18, QAD-TC19, QAD-TC29 | Verified |
 | BRD-M6 (Suppress On-Site Scrappage) | PRD-F3 (Space Image Upload), PRD-F4 (CV Image Analysis), PRD-F8 (Foreground Occlusion), PRD-F5 (Structural Guardrails) | SDD-C2 (Image Pre-Flight), SDD-C3 (CV Scene Analyzer), SDD-C4 (Parametric Builder), SDD-C5 (Visualization Canvas) | ERD-E6 (product_components), ERD-E7 (structural_rules), ERD-E10 (visualization_snapshots), ERD-E11 (product_configurations) | QAD-TC3, QAD-TC4, QAD-TC8, QAD-TC17 | Verified |
 
 ---
@@ -77,6 +77,9 @@ GlassFit is a responsive, web-based photo-simulation and consultation-support pl
 | September 9, 2026 | `docs/milestone.md` | Reynard John B. Rabanal | Master implementation roadmap integrating parametric BOM pricing, structural guardrails, and part inspector | PR #9 |
 | September 9, 2026 | `docs/milestone.md` | Reynard John B. Rabanal | Specification of Milestone 10 for admin product setup wizard state persistence and smooth component lifecycle | PR #10 |
 | September 19, 2026 | `docs/qad-glassfit.md` | Jedia Nicole I. Sagun | Added QAD-TC27 for alpha-aware Product Variant comparison model selection | Pending |
+| September 24, 2026 | `docs/qad-glassfit.md`, `docs/index.md` | GlassFit Capstone Team | Added QAD-TC29 and IMP-MS15 traceability for admin booking reflection, relational query integrity, and route freshness | Pending |
+| September 25, 2026 | `docs/erd-glassfit.md`, `docs/build-glassfit.md`, `docs/qad-glassfit.md`, `docs/index.md` | GlassFit Capstone Team | Added IMP-MS16 canonical quotation snapshots, negotiated-price auditability, deployment order, and QAD-TC30 | Pending |
+| September 26, 2026 | `docs/implementation/ms17.md` and upstream PRD, SDD, DSD, ERD, QAD, milestone, build, and index specifications | GlassFit Capstone Team | Reconciled simplified customer price disclosure, canonical per-item negotiation, DSD-UI11, ERD-E13 JSON overrides, migration 007, and QAD-TC31 | Pending |
 
 ---
 

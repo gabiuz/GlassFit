@@ -233,7 +233,8 @@ describe("Milestone 5: Multi-Product Pricing & Quotation Systems", () => {
     assert.ok(html.includes("ITEMIZED FIXTURE BREAKDOWN (2 FIXTURES)"));
     assert.ok(html.includes("Fixture 1: Series 798 Sliding Door"));
     assert.ok(html.includes("Fixture 2: Series 798 Casement Window"));
-    assert.ok(html.includes("Consolidated Total:"));
+    assert.ok(html.includes("Grand total"));
+    assert.ok(!html.includes("Direct materials subtotal"));
     assert.ok(html.includes(consolidatedSummary.finalGrandTotal.toLocaleString("en-PH")));
     assert.ok(html.includes('class="grand-total-row"'));
     assert.ok(html.includes("Consumer Act of the Philippines RA 7394"));

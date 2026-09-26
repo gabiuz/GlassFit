@@ -31,7 +31,7 @@ export default async function PublicQuotationPage({ params }: PublicQuotationPag
     style: "currency",
     currency: "PHP",
     maximumFractionDigits: 2,
-  }).format(data.totalEstimatedAmount);
+  }).format(data.effectiveFinalPrice);
 
   const isLinkActive = data.status === "Active" && !data.isExpired;
 
@@ -131,6 +131,7 @@ export default async function PublicQuotationPage({ params }: PublicQuotationPag
             <span className="text-3xl sm:text-4xl font-bold text-emerald-700">
               {formattedTotal}
             </span>
+            {data.isPriceModified && <><span className="text-xs text-neutral-500">Original calculated price: {new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" }).format(data.calculatedFinalPrice)}</span><span className="text-xs text-amber-800 mt-2 max-w-sm md:text-right">Final price adjusted by an authorized administrator for negotiation. The original system-calculated estimate is shown for transparency.</span></>}
             <span className="text-neutral-400 text-xs mt-1">Valid through {data.expiresAtFormatted}</span>
           </div>
         </div>

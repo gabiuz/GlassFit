@@ -7,6 +7,7 @@
  */
 
 import { z } from "zod";
+import { QuotationDocumentDraftV1Schema, QuotationDocumentSnapshotV1Schema } from "@/lib/pricing/quotationDocument";
 
 // ----------------------------------------------------------------------------
 // 1. Booking Request Platform & Status Enums
@@ -73,6 +74,7 @@ export const GenerateBookingLinkInputSchema = z.object({
   finalSnapshotDataUrl: z.string().nullable().optional(),
   items: z.array(ItemizedProductQuotationInputSchema).optional(),
   totalEstimatedAmount: z.number().nonnegative().optional(),
+  quotationDocument: QuotationDocumentDraftV1Schema.optional(),
 });
 export type GenerateBookingLinkInput = z.infer<typeof GenerateBookingLinkInputSchema>;
 
@@ -89,6 +91,7 @@ export const GeneratedBookingLinkResultSchema = z.object({
   expiresAt: z.string(),
   totalEstimatedAmount: z.number().nonnegative(),
   hasStructuralWaiver: z.boolean(),
+  quotationDocument: QuotationDocumentSnapshotV1Schema.optional(),
 });
 export type GeneratedBookingLinkResult = z.infer<typeof GeneratedBookingLinkResultSchema>;
 
@@ -150,6 +153,10 @@ export const PublicQuotationSummarySchema = z.object({
   glassType: z.string(),
   structuralWaiver: z.boolean(),
   totalEstimatedAmount: z.number(),
+  calculatedFinalPrice: z.number().default(0),
+  negotiatedFinalPrice: z.number().nullable().default(null),
+  effectiveFinalPrice: z.number().default(0),
+  isPriceModified: z.boolean().default(false),
   createdAtFormatted: z.string(),
   expiresAtFormatted: z.string(),
   isExpired: z.boolean().default(false),
@@ -187,3 +194,90 @@ export const UpdateBookingStatusInputSchema = z.object({
   status: z.enum(["Pending", "Ongoing", "Done", "Cancelled"]),
 });
 export type UpdateBookingStatusInput = z.infer<typeof UpdateBookingStatusInputSchema>;
+
+export const UpdateNegotiatedPriceInputSchema = z.object({
+  quotationId: z.string().uuid(),
+  negotiatedAmount: z.number().finite().min(0).max(9_999_999_999.99).nullable().refine(
+    (value) => value === null || Math.abs(value * 100 - Math.round(value * 100)) < 1e-7,
+    "Negotiated amount must have at most two decimal places",
+  ),
+  expectedUpdatedAt: z.string().datetime(),
+});
+export type UpdateNegotiatedPriceInput = z.infer<typeof UpdateNegotiatedPriceInputSchema>;
+export type UpdateNegotiatedPriceResult =
+  | { ok: true; quotationId: string; calculatedFinalPrice: number; negotiatedFinalPrice: number | null; effectiveFinalPrice: number; isPriceModified: boolean; negotiatedBy: string | null; negotiatedAt: string | null; updatedAt: string }
+  | { ok: false; code: "VALIDATION_ERROR" | "NOT_FOUND" | "UNSUPPORTED_QUOTATION" | "CONFLICT" | "PERSISTENCE_ERROR"; message: string };
+
+export const UpdateItemNegotiatedPriceInputSchema = z.object({
+  quotationId: z.string().uuid(), itemId: z.string().trim().min(1),
+  negotiatedSubtotal: z.number().finite().min(0).max(9_999_999_999.99).nullable().refine(
+    (value) => value === null || Math.abs(value * 100 - Math.round(value * 100)) < 1e-7,
+    "Negotiated subtotal must have at most two decimal places",
+  ),
+  expectedUpdatedAt: z.string().datetime({ offset: true }),
+});
+export type UpdateItemNegotiatedPriceInput = z.infer<typeof UpdateItemNegotiatedPriceInputSchema>;
+export type UpdateItemNegotiatedPriceResult =
+  | { ok: true; quotationId: string; item: import("@/lib/pricing/quotationDocument").ItemPricingView; pricing: import("@/lib/pricing/quotationDocument").QuotationPricingView; negotiatedBy: string | null; negotiatedAt: string | null; updatedAt: string }
+  | { ok: false; code: "VALIDATION_ERROR" | "NOT_FOUND" | "ITEM_NOT_FOUND" | "UNSUPPORTED_QUOTATION" | "CONFLICT" | "PERSISTENCE_ERROR"; message: string };
+
+// ----------------------------------------------------------------------------
+// 6. Admin relational query contracts (IMP-MS15, QAD-TC29)
+// ----------------------------------------------------------------------------
+
+export type BookingDatabaseStatus = z.infer<typeof BookingRequestStatusSchema>;
+
+export interface RawQuotationItemRecord {
+  item_name: string;
+  item_group_name?: string;
+  quantity?: number;
+  unit?: string;
+  unit_price?: number;
+  estimated_subtotal?: number;
+  pricing_details: Record<string, unknown> | null;
+}
+
+export interface RawQuotationEstimateRecord {
+  quotation_id: string;
+  quotation_number: string;
+  pdf_r2_object_key: string | null;
+  created_at: string;
+  updated_at: string;
+  total_estimated_amount: number;
+  negotiated_amount: number | null;
+  negotiated_by: string | null;
+  negotiated_at: string | null;
+  item_price_overrides?: unknown | null;
+  quotation_document_snapshot: unknown | null;
+  quotation_items: RawQuotationItemRecord[];
+}
+
+export interface RawSignedBookingLinkRecord {
+  quotation: RawQuotationEstimateRecord | null;
+}
+
+export interface RawProfileRecord {
+  full_name: string | null;
+  email: string | null;
+  contact_number: string | null;
+}
+
+export interface BookingRequestWithRelationsRow {
+  booking_request_id: string;
+  status: BookingDatabaseStatus;
+  created_at: string;
+  selected_platform: BookingPlatform;
+  booking_link: RawSignedBookingLinkRecord | null;
+  customer: RawProfileRecord | null;
+}
+
+export interface DashboardRecentBookingRow {
+  booking_request_id: string;
+  status: BookingDatabaseStatus;
+  customer: { full_name: string | null } | null;
+  booking_link: {
+    quotation: {
+      quotation_items: RawQuotationItemRecord[];
+    } | null;
+  } | null;
+}

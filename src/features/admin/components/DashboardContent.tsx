@@ -15,10 +15,11 @@ type DashboardContentProps = {
   summary: DashboardSummary;
   metrics: DashboardMetric[];
   recentBookings: BookingRequest[];
+  recentBookingsError?: string | null;
   productUpdatesList: ProductUpdate[];
 };
 
-export function DashboardContent({ summary, metrics, recentBookings, productUpdatesList }: DashboardContentProps) {
+export function DashboardContent({ summary, metrics, recentBookings, recentBookingsError, productUpdatesList }: DashboardContentProps) {
   return (
     <div className="flex flex-col justify-start items-start gap-6 sm:gap-8 w-full max-w-[1240px] pb-12">
       <div className="w-full flex flex-col justify-start items-start">
@@ -40,7 +41,7 @@ export function DashboardContent({ summary, metrics, recentBookings, productUpda
           <QuickActions actions={quickActions} />
         </div>
         <div className="w-full md:col-span-7 xl:col-span-6">
-          <RecentBookingsTable bookings={recentBookings} />
+          <RecentBookingsTable bookings={recentBookings} loadError={recentBookingsError} />
         </div>
         <div className="w-full md:col-span-12 xl:col-span-3">
           <ProductUpdates updates={productUpdatesList} />
@@ -49,4 +50,3 @@ export function DashboardContent({ summary, metrics, recentBookings, productUpda
     </div>
   );
 }
-

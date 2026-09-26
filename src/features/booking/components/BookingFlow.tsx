@@ -12,13 +12,12 @@ import {
   aggregateMultiProductBOM,
 } from "@/lib/pricing/pricingEngine";
 import type { ItemizedProductQuotation } from "@/lib/pricing/types";
-import {
-  generateQuotationPdfHtml,
-  type QuotationPdfMetadata,
-} from "@/lib/pricing/quotationPdfGenerator";
+import { generateQuotationPdfHtml } from "@/lib/pricing/quotationPdfGenerator";
+import { createQuotationDocumentSnapshotV1, createQuotationDocumentViewModel, QuotationDocumentSnapshotV1Schema, type QuotationDocumentSnapshotV1, type QuotationItemPriceOverridesV1 } from "@/lib/pricing/quotationDocument";
+import { getR2AssetUrl } from "@/lib/r2";
 import { openQuotationPreview } from "@/lib/pricing/quotationPreviewWindow";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
-import { generateSignedBookingLink, recordBookingRequest } from "@/lib/booking/bookingActions";
+import { generateSignedBookingLink, getOwnQuotationDocument, recordBookingRequest } from "@/lib/booking/bookingActions";
 import { Stepper } from "./Stepper";
 import { Step1ViewPdf } from "./Step1ViewPdf";
 import { Step2GenerateLink } from "./Step2GenerateLink";
@@ -45,6 +44,11 @@ export function BookingFlow() {
   const [generatedLink, setGeneratedLink] = useState("");
   const [shareableUrl, setShareableUrl] = useState("");
   const [activeLinkId, setActiveLinkId] = useState<string | null>(null);
+  const [quotationId, setQuotationId] = useState<string | null>(null);
+  const [savedDocument, setSavedDocument] = useState<QuotationDocumentSnapshotV1 | null>(null);
+  const [negotiatedAmount, setNegotiatedAmount] = useState<number | null>(null);
+  const [itemPriceOverrides, setItemPriceOverrides] = useState<QuotationItemPriceOverridesV1 | null>(null);
+  const [createdAt] = useState(() => new Date().toISOString());
 
   const {
     productConfiguration,
@@ -118,7 +122,6 @@ export function BookingFlow() {
 
   const {
     quotationItems,
-    consolidatedSummary,
     effectiveTotal,
     productNameSummary,
     hasAnyStructuralWaiver,
@@ -208,13 +211,55 @@ export function BookingFlow() {
 
     return {
       quotationItems: quotations,
-      consolidatedSummary: summary,
       effectiveTotal: effTotal,
       productNameSummary: nameSummary,
       hasAnyStructuralWaiver: anyWaiver,
       hasAnySill: anySill,
     };
   }, [placedOverlays, comparisonOverlays, structuralDefinition, productConfiguration, bomCalc, hasSill, structuralWaiver, widthMm, heightMm, finalSnapshotDataUrl, finishType, glassType, panelCount]);
+
+  const quotationDraft = useMemo(() => createQuotationDocumentSnapshotV1({
+    customer: { name: customerName, phone: customerPhone, email: customerEmail, siteLocation: null },
+    projectName: productNameSummary,
+    items: quotationItems,
+    fallbackBom: bomCalc,
+    hasSill: hasAnySill,
+    structuralWaiver: hasAnyStructuralWaiver,
+  }), [customerName, customerPhone, customerEmail, productNameSummary, quotationItems, bomCalc, hasAnySill, hasAnyStructuralWaiver]);
+
+  const documentSnapshot = useMemo(() => savedDocument ?? QuotationDocumentSnapshotV1Schema.parse({
+    ...quotationDraft, quotationNumber: "DRAFT", referenceCode: "DRAFT", shareablePath: "/send-booking",
+    createdAt, snapshotObjectKey: null,
+  }), [savedDocument, quotationDraft, createdAt]);
+
+  const quotationViewModel = useMemo(() => {
+    const browserOrigin = typeof window === "undefined" ? "http://localhost" : window.location.origin;
+    const allowedImageOrigins = [browserOrigin];
+    const configured = process.env.NEXT_PUBLIC_R2_ASSET_BASE_URL;
+    if (configured) try { allowedImageOrigins.push(new URL(configured).origin); } catch { /* Ignore invalid configuration. */ }
+    return createQuotationDocumentViewModel(documentSnapshot, {
+      brandLogoUrl: new URL("/Logo.svg", browserOrigin).href,
+      shareableUrl: shareableUrl || new URL(documentSnapshot.shareablePath, browserOrigin).href,
+      snapshotImageUrl: finalSnapshotDataUrl || getR2AssetUrl(documentSnapshot.snapshotObjectKey),
+      allowedImageOrigins,
+      negotiatedAmount,
+      itemPriceOverrides,
+    });
+  }, [documentSnapshot, shareableUrl, finalSnapshotDataUrl, negotiatedAmount, itemPriceOverrides]);
+  const displayedTotal = quotationViewModel.effectiveFinalPrice;
+
+  useEffect(() => {
+    if (!quotationId) return;
+    const refresh = async () => {
+      try {
+        const latest = await getOwnQuotationDocument(quotationId);
+        if (latest) { setSavedDocument(latest.quotationDocument); setNegotiatedAmount(latest.negotiatedFinalPrice); setItemPriceOverrides(latest.itemPriceOverrides); }
+      } catch { setErrorMessage("The latest saved price could not be loaded. Showing the last available quotation."); }
+    };
+    const onVisibility = () => { if (document.visibilityState === "visible") void refresh(); };
+    window.addEventListener("focus", refresh); document.addEventListener("visibilitychange", onVisibility);
+    return () => { window.removeEventListener("focus", refresh); document.removeEventListener("visibilitychange", onVisibility); };
+  }, [quotationId]);
 
   const now = new Date();
   const dateFormatted = new Intl.DateTimeFormat("en-US", {
@@ -234,43 +279,10 @@ export function BookingFlow() {
     year: "numeric",
   }).format(expiresDate);
 
-  const buildQuotationPdfMetadata = (): QuotationPdfMetadata => {
-    const allowedImageOrigins = [window.location.origin];
-    const configuredR2Url = process.env.NEXT_PUBLIC_R2_PUBLIC_URL;
-    if (configuredR2Url) {
-      try {
-        const r2Origin = new URL(configuredR2Url).origin;
-        if (!allowedImageOrigins.includes(r2Origin)) allowedImageOrigins.push(r2Origin);
-      } catch {
-        // An invalid public asset URL is ignored rather than trusted.
-      }
-    }
-    return {
-      quotationNumber: activeLinkId ? quotationNumber : "DRAFT",
-      referenceCode: activeLinkId ? referenceCode : null,
-      shareableUrl: activeLinkId ? shareableUrl : null,
-      customerName,
-      customerPhone,
-      customerEmail,
-      siteLocation: null,
-      createdAtFormatted: dateFormatted,
-      quotationValidityText: null,
-      projectName: productNameSummary,
-      hasSill: hasAnySill,
-      structuralWaiver: hasAnyStructuralWaiver,
-      bomResult: bomCalc,
-      snapshotImageUrl: finalSnapshotDataUrl,
-      brandLogoUrl: new URL("/Logo.svg", window.location.origin).href,
-      allowedImageOrigins,
-      items: quotationItems,
-      consolidatedSummary,
-    };
-  };
-
   const openPreview = (autoPrint: boolean) => {
     setErrorMessage("");
     const result = openQuotationPreview(
-      generateQuotationPdfHtml(buildQuotationPdfMetadata()),
+      generateQuotationPdfHtml(quotationViewModel),
       { autoPrint },
     );
     if (!result.ok) {
@@ -320,6 +332,7 @@ export function BookingFlow() {
         finalSnapshotDataUrl,
         items: quotationItems.length > 0 ? quotationItems : undefined,
         totalEstimatedAmount: effectiveTotal,
+        quotationDocument: quotationDraft,
       });
 
       setQuotationNumber(result.quotationNumber);
@@ -327,6 +340,9 @@ export function BookingFlow() {
       setGeneratedLink(result.displayBadge || result.displayLink);
       setShareableUrl(result.shareableUrl);
       setActiveLinkId(result.linkId);
+      setQuotationId(result.quotationId);
+      if (!result.quotationDocument) throw new Error("The saved quotation document was not returned.");
+      setSavedDocument(result.quotationDocument);
       setIsLinkGenerated(true);
     } catch (err: unknown) {
       console.error("Failed to generate signed reference link:", err);
@@ -403,7 +419,7 @@ export function BookingFlow() {
             onSave={handleSavePdf}
             structuralWaiver={hasAnyStructuralWaiver}
             hasSill={hasAnySill}
-            totalEstimatePhp={effectiveTotal}
+            totalEstimatePhp={displayedTotal}
             quotationNumber={quotationNumber}
             dateFormatted={dateFormatted}
           />
@@ -415,7 +431,7 @@ export function BookingFlow() {
             onGenerateLink={handleGenerateLink}
             generatedLink={generatedLink}
             shareableUrl={shareableUrl}
-            totalEstimatePhp={effectiveTotal}
+            totalEstimatePhp={displayedTotal}
             hasStructuralWaiver={hasAnyStructuralWaiver}
             customerName={customerName}
             referenceCode={referenceCode}
@@ -430,7 +446,7 @@ export function BookingFlow() {
             generatedLink={generatedLink}
             shareableUrl={shareableUrl}
             onSend={handleSend}
-            totalEstimatePhp={effectiveTotal}
+            totalEstimatePhp={displayedTotal}
             hasStructuralWaiver={hasAnyStructuralWaiver}
             productName={productNameSummary}
             quotationNumber={quotationNumber}
@@ -454,7 +470,7 @@ export function BookingFlow() {
             <Step4Success
               sharingMethod={sharingMethod}
               onBackToHome={handleBackToHome}
-              totalEstimatePhp={effectiveTotal}
+              totalEstimatePhp={displayedTotal}
               referenceCode={referenceCode}
               dateFormatted={dateFormatted}
             />

@@ -811,6 +811,11 @@ CREATE TABLE IF NOT EXISTS "public"."quotation_estimates" (
     "profile_id" "uuid" NOT NULL,
     "quotation_number" character varying(50) NOT NULL,
     "total_estimated_amount" numeric(12,2) NOT NULL,
+    "quotation_document_snapshot" jsonb,
+    "negotiated_amount" numeric(12,2),
+    "negotiated_by" uuid,
+    "negotiated_at" timestamp with time zone,
+    "item_price_overrides" jsonb,
     "currency" character(3) DEFAULT 'PHP'::"bpchar" NOT NULL,
     "quotation_note" "text",
     "pdf_r2_object_key" "text",
@@ -819,7 +824,11 @@ CREATE TABLE IF NOT EXISTS "public"."quotation_estimates" (
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     CONSTRAINT "quotation_estimates_currency_format" CHECK (("currency" ~ '^[A-Z]{3}$'::"text")),
     CONSTRAINT "quotation_estimates_status_check" CHECK ((("status")::"text" = ANY ((ARRAY['Draft'::character varying, 'Generated'::character varying, 'Expired'::character varying, 'Cancelled'::character varying])::"text"[]))),
-    CONSTRAINT "quotation_estimates_total_nonnegative" CHECK (("total_estimated_amount" >= (0)::numeric))
+    CONSTRAINT "quotation_estimates_total_nonnegative" CHECK (("total_estimated_amount" >= (0)::numeric)),
+    CONSTRAINT "quotation_document_snapshot_object_check" CHECK (("quotation_document_snapshot" IS NULL) OR (jsonb_typeof("quotation_document_snapshot") = 'object'::text)),
+    CONSTRAINT "quotation_negotiated_amount_range_check" CHECK (("negotiated_amount" IS NULL) OR (("negotiated_amount" >= 0) AND ("negotiated_amount" <= 9999999999.99))),
+    CONSTRAINT "quotation_negotiation_audit_check" CHECK ((("negotiated_amount" IS NULL) AND ("negotiated_by" IS NULL) AND ("negotiated_at" IS NULL)) OR (("negotiated_amount" IS NOT NULL) AND ("negotiated_by" IS NOT NULL) AND ("negotiated_at" IS NOT NULL))),
+    CONSTRAINT "quotation_item_price_overrides_object_check" CHECK (("item_price_overrides" IS NULL) OR (jsonb_typeof("item_price_overrides") = 'object'::text))
 );
 
 
@@ -1554,6 +1563,9 @@ ALTER TABLE ONLY "public"."profiles"
 ALTER TABLE ONLY "public"."quotation_estimates"
     ADD CONSTRAINT "quotation_estimates_profile_fk" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("profile_id") ON DELETE RESTRICT;
 
+ALTER TABLE ONLY "public"."quotation_estimates"
+    ADD CONSTRAINT "quotation_estimates_negotiated_by_fk" FOREIGN KEY ("negotiated_by") REFERENCES "public"."profiles"("profile_id") ON DELETE SET NULL;
+
 
 
 ALTER TABLE ONLY "public"."quotation_estimates"
@@ -1817,7 +1829,9 @@ CREATE POLICY "quotation_items_select_own_or_admin" ON "public"."quotation_items
 
 
 
-CREATE POLICY "quotations_admin_write" ON "public"."quotation_estimates" TO "authenticated" USING ("public"."is_admin"()) WITH CHECK ("public"."is_admin"());
+CREATE POLICY "quotations_admin_insert" ON "public"."quotation_estimates" FOR INSERT TO "authenticated" WITH CHECK ("public"."is_admin"());
+CREATE POLICY "quotations_admin_delete" ON "public"."quotation_estimates" FOR DELETE TO "authenticated" USING ("public"."is_admin"());
+CREATE POLICY "quotations_manage_bookings_update" ON "public"."quotation_estimates" FOR UPDATE TO "authenticated" USING ("public"."has_admin_permission"('manage_bookings')) WITH CHECK ("public"."has_admin_permission"('manage_bookings'));
 
 
 
@@ -2155,8 +2169,6 @@ ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TAB
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "anon";
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "authenticated";
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "service_role";
-
-
 
 
 

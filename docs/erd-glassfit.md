@@ -264,6 +264,8 @@ Row-Level Security (RLS) applied across all 16 database tables:
 | `created_at` | TIMESTAMPTZ | No | None | `now()` | System creation timestamp |
 
 #### Entity: QuotationEstimates (`ERD-E13`)
+
+MS17 adds nullable `item_price_overrides jsonb`. Null represents no canonical overrides. A non-null object has `schemaVersion: 1` and snapshot-ordered entries containing nonblank `itemId`, two-decimal `negotiatedSubtotal`, UUID `negotiatedBy`, and offset-aware `negotiatedAt`. The immutable `quotation_document_snapshot` retains calculated values only. `negotiated_amount`, `negotiated_by`, and `negotiated_at` are compatibility summary fields updated atomically from the override document; clearing the final override clears all four mutable fields. Customer and public read models omit entry audit identities.
 - Table Name: `public.quotation_estimates`
 - Purpose: Aggregate budgetary quotation record associated with a visual snapshot.
 
@@ -274,6 +276,10 @@ Row-Level Security (RLS) applied across all 16 database tables:
 | `profile_id` | UUID | No | Foreign Key | None | References `profiles(profile_id)` ON DELETE RESTRICT |
 | `quotation_number`| VARCHAR(50)| No | Unique | None | Human-readable identifier (e.g., Q-20260909-001) |
 | `total_estimated_amount`| NUMERIC(12,2)| No | None | None | Total price >= 0 |
+| `quotation_document_snapshot` | JSONB | Yes | None | None | Canonical versioned document object for post-MS16 quotations |
+| `negotiated_amount` | NUMERIC(12,2) | Yes | None | None | Optional final price from 0 through 9,999,999,999.99 |
+| `negotiated_by` | UUID | Yes | Foreign Key | None | References `profiles(profile_id)` ON DELETE SET NULL |
+| `negotiated_at` | TIMESTAMPTZ | Yes | None | None | Populated with the negotiated amount and administrator |
 | `currency` | CHAR(3) | No | None | `'PHP'` | Valid 3-letter currency code |
 | `quotation_note`| TEXT | Yes | None | None | Special notes or fabricator disclaimers |
 | `pdf_r2_object_key`| TEXT | Yes | Unique | None | Storage key for generated PDF document |
