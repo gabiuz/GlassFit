@@ -142,7 +142,7 @@ export default function Navbar({ className = "" }: ClassNameProps) {
             style={{ transformOrigin: "top right" }}
             className="absolute top-[calc(100%+8px)] right-0 w-[241px] bg-white rounded-[20px] shadow-[0_8px_30px_rgba(4,94,109,0.18)] border border-green/20 flex flex-col gap-[10px] p-[20px] z-50"
           >
-            {/* Header: avatar + name + email — Figma node 1376:8202 */}
+            {/* Header: avatar + name + email: Figma node 1376:8202 */}
             <div className="flex items-center gap-[7px] w-full min-w-0">
               <div className="shrink-0 rounded-full border border-[#C3C3C3]">
                 <Image
@@ -189,9 +189,9 @@ export default function Navbar({ className = "" }: ClassNameProps) {
               </span>
             </Link>
 
-            {/* My Request */}
+            {/* My Requests */}
             <Link
-              href="/dashboard"
+              href="/my-requests"
               onClick={() => setIsDropdownOpen(false)}
               className="flex items-center gap-[10px] group"
             >
@@ -204,7 +204,7 @@ export default function Navbar({ className = "" }: ClassNameProps) {
                 className="shrink-0"
               />
               <span className="text-[14px] leading-[1.4] tracking-[-0.019em] text-[#0f1422] group-hover:text-green transition-colors whitespace-nowrap">
-                My Request
+                My Requests
               </span>
             </Link>
 
@@ -394,6 +394,38 @@ export default function Navbar({ className = "" }: ClassNameProps) {
                         </span>
                         <span className="text-xs text-[#c3c3c3] truncate">{user.email}</span>
                       </div>
+                    </div>
+                    <div className="flex flex-col gap-2 pt-1 pb-1">
+                      <Link
+                        href="/profile"
+                        onClick={() => setIsOpen(false)}
+                        className="flex items-center gap-[10px] py-1 text-black hover:text-green transition-colors"
+                      >
+                        <Image
+                          src="/profile/profile.svg"
+                          alt=""
+                          aria-hidden="true"
+                          width={16}
+                          height={16}
+                          className="shrink-0"
+                        />
+                        <span className="text-sm font-medium">My Profile</span>
+                      </Link>
+                      <Link
+                        href="/my-requests"
+                        onClick={() => setIsOpen(false)}
+                        className="flex items-center gap-[10px] py-1 text-black hover:text-green transition-colors"
+                      >
+                        <Image
+                          src="/profile/request.svg"
+                          alt=""
+                          aria-hidden="true"
+                          width={16}
+                          height={16}
+                          className="shrink-0"
+                        />
+                        <span className="text-sm font-medium">My Requests</span>
+                      </Link>
                     </div>
                     <button
                       onClick={handleSignOut}
