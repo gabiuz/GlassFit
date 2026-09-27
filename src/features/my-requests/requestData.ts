@@ -36,8 +36,8 @@ export interface ClientRequestItem {
 export type ProgressStepState = "complete" | "current" | "future";
 
 export interface ProgressStep {
-  id: "submitted" | "under_review" | "completed";
-  label: "Submitted" | "Under Review" | "Completed";
+  id: "submitted" | "under_review" | "confirmed" | "completed";
+  label: "Submitted" | "Under Review" | "Confirmed" | "Completed";
   state: ProgressStepState;
 }
 
@@ -111,33 +111,33 @@ export function getBookingStatusBadge(status: BookingRequestStatus): StatusBadge
       return {
         label: "Submitted",
         variant: "amber",
-        bgClass: "bg-amber-50",
-        textClass: "text-amber-800",
-        borderClass: "border-amber-200",
+        bgClass: "bg-[#ffc876]",
+        textClass: "text-white",
+        borderClass: "border-transparent",
       };
     case "Ongoing":
       return {
         label: "Under Review",
         variant: "amber",
-        bgClass: "bg-amber-50",
-        textClass: "text-amber-800",
-        borderClass: "border-amber-200",
+        bgClass: "bg-[#ffc876]",
+        textClass: "text-white",
+        borderClass: "border-transparent",
       };
     case "Done":
       return {
         label: "Completed",
         variant: "green",
-        bgClass: "bg-emerald-50",
-        textClass: "text-emerald-800",
-        borderClass: "border-emerald-200",
+        bgClass: "bg-[#05b64b]",
+        textClass: "text-white",
+        borderClass: "border-transparent",
       };
     case "Cancelled":
       return {
         label: "Cancelled",
         variant: "red",
-        bgClass: "bg-rose-50",
-        textClass: "text-rose-800",
-        borderClass: "border-rose-200",
+        bgClass: "bg-[#c50000]",
+        textClass: "text-white",
+        borderClass: "border-transparent",
       };
     default:
       return assertNever(status);
@@ -151,7 +151,7 @@ export function getBookingStatusBanner(status: BookingRequestStatus): StatusBann
   switch (status) {
     case "Pending":
       return {
-        title: "Request received",
+        title: "Your request was received",
         description: "We will review your consultation PDF and contact you.",
         treatment: "cyan",
       };
@@ -189,6 +189,7 @@ export function getBookingProgressBehavior(status: BookingRequestStatus): Progre
         steps: [
           { id: "submitted", label: "Submitted", state: "current" },
           { id: "under_review", label: "Under Review", state: "future" },
+          { id: "confirmed", label: "Confirmed", state: "future" },
           { id: "completed", label: "Completed", state: "future" },
         ],
       };
@@ -198,6 +199,7 @@ export function getBookingProgressBehavior(status: BookingRequestStatus): Progre
         steps: [
           { id: "submitted", label: "Submitted", state: "complete" },
           { id: "under_review", label: "Under Review", state: "current" },
+          { id: "confirmed", label: "Confirmed", state: "future" },
           { id: "completed", label: "Completed", state: "future" },
         ],
       };
@@ -207,6 +209,7 @@ export function getBookingProgressBehavior(status: BookingRequestStatus): Progre
         steps: [
           { id: "submitted", label: "Submitted", state: "complete" },
           { id: "under_review", label: "Under Review", state: "complete" },
+          { id: "confirmed", label: "Confirmed", state: "complete" },
           { id: "completed", label: "Completed", state: "complete" },
         ],
       };
@@ -216,6 +219,7 @@ export function getBookingProgressBehavior(status: BookingRequestStatus): Progre
         steps: [
           { id: "submitted", label: "Submitted", state: "future" },
           { id: "under_review", label: "Under Review", state: "future" },
+          { id: "confirmed", label: "Confirmed", state: "future" },
           { id: "completed", label: "Completed", state: "future" },
         ],
       };

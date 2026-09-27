@@ -8,6 +8,7 @@
 "use client";
 
 import React from "react";
+import Image from "next/image";
 import type { BookingRequestStatus } from "@/lib/booking/types";
 import { getBookingProgressBehavior } from "../requestData";
 
@@ -22,35 +23,22 @@ export function RequestStatusProgress({ status }: RequestStatusProgressProps) {
     return (
       <div
         role="status"
-        className="p-5 sm:p-6 rounded-2xl bg-rose-50/80 border border-rose-200 flex items-start gap-4"
+        className="rounded-[20px] bg-[#c50000] px-4 py-3.5 sm:px-5 flex items-center gap-3 text-white"
       >
-        <div className="w-10 h-10 rounded-full bg-rose-100 flex items-center justify-center shrink-0 text-rose-600">
-          <svg
-            className="w-5 h-5"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
+        <div className="size-8 rounded-full bg-white/20 flex items-center justify-center shrink-0">
+          <Image
+            src="/visualization/circle-exclamation-duotone-regular-full 1.svg"
+            alt=""
+            width={20}
+            height={20}
             aria-hidden="true"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M6 18L18 6M6 6l12 12"
-            />
-          </svg>
+            className="brightness-0 invert"
+          />
         </div>
-        <div className="flex flex-col gap-1">
-          <div className="flex items-center gap-2">
-            <span className="text-base font-semibold text-rose-900">
-              Terminal State: Cancelled
-            </span>
-            <span className="px-2.5 py-0.5 text-xs font-medium rounded-full bg-rose-100 text-rose-800 border border-rose-200">
-              Cancelled
-            </span>
-          </div>
-          <p className="text-sm text-rose-700 leading-relaxed">
-            This request was closed and is no longer active. Contact GlassFit customer support if you need to submit a new inquiry.
+        <div className="flex flex-col">
+          <span className="text-sm font-medium">Request cancelled</span>
+          <p className="text-xs text-white/80 leading-snug">
+            This request is closed and no longer active.
           </p>
         </div>
       </div>
@@ -58,12 +46,8 @@ export function RequestStatusProgress({ status }: RequestStatusProgressProps) {
   }
 
   return (
-    <div className="p-5 sm:p-6 rounded-2xl bg-neutral-50/80 border border-neutral-200">
-      <h3 className="text-sm font-semibold uppercase tracking-wider text-neutral-500 mb-6">
-        Request Progress
-      </h3>
-
-      <ol className="relative flex flex-col sm:flex-row items-start justify-between gap-6 sm:gap-2">
+    <div className="w-full px-1 py-1">
+      <ol className="relative grid grid-cols-4 gap-0">
         {behavior.steps.map((step, index) => {
           const isCurrent = step.state === "current";
           const isComplete = step.state === "complete";
@@ -72,74 +56,47 @@ export function RequestStatusProgress({ status }: RequestStatusProgressProps) {
             <li
               key={step.id}
               aria-current={isCurrent ? "step" : undefined}
-              className="flex-1 relative flex sm:flex-col items-center sm:items-center text-left sm:text-center gap-3 w-full"
+              className="relative flex flex-col items-center gap-2 text-center min-w-0"
             >
-              {/* Connecting line between steps on desktop */}
               {index < behavior.steps.length - 1 && (
                 <div
                   aria-hidden="true"
-                  className={`hidden sm:block absolute top-4 left-1/2 w-full h-0.5 -z-0 ${
-                    isComplete ? "bg-emerald-500" : "bg-neutral-200"
+                  className={`absolute top-[9px] left-1/2 h-0.5 w-full ${
+                    isComplete ? "bg-[#05b64b]" : "bg-[#c3c3c3]"
                   }`}
                 />
               )}
 
-              {/* Step indicator circle */}
               <div
-                className={`relative z-10 w-9 h-9 rounded-full flex items-center justify-center text-sm font-semibold transition-colors shrink-0 ${
+                className={`relative z-10 size-5 rounded-full flex items-center justify-center shrink-0 border-[3px] bg-white ${
                   isComplete
-                    ? "bg-emerald-600 text-white shadow-sm"
+                    ? "border-[#05b64b] bg-[#05b64b]"
                     : isCurrent
-                    ? "bg-[#07b6d3] text-white ring-4 ring-[#07b6d3]/20 shadow-sm"
-                    : "bg-white text-neutral-400 border-2 border-neutral-300"
+                    ? "border-[#07b6d3]"
+                    : "border-[#c3c3c3] bg-[#c3c3c3]"
                 }`}
               >
                 {isComplete ? (
-                  <svg
-                    className="w-4 h-4"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
+                  <Image
+                    src="/send-booking/check.svg"
+                    alt=""
+                    width={14}
+                    height={14}
                     aria-hidden="true"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2.5}
-                      d="M5 13l4 4L19 7"
-                    />
-                  </svg>
-                ) : (
-                  <span>{index + 1}</span>
-                )}
+                    className="scale-[1.35]"
+                  />
+                ) : null}
               </div>
 
-              {/* Step Label and textual status badge */}
-              <div className="flex flex-col sm:items-center">
-                <span
-                  className={`text-sm font-semibold tracking-tight ${
-                    isComplete
-                      ? "text-emerald-950"
-                      : isCurrent
-                      ? "text-[#0f1422]"
-                      : "text-neutral-400"
-                  }`}
-                >
-                  {step.label}
-                </span>
-
-                <span
-                  className={`text-xs mt-0.5 font-medium ${
-                    isComplete
-                      ? "text-emerald-700"
-                      : isCurrent
-                      ? "text-[#07b6d3]"
-                      : "text-neutral-400"
-                  }`}
-                >
-                  {isComplete ? "(Completed)" : isCurrent ? "(Current Step)" : "(Upcoming)"}
-                </span>
-              </div>
+              <span className={`text-[10px] sm:text-xs leading-tight ${
+                isComplete
+                  ? "text-[#05b64b]"
+                  : isCurrent
+                  ? "text-[#07b6d3]"
+                  : "text-[#c3c3c3]"
+              }`}>
+                {step.label}
+              </span>
             </li>
           );
         })}

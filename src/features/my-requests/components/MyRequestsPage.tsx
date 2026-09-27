@@ -75,7 +75,7 @@ export function MyRequestsPage() {
       </section>
 
       {/* Main Container Area */}
-      <div className="max-w-[1200px] 2xl:max-w-[1400px] mx-auto w-full px-4 sm:px-6 lg:px-8 py-8 lg:py-12">
+      <div className="max-w-[1240px] mx-auto w-full px-4 sm:px-6 lg:px-8 py-8 lg:py-12">
         <MyRequestsContent />
       </div>
     </main>

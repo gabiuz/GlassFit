@@ -10,6 +10,7 @@
 import React, { useReducer, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { cn } from "@/lib/utils";
 import {
   CANONICAL_REQUEST_FIXTURES,
   getBookingStatusBadge,
@@ -66,15 +67,26 @@ export function MyRequestsContent({
     });
   };
 
+  const formatSubmittedAt = (isoString: string): string =>
+    new Intl.DateTimeFormat("en-US", {
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      timeZone: "Asia/Manila",
+    }).format(new Date(isoString));
+
   return (
-    <div className="flex flex-col gap-6 lg:gap-8 w-full">
+    <div className="flex flex-col items-start gap-6 sm:gap-8 w-full">
       {/* Filters Bar */}
       <div
         role="group"
         aria-label="Filter requests"
-        className="flex items-center gap-2 sm:gap-3 overflow-x-auto no-scrollbar py-1"
+        className="w-full overflow-x-auto pb-1 -mx-1 px-1"
       >
-        {FILTER_TABS.map((tab) => {
+        <div className="flex items-center gap-2 sm:gap-3 min-w-max">
+          {FILTER_TABS.map((tab) => {
           const isActive = state.activeFilter === tab;
           const count = counts[tab];
 
@@ -84,25 +96,21 @@ export function MyRequestsContent({
               type="button"
               aria-pressed={isActive}
               onClick={() => dispatch({ type: "set-filter", filter: tab })}
-              className={`min-h-[44px] px-5 py-2.5 rounded-full text-sm font-medium transition-all duration-200 shrink-0 flex items-center gap-2 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green ${
+              className={cn(
+                "px-4 sm:px-5 py-2 sm:py-2.5 rounded-[25px] flex items-center gap-2.5 sm:gap-3 whitespace-nowrap transition-[background-color,transform] duration-150 ease-[var(--ease-out)] active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]",
                 isActive
-                  ? "bg-[#0f1422] text-white shadow-sm"
-                  : "bg-white text-neutral-600 border border-neutral-200 hover:border-neutral-300 hover:bg-neutral-50"
-              }`}
+                  ? "bg-[#07b6d3] text-white shadow-xs"
+                  : "bg-[#c3c3c3] text-white hover:bg-stone-400"
+              )}
             >
-              <span>{tab}</span>
-              <span
-                className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
-                  isActive
-                    ? "bg-white/20 text-white"
-                    : "bg-neutral-100 text-neutral-600"
-                }`}
-              >
+              <span className="text-sm sm:text-base font-normal leading-snug">{tab}</span>
+              <span className="bg-white rounded-[10px] px-2 sm:px-2.5 py-[2px] text-xs text-[#0f1422] font-semibold leading-tight text-center min-w-[17px]">
                 {count}
               </span>
             </button>
           );
-        })}
+          })}
+        </div>
       </div>
 
       {/* Empty Fixture State: When no requests exist at all */}
@@ -141,9 +149,9 @@ export function MyRequestsContent({
         </div>
       ) : (
         /* Master-Detail Split Layout */
-        <div className="flex flex-col lg:flex-row gap-6 lg:gap-8 items-start w-full">
+        <div className="w-full flex flex-col xl:flex-row items-start gap-6">
           {/* Left Column: Request List */}
-          <div className="w-full lg:w-[420px] xl:w-[460px] shrink-0 flex flex-col gap-3">
+          <div className="w-full xl:w-[420px] 2xl:w-[480px] shrink-0 flex flex-col gap-4">
             {visibleRequests.length === 0 ? (
               <div className="p-8 bg-white rounded-2xl border border-neutral-200 text-center flex flex-col items-center justify-center gap-2">
                 <p className="text-sm font-semibold text-neutral-700">
@@ -158,7 +166,7 @@ export function MyRequestsContent({
                 const isSelected = req.id === state.selectedRequestId;
                 const badge = getBookingStatusBadge(req.status);
                 const itemsCountLabel = `${req.productCount} ${
-                  req.productCount === 1 ? "Item" : "Items"
+                  req.productCount === 1 ? "Product" : "Products"
                 }`;
 
                 return (
@@ -167,54 +175,34 @@ export function MyRequestsContent({
                     type="button"
                     aria-pressed={isSelected}
                     onClick={() => dispatch({ type: "select", requestId: req.id })}
-                    className={`w-full text-left p-4 sm:p-5 rounded-2xl border transition-all duration-200 flex flex-col gap-3.5 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green ${
+                    className={cn(
+                      "bg-white p-4 sm:p-5 rounded-[20px] flex flex-col gap-5 items-start w-full text-left shadow-xs border-2 transition-[border-color,transform] duration-150 ease-[var(--ease-out)] active:scale-[0.99] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]",
                       isSelected
-                        ? "bg-cyan-50/20 border-[#07b6d3] shadow-md ring-1 ring-[#07b6d3]/30"
-                        : "bg-white border-neutral-200 hover:border-neutral-300 hover:bg-neutral-50/60 shadow-xs"
-                    }`}
+                        ? "border-[#07b6d3]"
+                        : "border-transparent hover:border-neutral-200"
+                    )}
                   >
                     {/* Top Row: Reference + Status Badge */}
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-mono text-xs font-semibold text-neutral-500 tracking-wider">
+                    <div className="flex items-center justify-between gap-2 w-full">
+                      <span className="text-[#c3c3c3] text-xs sm:text-sm font-normal leading-snug">
                         {req.referenceNo}
                       </span>
                       <span
-                        className={`text-xs px-2.5 py-0.5 rounded-full font-semibold border ${badge.bgClass} ${badge.textClass} ${badge.borderClass}`}
+                        className={`text-xs px-2.5 py-[5px] rounded-[20px] font-normal border ${badge.bgClass} ${badge.textClass} ${badge.borderClass}`}
                       >
                         {badge.label}
                       </span>
                     </div>
 
-                    {/* Middle Row: Product Name + Request Icon */}
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex flex-col gap-1 min-w-0">
-                        <h4 className="text-base sm:text-lg font-semibold text-[#0f1422] truncate tracking-tight">
+                    <div className="flex flex-col gap-1 items-start w-full min-w-0">
+                        <h4 className="text-[#07b6d3] text-base sm:text-lg font-medium leading-snug truncate w-full">
                           {req.productName}
                         </h4>
-                        <div className="flex items-center gap-2 text-xs text-neutral-500 font-medium">
+                        <div className="flex flex-wrap items-center gap-x-1.5 text-xs sm:text-sm text-[#0f1422] font-normal leading-snug">
                           <span>{itemsCountLabel}</span>
                           <span>&bull;</span>
-                          <span>Submitted {formatDate(req.submittedAt)}</span>
+                          <span>Submitted: {formatSubmittedAt(req.submittedAt)}</span>
                         </div>
-                      </div>
-
-                      {/* Request Icon Treatment matching Section 6.1 */}
-                      <div
-                        className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border transition-colors ${
-                          isSelected
-                            ? "bg-white border-[#07b6d3]/40 text-[#07b6d3]"
-                            : "bg-neutral-50 border-neutral-200 text-neutral-400"
-                        }`}
-                        aria-hidden="true"
-                      >
-                        <Image
-                          src="/profile/request.svg"
-                          alt=""
-                          width={18}
-                          height={18}
-                          className="shrink-0"
-                        />
-                      </div>
                     </div>
                   </button>
                 );
@@ -223,7 +211,7 @@ export function MyRequestsContent({
           </div>
 
           {/* Right Column: Selected Request Detail Panel */}
-          <div className="w-full lg:flex-1 min-w-0">
+          <div className="w-full xl:flex-1 min-w-0">
             {!selectedRequest ? (
               <div className="p-12 bg-white rounded-3xl border border-neutral-200 shadow-xs text-center flex flex-col items-center justify-center gap-2">
                 <p className="text-base font-semibold text-neutral-700">
@@ -234,167 +222,90 @@ export function MyRequestsContent({
                 </p>
               </div>
             ) : (
-              <div className="bg-white rounded-3xl border border-neutral-200 shadow-xs p-6 sm:p-8 flex flex-col gap-6 lg:gap-8">
-                {/* Header: Reference + Title + Items + Status */}
-                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 pb-6 border-b border-neutral-100">
-                  <div className="flex flex-col gap-1.5">
-                    <span className="font-mono text-xs font-semibold text-neutral-400 uppercase tracking-widest">
-                      {selectedRequest.referenceNo}
-                    </span>
-                    <h3 className="text-2xl sm:text-3xl font-bold text-[#0f1422] tracking-tight">
+              <div className="flex-1 w-full bg-white rounded-[20px] p-5 sm:p-6 lg:p-[30px] flex flex-col gap-5 shadow-xs">
+                <div className="flex flex-row items-start justify-between gap-3 w-full">
+                  <div className="flex flex-col gap-1 min-w-0">
+                    <h3 className="text-[#0f1422] text-xl sm:text-2xl font-medium leading-tight truncate">
                       {selectedRequest.productName}
                     </h3>
-                    <p className="text-sm text-neutral-500 font-medium">
-                      {selectedRequest.productCount}{" "}
-                      {selectedRequest.productCount === 1 ? "Item" : "Items"} &bull; Submitted{" "}
-                      {formatDate(selectedRequest.submittedAt)}
-                    </p>
+                    <span className="text-[#c3c3c3] text-xs sm:text-sm font-normal leading-snug">
+                      {selectedRequest.referenceNo}
+                    </span>
                   </div>
-
-                  <div className="shrink-0">
-                    {(() => {
-                      const badge = getBookingStatusBadge(selectedRequest.status);
-                      return (
-                        <span
-                          className={`inline-block text-sm px-3.5 py-1 rounded-full font-semibold border ${badge.bgClass} ${badge.textClass} ${badge.borderClass}`}
-                        >
-                          {badge.label}
-                        </span>
-                      );
-                    })()}
-                  </div>
+                  {(() => {
+                    const badge = getBookingStatusBadge(selectedRequest.status);
+                    return (
+                      <span className={`shrink-0 text-xs px-2.5 py-[5px] rounded-[20px] font-normal border ${badge.bgClass} ${badge.textClass} ${badge.borderClass}`}>
+                        {badge.label}
+                      </span>
+                    );
+                  })()}
                 </div>
 
-                {/* Conditional Status Banner */}
                 {(() => {
                   const banner = getBookingStatusBanner(selectedRequest.status);
-
                   const bannerStyles = {
-                    cyan: "bg-[#e9f9fb] border-[#07b6d3]/40 text-[#097283]",
-                    amber: "bg-amber-50 border-amber-200 text-amber-900",
-                    green: "bg-emerald-50 border-emerald-200 text-emerald-900",
-                    red: "bg-rose-50 border-rose-200 text-rose-900",
+                    cyan: "bg-[#07b6d3] text-white",
+                    amber: "bg-[#ffc876] text-[#0f1422]",
+                    green: "bg-[#05b64b] text-white",
+                    red: "bg-[#c50000] text-white",
                   }[banner.treatment];
-
-                  const iconColor = {
-                    cyan: "text-[#07b6d3]",
-                    amber: "text-amber-600",
-                    green: "text-emerald-600",
-                    red: "text-rose-600",
-                  }[banner.treatment];
+                  const usesDarkIcon = banner.treatment === "amber";
+                  const iconSource = banner.treatment === "green"
+                    ? "/send-booking/check.svg"
+                    : "/visualization/circle-exclamation-duotone-regular-full 1.svg";
 
                   return (
-                    <div
-                      role="region"
-                      aria-label="Status notice"
-                      className={`p-4 sm:p-5 rounded-2xl border flex items-start gap-3.5 ${bannerStyles}`}
-                    >
-                      <div className={`mt-0.5 shrink-0 ${iconColor}`}>
-                        {banner.treatment === "green" ? (
-                          <svg
-                            className="w-5 h-5"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                            aria-hidden="true"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                            />
-                          </svg>
-                        ) : banner.treatment === "red" ? (
-                          <svg
-                            className="w-5 h-5"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                            aria-hidden="true"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"
-                            />
-                          </svg>
-                        ) : (
-                          <svg
-                            className="w-5 h-5"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                            aria-hidden="true"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                            />
-                          </svg>
-                        )}
+                    <div role="region" aria-label="Status notice" className={`rounded-[20px] px-4 py-4 sm:px-5 flex items-center gap-3 ${bannerStyles}`}>
+                      <div className="size-8 rounded-full bg-white/25 flex items-center justify-center shrink-0">
+                        <Image
+                          src={iconSource}
+                          alt=""
+                          width={21}
+                          height={21}
+                          aria-hidden="true"
+                          className={usesDarkIcon ? "brightness-0" : "brightness-0 invert"}
+                        />
                       </div>
-                      <div className="flex flex-col gap-0.5">
-                        <span className="text-sm font-semibold">{banner.title}</span>
-                        <p className="text-sm opacity-90 leading-relaxed">
-                          {banner.description}
-                        </p>
+                      <div className="flex flex-col">
+                        <span className="text-sm font-medium">{banner.title}</span>
+                        <p className="text-xs opacity-80 leading-snug">{banner.description}</p>
                       </div>
                     </div>
                   );
                 })()}
 
-                {/* Progress Indicator */}
                 <RequestStatusProgress status={selectedRequest.status} />
 
-                {/* Quotation Card */}
-                <div className="p-5 sm:p-6 rounded-2xl bg-neutral-50/80 border border-neutral-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-white border border-neutral-200 flex items-center justify-center shrink-0 text-[#07b6d3] shadow-2xs">
-                      <svg
-                        className="w-6 h-6"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                        aria-hidden="true"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={1.5}
-                          d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"
-                        />
-                      </svg>
-                    </div>
-                    <div className="flex flex-col min-w-0">
-                      <span className="text-sm font-semibold text-[#0f1422] truncate">
-                        {selectedRequest.quotation.filename}
-                      </span>
-                      <span className="text-xs text-neutral-500">
-                        Generated {formatDate(selectedRequest.quotation.generatedAt)}
-                      </span>
-                    </div>
+                <div className="w-full border-t border-[#e5e5e5] pt-4 flex flex-col gap-4">
+                  <div className="flex flex-col gap-0.5">
+                    <h4 className="text-[#07b6d3] text-lg sm:text-xl font-medium leading-snug">Your Visualization</h4>
+                    <p className="text-[#c3c3c3] text-xs leading-snug">The PDF you downloaded and shared</p>
                   </div>
-
-                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
-                    <button
-                      type="button"
-                      onClick={() => setIsPreviewOpen(true)}
-                      className="min-h-[44px] px-4 py-2 rounded-xl bg-white hover:bg-neutral-100 text-[#0f1422] text-sm font-medium border border-neutral-300 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green cursor-pointer"
-                    >
-                      View PDF
-                    </button>
-
-                    <div className="relative group flex flex-col">
+                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="size-16 sm:size-[72px] rounded-[16px] bg-[#f5f5f5] flex items-center justify-center shrink-0">
+                        <Image src="/admin/pdf-file.svg" alt="PDF file" width={45} height={45} />
+                      </div>
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-sm font-medium text-[#0f1422] truncate">{selectedRequest.quotation.filename}</span>
+                        <span className="text-[11px] text-[#c3c3c3]">Generated {formatDate(selectedRequest.quotation.generatedAt)}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setIsPreviewOpen(true)}
+                        className="min-h-10 px-4 rounded-[10px] bg-[#0f1422] text-white text-xs font-medium transition-transform duration-150 ease-[var(--ease-out)] active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]"
+                      >
+                        View PDF
+                      </button>
                       <button
                         type="button"
                         disabled
                         aria-disabled="true"
                         title="Download becomes available when live quotation files are connected."
-                        className="min-h-[44px] px-4 py-2 rounded-xl bg-neutral-200 text-neutral-400 text-sm font-medium cursor-not-allowed transition-colors"
+                        className="min-h-10 px-4 rounded-[10px] bg-[#07b6d3]/45 text-white text-xs font-medium cursor-not-allowed"
                       >
                         Download PDF
                       </button>
@@ -402,8 +313,8 @@ export function MyRequestsContent({
                   </div>
                 </div>
 
-                {/* Update Timeline */}
-                <RequestTimeline
+                <div className="w-full border-t border-[#e5e5e5] pt-4">
+                  <RequestTimeline
                   updates={selectedRequest.updates}
                   isExpanded={
                     state.expandedTimelineRequestId === selectedRequest.id
@@ -414,7 +325,8 @@ export function MyRequestsContent({
                       requestId: selectedRequest.id,
                     })
                   }
-                />
+                  />
+                </div>
               </div>
             )}
           </div>

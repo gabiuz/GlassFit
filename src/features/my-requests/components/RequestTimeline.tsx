@@ -27,8 +27,9 @@ export function RequestTimeline({
 
   if (totalCount === 0) {
     return (
-      <div className="p-6 rounded-2xl bg-neutral-50/80 border border-neutral-200 text-center">
-        <p className="text-sm text-neutral-500 font-medium">No request updates yet.</p>
+      <div className="flex flex-col gap-1">
+        <h3 className="text-[#07b6d3] text-lg sm:text-xl font-medium leading-snug">Request Updates</h3>
+        <p className="text-xs text-[#c3c3c3]">No request updates yet.</p>
       </div>
     );
   }
@@ -57,17 +58,15 @@ export function RequestTimeline({
   };
 
   return (
-    <div className="p-5 sm:p-6 rounded-2xl bg-white border border-neutral-200 flex flex-col gap-5">
-      <div className="flex items-center justify-between">
-        <h3 className="text-base font-semibold text-[#0f1422] tracking-tight">
-          Update History
+    <div className="flex flex-col gap-5">
+      <div className="flex flex-col gap-0.5">
+        <h3 className="text-[#07b6d3] text-lg sm:text-xl font-medium leading-snug">
+          Request Updates
         </h3>
-        <span className="text-xs font-medium text-neutral-500 bg-neutral-100 px-2.5 py-1 rounded-full">
-          {totalCount} {totalCount === 1 ? "update" : "updates"}
-        </span>
+        <p className="text-xs text-[#c3c3c3]">Track your updates</p>
       </div>
 
-      <div className="relative pl-6 sm:pl-8 flex flex-col gap-6 before:content-[''] before:absolute before:left-2 sm:before:left-3 before:top-2 before:bottom-2 before:w-0.5 before:bg-neutral-200">
+      <div className="relative pl-7 flex flex-col gap-5 before:content-[''] before:absolute before:left-[9px] before:top-2 before:bottom-2 before:w-0.5 before:bg-[#c3c3c3]">
         {displayedUpdates.map((update, idx) => {
           const isLatest = idx === 0;
 
@@ -75,39 +74,33 @@ export function RequestTimeline({
             <div key={update.id} className="relative flex flex-col gap-1">
               {/* Bullet node on timeline */}
               <div
-                className={`absolute -left-6 sm:-left-8 top-1 w-4 h-4 rounded-full border-2 bg-white transition-colors ${
+                className={`absolute -left-7 top-1 size-5 rounded-full transition-colors ${
                   isLatest
-                    ? "border-[#07b6d3] ring-4 ring-[#07b6d3]/20"
-                    : "border-neutral-300"
+                    ? "bg-[#07b6d3]"
+                    : "bg-[#c3c3c3]"
                 }`}
               />
 
-              <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-1">
-                <span className="text-sm font-semibold text-[#0f1422]">
-                  {update.title}
-                </span>
+              <div className="flex flex-col gap-0.5">
                 <time
                   dateTime={update.occurredAt}
-                  className="text-xs text-neutral-400 font-mono"
+                  className="text-sm font-medium text-[#0f1422]"
                 >
                   {formatTimestamp(update.occurredAt)}
                 </time>
+                <p className="text-xs text-[#c3c3c3] leading-snug">{update.title}</p>
               </div>
-
-              <p className="text-sm text-neutral-600 leading-relaxed">
-                {update.description}
-              </p>
             </div>
           );
         })}
       </div>
 
       {totalCount > 3 && (
-        <div className="pt-2 border-t border-neutral-100 flex justify-center">
+        <div className="flex justify-start">
           <button
             type="button"
             onClick={onToggleExpand}
-            className="min-h-[44px] px-5 py-2 inline-flex items-center gap-2 rounded-xl text-sm font-medium text-[#07b6d3] hover:text-[#097283] hover:bg-neutral-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green cursor-pointer"
+            className="min-h-10 px-3 py-2 inline-flex items-center gap-2 rounded-[10px] text-xs font-medium text-[#07b6d3] hover:bg-[#e9f9fb] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]"
           >
             <span>{isExpanded ? "Show latest updates" : "View all updates"}</span>
             <svg
