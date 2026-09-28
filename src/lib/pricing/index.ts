@@ -7,3 +7,5 @@
 
 export * from "./types";
 export * from "./pricingEngine";
+export * from "./rrdPricingEngine";
+

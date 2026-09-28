@@ -41,16 +41,29 @@ export const UpsertRawMaterialInputSchema = z.object({
     .regex(/^[a-zA-Z0-9_-]+$/, "Material code must contain only alphanumeric characters, underscores, and hyphens"),
   description: z.string().min(3, "Description is required").max(255),
   category: RawMaterialCategorySchema,
-  finish_type: RawMaterialFinishTypeSchema,
+  finish_type: z.string(),
   billing_unit: BillingUnitSchema,
   unit_price: z.number().min(0, "Unit price must be non-negative"),
   waste_allowance: z
     .number()
     .min(0, "Waste allowance must be between 0.00 and 1.00")
-    .max(1, "Waste allowance must be between 0.00 and 1.00"),
+    .max(1, "Waste allowance must be between 0.00 and 1.00")
+    .default(0.0),
   is_active: z.boolean().default(true),
+  stock_length_meters: z.number().positive().optional(),
+  stock_price_rrd: z.number().nonnegative().nullable().optional(),
+  sheet_width_ft: z.number().positive().optional(),
+  sheet_height_ft: z.number().positive().optional(),
+  is_premium_trigger: z.boolean().optional(),
+  pricing_tier: z.enum(["Standard", "Premium"]).optional(),
+  supported_thicknesses: z.array(z.number()).optional(),
 });
 export type UpsertRawMaterialInput = z.infer<typeof UpsertRawMaterialInputSchema>;
+
+export const BatchUpsertRawMaterialsInputSchema = z.object({
+  items: z.array(UpsertRawMaterialInputSchema),
+});
+export type BatchUpsertRawMaterialsInput = z.infer<typeof BatchUpsertRawMaterialsInputSchema>;
 
 export const BatchUpdateMaterialPricesInputSchema = z.object({
   updates: z.array(
@@ -61,6 +74,7 @@ export const BatchUpdateMaterialPricesInputSchema = z.object({
   ),
 });
 export type BatchUpdateMaterialPricesInput = z.infer<typeof BatchUpdateMaterialPricesInputSchema>;
+
 
 export const RawMaterialsFilterSchema = z.object({
   category: RawMaterialCategorySchema.optional(),

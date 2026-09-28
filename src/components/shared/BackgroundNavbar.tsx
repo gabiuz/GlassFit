@@ -38,9 +38,9 @@ export function BackgroundNavbar() {
         </div>
       </div>
       <div className="relative min-h-60">
-        <div className="absolute inset-0 overflow-hidden">
+        <div className="absolute inset-0 overflow-hidden bg-gradient-to-br from-[#045E6D]/15 via-white/80 to-[#045E6D]/10">
           <video
-            className="absolute inset-0 h-full w-full object-cover"
+            className="absolute inset-0 h-full w-full object-cover motion-reduce:hidden"
             autoPlay
             loop
             muted
@@ -48,7 +48,7 @@ export function BackgroundNavbar() {
           >
             <source src="/hero_video.mp4" type="video/mp4" />
           </video>
-          <div className="absolute inset-0 bg-white/70"></div>
+          <div className="absolute inset-0 bg-white/70" />
         </div>
       </div>
     </section>
