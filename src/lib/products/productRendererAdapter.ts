@@ -28,6 +28,13 @@ export function resolveRendererKey(
 export function mapDatabaseProductToCatalog(
   dbProduct: DatabaseProduct
 ): CatalogProduct {
+  const primaryUrl = getR2AssetUrl(dbProduct.catalog_image_r2_key);
+  const allUrls = (dbProduct.catalog_image_r2_keys || [])
+    .map(getR2AssetUrl)
+    .filter((url): url is string => url !== null);
+
+  const finalUrls = allUrls.length > 0 ? allUrls : primaryUrl ? [primaryUrl] : [];
+
   return {
     id: dbProduct.product_id,
     name: dbProduct.product_name,
@@ -35,7 +42,8 @@ export function mapDatabaseProductToCatalog(
     description: dbProduct.description,
     basePrice: dbProduct.base_price,
     rendererKey: resolveRendererKey(dbProduct.product_type),
-    imageUrl: getR2AssetUrl(dbProduct.catalog_image_r2_key),
+    imageUrl: primaryUrl ?? (finalUrls[0] || null),
+    imageUrls: finalUrls,
     previewGlbUrl: getR2AssetUrl(dbProduct.preview_glb_r2_key ?? null),
   };
 }

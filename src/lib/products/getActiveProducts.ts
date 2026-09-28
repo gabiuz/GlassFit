@@ -30,6 +30,7 @@ export async function getActiveProducts(): Promise<DatabaseProduct[]> {
         asset_id,
         asset_type,
         r2_object_key,
+        display_order,
         is_primary,
         status
       )
@@ -113,18 +114,18 @@ export async function getActiveProducts(): Promise<DatabaseProduct[]> {
           asset_id: string;
           asset_type: string;
           r2_object_key: string;
+          display_order?: number;
           is_primary: boolean;
           status: string;
         }>)
       : [];
 
-    const catalogImageAsset =
-      assets.find(
-        (a) =>
-          a.asset_type === "Catalog Image" &&
-          a.is_primary === true &&
-          a.status === "Active",
-      ) ?? assets.find((a) => a.asset_type === "Catalog Image" && a.status === "Active");
+    const catalogImages = assets
+      .filter((a) => a.asset_type === "Catalog Image" && a.status === "Active")
+      .sort((a, b) => (a.display_order ?? 1) - (b.display_order ?? 1));
+
+    const primaryAsset =
+      catalogImages.find((a) => a.is_primary === true) ?? catalogImages[0] ?? null;
 
     const glbAsset =
       assets.find(
@@ -140,11 +141,15 @@ export async function getActiveProducts(): Promise<DatabaseProduct[]> {
       );
 
     const catalogImageR2Key =
-      catalogImageAsset &&
-      typeof catalogImageAsset.r2_object_key === "string" &&
-      catalogImageAsset.r2_object_key.trim() !== ""
-        ? catalogImageAsset.r2_object_key
+      primaryAsset &&
+      typeof primaryAsset.r2_object_key === "string" &&
+      primaryAsset.r2_object_key.trim() !== ""
+        ? primaryAsset.r2_object_key
         : null;
+
+    const allImageKeys = catalogImages
+      .map((a) => a.r2_object_key)
+      .filter((key): key is string => typeof key === "string" && key.trim() !== "");
 
     const previewGlbR2Key =
       glbAsset &&
@@ -174,6 +179,7 @@ export async function getActiveProducts(): Promise<DatabaseProduct[]> {
           : "",
 
       catalog_image_r2_key: catalogImageR2Key,
+      catalog_image_r2_keys: allImageKeys,
       preview_glb_r2_key: previewGlbR2Key,
     });
   }

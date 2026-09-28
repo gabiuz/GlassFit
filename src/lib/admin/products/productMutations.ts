@@ -171,6 +171,7 @@ export async function getProductDraft(productId: string) {
                 byte_size,
                 r2_object_key,
                 component_id,
+                display_order,
                 is_primary,
                 status
             )

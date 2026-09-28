@@ -76,6 +76,7 @@ const mockCatalogProducts: CatalogProduct[] = [
     basePrice: 15000,
     rendererKey: null,
     imageUrl: "https://r2.glassfit.test/door.jpg",
+    imageUrls: ["https://r2.glassfit.test/door.jpg"],
     previewGlbUrl: "https://r2.glassfit.test/door.glb",
   },
   {
@@ -86,6 +87,7 @@ const mockCatalogProducts: CatalogProduct[] = [
     basePrice: 8500,
     rendererKey: "window",
     imageUrl: "https://r2.glassfit.test/awning.jpg",
+    imageUrls: ["https://r2.glassfit.test/awning.jpg"],
     previewGlbUrl: "https://r2.glassfit.test/awning.glb",
   },
 ];

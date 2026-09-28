@@ -8,6 +8,7 @@ export type ProductDetail = {
   description: string | null;
   base_price: number;
   catalog_image_url: string | null;
+  catalog_image_urls?: string[];
   preview_glb_url: string | null;
 };
 
@@ -27,8 +28,10 @@ export async function getProductById(id: string): Promise<ProductDetail | null> 
       description,
       base_price,
       product_assets (
+        asset_id,
         asset_type,
         r2_object_key,
+        display_order,
         is_primary,
         status
       )
@@ -43,18 +46,37 @@ export async function getProductById(id: string): Promise<ProductDetail | null> 
 
   const assets = Array.isArray(data.product_assets) ? data.product_assets : [];
 
-  type Asset = { asset_type: string; r2_object_key: string; is_primary: boolean; status: string };
+  type Asset = {
+    asset_id?: string;
+    asset_type: string;
+    r2_object_key: string;
+    display_order?: number;
+    is_primary: boolean;
+    status: string;
+  };
+
+  // Filter and sort all active catalog images
+  const catalogImages = (assets as Asset[])
+    .filter((a) => a.asset_type === "Catalog Image" && a.status === "Active")
+    .sort((a, b) => (a.display_order ?? 1) - (b.display_order ?? 1));
 
   // Primary catalog image
-  const catalogAsset = assets.find(
-    (a: Asset) =>
-      a.asset_type === "Catalog Image" && a.is_primary === true && a.status === "Active"
-  ) ?? null;
+  const primaryAsset = catalogImages.find((a) => a.is_primary === true) ?? catalogImages[0] ?? null;
+
+  const catalogImageUrls = catalogImages
+    .map((a) => getR2AssetUrl(a.r2_object_key))
+    .filter((url): url is string => url !== null);
 
   // Primary 3D preview GLB
-  const glbAsset = assets.find(
-    (a: Asset) =>
-      a.asset_type === "Catalog 3D Preview" && a.is_primary === true && a.status === "Active"
+  const glbAsset = (assets as Asset[]).find(
+    (a) =>
+      (a.asset_type === "Catalog 3D Preview" || a.asset_type === "Whole Model") &&
+      a.is_primary === true &&
+      a.status === "Active"
+  ) ?? (assets as Asset[]).find(
+    (a) =>
+      (a.asset_type === "Catalog 3D Preview" || a.asset_type === "Whole Model") &&
+      a.status === "Active"
   ) ?? null;
 
   const rawPrice = data.base_price;
@@ -65,13 +87,17 @@ export async function getProductById(id: string): Promise<ProductDetail | null> 
         ? parseFloat(rawPrice)
         : 0;
 
+  const primaryUrl = getR2AssetUrl(primaryAsset ? primaryAsset.r2_object_key : null);
+  const finalImageUrls = catalogImageUrls.length > 0 ? catalogImageUrls : (primaryUrl ? [primaryUrl] : []);
+
   return {
     product_id: data.product_id,
     product_name: data.product_name,
     product_type: data.product_type,
     description: typeof data.description === "string" ? data.description : null,
     base_price: price,
-    catalog_image_url: getR2AssetUrl(catalogAsset ? catalogAsset.r2_object_key : null),
+    catalog_image_url: primaryUrl ?? (finalImageUrls[0] || null),
+    catalog_image_urls: finalImageUrls,
     preview_glb_url: getR2AssetUrl(glbAsset ? glbAsset.r2_object_key : null),
   };
 }
