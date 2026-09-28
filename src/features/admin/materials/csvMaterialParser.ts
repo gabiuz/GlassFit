@@ -179,7 +179,6 @@ export function parseRawMaterialCsv(csvContent: string): CsvParseResult {
     const rawCategory = getColValue(columns, "Category", "Type");
     const rawFinish = getColValue(columns, "Finish or Color", "Finish", "Color", "Variant");
     const rawPrice = getColValue(columns, "RRD Stock Price (PHP)", "Stock Price", "RRD Price", "Price", "Unit Price", "Cost");
-    const rawSize = getColValue(columns, "Stock Size", "Size", "Dimensions", "Length");
 
     // 1. Description / Name
     const description = rawName || `Material Item ${rowIndex}`;
@@ -225,9 +224,9 @@ export function parseRawMaterialCsv(csvContent: string): CsvParseResult {
     // 5. Billing Unit & Automatic Rate Derivation
     let billingUnit: BillingUnit = "m";
     let unitPrice = stockPriceRrd;
-    let stockLengthM = STANDARD_STOCK_LENGTH_METERS;
-    let sheetWidthFt = 4.0;
-    let sheetHeightFt = 6.0;
+    const stockLengthM = STANDARD_STOCK_LENGTH_METERS;
+    const sheetWidthFt = 4.0;
+    const sheetHeightFt = 6.0;
 
     if (category === "Aluminum") {
       billingUnit = "m";

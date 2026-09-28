@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { X, TrendingUp, AlertCircle, RefreshCw } from "lucide-react";
 import type { RawMaterial, RawMaterialCategory } from "@/lib/pricing/types";
@@ -24,23 +24,35 @@ export function BatchPriceModal({
   onBatchUpdateAction,
   onSuccess,
 }: BatchPriceModalProps) {
+  if (!isOpen) return null;
+
+  return (
+    <BatchPriceModalInner
+      onClose={onClose}
+      materials={materials}
+      onBatchUpdateAction={onBatchUpdateAction}
+      onSuccess={onSuccess}
+    />
+  );
+}
+
+function BatchPriceModalInner({
+  onClose,
+  materials,
+  onBatchUpdateAction,
+  onSuccess,
+}: Omit<BatchPriceModalProps, "isOpen">) {
   const [selectedCategory, setSelectedCategory] = useState<RawMaterialCategory | "ALL">("ALL");
   const [percentageDelta, setPercentageDelta] = useState<number>(5);
-  const [priceMapStr, setPriceMapStr] = useState<Record<string, string>>({});
+  const [priceMapStr, setPriceMapStr] = useState<Record<string, string>>(() => {
+    const initialMap: Record<string, string> = {};
+    materials.forEach((m) => {
+      initialMap[m.id] = m.unit_price.toFixed(2);
+    });
+    return initialMap;
+  });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-
-  // Initialize priceMapStr with current unit prices
-  useEffect(() => {
-    if (isOpen) {
-      const initialMap: Record<string, string> = {};
-      materials.forEach((m) => {
-        initialMap[m.id] = m.unit_price.toFixed(2);
-      });
-      setPriceMapStr(initialMap);
-      setErrorMessage(null);
-    }
-  }, [isOpen, materials]);
 
   // Filter materials based on category
   const filteredMaterials = useMemo(() => {
@@ -120,8 +132,6 @@ export function BatchPriceModal({
       setIsSubmitting(false);
     }
   };
-
-  if (!isOpen) return null;
 
   const content = (
     <div
