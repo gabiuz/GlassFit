@@ -19,7 +19,10 @@ export interface RequestUpdate {
 export interface ClientRequestQuotation {
   filename: string;
   generatedAt: string;
-  availability: "prototype-only";
+  availability: "available" | "pending" | "prototype-only";
+  referenceCode: string;
+  shareableUrl: string;
+  r2ObjectKey: string | null;
 }
 
 export interface ClientRequestItem {
@@ -245,6 +248,9 @@ export const CANONICAL_REQUEST_FIXTURES: ClientRequestItem[] = [
       filename: "CF-2026-001-quotation.pdf",
       generatedAt: "2026-01-15T09:35:00+08:00",
       availability: "prototype-only",
+      referenceCode: "CF-2026-001",
+      shareableUrl: "/q/CF-2026-001",
+      r2ObjectKey: null,
     },
     // Deliberately out-of-order stored updates per Appendix A: U1-3, U1-1, U1-5, U1-2, U1-4
     updates: [
@@ -291,6 +297,9 @@ export const CANONICAL_REQUEST_FIXTURES: ClientRequestItem[] = [
       filename: "CF-2026-002-quotation.pdf",
       generatedAt: "2026-01-10T14:20:00+08:00",
       availability: "prototype-only",
+      referenceCode: "CF-2026-002",
+      shareableUrl: "/q/CF-2026-002",
+      r2ObjectKey: null,
     },
     updates: [
       {
@@ -318,6 +327,9 @@ export const CANONICAL_REQUEST_FIXTURES: ClientRequestItem[] = [
       filename: "CF-2026-003-quotation.pdf",
       generatedAt: "2026-01-05T11:05:00+08:00",
       availability: "prototype-only",
+      referenceCode: "CF-2026-003",
+      shareableUrl: "/q/CF-2026-003",
+      r2ObjectKey: null,
     },
     updates: [
       {
@@ -357,6 +369,9 @@ export const CANONICAL_REQUEST_FIXTURES: ClientRequestItem[] = [
       filename: "CF-2026-004-quotation.pdf",
       generatedAt: "2025-12-28T16:50:00+08:00",
       availability: "prototype-only",
+      referenceCode: "CF-2026-004",
+      shareableUrl: "/q/CF-2026-004",
+      r2ObjectKey: null,
     },
     updates: [],
   },
@@ -371,6 +386,9 @@ export const CANONICAL_REQUEST_FIXTURES: ClientRequestItem[] = [
       filename: "CF-2026-005-quotation.pdf",
       generatedAt: "2025-12-20T10:05:00+08:00",
       availability: "prototype-only",
+      referenceCode: "CF-2026-005",
+      shareableUrl: "/q/CF-2026-005",
+      r2ObjectKey: null,
     },
     updates: [
       {

@@ -1,13 +1,14 @@
 /**
- * Accessible Prototype Quotation Preview Dialog (IMP-MS19)
+ * Accessible Quotation Preview Dialog (IMP-MS20)
  *
- * Traceability: PRD-F12, PRD-F17, SDD-C10, DSD-UI12, QAD-TC32
- * Compliance: BAN-TYPE-05 (Zero any), BAN-PUNCT-01 (Zero em-dashes)
+ * Traceability: PRD-F12, PRD-F17, SDD-C10, DSD-UI12, QAD-TC32, QAD-TC33
+ * Compliance: BAN-TYPE-05 (Zero any), BAN-PUNCT-01 (Zero em-dashes), BAN-UI-09 (Strict UI consistency)
  */
 
 "use client";
 
 import React, { useEffect, useRef } from "react";
+import Link from "next/link";
 import type { ClientRequestQuotation } from "../requestData";
 
 interface QuotationPreviewDialogProps {
@@ -80,6 +81,9 @@ export function QuotationPreviewDialog({
     return null;
   }
 
+  const isLive = quotation.availability === "available";
+  const isPending = quotation.availability === "pending";
+
   return (
     <div
       role="presentation"
@@ -132,7 +136,7 @@ export function QuotationPreviewDialog({
           </button>
         </div>
 
-        {/* Prototype PDF Canvas Mockup */}
+        {/* PDF Canvas Mockup */}
         <div className="flex flex-col items-center justify-center p-8 bg-neutral-50 border-2 border-dashed border-neutral-300 rounded-xl text-center gap-3">
           <div className="w-14 h-14 rounded-full bg-cyan-50 flex items-center justify-center text-green">
             <svg
@@ -160,21 +164,51 @@ export function QuotationPreviewDialog({
               })}
             </p>
           </div>
-          <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-800 border border-amber-200">
-            <svg className="w-3.5 h-3.5 shrink-0" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
-              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-            </svg>
-            Prototype Preview Only
-          </div>
+          {isLive ? (
+            <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-green/10 text-[#05b64b] border border-green/20">
+              <svg className="w-3.5 h-3.5 shrink-0" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+              </svg>
+              Live Consultation Quotation
+            </div>
+          ) : isPending ? (
+            <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-800 border border-amber-200">
+              <svg className="w-3.5 h-3.5 shrink-0" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+              </svg>
+              Quotation In Preparation
+            </div>
+          ) : (
+            <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-800 border border-amber-200">
+              <svg className="w-3.5 h-3.5 shrink-0" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+              </svg>
+              Prototype Preview Only
+            </div>
+          )}
         </div>
 
         {/* Notice Description */}
         <p id="quotation-dialog-description" className="text-sm text-neutral-600 leading-relaxed text-center">
-          Live quotation PDF preview will be available in a future update. Download becomes available when live quotation files are connected.
+          {isLive
+            ? "You can view the full interactive quotation and Bill of Materials breakdown online."
+            : isPending
+            ? "Your quotation document is currently being prepared by our team."
+            : "Live quotation PDF preview will be available in a future update. Download becomes available when live quotation files are connected."}
         </p>
 
         {/* Actions */}
         <div className="flex flex-col sm:flex-row gap-3 justify-end pt-2 border-t border-neutral-100">
+          {isLive && (
+            <Link
+              href={`/q/${referenceNo}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="min-h-[44px] px-5 py-2.5 rounded-xl bg-[#0f1422] hover:bg-neutral-800 text-white text-sm font-medium inline-flex items-center justify-center gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green"
+            >
+              Open Consultation Viewer
+            </Link>
+          )}
           <button
             type="button"
             onClick={onClose}

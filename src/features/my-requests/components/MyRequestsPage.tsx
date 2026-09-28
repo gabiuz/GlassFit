@@ -1,12 +1,14 @@
 /**
- * My Requests Page Shell and Hero Composition (IMP-MS19)
+ * My Requests Page Shell and Hero Composition (IMP-MS20)
  *
- * Traceability: PRD-F12, PRD-F17, SDD-C10, DSD-UI12, ERD-E2, QAD-TC32
- * Compliance: BAN-TYPE-05 (Zero any), BAN-PUNCT-01 (Zero em-dashes)
+ * Traceability: PRD-F12, PRD-F17, SDD-C10, DSD-UI12, ERD-E2, ERD-E16, QAD-TC32, QAD-TC33
+ * Compliance: BAN-TYPE-05 (Zero any), BAN-PUNCT-01 (Zero em-dashes), BAN-RLS-07 (Strict RLS)
  */
 
 import React from "react";
 import Image from "next/image";
+import { getClientMyRequests } from "../clientRequestQueries";
+import { mapBookingRequestRowToClientItem } from "../clientRequestMapper";
 import { MyRequestsContent } from "./MyRequestsContent";
 
 const contactItems = [
@@ -27,7 +29,17 @@ const contactItems = [
   },
 ];
 
-export function MyRequestsPage() {
+export async function MyRequestsPage() {
+  const { data, error } = await getClientMyRequests();
+
+  const loadError = error
+    ? "Unable to load your consultation requests at this time."
+    : null;
+
+  const initialRequests = data
+    ? data.map(mapBookingRequestRowToClientItem)
+    : [];
+
   return (
     <main className="min-h-screen bg-[#fafbfc] flex flex-col">
       {/* Top Contact Bar */}
@@ -76,7 +88,10 @@ export function MyRequestsPage() {
 
       {/* Main Container Area */}
       <div className="max-w-[1240px] mx-auto w-full px-4 sm:px-6 lg:px-8 py-8 lg:py-12">
-        <MyRequestsContent />
+        <MyRequestsContent
+          initialRequests={initialRequests}
+          loadError={loadError}
+        />
       </div>
     </main>
   );

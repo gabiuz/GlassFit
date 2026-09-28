@@ -1,15 +1,16 @@
 /**
- * My Requests Interactive Island (IMP-MS19)
+ * My Requests Interactive Island (IMP-MS20)
  *
- * Traceability: PRD-F12, PRD-F17, SDD-C10, DSD-UI12, ERD-E2, QAD-TC32
- * Compliance: BAN-TYPE-05 (Zero any), BAN-PUNCT-01 (Zero em-dashes)
+ * Traceability: PRD-F12, PRD-F17, SDD-C10, DSD-UI12, ERD-E2, QAD-TC32, QAD-TC33
+ * Compliance: BAN-TYPE-05 (Zero any), BAN-PUNCT-01 (Zero em-dashes), BAN-UI-09 (Strict UI consistency)
  */
 
 "use client";
 
-import React, { useReducer, useState } from "react";
+import React, { useEffect, useReducer, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
   CANONICAL_REQUEST_FIXTURES,
@@ -33,9 +34,12 @@ const FILTER_TABS: RequestFilter[] = ["All", "Active", "Completed", "Cancelled"]
 
 export function MyRequestsContent({
   initialRequests = CANONICAL_REQUEST_FIXTURES,
+  loadError = null,
 }: {
   initialRequests?: ClientRequestItem[];
+  loadError?: string | null;
 }) {
+  const router = useRouter();
   const [state, dispatch] = useReducer(
     requestReducer,
     initialRequests,
@@ -43,6 +47,10 @@ export function MyRequestsContent({
   );
 
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+
+  useEffect(() => {
+    dispatch({ type: "sync-requests", requests: initialRequests });
+  }, [initialRequests]);
 
   const counts = getFilterCounts(state.requests);
   const visibleRequests = filterRequests(state.requests, state.activeFilter);
@@ -79,6 +87,36 @@ export function MyRequestsContent({
 
   return (
     <div className="flex flex-col items-start gap-6 sm:gap-8 w-full">
+      {/* Database Query Failure Alert */}
+      {loadError && (
+        <div
+          role="alert"
+          aria-live="assertive"
+          className="w-full rounded-[20px] bg-[#c50000] px-4 py-4 sm:px-5 text-white flex items-center justify-between gap-4 shadow-xs"
+        >
+          <div className="flex items-center gap-3">
+            <div className="size-8 rounded-full bg-white/25 flex items-center justify-center shrink-0">
+              <Image
+                src="/visualization/circle-exclamation-duotone-regular-full 1.svg"
+                alt=""
+                width={21}
+                height={21}
+                aria-hidden="true"
+                className="brightness-0 invert"
+              />
+            </div>
+            <p className="text-sm font-medium leading-snug">{loadError}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => router.refresh()}
+            className="min-h-10 px-4 rounded-[10px] bg-white text-[#0f1422] text-xs font-semibold hover:bg-neutral-100 transition-colors shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       {/* Filters Bar */}
       <div
         role="group"
@@ -87,35 +125,35 @@ export function MyRequestsContent({
       >
         <div className="flex items-center gap-2 sm:gap-3 min-w-max">
           {FILTER_TABS.map((tab) => {
-          const isActive = state.activeFilter === tab;
-          const count = counts[tab];
+            const isActive = state.activeFilter === tab;
+            const count = counts[tab];
 
-          return (
-            <button
-              key={tab}
-              type="button"
-              aria-pressed={isActive}
-              onClick={() => dispatch({ type: "set-filter", filter: tab })}
-              className={cn(
-                "px-4 sm:px-5 py-2 sm:py-2.5 rounded-[25px] flex items-center gap-2.5 sm:gap-3 whitespace-nowrap transition-[background-color,transform] duration-150 ease-[var(--ease-out)] active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]",
-                isActive
-                  ? "bg-[#07b6d3] text-white shadow-xs"
-                  : "bg-[#c3c3c3] text-white hover:bg-stone-400"
-              )}
-            >
-              <span className="text-sm sm:text-base font-normal leading-snug">{tab}</span>
-              <span className="bg-white rounded-[10px] px-2 sm:px-2.5 py-[2px] text-xs text-[#0f1422] font-semibold leading-tight text-center min-w-[17px]">
-                {count}
-              </span>
-            </button>
-          );
+            return (
+              <button
+                key={tab}
+                type="button"
+                aria-pressed={isActive}
+                onClick={() => dispatch({ type: "set-filter", filter: tab })}
+                className={cn(
+                  "px-4 sm:px-5 py-2 sm:py-2.5 rounded-[25px] flex items-center gap-2.5 sm:gap-3 whitespace-nowrap transition-[background-color,transform] duration-150 ease-[var(--ease-out)] active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]",
+                  isActive
+                    ? "bg-[#07b6d3] text-white shadow-xs"
+                    : "bg-[#c3c3c3] text-white hover:bg-stone-400"
+                )}
+              >
+                <span className="text-sm sm:text-base font-normal leading-snug">{tab}</span>
+                <span className="bg-white rounded-[10px] px-2 sm:px-2.5 py-[2px] text-xs text-[#0f1422] font-semibold leading-tight text-center min-w-[17px]">
+                  {count}
+                </span>
+              </button>
+            );
           })}
         </div>
       </div>
 
-      {/* Empty Fixture State: When no requests exist at all */}
+      {/* Empty State: When no requests exist at all */}
       {state.requests.length === 0 ? (
-        <div className="flex flex-col items-center justify-center p-12 bg-white rounded-3xl border border-neutral-200 shadow-xs text-center gap-4">
+        <div className="flex flex-col items-center justify-center p-12 bg-white rounded-3xl border border-neutral-200 shadow-xs text-center gap-4 w-full">
           <div className="w-16 h-16 rounded-full bg-cyan-50 text-[#07b6d3] flex items-center justify-center">
             <svg
               className="w-8 h-8"
@@ -195,14 +233,14 @@ export function MyRequestsContent({
                     </div>
 
                     <div className="flex flex-col gap-1 items-start w-full min-w-0">
-                        <h4 className="text-[#07b6d3] text-base sm:text-lg font-medium leading-snug truncate w-full">
-                          {req.productName}
-                        </h4>
-                        <div className="flex flex-wrap items-center gap-x-1.5 text-xs sm:text-sm text-[#0f1422] font-normal leading-snug">
-                          <span>{itemsCountLabel}</span>
-                          <span>&bull;</span>
-                          <span>Submitted: {formatSubmittedAt(req.submittedAt)}</span>
-                        </div>
+                      <h4 className="text-[#07b6d3] text-base sm:text-lg font-medium leading-snug truncate w-full">
+                        {req.productName}
+                      </h4>
+                      <div className="flex flex-wrap items-center gap-x-1.5 text-xs sm:text-sm text-[#0f1422] font-normal leading-snug">
+                        <span>{itemsCountLabel}</span>
+                        <span>&bull;</span>
+                        <span>Submitted: {formatSubmittedAt(req.submittedAt)}</span>
+                      </div>
                     </div>
                   </button>
                 );
@@ -300,31 +338,41 @@ export function MyRequestsContent({
                       >
                         View PDF
                       </button>
-                      <button
-                        type="button"
-                        disabled
-                        aria-disabled="true"
-                        title="Download becomes available when live quotation files are connected."
-                        className="min-h-10 px-4 rounded-[10px] bg-[#07b6d3]/45 text-white text-xs font-medium cursor-not-allowed"
-                      >
-                        Download PDF
-                      </button>
+                      {selectedRequest.quotation.r2ObjectKey ? (
+                        <a
+                          href={`/api/quotations/download?key=${encodeURIComponent(selectedRequest.quotation.r2ObjectKey)}`}
+                          download={selectedRequest.quotation.filename}
+                          className="min-h-10 px-4 rounded-[10px] bg-[#07b6d3] hover:bg-[#069db6] text-white text-xs font-medium inline-flex items-center justify-center transition-[background-color,transform] duration-150 ease-[var(--ease-out)] active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]"
+                        >
+                          Download PDF
+                        </a>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled
+                          aria-disabled="true"
+                          title="PDF document is being prepared by our system."
+                          className="min-h-10 px-4 rounded-[10px] bg-[#07b6d3]/45 text-white text-xs font-medium cursor-not-allowed"
+                        >
+                          Download PDF
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
 
                 <div className="w-full border-t border-[#e5e5e5] pt-4">
                   <RequestTimeline
-                  updates={selectedRequest.updates}
-                  isExpanded={
-                    state.expandedTimelineRequestId === selectedRequest.id
-                  }
-                  onToggleExpand={() =>
-                    dispatch({
-                      type: "toggle-timeline",
-                      requestId: selectedRequest.id,
-                    })
-                  }
+                    updates={selectedRequest.updates}
+                    isExpanded={
+                      state.expandedTimelineRequestId === selectedRequest.id
+                    }
+                    onToggleExpand={() =>
+                      dispatch({
+                        type: "toggle-timeline",
+                        requestId: selectedRequest.id,
+                      })
+                    }
                   />
                 </div>
               </div>
@@ -333,7 +381,7 @@ export function MyRequestsContent({
         </div>
       )}
 
-      {/* Prototype Preview Dialog */}
+      {/* Accessible Quotation Preview Dialog */}
       <QuotationPreviewDialog
         isOpen={isPreviewOpen}
         onClose={() => setIsPreviewOpen(false)}

@@ -22,7 +22,8 @@ export interface RequestState {
 export type RequestAction =
   | { type: "select"; requestId: string }
   | { type: "set-filter"; filter: RequestFilter }
-  | { type: "toggle-timeline"; requestId: string };
+  | { type: "toggle-timeline"; requestId: string }
+  | { type: "sync-requests"; requests: ClientRequestItem[] };
 
 /**
  * Filters request items according to canonical filter rules.
@@ -143,6 +144,28 @@ export function requestReducer(
       return {
         ...state,
         expandedTimelineRequestId: isCurrentlyExpanded ? null : action.requestId,
+      };
+    }
+    case "sync-requests": {
+      const visibleRequests = filterRequests(action.requests, state.activeFilter);
+      const isCurrentSelectionVisible = visibleRequests.some(
+        (item) => item.id === state.selectedRequestId
+      );
+
+      let nextSelectedId = state.selectedRequestId;
+      if (!isCurrentSelectionVisible) {
+        nextSelectedId = visibleRequests.length > 0 ? visibleRequests[0].id : "";
+      }
+
+      const selectionChanged = nextSelectedId !== state.selectedRequestId;
+
+      return {
+        ...state,
+        requests: action.requests,
+        selectedRequestId: nextSelectedId,
+        expandedTimelineRequestId: selectionChanged
+          ? null
+          : state.expandedTimelineRequestId,
       };
     }
     default:

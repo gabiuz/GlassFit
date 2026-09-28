@@ -211,4 +211,40 @@ describe("IMP-MS19: My Requests State and Mappings", () => {
       }
     );
   });
+
+  it("TC-14: sync-requests action preserves selected request or falls back to first visible", () => {
+    let state = createInitialRequestState(CANONICAL_REQUEST_FIXTURES);
+    const selectedId = CANONICAL_REQUEST_FIXTURES[0].id;
+    assert.strictEqual(state.selectedRequestId, selectedId);
+
+    // Sync with same requests retains selection and active filter
+    state = requestReducer(state, {
+      type: "sync-requests",
+      requests: [...CANONICAL_REQUEST_FIXTURES],
+    });
+    assert.strictEqual(state.selectedRequestId, selectedId);
+
+    // Filter to Completed (where CF-2026-003 is selected)
+    state = requestReducer(state, { type: "set-filter", filter: "Completed" });
+    assert.strictEqual(state.selectedRequestId, CANONICAL_REQUEST_FIXTURES[2].id);
+
+    // If new request list removes CF-2026-003, fallback to CF-2026-004 (next completed request)
+    const updatedList = CANONICAL_REQUEST_FIXTURES.filter(
+      (r) => r.id !== CANONICAL_REQUEST_FIXTURES[2].id
+    );
+    state = requestReducer(state, {
+      type: "sync-requests",
+      requests: updatedList,
+    });
+    assert.strictEqual(state.selectedRequestId, CANONICAL_REQUEST_FIXTURES[3].id);
+
+    // If active filter has zero items after sync, selectedRequestId is empty
+    state = requestReducer(state, {
+      type: "sync-requests",
+      requests: CANONICAL_REQUEST_FIXTURES.filter((r) => r.status === "Pending"),
+    });
+    assert.strictEqual(state.selectedRequestId, "");
+    assert.strictEqual(getSelectedRequest(state), null);
+  });
 });
+
