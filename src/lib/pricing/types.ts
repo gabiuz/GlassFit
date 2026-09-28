@@ -43,6 +43,9 @@ export const BillingUnitSchema = z.enum([
 ]);
 export type BillingUnit = z.infer<typeof BillingUnitSchema>;
 
+export const GlassBillingUnitSchema = z.enum(["sqm", "pc"]);
+export type GlassBillingUnit = z.infer<typeof GlassBillingUnitSchema>;
+
 export const PricingTierSchema = z.enum(["Standard", "Premium"]);
 export type PricingTier = z.infer<typeof PricingTierSchema>;
 
@@ -267,6 +270,7 @@ export const FrozenPricingDetailsSchema = z.object({
   contractor_margin: z.number(),
   margin_rate: z.number(),
   total_estimate: z.number(),
+  admin_labor_charge: z.number().optional(),
 });
 export type FrozenPricingDetails = z.infer<typeof FrozenPricingDetailsSchema>;
 

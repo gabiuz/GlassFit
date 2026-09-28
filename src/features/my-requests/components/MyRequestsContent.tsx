@@ -338,10 +338,11 @@ export function MyRequestsContent({
                       >
                         View PDF
                       </button>
-                      {selectedRequest.quotation.r2ObjectKey ? (
+                      {selectedRequest.quotation.availability === "available" ? (
                         <a
-                          href={`/api/quotations/download?key=${encodeURIComponent(selectedRequest.quotation.r2ObjectKey)}`}
-                          download={selectedRequest.quotation.filename}
+                          href={`/api/quotations/download?code=${encodeURIComponent(selectedRequest.referenceNo)}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
                           className="min-h-10 px-4 rounded-[10px] bg-[#07b6d3] hover:bg-[#069db6] text-white text-xs font-medium inline-flex items-center justify-center transition-[background-color,transform] duration-150 ease-[var(--ease-out)] active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]"
                         >
                           Download PDF

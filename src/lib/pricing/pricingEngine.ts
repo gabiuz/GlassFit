@@ -50,13 +50,14 @@ export interface CalculateBOMOptions {
 
 export const DEFAULT_AL_SCRAP = 0.12;
 export const DEFAULT_GL_SCRAP = 0.10;
-export const DEFAULT_LABOR_FLOOR = 750.00;
-export const DEFAULT_LABOR_RATE = 0.25;
-export const DEFAULT_MARGIN_RATE = 0.25;
+export const DEFAULT_LABOR_FLOOR = 0.00;
+export const DEFAULT_LABOR_RATE = 0.00;
+export const DEFAULT_MARGIN_RATE = 0.00;
 
 /**
  * Pure parametric Bill-of-Materials calculation engine.
- * Computes 1D extrusions, 2D glass, O(1) hardware/consumables, Option A labor, and 25% margin.
+ * Computes 1D extrusions, 2D sheet or per-piece glass, O(1) hardware/consumables,
+ * and outputs strictly raw product fabrication prices without automated markups (IMP-MS24).
  */
 export function calculateParametricBOM(
   components: ComponentPricingInput[],
@@ -105,24 +106,29 @@ export function calculateParametricBOM(
     let computedQty = 0;
     let unitLabel = mat ? mat.billing_unit : "pc";
 
-    switch (comp.dimensionBinding) {
-      case "WIDTH":
-        computedQty = widthM * comp.spanRatio * comp.baseQuantity;
-        unitLabel = "m";
-        break;
-      case "HEIGHT":
-        computedQty = heightM * comp.spanRatio * comp.baseQuantity;
-        unitLabel = "m";
-        break;
-      case "AREA":
-        computedQty = widthM * heightM * comp.spanRatio * comp.baseQuantity;
-        unitLabel = "sqm";
-        break;
-      case "FIXED":
-      default:
-        computedQty = comp.baseQuantity;
-        unitLabel = mat ? mat.billing_unit : "pc";
-        break;
+    if (mat && mat.category === "Glass" && mat.billing_unit === "pc") {
+      computedQty = comp.baseQuantity;
+      unitLabel = "pc";
+    } else {
+      switch (comp.dimensionBinding) {
+        case "WIDTH":
+          computedQty = widthM * comp.spanRatio * comp.baseQuantity;
+          unitLabel = "m";
+          break;
+        case "HEIGHT":
+          computedQty = heightM * comp.spanRatio * comp.baseQuantity;
+          unitLabel = "m";
+          break;
+        case "AREA":
+          computedQty = widthM * heightM * comp.spanRatio * comp.baseQuantity;
+          unitLabel = "sqm";
+          break;
+        case "FIXED":
+        default:
+          computedQty = comp.baseQuantity;
+          unitLabel = mat ? mat.billing_unit : "pc";
+          break;
+      }
     }
 
     const itemSubtotal = round2(computedQty * unitPrice);
@@ -169,7 +175,8 @@ export function calculateParametricBOM(
 
   let scrapGlazingSubtotal = 0;
   for (const item of glazingItems) {
-    const itemScrapRate = typeof item.waste_factor === "number" && item.waste_factor >= 0 ? item.waste_factor : glScrap;
+    const defaultGlScrap = item.unit === "pc" ? 0.0 : glScrap;
+    const itemScrapRate = typeof item.waste_factor === "number" && item.waste_factor >= 0 ? item.waste_factor : defaultGlScrap;
     scrapGlazingSubtotal += item.subtotal * itemScrapRate;
   }
   scrapGlazingSubtotal = round2(scrapGlazingSubtotal);
@@ -179,15 +186,15 @@ export function calculateParametricBOM(
     effectiveFramingCost + effectiveGlazingCost + hardwareSubtotal + consumablesSubtotal
   );
 
-  // Workshop Labor (Option A: max(laborFloor, laborRate * directMaterialsSubtotal))
-  const rawLabor = round2(directMaterialsSubtotal * laborRate);
-  const fabricationLaborCost = Math.max(laborFloor, rawLabor);
+  // Per IMP-MS24: Customer quotation reflects raw product price without automated labor/margin additions
+  const rawLabor = laborRate > 0 ? round2(directMaterialsSubtotal * laborRate) : 0.00;
+  const fabricationLaborCost = laborRate > 0 || laborFloor > 0 ? Math.max(laborFloor, rawLabor) : 0.00;
 
   // Total Direct Manufacturing Cost
   const totalDirectCost = round2(directMaterialsSubtotal + fabricationLaborCost);
 
   // Contractor Gross Margin & Final Quotation
-  const contractorMargin = round2(totalDirectCost * marginRate);
+  const contractorMargin = marginRate > 0 ? round2(totalDirectCost * marginRate) : 0.00;
   const finalQuotation = round2(totalDirectCost + contractorMargin);
 
   // Compile Frozen Snapshot for Quotation Items
@@ -218,6 +225,9 @@ export function calculateParametricBOM(
     total_estimate: finalQuotation,
   };
 
+  const totalGlazingQty = glazingAreaSqm > 0 ? round2(glazingAreaSqm) : (glazingItems.reduce((sum, g) => sum + g.quantity, 0) || 1);
+  const glazingUnit = glazingAreaSqm > 0 ? "sqm" : "pc";
+
   const groups: QuotationBOMGroupItem[] = [
     {
       item_group_name: "Aluminum Framing",
@@ -230,9 +240,9 @@ export function calculateParametricBOM(
     },
     {
       item_group_name: "Glass Infill",
-      quantity: round2(glazingAreaSqm),
-      unit_label: "sqm",
-      unit_price: round2(effectiveGlazingCost / (glazingAreaSqm || 1)),
+      quantity: totalGlazingQty,
+      unit_label: glazingUnit,
+      unit_price: round2(effectiveGlazingCost / (totalGlazingQty || 1)),
       estimated_subtotal: effectiveGlazingCost,
       structural_waiver: options.structuralWaiver ?? false,
       pricing_details: frozenDetails,
@@ -340,6 +350,9 @@ export function calculateStandardSeries798(params: {
   finishType?: "Analok" | "PowderCoatedWhite";
   glassType?: "6mm_bronze" | "6mm_clear" | "6mm_tempered";
   structuralWaiver?: boolean;
+  laborFloor?: number;
+  laborRate?: number;
+  contractorMarginRate?: number;
 }): CalculatedBOMResult {
   const isPCW = params.finishType === "PowderCoatedWhite";
   const panelCount = params.panelCount ?? (params.widthMm >= 2400 ? 3 : 2);
@@ -554,6 +567,9 @@ export function calculateStandardSeries798(params: {
     panelCount,
     hasSill,
     structuralWaiver: params.structuralWaiver ?? false,
+    laborFloor: params.laborFloor,
+    laborRate: params.laborRate,
+    contractorMarginRate: params.contractorMarginRate,
   });
 }
 

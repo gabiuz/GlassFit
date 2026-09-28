@@ -87,8 +87,15 @@ export function generateQuotationPdfHtml(metadata: QuotationPdfMetadata | Quotat
     const legacyHtml = generateQuotationPdfHtml(canonicalToLegacy(metadata));
     const priceByItem = new Map(metadata.itemPricing.map((item) => [item.itemId, item.effectiveSubtotal]));
     const fixtures = metadata.items.map((item) => canonicalGroupsTable(item, priceByItem.get(item.itemId) ?? item.calculatedSubtotal)).join("");
+    const laborDiff = Math.max(0, metadata.effectiveFinalPrice - metadata.pricing.directMaterialsSubtotal);
+    const laborRow = metadata.isPriceModified && laborDiff > 0
+      ? `<tr><td>Professional Installation &amp; Site Labor (Admin Confirmed)</td><td>${money(laborDiff)}</td></tr>`
+      : `<tr><td>Installation &amp; Site Labor</td><td style="font-style:italic;color:#64748b;">To be assessed upon consultation</td></tr>`;
     return legacyHtml
-      .replace(/<h2>Itemized quotation breakdown<\/h2>[\s\S]*?<table class="total-table">[\s\S]*?<\/table>/, `<h2>Configuration and final prices</h2>${fixtures}<table class="total-table"><tr class="grand-total-row"><td>Grand total</td><td>${money(metadata.effectiveFinalPrice)}</td></tr></table>`);
+      .replace(
+        /<h2>Itemized quotation breakdown<\/h2>[\s\S]*?<table class="total-table">[\s\S]*?<\/table>/,
+        `<h2>Configuration and final prices</h2>${fixtures}<table class="total-table"><tr><td>Raw product fabrication subtotal</td><td>${money(metadata.pricing.directMaterialsSubtotal)}</td></tr>${laborRow}<tr class="grand-total-row"><td>Grand total</td><td>${money(metadata.effectiveFinalPrice)}</td></tr></table>`
+      );
   }
   const items = metadata.items ?? [];
   const isMulti = items.length > 1 && Boolean(metadata.consolidatedSummary);

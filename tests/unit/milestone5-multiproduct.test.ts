@@ -2,7 +2,6 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   calculateOverlayPricing,
-  calculateStandardSeries798,
   aggregateMultiProductBOM,
 } from "../../src/lib/pricing/pricingEngine";
 import { generateQuotationPdfHtml } from "../../src/lib/pricing/quotationPdfGenerator";

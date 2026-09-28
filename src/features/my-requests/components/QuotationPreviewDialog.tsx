@@ -200,14 +200,24 @@ export function QuotationPreviewDialog({
         {/* Actions */}
         <div className="flex flex-col sm:flex-row gap-3 justify-end pt-2 border-t border-neutral-100">
           {isLive && (
-            <Link
-              href={`/q/${referenceNo}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="min-h-[44px] px-5 py-2.5 rounded-xl bg-[#0f1422] hover:bg-neutral-800 text-white text-sm font-medium inline-flex items-center justify-center gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green"
-            >
-              Open Consultation Viewer
-            </Link>
+            <>
+              <a
+                href={`/api/quotations/download?code=${encodeURIComponent(referenceNo)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="min-h-[44px] px-5 py-2.5 rounded-xl bg-[#07b6d3] hover:bg-cyan-600 text-white text-sm font-medium inline-flex items-center justify-center gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#07b6d3]"
+              >
+                View &amp; Print PDF
+              </a>
+              <Link
+                href={`/q/${referenceNo}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="min-h-[44px] px-5 py-2.5 rounded-xl bg-[#0f1422] hover:bg-neutral-800 text-white text-sm font-medium inline-flex items-center justify-center gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green"
+              >
+                Open Consultation Viewer
+              </Link>
+            </>
           )}
           <button
             type="button"

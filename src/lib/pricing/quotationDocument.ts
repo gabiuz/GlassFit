@@ -244,8 +244,29 @@ export interface QuotationDocumentViewModel extends QuotationDocumentSnapshotV1 
 export function createQuotationDocumentViewModel(snapshot: QuotationDocumentSnapshotV1, runtime: {
   brandLogoUrl: string; shareableUrl: string; snapshotImageUrl: string | null; allowedImageOrigins: string[]; negotiatedAmount: number | null; itemPriceOverrides?: QuotationItemPriceOverridesV1 | null;
 }): QuotationDocumentViewModel {
-  const pricing = deriveQuotationPricingFromItems(snapshot, runtime.itemPriceOverrides ?? null);
-  return { ...snapshot, ...runtime, ...pricing };
+  const itemPricingResult = deriveQuotationPricingFromItems(snapshot, runtime.itemPriceOverrides ?? null);
+  let effectiveFinalPrice = itemPricingResult.effectiveFinalPrice;
+  let negotiatedFinalPrice = itemPricingResult.negotiatedFinalPrice;
+  let isPriceModified = itemPricingResult.isPriceModified;
+
+  if (runtime.negotiatedAmount !== null && runtime.negotiatedAmount !== undefined) {
+    const negotiatedCents = Math.round(Number(runtime.negotiatedAmount) * 100);
+    const calculatedCents = Math.round(itemPricingResult.calculatedFinalPrice * 100);
+    if (negotiatedCents !== calculatedCents) {
+      negotiatedFinalPrice = negotiatedCents / 100;
+      effectiveFinalPrice = negotiatedCents / 100;
+      isPriceModified = true;
+    }
+  }
+
+  return {
+    ...snapshot,
+    ...runtime,
+    ...itemPricingResult,
+    negotiatedFinalPrice,
+    effectiveFinalPrice,
+    isPriceModified,
+  };
 }
 
 export interface LegacyQuotationRow { item_name: string; item_group_name?: string; quantity: number; unit: string; unit_price: number; estimated_subtotal: number; pricing_details: Record<string, unknown> | null; }

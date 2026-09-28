@@ -11,7 +11,7 @@ import {
   type BookingStatus,
 } from "./bookingData";
 import { bookingStateReducer, createBookingState } from "./bookingState";
-import { updateBookingRequestStatus, updateItemNegotiatedPrice, updateNegotiatedPrice } from "@/lib/booking/bookingActions";
+import { updateBookingRequestStatus, updateItemNegotiatedPrice, updateNegotiatedPrice, updateBookingLaborCharge } from "@/lib/booking/bookingActions";
 import { createQuotationDocumentViewModel } from "@/lib/pricing/quotationDocument";
 import { generateQuotationPdfHtml } from "@/lib/pricing/quotationPdfGenerator";
 import { openQuotationPreview } from "@/lib/pricing/quotationPreviewWindow";
@@ -50,6 +50,9 @@ export function BookingsContent({ initialBookings, loadError = null }: BookingsC
   const [feedbackToast, setFeedbackToast] = useState<string | null>(null);
   const [isEditingPrice, setIsEditingPrice] = useState(false);
   const [priceInput, setPriceInput] = useState("");
+  const [isEditingLabor, setIsEditingLabor] = useState(false);
+  const [laborInput, setLaborInput] = useState("");
+  const [isSavingLabor, setIsSavingLabor] = useState(false);
   const [priceError, setPriceError] = useState<string | null>(null);
   const [isSavingPrice, setIsSavingPrice] = useState(false);
   const [zeroConfirmed, setZeroConfirmed] = useState(false);
@@ -122,6 +125,48 @@ export function BookingsContent({ initialBookings, loadError = null }: BookingsC
     if (!result.ok) { setPriceError(result.message); if (result.code === "CONFLICT") startRefreshTransition(() => router.refresh()); setIsSavingPrice(false); return; }
     dispatch({ type: "quotation-price-saved", bookingId: selectedBooking.id, quotation: { ...selectedBooking.quotation, ...result } });
     setIsEditingPrice(false); setZeroConfirmed(false); setIsSavingPrice(false); setFeedbackToast("Final price updated successfully");
+    startRefreshTransition(() => router.refresh());
+  };
+
+  const handleLaborSave = async () => {
+    if (!selectedBooking?.quotation.id || !selectedBooking.quotation.updatedAt) return;
+    if (!laborInput.trim()) { setPriceError("Enter a labor fee. Enter 0 to reset."); return; }
+    if (!/^\d+(?:\.\d{1,2})?$/.test(laborInput)) { setPriceError("Enter a nonnegative amount with at most two decimal places."); return; }
+    const value = Number(laborInput);
+    if (!Number.isFinite(value) || value > 9_999_999_999.99) { setPriceError("Enter an amount within the supported range."); return; }
+
+    setIsSavingLabor(true);
+    setPriceError(null);
+    const result = await updateBookingLaborCharge({
+      quotationId: selectedBooking.quotation.id,
+      laborAmount: value === 0 ? null : value,
+      expectedUpdatedAt: selectedBooking.quotation.updatedAt,
+    });
+
+    if (!result.ok) {
+      setPriceError(result.message);
+      if (result.code === "CONFLICT") startRefreshTransition(() => router.refresh());
+      setIsSavingLabor(false);
+      return;
+    }
+
+    dispatch({
+      type: "quotation-price-saved",
+      bookingId: selectedBooking.id,
+      quotation: {
+        ...selectedBooking.quotation,
+        calculatedFinalPrice: result.calculatedFinalPrice,
+        negotiatedFinalPrice: result.negotiatedFinalPrice,
+        effectiveFinalPrice: result.effectiveFinalPrice,
+        isPriceModified: result.isPriceModified,
+        negotiatedBy: result.negotiatedBy,
+        negotiatedAt: result.negotiatedAt,
+        updatedAt: result.updatedAt,
+      },
+    });
+    setIsEditingLabor(false);
+    setIsSavingLabor(false);
+    setFeedbackToast("Installation and labor fee updated successfully");
     startRefreshTransition(() => router.refresh());
   };
 
@@ -421,15 +466,105 @@ export function BookingsContent({ initialBookings, loadError = null }: BookingsC
               </div>
 
               <div className="bg-[#f5f5f5] p-4 sm:p-5 rounded-[20px] flex flex-col gap-4 w-full">
-                <div aria-busy={isSavingPrice} className="rounded-[16px] bg-white p-4 flex flex-col gap-3">
+                <div aria-busy={isSavingPrice || isSavingLabor} className="rounded-[16px] bg-white p-4 flex flex-col gap-3">
+                  <div className="flex flex-col gap-1 border-b border-[#e5e5e5] pb-3">
+                    <p className="text-xs text-[#c3c3c3]">Raw Product Fabrication Subtotal</p>
+                    <p className="text-base font-semibold text-[#0f1422]">
+                      ₱{(selectedBooking.quotation.calculatedFinalPrice ?? 0).toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                    </p>
+                  </div>
+
+                  {/* Labor & Installation Fee Section */}
+                  <div className="rounded-[12px] border border-[#e5e5e5] bg-neutral-50/70 p-3 flex flex-col gap-2">
+                    <div className="flex flex-wrap justify-between items-center gap-2">
+                      <div>
+                        <p className="text-sm font-medium text-[#0f1422]">Site Installation & Labor Fee</p>
+                        <p className="text-xs text-neutral-500">
+                          {selectedBooking.quotation.negotiatedFinalPrice !== null && selectedBooking.quotation.isPriceModified
+                            ? `Confirmed Fee: ₱${Math.max(0, (selectedBooking.quotation.effectiveFinalPrice ?? 0) - (selectedBooking.quotation.calculatedFinalPrice ?? 0)).toLocaleString("en-PH", { minimumFractionDigits: 2 })}`
+                            : "Pending admin review / site assessment"}
+                        </p>
+                      </div>
+                      {!isEditingLabor && (
+                        <button
+                          type="button"
+                          disabled={isSavingLabor || isSavingPrice}
+                          onClick={() => {
+                            const diff = Math.max(0, (selectedBooking.quotation.effectiveFinalPrice ?? 0) - (selectedBooking.quotation.calculatedFinalPrice ?? 0));
+                            setLaborInput(diff > 0 ? diff.toFixed(2) : "");
+                            setIsEditingLabor(true);
+                            setPriceError(null);
+                          }}
+                          className="bg-[#097283] text-white text-xs px-3 py-1.5 rounded-[10px] hover:bg-cyan-700 transition-colors disabled:opacity-50"
+                        >
+                          {selectedBooking.quotation.isPriceModified ? "Edit Labor Fee" : "Add Labor Fee"}
+                        </button>
+                      )}
+                    </div>
+                    {isEditingLabor && (
+                      <div className="flex flex-col gap-2 pt-1">
+                        <label className="text-xs font-medium text-neutral-700" htmlFor="admin-labor-input">
+                          Enter installation / site labor amount (PHP)
+                        </label>
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500 text-xs font-semibold">₱</span>
+                          <input
+                            id="admin-labor-input"
+                            inputMode="decimal"
+                            step="0.01"
+                            value={laborInput}
+                            onChange={(e) => setLaborInput(e.target.value)}
+                            placeholder="e.g. 1500.00"
+                            disabled={isSavingLabor}
+                            className="w-full pl-7 pr-3 py-1.5 rounded-[10px] border border-neutral-300 text-sm font-semibold bg-white text-[#0f1422] focus-visible:outline-2 focus-visible:outline-[#07b6d3]"
+                          />
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            disabled={isSavingLabor}
+                            onClick={() => void handleLaborSave()}
+                            className="bg-[#05b64b] text-white text-xs px-3 py-1.5 rounded-[10px] hover:bg-emerald-600 transition-colors disabled:opacity-50"
+                          >
+                            Save Labor
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isSavingLabor}
+                            onClick={() => {
+                              setIsEditingLabor(false);
+                              setPriceError(null);
+                            }}
+                            className="bg-neutral-200 text-xs px-3 py-1.5 rounded-[10px] hover:bg-neutral-300 transition-colors"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
                   {selectedBooking.quotation.supportsItemNegotiation ? <>
                     <p className="text-sm font-medium text-[#0f1422]">Per-item final prices</p>
                     {(selectedBooking.quotation.itemPricing ?? []).map((item) => <div key={item.itemId} className="rounded-[12px] border border-[#e5e5e5] p-3 flex flex-col gap-2">
                       <div className="flex flex-wrap justify-between gap-3"><div><p className="text-sm font-medium text-[#0f1422]">{item.productName} <span className="text-xs text-[#c3c3c3]">× {item.quantity}</span></p><p className="text-xs text-[#c3c3c3]">Calculated: ₱{item.calculatedSubtotal.toLocaleString("en-PH", { minimumFractionDigits: 2 })}</p></div><div className="text-right"><p className="font-semibold text-emerald-700">₱{item.effectiveSubtotal.toLocaleString("en-PH", { minimumFractionDigits: 2 })}</p>{item.isPriceModified && <span className="text-[11px] text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full">Negotiated</span>}</div></div>
                       {editingItemId === item.itemId ? <div className="flex flex-col gap-2"><label className="text-xs font-medium" htmlFor={`item-price-${item.itemId}`}>Final item price for {item.productName}</label><input id={`item-price-${item.itemId}`} inputMode="decimal" step="0.01" value={priceInput} onChange={(event) => { setPriceInput(event.target.value); setZeroConfirmed(false); }} disabled={isSavingPrice} className="rounded-[10px] border border-neutral-300 px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-[#07b6d3]"/><div className="flex gap-2"><button type="button" disabled={isSavingPrice} onClick={() => void handleItemPriceSave()} className="bg-[#05b64b] text-white text-xs px-3 py-2 rounded-[10px] disabled:opacity-50">Save</button><button type="button" disabled={isSavingPrice} onClick={() => { setEditingItemId(null); setPriceError(null); }} className="bg-neutral-200 text-xs px-3 py-2 rounded-[10px]">Cancel</button></div></div> : <div className="flex gap-2"><button type="button" disabled={isSavingPrice} onClick={() => { setEditingItemId(item.itemId); setPriceInput(item.effectiveSubtotal.toFixed(2)); setPriceError(null); setZeroConfirmed(false); }} className="bg-[#0f1422] text-white text-xs px-3 py-2 rounded-[10px] disabled:opacity-50">Edit Price</button><button type="button" disabled={isSavingPrice || !item.isPriceModified} onClick={() => void saveItemPrice(item.itemId, null)} className="bg-[#c50000] text-white text-xs px-3 py-2 rounded-[10px] disabled:opacity-40">Reset</button></div>}
                     </div>)}
-                    <div className="flex flex-wrap items-end justify-between gap-3 border-t border-[#e5e5e5] pt-3"><div><p className="text-xs text-[#c3c3c3]">Calculated grand total</p><p className="font-medium">₱{(selectedBooking.quotation.calculatedFinalPrice ?? 0).toLocaleString("en-PH", { minimumFractionDigits: 2 })}</p></div><div className="text-right"><p className="text-xs text-[#c3c3c3]">Effective grand total</p><p className="text-xl font-semibold text-emerald-700">₱{(selectedBooking.quotation.effectiveFinalPrice ?? 0).toLocaleString("en-PH", { minimumFractionDigits: 2 })}</p>{selectedBooking.quotation.isPriceModified && <span className="text-[11px] text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full">Negotiated</span>}</div></div>
                   </> : <><p className="text-xs text-amber-800">Per-item editing unavailable for legacy quotation</p><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs text-[#c3c3c3]">Calculated price</p><p className="font-medium">₱{(selectedBooking.quotation.calculatedFinalPrice ?? 0).toLocaleString("en-PH", { minimumFractionDigits: 2 })}</p></div><div className="text-right"><p className="text-xs text-[#c3c3c3]">Final price</p><p className="text-xl font-semibold text-emerald-700">₱{(selectedBooking.quotation.effectiveFinalPrice ?? 0).toLocaleString("en-PH", { minimumFractionDigits: 2 })}</p></div></div>{isEditingPrice ? <div className="flex flex-col gap-2"><input aria-label="Negotiated final price" inputMode="decimal" step="0.01" value={priceInput} onChange={(event) => setPriceInput(event.target.value)} className="rounded-[10px] border px-3 py-2"/><div className="flex gap-2"><button type="button" onClick={() => void handlePriceSave()} className="bg-[#05b64b] text-white text-xs px-3 py-2 rounded-[10px]">Save</button><button type="button" onClick={() => setIsEditingPrice(false)} className="bg-neutral-200 text-xs px-3 py-2 rounded-[10px]">Cancel</button><button type="button" disabled={!selectedBooking.quotation.isPriceModified} onClick={() => void saveNegotiatedPrice(null)} className="bg-[#c50000] text-white text-xs px-3 py-2 rounded-[10px] disabled:opacity-40">Reset</button></div></div> : <button type="button" disabled={isSavingPrice} onClick={() => { setPriceInput((selectedBooking.quotation.effectiveFinalPrice ?? 0).toFixed(2)); setIsEditingPrice(true); }} className="self-start bg-[#0f1422] text-white text-xs px-3 py-2 rounded-[10px]">Edit Final Price</button>}</>}
+
+                  <div className="flex flex-wrap items-end justify-between gap-3 border-t border-[#e5e5e5] pt-3">
+                    <div>
+                      <p className="text-xs text-[#c3c3c3]">Effective Grand Total</p>
+                      <p className="text-xl font-semibold text-emerald-700">
+                        ₱{(selectedBooking.quotation.effectiveFinalPrice ?? 0).toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                    {selectedBooking.quotation.isPriceModified && (
+                      <span className="text-[11px] text-amber-800 bg-amber-100 px-2.5 py-1 rounded-full font-medium">
+                        Adjusted / Confirmed Total
+                      </span>
+                    )}
+                  </div>
                   {priceError && <p role="alert" className="text-xs text-[#c50000]">{priceError}</p>}
                 </div>
                 <div className="flex flex-col gap-1 items-start">

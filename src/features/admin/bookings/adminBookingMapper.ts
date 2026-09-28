@@ -137,9 +137,22 @@ export function mapAdminBookingRow(
   }) : null;
   const overrideResult = QuotationItemPriceOverridesV1Schema.safeParse(quotation?.item_price_overrides);
   const itemPriceOverrides = overrideResult.success ? overrideResult.data : null;
-  const pricing = parsedDocument.success
+  let pricing = parsedDocument.success
     ? deriveQuotationPricingFromItems(parsedDocument.data, itemPriceOverrides)
     : deriveQuotationPricing(Number(quotation?.total_estimated_amount ?? 0), quotation?.negotiated_amount === null || quotation?.negotiated_amount === undefined ? null : Number(quotation.negotiated_amount));
+
+  if (parsedDocument.success && quotation?.negotiated_amount !== null && quotation?.negotiated_amount !== undefined) {
+    const negotiatedCents = Math.round(Number(quotation.negotiated_amount) * 100);
+    const calculatedCents = Math.round(pricing.calculatedFinalPrice * 100);
+    if (negotiatedCents !== calculatedCents) {
+      pricing = {
+        ...pricing,
+        negotiatedFinalPrice: negotiatedCents / 100,
+        effectiveFinalPrice: negotiatedCents / 100,
+        isPriceModified: true,
+      };
+    }
+  }
 
   return {
     id: row.booking_request_id,
