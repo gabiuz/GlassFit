@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChevronRight, Minus, Plus } from "lucide-react";
+import { ChevronLeft, ChevronRight, Minus, Plus } from "lucide-react";
 import Button from "@/components/shared/Button";
 import type { ProductDetail } from "@/lib/products/getProductById";
 import {
@@ -70,6 +70,26 @@ export function ProductDetails({ product }: { product: ProductDetail }) {
     capabilities: ProductMaterialCapabilities;
   } | null>(null);
   const [navigationError, setNavigationError] = useState<string | null>(null);
+
+  const images = (product.catalog_image_urls && product.catalog_image_urls.length > 0)
+    ? product.catalog_image_urls
+    : product.catalog_image_url
+      ? [product.catalog_image_url]
+      : [];
+  const [current2dImageIndex, setCurrent2dImageIndex] = useState(0);
+  const total2dImages = images.length;
+
+  const handleNext2dImage = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (total2dImages <= 1) return;
+    setCurrent2dImageIndex((prev) => (prev + 1) % total2dImages);
+  };
+
+  const handlePrev2dImage = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (total2dImages <= 1) return;
+    setCurrent2dImageIndex((prev) => (prev - 1 + total2dImages) % total2dImages);
+  };
 
   const dimensionResult = validateDimensionPair(width, height);
   useEffect(() => {
@@ -137,46 +157,118 @@ export function ProductDetails({ product }: { product: ProductDetail }) {
       <Breadcrumb productName={product.product_name} />
 
       <div className="flex w-full flex-col items-stretch gap-9 lg:flex-row lg:items-start">
-        <div className="relative h-64 w-full shrink-0 overflow-hidden rounded-sm bg-[#d9d9d9] sm:h-96 lg:h-226.75 lg:w-164.5">
-          {(!view3d || !has3d) && (
-            product.catalog_image_url ? (
-              <Image src={product.catalog_image_url} alt={product.product_name} fill className="object-cover" unoptimized />
-            ) : (
-              <div className="h-full w-full bg-[#d9d9d9]" />
-            )
-          )}
+        <div className="relative flex flex-col gap-3 shrink-0 w-full sm:w-auto">
+          <div className="relative h-64 w-full shrink-0 overflow-hidden rounded-sm bg-[#d9d9d9] sm:h-96 lg:h-226.75 lg:w-164.5 group">
+            {(!view3d || !has3d) && (
+              total2dImages > 0 ? (
+                <>
+                  <Image
+                    src={images[current2dImageIndex]}
+                    alt={`${product.product_name} - Image ${current2dImageIndex + 1}`}
+                    fill
+                    className="object-cover transition-all duration-300"
+                    unoptimized
+                  />
 
-          {view3d && has3d && (
-            <Suspense fallback={<div className="absolute inset-0 flex items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-2 border-white/40 border-t-white" /></div>}>
-              <ProductModel3D
-                glbUrl={product.preview_glb_url!}
-                aluminumFinish={supportsConfiguration ? selectedFinish : "white"}
-                glassAppearance={supportsConfiguration ? glassAppearance : "clear"}
-                glassColor={supportsConfiguration ? selectedGlassColor : "clear"}
-                glassThicknessMm={supportsConfiguration ? selectedThickness : 6}
-                widthCm={supportsConfiguration ? previewDimensions?.widthCm : undefined}
-                heightCm={supportsConfiguration ? previewDimensions?.heightCm : undefined}
-                quantity={supportsConfiguration ? normalizedQuantity : 1}
-                onCapabilitiesDetected={handleCapabilitiesDetected}
-              />
-            </Suspense>
-          )}
+                  {/* Infinite Marquee Controls: Left / Right Arrows (No hard boundaries) */}
+                  {total2dImages > 1 && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={handlePrev2dImage}
+                        aria-label="Previous image"
+                        className="absolute left-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-white/80 hover:bg-white text-neutral-800 shadow-md transition-all hover:scale-110 z-10 cursor-pointer"
+                      >
+                        <ChevronLeft className="size-5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleNext2dImage}
+                        aria-label="Next image"
+                        className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-white/80 hover:bg-white text-neutral-800 shadow-md transition-all hover:scale-110 z-10 cursor-pointer"
+                      >
+                        <ChevronRight className="size-5" />
+                      </button>
 
-          {has3d && (
-            <div className="absolute right-4 bottom-4 z-10">
-              <div className="flex select-none items-center gap-0.5 rounded-full border border-white/30 bg-white/20 px-1.5 py-1.5 shadow-[0_4px_24px_rgba(0,0,0,0.18)] backdrop-blur-md">
-                {([false, true] as const).map((is3d) => (
-                  <button
-                    key={String(is3d)}
-                    type="button"
-                    onClick={() => setView3d(is3d)}
-                    aria-pressed={view3d === is3d}
-                    className={`rounded-full px-3.5 py-1.5 text-sm font-medium transition-all duration-200 ${view3d === is3d ? "bg-white text-black shadow-sm" : "text-white/80 hover:text-white"}`}
-                  >
-                    {is3d ? "3D" : "2D"}
-                  </button>
-                ))}
+                      {/* Pagination Indicator Dots */}
+                      <div className="absolute bottom-4 inset-x-0 flex flex-col items-center gap-1.5 z-10 pointer-events-none">
+                        <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-black/40 backdrop-blur-xs">
+                          {images.map((_, idx) => (
+                            <span
+                              key={idx}
+                              className={`h-1.5 rounded-full transition-all ${
+                                idx === current2dImageIndex ? "w-4 bg-white" : "w-1.5 bg-white/50"
+                              }`}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </>
+              ) : (
+                <div className="h-full w-full bg-[#d9d9d9]" />
+              )
+            )}
+
+            {view3d && has3d && (
+              <Suspense fallback={<div className="absolute inset-0 flex items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-2 border-white/40 border-t-white" /></div>}>
+                <ProductModel3D
+                  glbUrl={product.preview_glb_url!}
+                  aluminumFinish={supportsConfiguration ? selectedFinish : "white"}
+                  glassAppearance={supportsConfiguration ? glassAppearance : "clear"}
+                  glassColor={supportsConfiguration ? selectedGlassColor : "clear"}
+                  glassThicknessMm={supportsConfiguration ? selectedThickness : 6}
+                  widthCm={supportsConfiguration ? previewDimensions?.widthCm : undefined}
+                  heightCm={supportsConfiguration ? previewDimensions?.heightCm : undefined}
+                  quantity={supportsConfiguration ? normalizedQuantity : 1}
+                  onCapabilitiesDetected={handleCapabilitiesDetected}
+                />
+              </Suspense>
+            )}
+
+            {has3d && (
+              <div className="absolute right-4 bottom-4 z-10">
+                <div className="flex select-none items-center gap-0.5 rounded-full border border-white/30 bg-white/20 px-1.5 py-1.5 shadow-[0_4px_24px_rgba(0,0,0,0.18)] backdrop-blur-md">
+                  {([false, true] as const).map((is3d) => (
+                    <button
+                      key={String(is3d)}
+                      type="button"
+                      onClick={() => setView3d(is3d)}
+                      aria-pressed={view3d === is3d}
+                      className={`rounded-full px-3.5 py-1.5 text-sm font-medium transition-all duration-200 cursor-pointer ${view3d === is3d ? "bg-white text-black shadow-sm" : "text-white/80 hover:text-white"}`}
+                    >
+                      {is3d ? "3D" : "2D"}
+                    </button>
+                  ))}
+                </div>
               </div>
+            )}
+          </div>
+
+          {/* Micro Thumbnail Rail when in 2D and multiple images exist */}
+          {(!view3d || !has3d) && total2dImages > 1 && (
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 max-w-full lg:max-w-164.5">
+              {images.map((src, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => setCurrent2dImageIndex(idx)}
+                  className={`relative size-16 shrink-0 rounded-[8px] border-2 overflow-hidden transition-all cursor-pointer ${
+                    idx === current2dImageIndex
+                      ? "border-black ring-2 ring-black/10 scale-105"
+                      : "border-neutral-200 opacity-60 hover:opacity-100"
+                  }`}
+                >
+                  <Image
+                    src={src}
+                    alt={`${product.product_name} thumbnail ${idx + 1}`}
+                    fill
+                    unoptimized
+                    className="object-cover"
+                  />
+                </button>
+              ))}
             </div>
           )}
         </div>

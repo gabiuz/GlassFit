@@ -20,6 +20,7 @@ export type DatabaseProduct = {
   updated_at: string;
 
   catalog_image_r2_key: string | null;
+  catalog_image_r2_keys?: string[];
   preview_glb_r2_key?: string | null;
 };
 
@@ -45,8 +46,10 @@ export type CatalogProduct = {
    * null means the product has no supported visualization yet.
    */
   rendererKey: SupportedRendererKey | null;
-  /** R2 public URL for the catalog image, or null if no image is uploaded yet. */
+  /** R2 public URL for the primary catalog image, or null if no image is uploaded yet. */
   imageUrl: string | null;
+  /** Array of R2 public URLs for all active catalog images ordered by display_order. */
+  imageUrls: string[];
   /** R2 public URL for the 3D model preview GLB, or null if unavailable. */
   previewGlbUrl?: string | null;
 };

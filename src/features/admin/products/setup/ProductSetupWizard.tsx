@@ -17,10 +17,15 @@ export interface ProductAssetSummary {
     asset_id?: string;
     asset_type?: string;
     is_primary?: boolean;
+    display_order?: number;
+    file_name?: string;
     file_url?: string;
     storage_path?: string;
+    r2_object_key?: string;
     file_size_bytes?: number;
+    byte_size?: number;
     mime_type?: string;
+    status?: string;
     [key: string]: unknown;
 }
 
@@ -191,6 +196,7 @@ export function ProductSetupWizard({ productId, initialData }: ProductSetupWizar
                     <CatalogAssetsSection
                         productId={draftId}
                         initialData={{
+                            catalogImages: productData?.product_assets?.filter?.((a: ProductAssetSummary) => a.asset_type === "Catalog Image" && a.status !== "Inactive"),
                             catalogImage: productData?.product_assets?.find?.((a: ProductAssetSummary) => a.asset_type === "Catalog Image" && a.is_primary !== false),
                             catalogPreview: productData?.product_assets?.find?.((a: ProductAssetSummary) => a.asset_type === "Catalog 3D Preview" && a.is_primary !== false)
                         }}

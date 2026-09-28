@@ -159,6 +159,159 @@ export async function confirmAssetUpload(
     return data;
 }
 
+export interface MultiAssetUploadItem {
+    assetId: string;
+    objectKey: string;
+    fileName: string;
+    mimeType: string;
+    byteSize: number;
+    displayOrder: number;
+    isPrimary: boolean;
+}
+
+export interface CatalogAssetRecord {
+    asset_id: string;
+    product_id: string;
+    template_id?: string | null;
+    component_id?: string | null;
+    asset_type: AssetType;
+    r2_object_key: string;
+    file_name: string;
+    mime_type: string;
+    byte_size: number;
+    display_order: number;
+    is_primary: boolean;
+    status: "Active" | "Inactive";
+    created_by?: string;
+    updated_by?: string;
+    created_at?: string;
+    updated_at?: string;
+}
+
+export async function confirmCatalogImageBatch(
+    productId: string,
+    newAssets: MultiAssetUploadItem[]
+): Promise<CatalogAssetRecord[]> {
+    const adminCtx = await requirePermission("manage_products");
+    const supabase = await createSupabaseServerClient();
+
+    // 1. Fetch existing active catalog images to calculate display orders
+    const { data: existingAssets } = await supabase
+        .from("product_assets")
+        .select("asset_id, display_order, is_primary")
+        .eq("product_id", productId)
+        .eq("asset_type", "Catalog Image")
+        .eq("status", "Active")
+        .order("display_order", { ascending: true });
+
+    const currentCount = existingAssets?.length || 0;
+    const hasExistingPrimary = existingAssets?.some((a) => a.is_primary) || false;
+
+    // 2. Prepare insert payloads with continuous display_order
+    const insertPayloads = newAssets.map((item, index) => {
+        const isFirstOverall = !hasExistingPrimary && index === 0;
+        return {
+            asset_id: item.assetId,
+            product_id: productId,
+            created_by: adminCtx.profileId,
+            updated_by: adminCtx.profileId,
+            asset_type: "Catalog Image" as const,
+            r2_object_key: item.objectKey,
+            file_name: item.fileName,
+            mime_type: item.mimeType,
+            byte_size: item.byteSize,
+            display_order: currentCount + index + 1,
+            is_primary: isFirstOverall ? true : item.isPrimary && !hasExistingPrimary,
+            status: "Active" as const,
+        };
+    });
+
+    const { data, error } = await supabase
+        .from("product_assets")
+        .insert(insertPayloads)
+        .select();
+
+    if (error) {
+        console.error("Failed to batch insert catalog images:", error);
+        throw new Error(error.message);
+    }
+
+    revalidatePath(`/admin/products/${productId}/setup`);
+    revalidatePath("/product");
+    revalidatePath(`/product-details/${productId}`);
+
+    return data as CatalogAssetRecord[];
+}
+
+export async function setPrimaryCatalogImage(
+    productId: string,
+    targetAssetId: string
+): Promise<void> {
+    const adminCtx = await requirePermission("manage_products");
+    const supabase = await createSupabaseServerClient();
+
+    // Step 1: Remove primary flag from current primary
+    await supabase
+        .from("product_assets")
+        .update({ is_primary: false, updated_by: adminCtx.profileId })
+        .eq("product_id", productId)
+        .eq("asset_type", "Catalog Image")
+        .eq("is_primary", true);
+
+    // Step 2: Set target asset as primary
+    const { error } = await supabase
+        .from("product_assets")
+        .update({ is_primary: true, updated_by: adminCtx.profileId })
+        .eq("asset_id", targetAssetId);
+
+    if (error) {
+        throw new Error(`Failed to set primary asset: ${error.message}`);
+    }
+
+    revalidatePath(`/admin/products/${productId}/setup`);
+    revalidatePath("/product");
+    revalidatePath(`/product-details/${productId}`);
+}
+
+export async function deleteCatalogImage(
+    productId: string,
+    assetId: string
+): Promise<void> {
+    const adminCtx = await requirePermission("manage_products");
+    const supabase = await createSupabaseServerClient();
+
+    // 1. Soft-delete the asset
+    const { data: deleted } = await supabase
+        .from("product_assets")
+        .update({ status: "Inactive", is_primary: false, updated_by: adminCtx.profileId })
+        .eq("asset_id", assetId)
+        .select("is_primary")
+        .single();
+
+    // 2. If deleted asset was primary, promote the first remaining active asset
+    if (deleted?.is_primary) {
+        const { data: remaining } = await supabase
+            .from("product_assets")
+            .select("asset_id")
+            .eq("product_id", productId)
+            .eq("asset_type", "Catalog Image")
+            .eq("status", "Active")
+            .order("display_order", { ascending: true })
+            .limit(1);
+
+        if (remaining && remaining.length > 0) {
+            await supabase
+                .from("product_assets")
+                .update({ is_primary: true, updated_by: adminCtx.profileId })
+                .eq("asset_id", remaining[0].asset_id);
+        }
+    }
+
+    revalidatePath(`/admin/products/${productId}/setup`);
+    revalidatePath("/product");
+    revalidatePath(`/product-details/${productId}`);
+}
+
 export async function deleteProductAssets(objectKeys: string[]) {
     if (!objectKeys || objectKeys.length === 0) return;
     
