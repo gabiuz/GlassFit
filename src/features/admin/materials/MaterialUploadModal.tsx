@@ -10,8 +10,6 @@ import {
   CheckCircle2,
   AlertTriangle,
   AlertCircle,
-  Layers,
-  Sparkles,
   ArrowRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -20,7 +18,6 @@ import {
   parseRawMaterialCsv,
   generateCsvTemplate,
   type CsvParseResult,
-  type ParsedMaterialRow,
 } from "./csvMaterialParser";
 
 type MaterialUploadModalProps = {

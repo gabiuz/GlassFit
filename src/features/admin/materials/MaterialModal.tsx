@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { createPortal } from "react-dom";
 import {
   X,
@@ -91,65 +91,64 @@ export function MaterialModal({
   material,
   onUpsertAction,
 }: MaterialModalProps) {
+  if (!isOpen) return null;
+
+  return (
+    <MaterialModalInner
+      key={material?.id ?? "new"}
+      onClose={onClose}
+      onSave={onSave}
+      material={material}
+      onUpsertAction={onUpsertAction}
+    />
+  );
+}
+
+function MaterialModalInner({
+  onClose,
+  onSave,
+  material,
+  onUpsertAction,
+}: Omit<MaterialModalProps, "isOpen">) {
   const isEditing = !!material;
 
-  const [category, setCategory] = useState<RawMaterialCategory>("Aluminum");
-  const [description, setDescription] = useState("");
+  const [category, setCategory] = useState<RawMaterialCategory>(() => material?.category ?? "Aluminum");
+  const [description, setDescription] = useState<string>(() => material?.description ?? (material ? "" : '1" x 1" Aluminum Tube'));
   const [glassWidthFt] = useState<number>(4.0);
   const [glassHeightFt] = useState<number>(6.0);
 
   // String-based price states to avoid sticky 0 defaults
-  const [stockPriceStr, setStockPriceStr] = useState<string>("");
-  const [hardwareUnitPriceStr, setHardwareUnitPriceStr] = useState<string>("");
-  const [billingUnit, setBillingUnit] = useState<BillingUnit>("m");
-  const [wasteAllowance] = useState<number>(0.0);
-  const [isActive, setIsActive] = useState<boolean>(true);
+  const [stockPriceStr, setStockPriceStr] = useState<string>(() => {
+    if (!material) return "";
+    if (material.category === "Aluminum") {
+      const alPrice =
+        material.stock_price_rrd ??
+        (material.unit_price ? material.unit_price * STANDARD_STOCK_LENGTH_METERS : null);
+      return alPrice != null ? alPrice.toFixed(2) : "";
+    }
+    if (material.category === "Glass") {
+      const glPrice =
+        material.stock_price_rrd ??
+        (material.unit_price ? (material.unit_price / SQFT_PER_SQM) * STANDARD_SHEET_AREA_SQFT : null);
+      return glPrice != null ? glPrice.toFixed(2) : "";
+    }
+    return "";
+  });
 
-  const [customMaterialCode, setCustomMaterialCode] = useState<string>("");
+  const [hardwareUnitPriceStr, setHardwareUnitPriceStr] = useState<string>(() => {
+    if (!material || material.category === "Aluminum" || material.category === "Glass") return "";
+    return material.unit_price != null ? material.unit_price.toFixed(2) : "";
+  });
+
+  const [billingUnit, setBillingUnit] = useState<BillingUnit>(() => material?.billing_unit ?? "m");
+  const [wasteAllowance] = useState<number>(0.0);
+  const [isActive, setIsActive] = useState<boolean>(() => material?.is_active ?? true);
+
+  const [customMaterialCode, setCustomMaterialCode] = useState<string>(() => material?.material_code ?? "");
   const [isCodeAccordionOpen, setIsCodeAccordionOpen] = useState(false);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-
-  // Initialize or reset form state when modal opens
-  useEffect(() => {
-    if (isOpen) {
-      if (material) {
-        setCategory(material.category);
-        setDescription(material.description);
-        setCustomMaterialCode(material.material_code);
-        setIsActive(material.is_active);
-        setBillingUnit(material.billing_unit);
-
-        if (material.category === "Aluminum") {
-          const alPrice =
-            material.stock_price_rrd ??
-            (material.unit_price ? material.unit_price * STANDARD_STOCK_LENGTH_METERS : null);
-          setStockPriceStr(alPrice != null ? alPrice.toFixed(2) : "");
-          setHardwareUnitPriceStr("");
-        } else if (material.category === "Glass") {
-          const glPrice =
-            material.stock_price_rrd ??
-            (material.unit_price ? (material.unit_price / SQFT_PER_SQM) * STANDARD_SHEET_AREA_SQFT : null);
-          setStockPriceStr(glPrice != null ? glPrice.toFixed(2) : "");
-          setHardwareUnitPriceStr("");
-        } else {
-          setStockPriceStr("");
-          setHardwareUnitPriceStr(material.unit_price != null ? material.unit_price.toFixed(2) : "");
-        }
-      } else {
-        setCategory("Aluminum");
-        setDescription('1" x 1" Aluminum Tube');
-        setStockPriceStr("");
-        setHardwareUnitPriceStr("");
-        setBillingUnit("m");
-        setIsActive(true);
-        setCustomMaterialCode("");
-        setIsCodeAccordionOpen(false);
-      }
-      setErrorMessage(null);
-    }
-  }, [isOpen, material]);
 
   // Finish type is stored as Standard/Base for raw inventory materials; variations are chosen dynamically by customers
   const defaultFinish = "Standard";
@@ -284,8 +283,6 @@ export function MaterialModal({
       setIsSubmitting(false);
     }
   };
-
-  if (!isOpen) return null;
 
   const content = (
     <div
