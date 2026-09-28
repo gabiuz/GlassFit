@@ -2,8 +2,6 @@ import { describe, it } from "node:test";
 import assert from "node:assert";
 import {
   calculateStandardSeries798,
-  calculateParametricBOM,
-  generateQuotationSnapshot,
 } from "../../src/lib/pricing/pricingEngine.js";
 import {
   validateEngineeringGuardrails,
@@ -15,14 +13,6 @@ import {
   formatBookingShareMessage,
 } from "../../src/lib/pricing/quotationPdfGenerator.js";
 import { autoDetectComponentSettings } from "../../src/lib/admin/products/autoDetection.js";
-import {
-  QuotationBOMSummarySchema,
-  FrozenPricingDetailsSchema,
-  RawMaterialSchema,
-  ProductComponentBindingSchema,
-  StructuralRulePayloadSchema,
-} from "../../src/lib/pricing/types.js";
-import { UpsertRawMaterialInputSchema } from "../../src/lib/admin/materials/types.js";
 
 describe("Milestone 8: Automated Test Suites & Numerical Validation (QA Layer)", () => {
   // --------------------------------------------------------------------------
@@ -37,6 +27,9 @@ describe("Milestone 8: Automated Test Suites & Numerical Validation (QA Layer)",
         hasSill: true,
         finishType: "Analok",
         glassType: "6mm_bronze",
+        laborFloor: 750,
+        laborRate: 0.25,
+        contractorMarginRate: 0.25,
       });
 
       // 1. Raw Aluminum Extrusions:
@@ -98,6 +91,9 @@ describe("Milestone 8: Automated Test Suites & Numerical Validation (QA Layer)",
         hasSill: true,
         finishType: "Analok",
         glassType: "6mm_bronze",
+        laborFloor: 750,
+        laborRate: 0.25,
+        contractorMarginRate: 0.25,
       });
 
       // 1. Raw Aluminum Extrusions:
@@ -150,6 +146,9 @@ describe("Milestone 8: Automated Test Suites & Numerical Validation (QA Layer)",
         heightMm: 1200,
         panelCount: 2,
         hasSill: true,
+        laborFloor: 750,
+        laborRate: 0.25,
+        contractorMarginRate: 0.25,
       });
 
       const withoutSill = calculateStandardSeries798({
@@ -157,6 +156,9 @@ describe("Milestone 8: Automated Test Suites & Numerical Validation (QA Layer)",
         heightMm: 1200,
         panelCount: 2,
         hasSill: false,
+        laborFloor: 750,
+        laborRate: 0.25,
+        contractorMarginRate: 0.25,
       });
 
       // Raw Extrusions without sill (Sill length = 0.00m, cost = 0.00)
@@ -209,6 +211,9 @@ describe("Milestone 8: Automated Test Suites & Numerical Validation (QA Layer)",
         hasSill: true,
         finishType: "Analok",
         glassType: "6mm_bronze",
+        laborFloor: 750,
+        laborRate: 0.25,
+        contractorMarginRate: 0.25,
       });
 
       // 1. Raw Aluminum Extrusions:

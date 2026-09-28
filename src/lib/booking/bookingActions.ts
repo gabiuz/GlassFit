@@ -26,6 +26,7 @@ import {
   UpdateBookingStatusInputSchema,
   UpdateNegotiatedPriceInputSchema,
   UpdateItemNegotiatedPriceInputSchema,
+  UpdateBookingLaborInputSchema,
   type GenerateBookingLinkInput,
   type GeneratedBookingLinkResult,
   type RecordBookingRequestInput,
@@ -36,6 +37,7 @@ import {
   type UpdateNegotiatedPriceResult,
   type UpdateItemNegotiatedPriceInput,
   type UpdateItemNegotiatedPriceResult,
+  type UpdateBookingLaborInput,
 } from "./types";
 
 function revalidateBookingPaths(): void {
@@ -722,6 +724,73 @@ export async function updateItemNegotiatedPrice(input: UpdateItemNegotiatedPrice
   const item = pricing.itemPricing.find((candidate) => candidate.itemId === parsed.data.itemId);
   if (!item) return { ok: false, code: "ITEM_NOT_FOUND", message: "Quotation item not found" };
   return { ok: true, quotationId: parsed.data.quotationId, item, pricing, negotiatedBy, negotiatedAt, updatedAt: updated.updated_at };
+}
+
+/**
+ * Admin action to enter or adjust administrative labor and installation charges for a booking (IMP-MS24).
+ */
+export async function updateBookingLaborCharge(
+  input: UpdateBookingLaborInput
+): Promise<UpdateNegotiatedPriceResult> {
+  const admin = await requirePermission("manage_bookings");
+  const parsed = UpdateBookingLaborInputSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      code: "VALIDATION_ERROR",
+      message: parsed.error.issues[0]?.message ?? "Invalid labor charge input",
+    };
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const { data: current, error: readError } = await supabase
+    .from("quotation_estimates")
+    .select("quotation_id, total_estimated_amount, quotation_document_snapshot, updated_at")
+    .eq("quotation_id", parsed.data.quotationId)
+    .maybeSingle();
+
+  if (readError) return { ok: false, code: "PERSISTENCE_ERROR", message: "Unable to read quotation" };
+  if (!current) return { ok: false, code: "NOT_FOUND", message: "Quotation not found" };
+  if (current.updated_at !== parsed.data.expectedUpdatedAt) {
+    return {
+      ok: false,
+      code: "CONFLICT",
+      message: "This quotation was updated in another session. Review the latest values and try again.",
+    };
+  }
+
+  const rawProductPrice = Number(current.total_estimated_amount);
+  const labor = parsed.data.laborAmount;
+  const newEffectiveGrandTotal = labor === null ? null : Math.round((rawProductPrice + labor) * 100) / 100;
+
+  const pricing = deriveQuotationPricing(rawProductPrice, newEffectiveGrandTotal);
+  const negotiatedAt = pricing.negotiatedFinalPrice === null ? null : new Date().toISOString();
+  const negotiatedBy = pricing.negotiatedFinalPrice === null ? null : admin.profileId;
+
+  const { data: updated, error } = await supabase
+    .from("quotation_estimates")
+    .update({
+      negotiated_amount: pricing.negotiatedFinalPrice,
+      negotiated_by: negotiatedBy,
+      negotiated_at: negotiatedAt,
+    })
+    .eq("quotation_id", parsed.data.quotationId)
+    .eq("updated_at", parsed.data.expectedUpdatedAt)
+    .select("updated_at")
+    .maybeSingle();
+
+  if (error) return { ok: false, code: "PERSISTENCE_ERROR", message: "Unable to save labor charge" };
+  if (!updated) return { ok: false, code: "CONFLICT", message: "This quotation changed before the price could be saved." };
+
+  revalidateBookingPaths();
+  return {
+    ok: true,
+    quotationId: parsed.data.quotationId,
+    ...pricing,
+    negotiatedBy,
+    negotiatedAt,
+    updatedAt: updated.updated_at,
+  };
 }
 
 /**

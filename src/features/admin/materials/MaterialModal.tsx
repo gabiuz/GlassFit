@@ -68,6 +68,14 @@ const GLASS_SUGGESTIONS = [
   "Heavy-Duty Partition Glass Sheet",
 ];
 
+const JALOUSIE_GLASS_SUGGESTIONS = [
+  '4" x 24" Jalousie Glass Blade',
+  '4" x 30" Jalousie Glass Blade',
+  '4" x 36" Jalousie Glass Blade',
+  '6" x 24" Jalousie Glass Blade',
+  "Jalousie Louver Glass Blade",
+];
+
 /**
  * Sanitizes decimal input so it only accepts numbers, at most one period,
  * and at most two digits after the decimal point.
@@ -113,6 +121,12 @@ function MaterialModalInner({
   const isEditing = !!material;
 
   const [category, setCategory] = useState<RawMaterialCategory>(() => material?.category ?? "Aluminum");
+  const [glassMode, setGlassMode] = useState<"sheet" | "piece">(() => {
+    if (material?.category === "Glass" && material.billing_unit === "pc") {
+      return "piece";
+    }
+    return "sheet";
+  });
   const [description, setDescription] = useState<string>(() => material?.description ?? (material ? "" : '1" x 1" Aluminum Tube'));
   const [glassWidthFt] = useState<number>(4.0);
   const [glassHeightFt] = useState<number>(6.0);
@@ -127,6 +141,10 @@ function MaterialModalInner({
       return alPrice != null ? alPrice.toFixed(2) : "";
     }
     if (material.category === "Glass") {
+      if (material.billing_unit === "pc") {
+        const glPrice = material.stock_price_rrd ?? material.unit_price;
+        return glPrice != null ? glPrice.toFixed(2) : "";
+      }
       const glPrice =
         material.stock_price_rrd ??
         (material.unit_price ? (material.unit_price / SQFT_PER_SQM) * STANDARD_SHEET_AREA_SQFT : null);
@@ -181,6 +199,16 @@ function MaterialModalInner({
       };
     }
     if (category === "Glass") {
+      if (glassMode === "piece") {
+        const perPiece = Math.round((numericStockPrice + Number.EPSILON) * 100) / 100;
+        return {
+          unitPrice: perPiece,
+          unitLabel: "pc" as BillingUnit,
+          displayText: numericStockPrice > 0
+            ? `₱${perPiece.toFixed(2)} / pc (Pre-cut Jalousie Glass Slat)`
+            : "Enter price per blade to calculate rate per piece",
+        };
+      }
       const area = Math.max(0.1, glassWidthFt * glassHeightFt);
       const perSqFt = numericStockPrice / area;
       const perSqm = Math.round((perSqFt * SQFT_PER_SQM + Number.EPSILON) * 100) / 100;
@@ -199,7 +227,7 @@ function MaterialModalInner({
         ? `₱${numericHardwarePrice.toFixed(2)} / ${billingUnit}`
         : "Enter unit selling price",
     };
-  }, [category, numericStockPrice, glassWidthFt, glassHeightFt, numericHardwarePrice, billingUnit]);
+  }, [category, glassMode, numericStockPrice, glassWidthFt, glassHeightFt, numericHardwarePrice, billingUnit]);
 
   // Handle Category Switch
   const handleCategorySwitch = (newCat: RawMaterialCategory) => {
@@ -211,10 +239,15 @@ function MaterialModalInner({
         setHardwareUnitPriceStr("");
         setBillingUnit("m");
       } else if (newCat === "Glass") {
-        setDescription("Standard Float Glass Sheet");
+        if (glassMode === "piece") {
+          setDescription('4" x 24" Jalousie Glass Blade');
+          setBillingUnit("pc");
+        } else {
+          setDescription("Standard Float Glass Sheet");
+          setBillingUnit("sqm");
+        }
         setStockPriceStr("");
         setHardwareUnitPriceStr("");
-        setBillingUnit("sqm");
       } else if (newCat === "Hardware") {
         setDescription("Series 798 Sash Roller");
         setStockPriceStr("");
@@ -226,6 +259,22 @@ function MaterialModalInner({
         setHardwareUnitPriceStr("");
         setBillingUnit("tube");
       }
+    }
+  };
+
+  const handleGlassModeSwitch = (mode: "sheet" | "piece") => {
+    setGlassMode(mode);
+    if (!isEditing) {
+      if (mode === "piece") {
+        setDescription('4" x 24" Jalousie Glass Blade');
+        setBillingUnit("pc");
+      } else {
+        setDescription("Standard Float Glass Sheet");
+        setBillingUnit("sqm");
+      }
+      setStockPriceStr("");
+    } else {
+      setBillingUnit(mode === "piece" ? "pc" : "sqm");
     }
   };
 
@@ -253,12 +302,12 @@ function MaterialModalInner({
       finish_type: defaultFinish,
       billing_unit: derivedRate.unitLabel,
       unit_price: derivedRate.unitPrice,
-      waste_allowance: wasteAllowance,
+      waste_allowance: category === "Glass" && glassMode === "piece" ? 0.0 : wasteAllowance,
       is_active: isActive,
       stock_length_meters: category === "Aluminum" ? STANDARD_STOCK_LENGTH_METERS : undefined,
       stock_price_rrd: category === "Aluminum" || category === "Glass" ? numericStockPrice : numericHardwarePrice,
-      sheet_width_ft: category === "Glass" ? glassWidthFt : undefined,
-      sheet_height_ft: category === "Glass" ? glassHeightFt : undefined,
+      sheet_width_ft: category === "Glass" && glassMode === "sheet" ? glassWidthFt : undefined,
+      sheet_height_ft: category === "Glass" && glassMode === "sheet" ? glassHeightFt : undefined,
       is_premium_trigger: false,
       pricing_tier: "Standard",
       supported_thicknesses: category === "Glass" ? [6, 8, 12] : undefined,
@@ -436,23 +485,54 @@ function MaterialModalInner({
           {/* Glass Infill View */}
           {category === "Glass" && (
             <div className="flex flex-col gap-4 bg-neutral-50/70 border border-neutral-200 rounded-[16px] p-4">
+              {/* Glass Ingestion Mode Toggle */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-neutral-700">Glass Billing Mode</label>
+                <div className="grid grid-cols-2 gap-2 bg-neutral-200/60 p-1 rounded-xl">
+                  <button
+                    type="button"
+                    onClick={() => handleGlassModeSwitch("sheet")}
+                    className={cn(
+                      "py-1.5 px-3 rounded-lg text-xs font-medium transition-all cursor-pointer text-center",
+                      glassMode === "sheet"
+                        ? "bg-white text-[#097283] shadow-xs font-semibold"
+                        : "text-neutral-600 hover:text-neutral-900"
+                    )}
+                  >
+                    Standard Whole Sheet (Area)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleGlassModeSwitch("piece")}
+                    className={cn(
+                      "py-1.5 px-3 rounded-lg text-xs font-medium transition-all cursor-pointer text-center",
+                      glassMode === "piece"
+                        ? "bg-white text-[#097283] shadow-xs font-semibold"
+                        : "text-neutral-600 hover:text-neutral-900"
+                    )}
+                  >
+                    Jalousie / Louver Blade (Per Piece)
+                  </button>
+                </div>
+              </div>
+
               {/* Description */}
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs font-medium text-neutral-700">
-                  Glass Sheet Description <span className="text-red-500">*</span>
+                  {glassMode === "piece" ? "Jalousie Blade Description / Size" : "Glass Sheet Description"} <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  placeholder="e.g. Standard Architectural Glass Sheet"
+                  placeholder={glassMode === "piece" ? 'e.g. 4" x 24" Jalousie Glass Blade' : "e.g. Standard Architectural Glass Sheet"}
                   className="w-full px-3.5 py-2 rounded-xl border border-neutral-300 text-sm bg-white text-[#0f1422] focus:outline-none focus:border-[#097283]"
                   required
                 />
                 {/* Quick suggestions */}
                 <div className="flex items-center gap-1.5 flex-wrap pt-1">
                   <span className="text-[10px] text-neutral-400 font-normal">Suggestions:</span>
-                  {GLASS_SUGGESTIONS.map((g) => (
+                  {(glassMode === "piece" ? JALOUSIE_GLASS_SUGGESTIONS : GLASS_SUGGESTIONS).map((g) => (
                     <button
                       key={g}
                       type="button"
@@ -469,7 +549,7 @@ function MaterialModalInner({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="flex flex-col gap-1.5">
                   <label className="text-xs font-medium text-neutral-700">
-                    R.R.D. Whole Sheet Base Price (PHP) <span className="text-red-500">*</span>
+                    {glassMode === "piece" ? "Price per Blade (PHP / pc)" : "R.R.D. Whole Sheet Base Price (PHP)"} <span className="text-red-500">*</span>
                   </label>
                   <div className="relative">
                     <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-500 text-sm font-semibold">
@@ -488,9 +568,11 @@ function MaterialModalInner({
                 </div>
 
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-medium text-neutral-700">Standard Stock Sheet Size</label>
+                  <label className="text-xs font-medium text-neutral-700">
+                    {glassMode === "piece" ? "Billing & Sizing Mode" : "Standard Stock Sheet Size"}
+                  </label>
                   <div className="px-3.5 py-2 rounded-xl border border-neutral-200 bg-neutral-100 text-sm text-neutral-600 font-medium">
-                    {glassWidthFt} ft x {glassHeightFt} ft ({glassWidthFt * glassHeightFt} sq.ft.)
+                    {glassMode === "piece" ? "Per Piece (pc) Louver Slat" : `${glassWidthFt} ft x ${glassHeightFt} ft (${glassWidthFt * glassHeightFt} sq.ft.)`}
                   </div>
                 </div>
               </div>
@@ -499,8 +581,17 @@ function MaterialModalInner({
               <div className="flex items-start gap-2.5 text-xs text-cyan-900 bg-cyan-50 border border-cyan-200/80 rounded-xl p-3">
                 <Info className="size-4 shrink-0 text-cyan-600 mt-0.5" />
                 <div className="leading-relaxed">
-                  <span className="font-semibold block">Automatic Glass Variations & Surcharges:</span>
-                  Customers choose glass types (Regular, Frosted, Mirror, Tempered, Reflective), glass colors (Clear, Bronze, Silver, Blue), and thicknesses (6mm, 8mm, 12mm) on the 3D visualizer. The single-application x2 premium multiplier and thickness surcharges (+₱400/+₱600, +₱1,000/+₱1,200) calculate dynamically at checkout.
+                  {glassMode === "piece" ? (
+                    <>
+                      <span className="font-semibold block">Jalousie Blade Per-Piece Billing:</span>
+                      Jalousie glass slats are procured and billed per discrete blade. In parametric quotations, fixture pricing evaluates directly from slat count without scrap conversions. Special glass finish multipliers (Frosted, Reflective) still apply dynamically.
+                    </>
+                  ) : (
+                    <>
+                      <span className="font-semibold block">Automatic Glass Variations & Surcharges:</span>
+                      Customers choose glass types (Regular, Frosted, Mirror, Tempered, Reflective), glass colors (Clear, Bronze, Silver, Blue), and thicknesses (6mm, 8mm, 12mm) on the 3D visualizer. The single-application x2 premium multiplier and thickness surcharges (+₱400/+₱600, +₱1,000/+₱1,200) calculate dynamically at checkout.
+                    </>
+                  )}
                 </div>
               </div>
             </div>

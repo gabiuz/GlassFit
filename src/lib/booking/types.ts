@@ -221,6 +221,17 @@ export type UpdateItemNegotiatedPriceResult =
   | { ok: true; quotationId: string; item: import("@/lib/pricing/quotationDocument").ItemPricingView; pricing: import("@/lib/pricing/quotationDocument").QuotationPricingView; negotiatedBy: string | null; negotiatedAt: string | null; updatedAt: string }
   | { ok: false; code: "VALIDATION_ERROR" | "NOT_FOUND" | "ITEM_NOT_FOUND" | "UNSUPPORTED_QUOTATION" | "CONFLICT" | "PERSISTENCE_ERROR"; message: string };
 
+export const UpdateBookingLaborInputSchema = z.object({
+  quotationId: z.string().uuid(),
+  laborAmount: z.number().finite().min(0).max(9_999_999_999.99).nullable().refine(
+    (value) => value === null || Math.abs(value * 100 - Math.round(value * 100)) < 1e-7,
+    "Labor amount must have at most two decimal places",
+  ),
+  laborDescription: z.string().max(255).optional(),
+  expectedUpdatedAt: z.string().datetime({ offset: true }).or(z.string().datetime()),
+});
+export type UpdateBookingLaborInput = z.infer<typeof UpdateBookingLaborInputSchema>;
+
 // ----------------------------------------------------------------------------
 // 6. Admin relational query contracts (IMP-MS15, QAD-TC29)
 // ----------------------------------------------------------------------------

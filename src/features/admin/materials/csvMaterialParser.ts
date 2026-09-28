@@ -58,6 +58,7 @@ export const CSV_SAMPLE_ROWS = [
   '1" x 1" Aluminum Tube,Aluminum,Analok,720,6m,Standard hollow tube',
   '1" x 2" Aluminum Tube,Aluminum,White,1040,6m,Standard framing tube',
   'Clear Float Glass,Glass,Clear,864,4x6ft,Standard window glass',
+  '4" x 24" Jalousie Glass Blade,Glass,Clear,45,1pc,Jalousie window louver slat',
   'Tempered Silver Glass,Glass,Silver,1728,4x6ft,Premium safety glass',
   "Series 798 Roller,Hardware,None,45,1pc,Single sash roller",
 ];
@@ -179,6 +180,8 @@ export function parseRawMaterialCsv(csvContent: string): CsvParseResult {
     const rawCategory = getColValue(columns, "Category", "Type");
     const rawFinish = getColValue(columns, "Finish or Color", "Finish", "Color", "Variant");
     const rawPrice = getColValue(columns, "RRD Stock Price (PHP)", "Stock Price", "RRD Price", "Price", "Unit Price", "Cost");
+    const rawSize = getColValue(columns, "Stock Size (e.g. 6m or 4x6ft)", "Stock Size", "Size", "Unit");
+    const rawNotes = getColValue(columns, "Notes", "Note", "Remarks");
 
     // 1. Description / Name
     const description = rawName || `Material Item ${rowIndex}`;
@@ -228,14 +231,32 @@ export function parseRawMaterialCsv(csvContent: string): CsvParseResult {
     const sheetWidthFt = 4.0;
     const sheetHeightFt = 6.0;
 
+    const isJalousiePiece =
+      category === "Glass" &&
+      (catLower.includes("jalousie") ||
+        description.toLowerCase().includes("jalousie") ||
+        description.toLowerCase().includes("blade") ||
+        description.toLowerCase().includes("slat") ||
+        rawSize.toLowerCase().includes("pc") ||
+        rawSize.toLowerCase().includes("piece") ||
+        rawNotes.toLowerCase().includes("jalousie") ||
+        rawNotes.toLowerCase().includes("blade") ||
+        rawNotes.toLowerCase().includes("slat") ||
+        rawNotes.toLowerCase().includes("piece"));
+
     if (category === "Aluminum") {
       billingUnit = "m";
       unitPrice = Math.round((stockPriceRrd / stockLengthM + Number.EPSILON) * 100) / 100;
     } else if (category === "Glass") {
-      billingUnit = "sqm";
-      // Convert standard 4x6 ft (24 sqft) sheet to square meters
-      const ratePerSqFt = stockPriceRrd / STANDARD_SHEET_AREA_SQFT;
-      unitPrice = Math.round((ratePerSqFt * SQFT_PER_SQM + Number.EPSILON) * 100) / 100;
+      if (isJalousiePiece) {
+        billingUnit = "pc";
+        unitPrice = stockPriceRrd;
+      } else {
+        billingUnit = "sqm";
+        // Convert standard 4x6 ft (24 sqft) sheet to square meters
+        const ratePerSqFt = stockPriceRrd / STANDARD_SHEET_AREA_SQFT;
+        unitPrice = Math.round((ratePerSqFt * SQFT_PER_SQM + Number.EPSILON) * 100) / 100;
+      }
     } else if (category === "Hardware") {
       billingUnit = "pc";
       unitPrice = stockPriceRrd;
@@ -289,12 +310,12 @@ export function parseRawMaterialCsv(csvContent: string): CsvParseResult {
         finish_type: finishType,
         billing_unit: billingUnit,
         unit_price: unitPrice,
-        waste_allowance: category === "Aluminum" ? 0.12 : category === "Glass" ? 0.1 : 0.0,
+        waste_allowance: category === "Aluminum" ? 0.12 : (category === "Glass" && !isJalousiePiece) ? 0.1 : 0.0,
         is_active: true,
         stock_length_meters: category === "Aluminum" ? stockLengthM : undefined,
         stock_price_rrd: stockPriceRrd,
-        sheet_width_ft: category === "Glass" ? sheetWidthFt : undefined,
-        sheet_height_ft: category === "Glass" ? sheetHeightFt : undefined,
+        sheet_width_ft: category === "Glass" && !isJalousiePiece ? sheetWidthFt : undefined,
+        sheet_height_ft: category === "Glass" && !isJalousiePiece ? sheetHeightFt : undefined,
         is_premium_trigger: isPremiumTrigger,
         pricing_tier: pricingTier,
         supported_thicknesses: category === "Glass" ? [6, 8, 12] : undefined,

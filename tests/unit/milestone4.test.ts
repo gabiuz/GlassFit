@@ -18,6 +18,9 @@ describe("Milestone 4: Interactive Test-Drive Simulator & Parametric BOM Engine"
         hasSill: true,
         finishType: "Analok",
         glassType: "6mm_bronze",
+        laborFloor: 750,
+        laborRate: 0.25,
+        contractorMarginRate: 0.25,
       });
 
       // Aluminum Extrusions:
@@ -69,6 +72,9 @@ describe("Milestone 4: Interactive Test-Drive Simulator & Parametric BOM Engine"
         hasSill: true,
         finishType: "Analok",
         glassType: "6mm_bronze",
+        laborFloor: 750,
+        laborRate: 0.25,
+        contractorMarginRate: 0.25,
       });
 
       // Raw Extrusions Subtotal = 1,161.60
@@ -111,6 +117,9 @@ describe("Milestone 4: Interactive Test-Drive Simulator & Parametric BOM Engine"
         hasSill: false,
         finishType: "Analok",
         glassType: "6mm_bronze",
+        laborFloor: 750,
+        laborRate: 0.25,
+        contractorMarginRate: 0.25,
       });
 
       // Raw Extrusions Subtotal = 963.60 (Sill 198.00 omitted)
@@ -151,6 +160,9 @@ describe("Milestone 4: Interactive Test-Drive Simulator & Parametric BOM Engine"
         hasSill: true,
         finishType: "Analok",
         glassType: "6mm_bronze",
+        laborFloor: 750,
+        laborRate: 0.25,
+        contractorMarginRate: 0.25,
       });
 
       // Raw Extrusions Subtotal = 1,624.00 (Includes 6 rails and 6 stiles)
@@ -218,6 +230,9 @@ describe("Milestone 4: Interactive Test-Drive Simulator & Parametric BOM Engine"
         heightMm: 1200,
         panelCount: 2,
         hasSill: true,
+        laborFloor: 750,
+        laborRate: 0.25,
+        contractorMarginRate: 0.25,
       });
 
       assert.strictEqual(result.bomSummary.groups.length, 4);

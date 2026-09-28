@@ -22,6 +22,9 @@ describe("Milestone 5: Parametric Bill-of-Materials (BOM) Pricing Engine Core", 
         hasSill: true,
         finishType: "Analok",
         glassType: "6mm_bronze",
+        laborFloor: 750,
+        laborRate: 0.25,
+        contractorMarginRate: 0.25,
       });
 
       // Framing: Head (108.00) + Sill (132.00) + Jambs (168.00) + Rails (172.80) + Stiles (374.40) = 955.20
@@ -73,6 +76,9 @@ describe("Milestone 5: Parametric Bill-of-Materials (BOM) Pricing Engine Core", 
         hasSill: true,
         finishType: "Analok",
         glassType: "6mm_bronze",
+        laborFloor: 750,
+        laborRate: 0.25,
+        contractorMarginRate: 0.25,
       });
 
       // Raw Extrusions: Head (162.00) + Sill (198.00) + Jambs (168.00) + Rails (259.20) + Stiles (374.40) = 1,161.60
@@ -112,6 +118,9 @@ describe("Milestone 5: Parametric Bill-of-Materials (BOM) Pricing Engine Core", 
         heightMm: 1200,
         panelCount: 2,
         hasSill: true,
+        laborFloor: 750,
+        laborRate: 0.25,
+        contractorMarginRate: 0.25,
       });
 
       const withoutSill = calculateStandardSeries798({
@@ -119,6 +128,9 @@ describe("Milestone 5: Parametric Bill-of-Materials (BOM) Pricing Engine Core", 
         heightMm: 1200,
         panelCount: 2,
         hasSill: false,
+        laborFloor: 750,
+        laborRate: 0.25,
+        contractorMarginRate: 0.25,
       });
 
       // Raw Extrusions Subtotal without sill = 963.60
@@ -164,6 +176,9 @@ describe("Milestone 5: Parametric Bill-of-Materials (BOM) Pricing Engine Core", 
         hasSill: true,
         finishType: "Analok",
         glassType: "6mm_bronze",
+        laborFloor: 750,
+        laborRate: 0.25,
+        contractorMarginRate: 0.25,
       });
 
       // Raw Extrusions: Head (234.00) + Sill (286.00) + Jambs (168.00) + Rails (374.40) + Stiles (561.60) = 1,624.00
@@ -205,6 +220,9 @@ describe("Milestone 5: Parametric Bill-of-Materials (BOM) Pricing Engine Core", 
         hasSill: true,
         finishType: "PowderCoatedWhite",
         glassType: "6mm_tempered",
+        laborFloor: 750,
+        laborRate: 0.25,
+        contractorMarginRate: 0.25,
       });
 
       // Head (1.2*105=126) + Sill (1.2*125=150) + Jambs (2.4*82=196.8) + Rails (2.4*84=201.6) + Stiles (4.8*90=432) = 1106.40
@@ -230,6 +248,9 @@ describe("Milestone 5: Parametric Bill-of-Materials (BOM) Pricing Engine Core", 
         panelCount: 2,
         hasSill: true,
         structuralWaiver: false,
+        laborFloor: 750,
+        laborRate: 0.25,
+        contractorMarginRate: 0.25,
       });
 
       const quoteId = "550e8400-e29b-41d4-a716-446655440000";

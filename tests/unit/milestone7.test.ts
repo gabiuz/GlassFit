@@ -22,6 +22,9 @@ describe("Milestone 7: Quotation Summary & Consultation PDF Handoff", () => {
         hasSill: true,
         finishType: "Analok",
         glassType: "6mm_bronze",
+        laborFloor: 750,
+        laborRate: 0.25,
+        contractorMarginRate: 0.25,
       });
 
       assert.strictEqual(bomResult.finalQuotation, 4362.93);
@@ -48,6 +51,9 @@ describe("Milestone 7: Quotation Summary & Consultation PDF Handoff", () => {
         heightMm: 1200,
         panelCount: 2,
         hasSill: true,
+        laborFloor: 750,
+        laborRate: 0.25,
+        contractorMarginRate: 0.25,
       });
 
       const withoutSill = calculateStandardSeries798({
@@ -55,6 +61,9 @@ describe("Milestone 7: Quotation Summary & Consultation PDF Handoff", () => {
         heightMm: 1200,
         panelCount: 2,
         hasSill: false,
+        laborFloor: 750,
+        laborRate: 0.25,
+        contractorMarginRate: 0.25,
       });
 
       assert.strictEqual(withSill.finalQuotation, 5670.74);
@@ -76,6 +85,9 @@ describe("Milestone 7: Quotation Summary & Consultation PDF Handoff", () => {
         heightMm: 1200,
         panelCount: 2,
         hasSill: true,
+        laborFloor: 750,
+        laborRate: 0.25,
+        contractorMarginRate: 0.25,
       });
 
       const metadata = {
