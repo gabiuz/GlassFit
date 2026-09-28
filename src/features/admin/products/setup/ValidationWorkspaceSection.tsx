@@ -406,13 +406,14 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
                             {/* Itemized summary lines */}
                             <div className="space-y-1.5 text-xs">
                                 <div className="flex justify-between items-center text-neutral-600">
-                                    <span>Aluminum Extrusions ({bomCalculation.totalLinearMetersFraming.toFixed(2)}m + 12% scrap):</span>
+                                    <span>Aluminum Extrusions ({bomCalculation.totalLinearMetersFraming.toFixed(2)}m):</span>
                                     <span className="font-mono font-medium text-neutral-900">PHP {bomCalculation.effectiveFramingCost.toFixed(2)}</span>
                                 </div>
                                 <div className="flex justify-between items-center text-neutral-600">
-                                    <span>Glass Infill ({bomCalculation.glazingAreaSqm.toFixed(2)}m² + 10% scrap):</span>
+                                    <span>Glass Infill ({bomCalculation.glazingAreaSqm.toFixed(2)}m²):</span>
                                     <span className="font-mono font-medium text-neutral-900">PHP {bomCalculation.effectiveGlazingCost.toFixed(2)}</span>
                                 </div>
+
                                 <div className="flex justify-between items-center text-neutral-600">
                                     <span>Hardware & Sealant Consumables:</span>
                                     <span className="font-mono font-medium text-neutral-900">PHP {(bomCalculation.hardwareSubtotal + bomCalculation.consumablesSubtotal).toFixed(2)}</span>

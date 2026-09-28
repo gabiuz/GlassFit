@@ -3,3 +3,6 @@ export { MaterialsContent } from "./MaterialsContent";
 export { MaterialModal } from "./MaterialModal";
 export { BatchPriceModal } from "./BatchPriceModal";
 export { DeleteMaterialModal } from "./DeleteMaterialModal";
+export { MaterialUploadModal } from "./MaterialUploadModal";
+export * from "./csvMaterialParser";
+

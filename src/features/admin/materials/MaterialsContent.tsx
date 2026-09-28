@@ -2,18 +2,23 @@
 
 import { useState, useMemo, useTransition } from "react";
 import { SearchBar } from "@/components/shared/SearchBar";
-import { Copy, Check, Plus, TrendingUp, Layers, CheckCircle2 } from "lucide-react";
+import { Copy, Check, Plus, TrendingUp, Layers, CheckCircle2, UploadCloud } from "lucide-react";
+
 import { cn } from "@/lib/utils";
 import type { RawMaterial, RawMaterialCategory, RawMaterialFinishType } from "@/lib/pricing/types";
 import {
   upsertRawMaterial,
   deleteRawMaterial,
   batchUpdateMaterialPrices,
+  batchUpsertRawMaterials,
   toggleRawMaterialStatus,
+  getRawMaterials,
 } from "@/lib/admin/materials/materialActions";
 import { MaterialModal } from "./MaterialModal";
 import { BatchPriceModal } from "./BatchPriceModal";
 import { DeleteMaterialModal } from "./DeleteMaterialModal";
+import { MaterialUploadModal } from "./MaterialUploadModal";
+
 
 type MaterialsContentProps = {
   initialMaterials: RawMaterial[];
@@ -93,6 +98,7 @@ export function MaterialsContent({ initialMaterials }: MaterialsContentProps) {
   const [isAddEditOpen, setIsAddEditOpen] = useState(false);
   const [editingMaterial, setEditingMaterial] = useState<RawMaterial | null>(null);
   const [isBatchOpen, setIsBatchOpen] = useState(false);
+  const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [deletingMaterial, setDeletingMaterial] = useState<RawMaterial | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -105,6 +111,17 @@ export function MaterialsContent({ initialMaterials }: MaterialsContentProps) {
       setToastMessage((current) => (current === msg ? null : current));
     }, 3000);
   };
+
+  const handleUploadSuccess = async (count: number) => {
+    showToast(`Successfully imported ${count} materials from spreadsheet`);
+    try {
+      const refreshed = await getRawMaterials();
+      setMaterials(refreshed);
+    } catch {
+      // Fallback
+    }
+  };
+
 
   // Filtered materials
   const filtered = useMemo(() => {
@@ -228,8 +245,9 @@ export function MaterialsContent({ initialMaterials }: MaterialsContentProps) {
             Raw Materials Catalog
           </h1>
           <p className="text-neutral-700 text-sm sm:text-base lg:text-lg font-normal leading-snug">
-            Manage wholesale aluminum profiles, glass stock sheets, hardware, and waste scrap allowances
+            Manage standard aluminum profiles, whole glass stock sheets, and hardware accessories
           </p>
+
         </div>
 
         <div className="w-full xl:w-auto flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
@@ -244,12 +262,22 @@ export function MaterialsContent({ initialMaterials }: MaterialsContentProps) {
 
           <button
             type="button"
+            onClick={() => setIsUploadOpen(true)}
+            className="bg-white border border-neutral-300 hover:bg-neutral-50 text-[#0f1422] rounded-[25px] px-4 py-2.5 sm:py-3 flex items-center justify-center gap-2 cursor-pointer transition-colors shrink-0 shadow-xs"
+          >
+            <UploadCloud className="size-4 text-[#097283]" />
+            <span className="text-sm font-medium whitespace-nowrap">Import Spreadsheet</span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => setIsBatchOpen(true)}
             className="bg-white border border-neutral-300 hover:bg-neutral-50 text-[#0f1422] rounded-[25px] px-4 py-2.5 sm:py-3 flex items-center justify-center gap-2 cursor-pointer transition-colors shrink-0 shadow-xs"
           >
             <TrendingUp className="size-4 text-[#097283]" />
             <span className="text-sm font-medium whitespace-nowrap">Batch Price Adjust</span>
           </button>
+
 
           <button
             type="button"
@@ -335,8 +363,6 @@ export function MaterialsContent({ initialMaterials }: MaterialsContentProps) {
                 <th className="py-3 px-3">Finish / Variant</th>
                 <th className="py-3 px-3 text-center">Unit</th>
                 <th className="py-3 px-3 text-right">Unit Price</th>
-                <th className="py-3 px-3 text-right">Scrap Allowance</th>
-                <th className="py-3 px-3 text-right">Effective Rate</th>
                 <th className="py-3 px-3 text-center">Active</th>
                 <th className="py-3 px-3 text-center">Actions</th>
               </tr>
@@ -344,7 +370,7 @@ export function MaterialsContent({ initialMaterials }: MaterialsContentProps) {
             <tbody className="divide-y divide-neutral-100">
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="py-12 text-center text-neutral-400 text-sm">
+                  <td colSpan={8} className="py-12 text-center text-neutral-400 text-sm">
                     <div className="flex flex-col items-center justify-center gap-2">
                       <Layers className="size-8 text-neutral-300" />
                       <span>No raw materials found matching your criteria.</span>
@@ -353,8 +379,6 @@ export function MaterialsContent({ initialMaterials }: MaterialsContentProps) {
                 </tr>
               ) : (
                 filtered.map((item) => {
-                  const effectivePrice = item.unit_price * (1 + item.waste_allowance);
-
                   return (
                     <tr
                       key={item.id}
@@ -400,18 +424,6 @@ export function MaterialsContent({ initialMaterials }: MaterialsContentProps) {
                         ₱{item.unit_price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </td>
 
-                      {/* Scrap Allowance */}
-                      <td className="py-3 px-3 text-right font-mono">
-                        <span className={item.waste_allowance > 0 ? "text-amber-700 font-semibold" : "text-neutral-400"}>
-                          {(item.waste_allowance * 100).toFixed(1)}%
-                        </span>
-                      </td>
-
-                      {/* Effective Rate */}
-                      <td className="py-3 px-3 text-right font-semibold text-[#097283]">
-                        ₱{effectivePrice.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </td>
-
                       {/* Active Status Switch */}
                       <td className="py-3 px-3 text-center">
                         <button
@@ -431,6 +443,7 @@ export function MaterialsContent({ initialMaterials }: MaterialsContentProps) {
                           />
                         </button>
                       </td>
+
 
                       {/* Actions */}
                       <td className="py-3 px-3 text-center">
@@ -484,6 +497,14 @@ export function MaterialsContent({ initialMaterials }: MaterialsContentProps) {
         onSuccess={handleBatchSuccess}
       />
 
+      {/* Spreadsheet Import Modal */}
+      <MaterialUploadModal
+        isOpen={isUploadOpen}
+        onClose={() => setIsUploadOpen(false)}
+        onSuccess={handleUploadSuccess}
+        onBatchUpsertAction={batchUpsertRawMaterials}
+      />
+
       {/* Delete Confirmation Modal */}
       <DeleteMaterialModal
         isOpen={!!deletingMaterial}
@@ -495,3 +516,4 @@ export function MaterialsContent({ initialMaterials }: MaterialsContentProps) {
     </div>
   );
 }
+
