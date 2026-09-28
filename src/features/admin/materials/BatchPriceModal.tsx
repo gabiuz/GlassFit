@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { X, TrendingUp, AlertCircle, RefreshCw } from "lucide-react";
 import type { RawMaterial, RawMaterialCategory } from "@/lib/pricing/types";
 import type { BatchUpdateMaterialPricesInput } from "@/lib/admin/materials/types";
+import { sanitizeDecimalInput } from "./MaterialModal";
 
 type BatchPriceModalProps = {
   isOpen: boolean;
@@ -25,18 +26,18 @@ export function BatchPriceModal({
 }: BatchPriceModalProps) {
   const [selectedCategory, setSelectedCategory] = useState<RawMaterialCategory | "ALL">("ALL");
   const [percentageDelta, setPercentageDelta] = useState<number>(5);
-  const [priceMap, setPriceMap] = useState<Record<string, number>>({});
+  const [priceMapStr, setPriceMapStr] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Initialize priceMap with current unit prices
+  // Initialize priceMapStr with current unit prices
   useEffect(() => {
     if (isOpen) {
-      const initialMap: Record<string, number> = {};
+      const initialMap: Record<string, string> = {};
       materials.forEach((m) => {
-        initialMap[m.id] = m.unit_price;
+        initialMap[m.id] = m.unit_price.toFixed(2);
       });
-      setPriceMap(initialMap);
+      setPriceMapStr(initialMap);
       setErrorMessage(null);
     }
   }, [isOpen, materials]);
@@ -49,13 +50,12 @@ export function BatchPriceModal({
 
   // Apply percentage hike/discount across filtered materials
   const handleApplyPercentage = (pct: number) => {
-    setPriceMap((prev) => {
+    setPriceMapStr((prev) => {
       const updated = { ...prev };
       filteredMaterials.forEach((m) => {
         const factor = 1 + pct / 100;
-        // Round to 2 decimal places
         const newPrice = Math.round(m.unit_price * factor * 100) / 100;
-        updated[m.id] = Math.max(0, newPrice);
+        updated[m.id] = Math.max(0, newPrice).toFixed(2);
       });
       return updated;
     });
@@ -63,10 +63,10 @@ export function BatchPriceModal({
 
   // Reset to original prices for current filter
   const handleResetToOriginal = () => {
-    setPriceMap((prev) => {
+    setPriceMapStr((prev) => {
       const updated = { ...prev };
       filteredMaterials.forEach((m) => {
-        updated[m.id] = m.unit_price;
+        updated[m.id] = m.unit_price.toFixed(2);
       });
       return updated;
     });
@@ -74,13 +74,18 @@ export function BatchPriceModal({
 
   // Calculate total modified count
   const modifiedItems = useMemo(() => {
-    return Object.entries(priceMap)
-      .filter(([id, newPrice]) => {
+    return Object.entries(priceMapStr)
+      .filter(([id, priceStr]) => {
         const original = materials.find((m) => m.id === id);
-        return original && original.unit_price !== newPrice;
+        if (!original) return false;
+        const newPrice = parseFloat(priceStr);
+        return !isNaN(newPrice) && Math.abs(original.unit_price - newPrice) > 0.001;
       })
-      .map(([id, newPrice]) => ({ id, unit_price: newPrice }));
-  }, [priceMap, materials]);
+      .map(([id, priceStr]) => ({
+        id,
+        unit_price: Math.max(0, Math.round((parseFloat(priceStr) + Number.EPSILON) * 100) / 100),
+      }));
+  }, [priceMapStr, materials]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -89,10 +94,13 @@ export function BatchPriceModal({
       return;
     }
 
-    // Check for negative prices
-    const hasNegative = modifiedItems.some((item) => item.unit_price < 0 || isNaN(item.unit_price));
-    if (hasNegative) {
-      setErrorMessage("Unit prices must be non-negative numbers");
+    // Check for invalid or negative prices
+    const hasInvalid = Object.values(priceMapStr).some((str) => {
+      const val = parseFloat(str);
+      return isNaN(val) || val < 0;
+    });
+    if (hasInvalid) {
+      setErrorMessage("All entered unit prices must be non-negative valid numbers");
       return;
     }
 
@@ -226,7 +234,9 @@ export function BatchPriceModal({
             <tbody className="divide-y divide-neutral-200">
               {filteredMaterials.map((m) => {
                 const current = m.unit_price;
-                const newPrice = priceMap[m.id] ?? current;
+                const priceStr = priceMapStr[m.id] ?? current.toFixed(2);
+                const parsedNew = parseFloat(priceStr);
+                const newPrice = isNaN(parsedNew) ? 0 : parsedNew;
                 const delta = newPrice - current;
                 const pctChange = current > 0 ? (delta / current) * 100 : 0;
                 const isChanged = Math.abs(delta) > 0.001;
@@ -252,15 +262,15 @@ export function BatchPriceModal({
                       <div className="inline-flex items-center gap-1 bg-white border border-neutral-300 rounded-lg px-2 py-0.5 focus-within:border-[#097283]">
                         <span className="text-neutral-400 text-[10px]">₱</span>
                         <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          value={isNaN(newPrice) ? "" : newPrice}
+                          type="text"
+                          inputMode="decimal"
+                          placeholder="0.00"
+                          value={priceMapStr[m.id] ?? ""}
                           onChange={(e) => {
-                            const val = parseFloat(e.target.value);
-                            setPriceMap((prev) => ({
+                            const sanitized = sanitizeDecimalInput(e.target.value);
+                            setPriceMapStr((prev) => ({
                               ...prev,
-                              [m.id]: isNaN(val) ? 0 : val,
+                              [m.id]: sanitized,
                             }));
                           }}
                           className="w-20 text-xs font-mono font-semibold text-right outline-none text-[#0f1422]"

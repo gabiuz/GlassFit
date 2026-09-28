@@ -2,50 +2,87 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
-import { X, Sparkles, AlertCircle, Layers } from "lucide-react";
+import {
+  X,
+  Sparkles,
+  AlertCircle,
+  Layers,
+  CheckSquare,
+  ChevronDown,
+  ChevronUp,
+  Info,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
 import {
   type RawMaterial,
   type RawMaterialCategory,
-  type RawMaterialFinishType,
   type BillingUnit,
-  RawMaterialCategorySchema,
-  RawMaterialFinishTypeSchema,
-  BillingUnitSchema,
 } from "@/lib/pricing/types";
 import {
   UpsertRawMaterialInputSchema,
   type UpsertRawMaterialInput,
 } from "@/lib/admin/materials/types";
+import {
+  STANDARD_STOCK_LENGTH_METERS,
+  STANDARD_SHEET_AREA_SQFT,
+  SQFT_PER_SQM,
+} from "@/lib/pricing/rrdPricingEngine";
+import { generateMaterialCode } from "./csvMaterialParser";
 
 type MaterialModalProps = {
   isOpen: boolean;
   onClose: () => void;
   onSave: (saved: RawMaterial) => void;
-  material: RawMaterial | null; // null for Create, populated for Edit
+  material: RawMaterial | null;
   onUpsertAction: (input: UpsertRawMaterialInput) => Promise<RawMaterial>;
 };
 
-const CATEGORIES: RawMaterialCategory[] = ["Aluminum", "Glass", "Hardware", "Consumable"];
-
-const FINISH_TYPES: RawMaterialFinishType[] = [
-  "Analok",
-  "PowderCoatedWhite",
-  "PowderCoatedBlack",
-  "Anodized",
-  "Mill",
-  "Bronze",
-  "Clear",
-  "None",
+const CATEGORIES: {
+  key: RawMaterialCategory;
+  label: string;
+  icon: typeof Layers;
+}[] = [
+  { key: "Aluminum", label: "Aluminum Framing", icon: Layers },
+  { key: "Glass", label: "Glass Infill", icon: Sparkles },
+  { key: "Hardware", label: "Hardware & Latches", icon: CheckSquare },
+  { key: "Consumable", label: "Consumables & Sealants", icon: Layers },
 ];
 
-const BILLING_UNITS: BillingUnit[] = ["m", "sqm", "pc", "set", "tube", "lot"];
+const ALUMINUM_SIZE_SUGGESTIONS = [
+  '1" x 1" Aluminum Tube',
+  '1" x 2" Aluminum Tube',
+  '1" x 3" Aluminum Tube',
+  '1-3/4" x 3" Aluminum Tube',
+  '1-3/4" x 4" Aluminum Tube',
+  "Series 798 Double Head Track",
+  "Series 798 Double Sill Track",
+  "Series 798 Double Jamb",
+  "Series 798 Sash Rails",
+  "Series 798 Sash Stiles",
+];
 
-const DEFAULT_WASTE_BY_CATEGORY: Record<RawMaterialCategory, number> = {
-  Aluminum: 0.12, // 12% standard offcut scrap
-  Glass: 0.1, // 10% handling & edge cut scrap
-  Hardware: 0.0, // Zero scrap for discrete hardware
-  Consumable: 0.0, // Tube/roll units
-};
+const GLASS_SUGGESTIONS = [
+  "Standard Float Glass Sheet",
+  "Commercial Architectural Glass Sheet",
+  "Window & Door Glass Sheet",
+  "Heavy-Duty Partition Glass Sheet",
+];
+
+/**
+ * Sanitizes decimal input so it only accepts numbers, at most one period,
+ * and at most two digits after the decimal point.
+ */
+export function sanitizeDecimalInput(raw: string): string {
+  const clean = raw.replace(/[^0-9.]/g, "");
+  const parts = clean.split(".");
+  if (parts.length > 2) {
+    return parts[0] + "." + parts.slice(1).join("").slice(0, 2);
+  }
+  if (parts.length === 2) {
+    return `${parts[0]}.${parts[1].slice(0, 2)}`;
+  }
+  return clean;
+}
 
 export function MaterialModal({
   isOpen,
@@ -56,14 +93,20 @@ export function MaterialModal({
 }: MaterialModalProps) {
   const isEditing = !!material;
 
-  const [materialCode, setMaterialCode] = useState("");
-  const [description, setDescription] = useState("");
   const [category, setCategory] = useState<RawMaterialCategory>("Aluminum");
-  const [finishType, setFinishType] = useState<RawMaterialFinishType>("Analok");
+  const [description, setDescription] = useState("");
+  const [glassWidthFt] = useState<number>(4.0);
+  const [glassHeightFt] = useState<number>(6.0);
+
+  // String-based price states to avoid sticky 0 defaults
+  const [stockPriceStr, setStockPriceStr] = useState<string>("");
+  const [hardwareUnitPriceStr, setHardwareUnitPriceStr] = useState<string>("");
   const [billingUnit, setBillingUnit] = useState<BillingUnit>("m");
-  const [unitPrice, setUnitPrice] = useState<number>(0);
-  const [wasteAllowance, setWasteAllowance] = useState<number>(0.12);
+  const [wasteAllowance] = useState<number>(0.0);
   const [isActive, setIsActive] = useState<boolean>(true);
+
+  const [customMaterialCode, setCustomMaterialCode] = useState<string>("");
+  const [isCodeAccordionOpen, setIsCodeAccordionOpen] = useState(false);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -72,76 +115,154 @@ export function MaterialModal({
   useEffect(() => {
     if (isOpen) {
       if (material) {
-        setMaterialCode(material.material_code);
-        setDescription(material.description);
         setCategory(material.category);
-        setFinishType(material.finish_type);
-        setBillingUnit(material.billing_unit);
-        setUnitPrice(material.unit_price);
-        setWasteAllowance(material.waste_allowance);
+        setDescription(material.description);
+        setCustomMaterialCode(material.material_code);
         setIsActive(material.is_active);
+        setBillingUnit(material.billing_unit);
+
+        if (material.category === "Aluminum") {
+          const alPrice =
+            material.stock_price_rrd ??
+            (material.unit_price ? material.unit_price * STANDARD_STOCK_LENGTH_METERS : null);
+          setStockPriceStr(alPrice != null ? alPrice.toFixed(2) : "");
+          setHardwareUnitPriceStr("");
+        } else if (material.category === "Glass") {
+          const glPrice =
+            material.stock_price_rrd ??
+            (material.unit_price ? (material.unit_price / SQFT_PER_SQM) * STANDARD_SHEET_AREA_SQFT : null);
+          setStockPriceStr(glPrice != null ? glPrice.toFixed(2) : "");
+          setHardwareUnitPriceStr("");
+        } else {
+          setStockPriceStr("");
+          setHardwareUnitPriceStr(material.unit_price != null ? material.unit_price.toFixed(2) : "");
+        }
       } else {
-        setMaterialCode("");
-        setDescription("");
         setCategory("Aluminum");
-        setFinishType("Analok");
+        setDescription('1" x 1" Aluminum Tube');
+        setStockPriceStr("");
+        setHardwareUnitPriceStr("");
         setBillingUnit("m");
-        setUnitPrice(0);
-        setWasteAllowance(DEFAULT_WASTE_BY_CATEGORY["Aluminum"]);
         setIsActive(true);
+        setCustomMaterialCode("");
+        setIsCodeAccordionOpen(false);
       }
       setErrorMessage(null);
     }
   }, [isOpen, material]);
 
-  // When category changes in Create mode, intelligently update default finish, unit, and waste
-  const handleCategoryChange = (newCategory: RawMaterialCategory) => {
-    setCategory(newCategory);
+  // Finish type is stored as Standard/Base for raw inventory materials; variations are chosen dynamically by customers
+  const defaultFinish = "Standard";
+
+  // Auto-derived material code
+  const autoGeneratedCode = useMemo(() => {
+    return generateMaterialCode(category, description || "ITEM", defaultFinish);
+  }, [category, description, defaultFinish]);
+
+  const activeMaterialCode = customMaterialCode.trim() || autoGeneratedCode;
+
+  // Numeric equivalents for calculation
+  const numericStockPrice = parseFloat(stockPriceStr) || 0;
+  const numericHardwarePrice = parseFloat(hardwareUnitPriceStr) || 0;
+
+  // Derived unit prices
+  const derivedRate = useMemo<{
+    unitPrice: number;
+    unitLabel: BillingUnit;
+    displayText: string;
+  }>(() => {
+    if (category === "Aluminum") {
+      const perMeter = Math.round((numericStockPrice / STANDARD_STOCK_LENGTH_METERS + Number.EPSILON) * 100) / 100;
+      return {
+        unitPrice: perMeter,
+        unitLabel: "m" as BillingUnit,
+        displayText: numericStockPrice > 0
+          ? `₱${numericStockPrice.toFixed(2)} ÷ 6m = ₱${perMeter.toFixed(2)} / meter`
+          : "Enter base stock price to calculate rate per meter",
+      };
+    }
+    if (category === "Glass") {
+      const area = Math.max(0.1, glassWidthFt * glassHeightFt);
+      const perSqFt = numericStockPrice / area;
+      const perSqm = Math.round((perSqFt * SQFT_PER_SQM + Number.EPSILON) * 100) / 100;
+      return {
+        unitPrice: perSqm,
+        unitLabel: "sqm" as BillingUnit,
+        displayText: numericStockPrice > 0
+          ? `₱${perSqFt.toFixed(2)} / sq.ft. (₱${perSqm.toFixed(2)} / m²) (₱${numericStockPrice.toFixed(2)} / ${area.toFixed(0)} sq.ft.)`
+          : "Enter whole sheet price to calculate rate per sq.ft. & m²",
+      };
+    }
+    return {
+      unitPrice: numericHardwarePrice,
+      unitLabel: billingUnit,
+      displayText: numericHardwarePrice > 0
+        ? `₱${numericHardwarePrice.toFixed(2)} / ${billingUnit}`
+        : "Enter unit selling price",
+    };
+  }, [category, numericStockPrice, glassWidthFt, glassHeightFt, numericHardwarePrice, billingUnit]);
+
+  // Handle Category Switch
+  const handleCategorySwitch = (newCat: RawMaterialCategory) => {
+    setCategory(newCat);
     if (!isEditing) {
-      setWasteAllowance(DEFAULT_WASTE_BY_CATEGORY[newCategory]);
-      if (newCategory === "Aluminum") {
-        setFinishType("Analok");
+      if (newCat === "Aluminum") {
+        setDescription('1" x 1" Aluminum Tube');
+        setStockPriceStr("");
+        setHardwareUnitPriceStr("");
         setBillingUnit("m");
-      } else if (newCategory === "Glass") {
-        setFinishType("Clear");
+      } else if (newCat === "Glass") {
+        setDescription("Standard Float Glass Sheet");
+        setStockPriceStr("");
+        setHardwareUnitPriceStr("");
         setBillingUnit("sqm");
-      } else if (newCategory === "Hardware") {
-        setFinishType("Mill");
+      } else if (newCat === "Hardware") {
+        setDescription("Series 798 Sash Roller");
+        setStockPriceStr("");
+        setHardwareUnitPriceStr("");
         setBillingUnit("pc");
-      } else if (newCategory === "Consumable") {
-        setFinishType("None");
+      } else if (newCat === "Consumable") {
+        setDescription("Silicone Sealant 300ml");
+        setStockPriceStr("");
+        setHardwareUnitPriceStr("");
         setBillingUnit("tube");
       }
     }
   };
 
-  // Real-time calculation preview of effective cost
-  const effectiveCost = useMemo(() => {
-    const validPrice = Math.max(0, isNaN(unitPrice) ? 0 : unitPrice);
-    const validWaste = Math.max(0, Math.min(1, isNaN(wasteAllowance) ? 0 : wasteAllowance));
-    return validPrice * (1 + validWaste);
-  }, [unitPrice, wasteAllowance]);
-
-  const scrapMarkup = useMemo(() => {
-    const validPrice = Math.max(0, isNaN(unitPrice) ? 0 : unitPrice);
-    const validWaste = Math.max(0, Math.min(1, isNaN(wasteAllowance) ? 0 : wasteAllowance));
-    return validPrice * validWaste;
-  }, [unitPrice, wasteAllowance]);
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
 
+    if (category === "Aluminum" || category === "Glass") {
+      if (!stockPriceStr.trim() || numericStockPrice <= 0) {
+        setErrorMessage("Please enter a valid stock price greater than 0");
+        return;
+      }
+    } else {
+      if (!hardwareUnitPriceStr.trim() || numericHardwarePrice <= 0) {
+        setErrorMessage("Please enter a valid unit selling price greater than 0");
+        return;
+      }
+    }
+
     const rawInput: UpsertRawMaterialInput = {
       ...(material?.id ? { id: material.id } : {}),
-      material_code: materialCode.trim(),
+      material_code: activeMaterialCode,
       description: description.trim(),
       category,
-      finish_type: finishType,
-      billing_unit: billingUnit,
-      unit_price: Number(unitPrice),
-      waste_allowance: Number(wasteAllowance),
+      finish_type: defaultFinish,
+      billing_unit: derivedRate.unitLabel,
+      unit_price: derivedRate.unitPrice,
+      waste_allowance: wasteAllowance,
       is_active: isActive,
+      stock_length_meters: category === "Aluminum" ? STANDARD_STOCK_LENGTH_METERS : undefined,
+      stock_price_rrd: category === "Aluminum" || category === "Glass" ? numericStockPrice : numericHardwarePrice,
+      sheet_width_ft: category === "Glass" ? glassWidthFt : undefined,
+      sheet_height_ft: category === "Glass" ? glassHeightFt : undefined,
+      is_premium_trigger: false,
+      pricing_tier: "Standard",
+      supported_thicknesses: category === "Glass" ? [6, 8, 12] : undefined,
     };
 
     const validation = UpsertRawMaterialInputSchema.safeParse(rawInput);
@@ -176,7 +297,7 @@ export function MaterialModal({
       aria-modal="true"
     >
       <div
-        className="bg-white rounded-[20px] p-6 sm:p-8 w-full max-w-[620px] shadow-[0px_4px_30px_0px_rgba(0,0,0,0.15)] flex flex-col gap-5 my-8 select-none animate-in fade-in zoom-in-95 duration-150"
+        className="bg-white rounded-[20px] p-6 sm:p-8 w-full max-w-[640px] shadow-[0px_4px_30px_0px_rgba(0,0,0,0.15)] flex flex-col gap-5 my-8 select-none animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Header */}
@@ -191,8 +312,8 @@ export function MaterialModal({
               </h2>
               <p className="text-xs text-neutral-500 font-normal">
                 {isEditing
-                  ? "Update stock catalog rates and waste allowances"
-                  : "Register a new profile, glass sheet, or hardware accessory"}
+                  ? "Update R.R.D. base stock selling rates and dimensions"
+                  : "Register standard aluminum profiles, glass stock sheets, or hardware"}
               </p>
             </div>
           </div>
@@ -200,7 +321,7 @@ export function MaterialModal({
             type="button"
             onClick={onClose}
             disabled={isSubmitting}
-            className="p-1.5 rounded-lg text-neutral-400 hover:text-black hover:bg-neutral-100 transition-colors"
+            className="p-1.5 rounded-lg text-neutral-400 hover:text-black hover:bg-neutral-100 transition-colors cursor-pointer"
           >
             <X className="size-5" />
           </button>
@@ -214,192 +335,283 @@ export function MaterialModal({
           </div>
         )}
 
+        {/* Category Switcher Cards */}
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-semibold text-neutral-700">Select Material Category</label>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {CATEGORIES.map((cat) => {
+              const Icon = cat.icon;
+              const isSelected = category === cat.key;
+              return (
+                <button
+                  key={cat.key}
+                  type="button"
+                  onClick={() => handleCategorySwitch(cat.key)}
+                  className={cn(
+                    "flex flex-col items-center justify-center gap-1.5 p-3 rounded-[14px] border text-center transition-all cursor-pointer",
+                    isSelected
+                      ? "border-[#097283] bg-[#097283]/5 text-[#097283] shadow-xs"
+                      : "border-neutral-200 hover:border-neutral-300 bg-white text-neutral-600 hover:bg-neutral-50"
+                  )}
+                >
+                  <Icon className={cn("size-5", isSelected ? "text-[#097283]" : "text-neutral-500")} />
+                  <span className="text-xs font-medium leading-snug">{cat.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          {/* Row 1: Material Code & Description */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-neutral-700">
-                Material Code <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                value={materialCode}
-                onChange={(e) => setMaterialCode(e.target.value)}
-                placeholder="e.g. mat_al_798_head_anlk"
-                disabled={isEditing}
-                className="w-full px-3.5 py-2 rounded-xl border border-neutral-300 text-sm font-mono text-[#0f1422] placeholder:text-neutral-400 focus:outline-none focus:border-[#097283] focus:ring-1 focus:ring-[#097283] disabled:bg-neutral-100 disabled:text-neutral-500 transition-all"
-                required
-              />
-              <span className="text-[10px] text-neutral-400 font-normal">
-                Unique identifier used by parametric components
-              </span>
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-neutral-700">
-                Description <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="e.g. Series 798 Double Head Track"
-                className="w-full px-3.5 py-2 rounded-xl border border-neutral-300 text-sm text-[#0f1422] placeholder:text-neutral-400 focus:outline-none focus:border-[#097283] focus:ring-1 focus:ring-[#097283] transition-all"
-                required
-              />
-              <span className="text-[10px] text-neutral-400 font-normal">
-                Human-readable material or extrusion name
-              </span>
-            </div>
-          </div>
-
-          {/* Row 2: Category, Finish Type & Billing Unit */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-neutral-700">Category</label>
-              <select
-                value={category}
-                onChange={(e) => handleCategoryChange(e.target.value as RawMaterialCategory)}
-                className="w-full px-3 py-2 rounded-xl border border-neutral-300 text-sm bg-white text-[#0f1422] focus:outline-none focus:border-[#097283] focus:ring-1 focus:ring-[#097283] transition-all cursor-pointer"
-              >
-                {CATEGORIES.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-neutral-700">Finish / Variant</label>
-              <select
-                value={finishType}
-                onChange={(e) => setFinishType(e.target.value as RawMaterialFinishType)}
-                className="w-full px-3 py-2 rounded-xl border border-neutral-300 text-sm bg-white text-[#0f1422] focus:outline-none focus:border-[#097283] focus:ring-1 focus:ring-[#097283] transition-all cursor-pointer"
-              >
-                {FINISH_TYPES.map((f) => (
-                  <option key={f} value={f}>
-                    {f}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-neutral-700">Billing Unit</label>
-              <select
-                value={billingUnit}
-                onChange={(e) => setBillingUnit(e.target.value as BillingUnit)}
-                className="w-full px-3 py-2 rounded-xl border border-neutral-300 text-sm bg-white text-[#0f1422] focus:outline-none focus:border-[#097283] focus:ring-1 focus:ring-[#097283] transition-all cursor-pointer"
-              >
-                {BILLING_UNITS.map((u) => (
-                  <option key={u} value={u}>
-                    {u} ({u === "m" ? "Linear Meter" : u === "sqm" ? "Square Meter" : u === "pc" ? "Piece" : u === "tube" ? "Tube" : u === "set" ? "Set" : "Lot"})
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {/* Row 3: Unit Price & Waste Allowance */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-neutral-700">
-                Unit Price (PHP / {billingUnit}) <span className="text-red-500">*</span>
-              </label>
-              <div className="relative">
-                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-500 text-sm font-semibold">
-                  ₱
-                </span>
+          {/* Aluminum Framing View */}
+          {category === "Aluminum" && (
+            <div className="flex flex-col gap-4 bg-neutral-50/70 border border-neutral-200 rounded-[16px] p-4">
+              {/* Profile Description */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-medium text-neutral-700">
+                  Profile Size / Description <span className="text-red-500">*</span>
+                </label>
                 <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={isNaN(unitPrice) ? "" : unitPrice}
-                  onChange={(e) => setUnitPrice(parseFloat(e.target.value) || 0)}
-                  placeholder="0.00"
-                  className="w-full pl-8 pr-3.5 py-2 rounded-xl border border-neutral-300 text-sm font-medium text-[#0f1422] focus:outline-none focus:border-[#097283] focus:ring-1 focus:ring-[#097283] transition-all"
+                  type="text"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="e.g. 1 x 2 Aluminum Tube"
+                  className="w-full px-3.5 py-2 rounded-xl border border-neutral-300 text-sm bg-white text-[#0f1422] focus:outline-none focus:border-[#097283]"
+                  required
+                />
+                {/* Quick suggestions */}
+                <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                  <span className="text-[10px] text-neutral-400 font-normal">Common Profiles:</span>
+                  {ALUMINUM_SIZE_SUGGESTIONS.slice(0, 5).map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => setDescription(s)}
+                      className="text-[10px] bg-white border border-neutral-200 text-neutral-600 px-2 py-0.5 rounded-md hover:bg-neutral-100 transition-colors"
+                    >
+                      {s.split(" ")[0]} {s.split(" ")[1] || ""}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Price & Length Inputs */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-medium text-neutral-700">
+                    R.R.D. Base Price per 6m Bar (PHP) <span className="text-red-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-500 text-sm font-semibold">
+                      ₱
+                    </span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={stockPriceStr}
+                      onChange={(e) => setStockPriceStr(sanitizeDecimalInput(e.target.value))}
+                      placeholder="0.00"
+                      className="w-full pl-8 pr-3.5 py-2 rounded-xl border border-neutral-300 text-sm font-semibold bg-white text-[#0f1422] focus:outline-none focus:border-[#097283]"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-medium text-neutral-700">Standard Stock Length</label>
+                  <div className="px-3.5 py-2 rounded-xl border border-neutral-200 bg-neutral-100 text-sm text-neutral-600 font-medium">
+                    6.0 Meters (Standard)
+                  </div>
+                </div>
+              </div>
+
+              {/* Automated Variations Info Banner */}
+              <div className="flex items-start gap-2.5 text-xs text-blue-800 bg-blue-50 border border-blue-200/80 rounded-xl p-3">
+                <Info className="size-4 shrink-0 text-blue-600 mt-0.5" />
+                <div className="leading-relaxed">
+                  <span className="font-semibold block">Automatic Finish Multipliers:</span>
+                  Customers select their preferred aluminum finish (White, Analok, or Special Powder-Coated colors with the standardized x2 multiplier) on the 3D visualizer. Pricing is applied dynamically at checkout without requiring duplicate catalog entries.
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Glass Infill View */}
+          {category === "Glass" && (
+            <div className="flex flex-col gap-4 bg-neutral-50/70 border border-neutral-200 rounded-[16px] p-4">
+              {/* Description */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-medium text-neutral-700">
+                  Glass Sheet Description <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="e.g. Standard Architectural Glass Sheet"
+                  className="w-full px-3.5 py-2 rounded-xl border border-neutral-300 text-sm bg-white text-[#0f1422] focus:outline-none focus:border-[#097283]"
+                  required
+                />
+                {/* Quick suggestions */}
+                <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                  <span className="text-[10px] text-neutral-400 font-normal">Suggestions:</span>
+                  {GLASS_SUGGESTIONS.map((g) => (
+                    <button
+                      key={g}
+                      type="button"
+                      onClick={() => setDescription(g)}
+                      className="text-[10px] bg-white border border-neutral-200 text-neutral-600 px-2 py-0.5 rounded-md hover:bg-neutral-100 transition-colors"
+                    >
+                      {g}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Sheet Dimensions & Price */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-medium text-neutral-700">
+                    R.R.D. Whole Sheet Base Price (PHP) <span className="text-red-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-500 text-sm font-semibold">
+                      ₱
+                    </span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={stockPriceStr}
+                      onChange={(e) => setStockPriceStr(sanitizeDecimalInput(e.target.value))}
+                      placeholder="0.00"
+                      className="w-full pl-8 pr-3.5 py-2 rounded-xl border border-neutral-300 text-sm font-semibold bg-white text-[#0f1422] focus:outline-none focus:border-[#097283]"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-medium text-neutral-700">Standard Stock Sheet Size</label>
+                  <div className="px-3.5 py-2 rounded-xl border border-neutral-200 bg-neutral-100 text-sm text-neutral-600 font-medium">
+                    {glassWidthFt} ft x {glassHeightFt} ft ({glassWidthFt * glassHeightFt} sq.ft.)
+                  </div>
+                </div>
+              </div>
+
+              {/* Automated Glass Options Info Banner */}
+              <div className="flex items-start gap-2.5 text-xs text-cyan-900 bg-cyan-50 border border-cyan-200/80 rounded-xl p-3">
+                <Info className="size-4 shrink-0 text-cyan-600 mt-0.5" />
+                <div className="leading-relaxed">
+                  <span className="font-semibold block">Automatic Glass Variations & Surcharges:</span>
+                  Customers choose glass types (Regular, Frosted, Mirror, Tempered, Reflective), glass colors (Clear, Bronze, Silver, Blue), and thicknesses (6mm, 8mm, 12mm) on the 3D visualizer. The single-application x2 premium multiplier and thickness surcharges (+₱400/+₱600, +₱1,000/+₱1,200) calculate dynamically at checkout.
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Hardware & Consumables View */}
+          {(category === "Hardware" || category === "Consumable") && (
+            <div className="flex flex-col gap-4 bg-neutral-50/70 border border-neutral-200 rounded-[16px] p-4">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-medium text-neutral-700">
+                  Item Description <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="e.g. Series 798 Single Sash Roller"
+                  className="w-full px-3.5 py-2 rounded-xl border border-neutral-300 text-sm bg-white text-[#0f1422] focus:outline-none focus:border-[#097283]"
                   required
                 />
               </div>
-            </div>
 
-            <div className="flex flex-col gap-1.5">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-medium text-neutral-700">
-                  Waste Allowance Scrap
-                </label>
-                <span className="text-xs font-semibold text-[#097283]">
-                  {(wasteAllowance * 100).toFixed(1)}%
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <input
-                  type="range"
-                  min="0"
-                  max="0.5"
-                  step="0.005"
-                  value={wasteAllowance}
-                  onChange={(e) => setWasteAllowance(parseFloat(e.target.value))}
-                  className="flex-1 accent-[#097283] cursor-pointer"
-                />
-                <input
-                  type="number"
-                  step="0.001"
-                  min="0"
-                  max="1.0"
-                  value={wasteAllowance}
-                  onChange={(e) => setWasteAllowance(parseFloat(e.target.value) || 0)}
-                  className="w-20 px-2 py-1 rounded-lg border border-neutral-300 text-xs font-mono text-right text-[#0f1422] focus:outline-none focus:border-[#097283]"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-medium text-neutral-700">
+                    Unit Selling Price (PHP) <span className="text-red-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-500 text-sm font-semibold">
+                      ₱
+                    </span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={hardwareUnitPriceStr}
+                      onChange={(e) => setHardwareUnitPriceStr(sanitizeDecimalInput(e.target.value))}
+                      placeholder="0.00"
+                      className="w-full pl-8 pr-3.5 py-2 rounded-xl border border-neutral-300 text-sm font-semibold bg-white text-[#0f1422] focus:outline-none focus:border-[#097283]"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-medium text-neutral-700">Billing Unit</label>
+                  <select
+                    value={billingUnit}
+                    onChange={(e) => setBillingUnit(e.target.value as BillingUnit)}
+                    className="w-full px-3 py-2 rounded-xl border border-neutral-300 text-sm bg-white text-[#0f1422] outline-none"
+                  >
+                    <option value="pc">Piece (pc)</option>
+                    <option value="set">Kit / Set (set)</option>
+                    <option value="tube">Tube (tube)</option>
+                    <option value="lot">Lot (lot)</option>
+                  </select>
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
-          {/* Live Calculation Preview Card */}
-          <div className="bg-gradient-to-br from-neutral-50 to-slate-100/70 border border-neutral-200 rounded-[16px] p-4 flex flex-col gap-2.5">
+          {/* Live Workshop Rate Card */}
+          <div className="bg-gradient-to-br from-neutral-50 to-slate-100/80 border border-neutral-200 rounded-[16px] p-4 flex flex-col gap-2">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-xs font-semibold text-[#0f1422]">
                 <Sparkles className="size-3.5 text-[#097283]" />
-                <span>Instant Fabricator Cost Breakdown</span>
+                <span>Auto-Derived Workshop Rate</span>
               </div>
-              <span className="text-[11px] text-neutral-500 font-medium">
-                Per 1 {billingUnit}
+              <span className="text-[11px] text-neutral-500 font-mono">
+                Code: {activeMaterialCode}
               </span>
             </div>
-
-            <div className="grid grid-cols-3 gap-2 pt-1 border-t border-neutral-200/80 text-xs">
-              <div>
-                <span className="text-neutral-500 text-[11px] block">Base Rate</span>
-                <span className="font-semibold text-neutral-800">
-                  ₱{unitPrice.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </span>
-              </div>
-              <div>
-                <span className="text-neutral-500 text-[11px] block">
-                  Scrap Factor (+{(wasteAllowance * 100).toFixed(1)}%)
-                </span>
-                <span className="font-semibold text-amber-700">
-                  +₱{scrapMarkup.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </span>
-              </div>
-              <div className="text-right">
-                <span className="text-[#097283] text-[11px] font-semibold block">
-                  Effective Cost Rate
-                </span>
-                <span className="font-bold text-[#097283] text-sm">
-                  ₱{effectiveCost.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </span>
-              </div>
+            <div className="pt-1 text-sm font-semibold text-[#097283]">
+              {derivedRate.displayText}
             </div>
           </div>
 
-          {/* Active Status Toggle */}
+          {/* Advanced Material Code Accordion (Optional) */}
+          <div className="border border-neutral-200 rounded-[14px] overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setIsCodeAccordionOpen((prev) => !prev)}
+              className="w-full flex items-center justify-between px-4 py-2.5 bg-neutral-50 text-xs font-medium text-neutral-700 hover:bg-neutral-100 transition-colors"
+            >
+              <span>Advanced: Custom Material Code</span>
+              {isCodeAccordionOpen ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+            </button>
+            {isCodeAccordionOpen && (
+              <div className="p-3 bg-white border-t border-neutral-200 flex flex-col gap-1.5">
+                <input
+                  type="text"
+                  value={customMaterialCode}
+                  onChange={(e) => setCustomMaterialCode(e.target.value)}
+                  placeholder={autoGeneratedCode}
+                  className="w-full px-3 py-1.5 rounded-lg border border-neutral-300 text-xs font-mono text-[#0f1422]"
+                />
+                <span className="text-[10px] text-neutral-400">
+                  Leave blank to use automatically generated code: {autoGeneratedCode}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Active Status Switch */}
           <div className="flex items-center justify-between px-1 py-1">
             <div>
               <span className="text-xs font-medium text-neutral-800 block">Catalog Status</span>
               <span className="text-[11px] text-neutral-500">
-                Active materials are selectable for parametric product components
+                Active materials are available for 3D visualization and client quotations
               </span>
             </div>
             <button
@@ -417,7 +629,7 @@ export function MaterialModal({
             </button>
           </div>
 
-          {/* Form Action Buttons */}
+          {/* Footer Actions */}
           <div className="flex items-center justify-end gap-3 pt-3 border-t border-neutral-100">
             <button
               type="button"

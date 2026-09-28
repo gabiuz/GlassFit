@@ -70,6 +70,13 @@ export async function upsertRawMaterial(input: UpsertRawMaterialInput): Promise<
     unit_price: validated.unit_price,
     waste_allowance: validated.waste_allowance,
     is_active: validated.is_active,
+    ...(validated.stock_length_meters !== undefined ? { stock_length_meters: validated.stock_length_meters } : {}),
+    ...(validated.stock_price_rrd !== undefined ? { stock_price_rrd: validated.stock_price_rrd } : {}),
+    ...(validated.sheet_width_ft !== undefined ? { sheet_width_ft: validated.sheet_width_ft } : {}),
+    ...(validated.sheet_height_ft !== undefined ? { sheet_height_ft: validated.sheet_height_ft } : {}),
+    ...(validated.is_premium_trigger !== undefined ? { is_premium_trigger: validated.is_premium_trigger } : {}),
+    ...(validated.pricing_tier !== undefined ? { pricing_tier: validated.pricing_tier } : {}),
+    ...(validated.supported_thicknesses !== undefined ? { supported_thicknesses: validated.supported_thicknesses } : {}),
   };
 
   let resultData: RawMaterial | null = null;
@@ -104,6 +111,69 @@ export async function upsertRawMaterial(input: UpsertRawMaterialInput): Promise<
   revalidatePath("/admin/materials");
   return resultData;
 }
+
+/**
+ * Batch upsert raw materials from spreadsheet ingestion.
+ */
+export async function batchUpsertRawMaterials(
+  items: UpsertRawMaterialInput[]
+): Promise<{ successCount: number; errors: string[] }> {
+  await requirePermission("manage_products");
+  const supabase = await createSupabaseServerClient();
+  const errors: string[] = [];
+  let successCount = 0;
+
+  for (const item of items) {
+    try {
+      const validated = UpsertRawMaterialInputSchema.parse(item);
+      const payload = {
+        material_code: validated.material_code,
+        description: validated.description,
+        category: validated.category,
+        finish_type: validated.finish_type,
+        billing_unit: validated.billing_unit,
+        unit_price: validated.unit_price,
+        waste_allowance: validated.waste_allowance ?? 0.0,
+        is_active: validated.is_active ?? true,
+        ...(validated.stock_length_meters !== undefined ? { stock_length_meters: validated.stock_length_meters } : {}),
+        ...(validated.stock_price_rrd !== undefined ? { stock_price_rrd: validated.stock_price_rrd } : {}),
+        ...(validated.sheet_width_ft !== undefined ? { sheet_width_ft: validated.sheet_width_ft } : {}),
+        ...(validated.sheet_height_ft !== undefined ? { sheet_height_ft: validated.sheet_height_ft } : {}),
+        ...(validated.is_premium_trigger !== undefined ? { is_premium_trigger: validated.is_premium_trigger } : {}),
+        ...(validated.pricing_tier !== undefined ? { pricing_tier: validated.pricing_tier } : {}),
+        ...(validated.supported_thicknesses !== undefined ? { supported_thicknesses: validated.supported_thicknesses } : {}),
+      };
+
+      // Check if material with same code exists
+      const { data: existing } = await supabase
+        .from("raw_materials")
+        .select("id")
+        .eq("material_code", validated.material_code)
+        .maybeSingle();
+
+      if (existing?.id) {
+        const { error } = await supabase
+          .from("raw_materials")
+          .update(payload)
+          .eq("id", existing.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from("raw_materials")
+          .insert(payload);
+        if (error) throw error;
+      }
+      successCount++;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      errors.push(`Error for ${item.material_code || item.description}: ${msg}`);
+    }
+  }
+
+  revalidatePath("/admin/materials");
+  return { successCount, errors };
+}
+
 
 /**
  * Delete a raw material record, or flag inactive if bound to product components.

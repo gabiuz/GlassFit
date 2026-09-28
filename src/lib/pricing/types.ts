@@ -27,6 +27,8 @@ export const RawMaterialFinishTypeSchema = z.enum([
   "PowderCoatedBlack",
   "Clear",
   "Bronze",
+  "Silver",
+  "Blue",
   "None",
 ]);
 export type RawMaterialFinishType = z.infer<typeof RawMaterialFinishTypeSchema>;
@@ -41,20 +43,119 @@ export const BillingUnitSchema = z.enum([
 ]);
 export type BillingUnit = z.infer<typeof BillingUnitSchema>;
 
+export const PricingTierSchema = z.enum(["Standard", "Premium"]);
+export type PricingTier = z.infer<typeof PricingTierSchema>;
+
 export const RawMaterialSchema = z.object({
   id: z.string().uuid(),
   material_code: z.string().min(1).max(50),
   description: z.string().min(1).max(255),
   category: RawMaterialCategorySchema,
-  finish_type: RawMaterialFinishTypeSchema,
+  finish_type: z.string(),
   billing_unit: BillingUnitSchema,
   unit_price: z.number().nonnegative(),
   waste_allowance: z.number().min(0).max(1),
   is_active: z.boolean(),
+  stock_length_meters: z.number().positive().optional(),
+  stock_price_rrd: z.number().nonnegative().nullable().optional(),
+  sheet_width_ft: z.number().positive().optional(),
+  sheet_height_ft: z.number().positive().optional(),
+  is_premium_trigger: z.boolean().optional(),
+  pricing_tier: PricingTierSchema.optional(),
+  supported_thicknesses: z.array(z.number()).optional(),
   created_at: z.string().optional(),
   updated_at: z.string().optional(),
 });
 export type RawMaterial = z.infer<typeof RawMaterialSchema>;
+
+// ----------------------------------------------------------------------------
+// 1.1 R.R.D. Client Pricing & Finish Models (docs/plans/pricing_model.md, IMP-MS21)
+// ----------------------------------------------------------------------------
+
+export const AluminumColorTierSchema = z.enum(["Standard", "SpecialPowderCoated"]);
+export type AluminumColorTier = z.infer<typeof AluminumColorTierSchema>;
+
+export const AluminumColorSelectionSchema = z.object({
+  colorName: z.string().min(1),
+  colorCode: z.string().optional(),
+  tier: AluminumColorTierSchema,
+  multiplier: z.number().default(1.0),
+});
+export type AluminumColorSelection = z.infer<typeof AluminumColorSelectionSchema>;
+
+export const GlassTypeSchema = z.enum([
+  "Regular",
+  "Frosted",
+  "Mirror",
+  "Tempered",
+  "Reflective",
+]);
+export type GlassType = z.infer<typeof GlassTypeSchema>;
+
+export const GlassColorSchema = z.enum([
+  "Clear",
+  "Bronze",
+  "Silver",
+  "Blue",
+]);
+export type GlassColor = z.infer<typeof GlassColorSchema>;
+
+export const GlassThicknessSchema = z.union([
+  z.literal(6),
+  z.literal(8),
+  z.literal(12),
+]);
+export type GlassThickness = z.infer<typeof GlassThicknessSchema>;
+
+export const GlassSpecificationSchema = z.object({
+  type: GlassTypeSchema,
+  color: GlassColorSchema,
+  thicknessMm: GlassThicknessSchema,
+  isPremium: z.boolean(),
+  thicknessSurcharge: z.number().nonnegative(),
+});
+export type GlassSpecification = z.infer<typeof GlassSpecificationSchema>;
+
+export const RrdRawMaterialSchema = z.object({
+  id: z.string().uuid(),
+  material_code: z.string().min(1).max(50),
+  description: z.string().min(1).max(255),
+  category: RawMaterialCategorySchema,
+  finish_type: z.string(),
+  billing_unit: BillingUnitSchema,
+  unit_price: z.number().nonnegative(),
+  stock_length_meters: z.number().positive().default(6.0),
+  stock_price_rrd: z.number().nonnegative().optional(),
+  sheet_width_ft: z.number().positive().default(4.0),
+  sheet_height_ft: z.number().positive().default(6.0),
+  is_premium_trigger: z.boolean().default(false),
+  pricing_tier: PricingTierSchema.default("Standard"),
+  supported_thicknesses: z.array(z.number()).default([6, 8, 12]),
+  waste_allowance: z.number().min(0).max(1).default(0.0),
+  is_active: z.boolean().default(true),
+});
+export type RrdRawMaterial = z.infer<typeof RrdRawMaterialSchema>;
+
+export interface RrdPricingAuditDetails {
+  baseProductPrice: number;
+  aluminumColor: {
+    name: string;
+    isSpecial: boolean;
+    multiplier: number;
+  };
+  glassConfig: {
+    type: GlassType;
+    color: GlassColor;
+    thicknessMm: GlassThickness;
+    isTypePremium: boolean;
+    isColorPremium: boolean;
+    isOverallPremium: boolean;
+    multiplierApplied: number;
+    thicknessSurcharge: number;
+  };
+  finalPrice: number;
+}
+
 
 // ----------------------------------------------------------------------------
 // 2. Product Components & Dimensional Binding Schemas (ERD-E6)
