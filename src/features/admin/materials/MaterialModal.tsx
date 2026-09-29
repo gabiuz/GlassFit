@@ -1,0 +1,771 @@
+"use client";
+
+import { useState, useMemo } from "react";
+import { createPortal } from "react-dom";
+import {
+  X,
+  Sparkles,
+  AlertCircle,
+  Layers,
+  CheckSquare,
+  ChevronDown,
+  ChevronUp,
+  Info,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import {
+  type RawMaterial,
+  type RawMaterialCategory,
+  type BillingUnit,
+} from "@/lib/pricing/types";
+import {
+  UpsertRawMaterialInputSchema,
+  type UpsertRawMaterialInput,
+} from "@/lib/admin/materials/types";
+import {
+  STANDARD_STOCK_LENGTH_METERS,
+  STANDARD_SHEET_AREA_SQFT,
+  SQFT_PER_SQM,
+} from "@/lib/pricing/rrdPricingEngine";
+import { generateMaterialCode } from "./csvMaterialParser";
+
+type MaterialModalProps = {
+  isOpen: boolean;
+  onClose: () => void;
+  onSave: (saved: RawMaterial) => void;
+  material: RawMaterial | null;
+  onUpsertAction: (input: UpsertRawMaterialInput) => Promise<RawMaterial>;
+};
+
+const CATEGORIES: {
+  key: RawMaterialCategory;
+  label: string;
+  icon: typeof Layers;
+}[] = [
+  { key: "Aluminum", label: "Aluminum Framing", icon: Layers },
+  { key: "Glass", label: "Glass Infill", icon: Sparkles },
+  { key: "Hardware", label: "Hardware & Latches", icon: CheckSquare },
+  { key: "Consumable", label: "Consumables & Sealants", icon: Layers },
+];
+
+const ALUMINUM_SIZE_SUGGESTIONS = [
+  '1" x 1" Aluminum Tube',
+  '1" x 2" Aluminum Tube',
+  '1" x 3" Aluminum Tube',
+  '1-3/4" x 3" Aluminum Tube',
+  '1-3/4" x 4" Aluminum Tube',
+  "Series 798 Double Head Track",
+  "Series 798 Double Sill Track",
+  "Series 798 Double Jamb",
+  "Series 798 Sash Rails",
+  "Series 798 Sash Stiles",
+];
+
+const GLASS_SUGGESTIONS = [
+  "Standard Float Glass Sheet",
+  "Commercial Architectural Glass Sheet",
+  "Window & Door Glass Sheet",
+  "Heavy-Duty Partition Glass Sheet",
+];
+
+const JALOUSIE_GLASS_SUGGESTIONS = [
+  '4" x 24" Jalousie Glass Blade',
+  '4" x 30" Jalousie Glass Blade',
+  '4" x 36" Jalousie Glass Blade',
+  '6" x 24" Jalousie Glass Blade',
+  "Jalousie Louver Glass Blade",
+];
+
+/**
+ * Sanitizes decimal input so it only accepts numbers, at most one period,
+ * and at most two digits after the decimal point.
+ */
+export function sanitizeDecimalInput(raw: string): string {
+  const clean = raw.replace(/[^0-9.]/g, "");
+  const parts = clean.split(".");
+  if (parts.length > 2) {
+    return parts[0] + "." + parts.slice(1).join("").slice(0, 2);
+  }
+  if (parts.length === 2) {
+    return `${parts[0]}.${parts[1].slice(0, 2)}`;
+  }
+  return clean;
+}
+
+export function MaterialModal({
+  isOpen,
+  onClose,
+  onSave,
+  material,
+  onUpsertAction,
+}: MaterialModalProps) {
+  if (!isOpen) return null;
+
+  return (
+    <MaterialModalInner
+      key={material?.id ?? "new"}
+      onClose={onClose}
+      onSave={onSave}
+      material={material}
+      onUpsertAction={onUpsertAction}
+    />
+  );
+}
+
+function MaterialModalInner({
+  onClose,
+  onSave,
+  material,
+  onUpsertAction,
+}: Omit<MaterialModalProps, "isOpen">) {
+  const isEditing = !!material;
+
+  const [category, setCategory] = useState<RawMaterialCategory>(() => material?.category ?? "Aluminum");
+  const [glassMode, setGlassMode] = useState<"sheet" | "piece">(() => {
+    if (material?.category === "Glass" && material.billing_unit === "pc") {
+      return "piece";
+    }
+    return "sheet";
+  });
+  const [description, setDescription] = useState<string>(() => material?.description ?? (material ? "" : '1" x 1" Aluminum Tube'));
+  const [glassWidthFt] = useState<number>(4.0);
+  const [glassHeightFt] = useState<number>(6.0);
+
+  // String-based price states to avoid sticky 0 defaults
+  const [stockPriceStr, setStockPriceStr] = useState<string>(() => {
+    if (!material) return "";
+    if (material.category === "Aluminum") {
+      const alPrice =
+        material.stock_price_rrd ??
+        (material.unit_price ? material.unit_price * STANDARD_STOCK_LENGTH_METERS : null);
+      return alPrice != null ? alPrice.toFixed(2) : "";
+    }
+    if (material.category === "Glass") {
+      if (material.billing_unit === "pc") {
+        const glPrice = material.stock_price_rrd ?? material.unit_price;
+        return glPrice != null ? glPrice.toFixed(2) : "";
+      }
+      const glPrice =
+        material.stock_price_rrd ??
+        (material.unit_price ? (material.unit_price / SQFT_PER_SQM) * STANDARD_SHEET_AREA_SQFT : null);
+      return glPrice != null ? glPrice.toFixed(2) : "";
+    }
+    return "";
+  });
+
+  const [hardwareUnitPriceStr, setHardwareUnitPriceStr] = useState<string>(() => {
+    if (!material || material.category === "Aluminum" || material.category === "Glass") return "";
+    return material.unit_price != null ? material.unit_price.toFixed(2) : "";
+  });
+
+  const [billingUnit, setBillingUnit] = useState<BillingUnit>(() => material?.billing_unit ?? "m");
+  const [wasteAllowance] = useState<number>(0.0);
+  const [isActive, setIsActive] = useState<boolean>(() => material?.is_active ?? true);
+
+  const [customMaterialCode, setCustomMaterialCode] = useState<string>(() => material?.material_code ?? "");
+  const [isCodeAccordionOpen, setIsCodeAccordionOpen] = useState(false);
+
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Finish type is stored as Standard/Base for raw inventory materials; variations are chosen dynamically by customers
+  const defaultFinish = "Standard";
+
+  // Auto-derived material code
+  const autoGeneratedCode = useMemo(() => {
+    return generateMaterialCode(category, description || "ITEM", defaultFinish);
+  }, [category, description, defaultFinish]);
+
+  const activeMaterialCode = customMaterialCode.trim() || autoGeneratedCode;
+
+  // Numeric equivalents for calculation
+  const numericStockPrice = parseFloat(stockPriceStr) || 0;
+  const numericHardwarePrice = parseFloat(hardwareUnitPriceStr) || 0;
+
+  // Derived unit prices
+  const derivedRate = useMemo<{
+    unitPrice: number;
+    unitLabel: BillingUnit;
+    displayText: string;
+  }>(() => {
+    if (category === "Aluminum") {
+      const perMeter = Math.round((numericStockPrice / STANDARD_STOCK_LENGTH_METERS + Number.EPSILON) * 100) / 100;
+      return {
+        unitPrice: perMeter,
+        unitLabel: "m" as BillingUnit,
+        displayText: numericStockPrice > 0
+          ? `₱${numericStockPrice.toFixed(2)} ÷ 6m = ₱${perMeter.toFixed(2)} / meter`
+          : "Enter base stock price to calculate rate per meter",
+      };
+    }
+    if (category === "Glass") {
+      if (glassMode === "piece") {
+        const perPiece = Math.round((numericStockPrice + Number.EPSILON) * 100) / 100;
+        return {
+          unitPrice: perPiece,
+          unitLabel: "pc" as BillingUnit,
+          displayText: numericStockPrice > 0
+            ? `₱${perPiece.toFixed(2)} / pc (Pre-cut Jalousie Glass Slat)`
+            : "Enter price per blade to calculate rate per piece",
+        };
+      }
+      const area = Math.max(0.1, glassWidthFt * glassHeightFt);
+      const perSqFt = numericStockPrice / area;
+      const perSqm = Math.round((perSqFt * SQFT_PER_SQM + Number.EPSILON) * 100) / 100;
+      return {
+        unitPrice: perSqm,
+        unitLabel: "sqm" as BillingUnit,
+        displayText: numericStockPrice > 0
+          ? `₱${perSqFt.toFixed(2)} / sq.ft. (₱${perSqm.toFixed(2)} / m²) (₱${numericStockPrice.toFixed(2)} / ${area.toFixed(0)} sq.ft.)`
+          : "Enter whole sheet price to calculate rate per sq.ft. & m²",
+      };
+    }
+    return {
+      unitPrice: numericHardwarePrice,
+      unitLabel: billingUnit,
+      displayText: numericHardwarePrice > 0
+        ? `₱${numericHardwarePrice.toFixed(2)} / ${billingUnit}`
+        : "Enter unit selling price",
+    };
+  }, [category, glassMode, numericStockPrice, glassWidthFt, glassHeightFt, numericHardwarePrice, billingUnit]);
+
+  // Handle Category Switch
+  const handleCategorySwitch = (newCat: RawMaterialCategory) => {
+    setCategory(newCat);
+    if (!isEditing) {
+      if (newCat === "Aluminum") {
+        setDescription('1" x 1" Aluminum Tube');
+        setStockPriceStr("");
+        setHardwareUnitPriceStr("");
+        setBillingUnit("m");
+      } else if (newCat === "Glass") {
+        if (glassMode === "piece") {
+          setDescription('4" x 24" Jalousie Glass Blade');
+          setBillingUnit("pc");
+        } else {
+          setDescription("Standard Float Glass Sheet");
+          setBillingUnit("sqm");
+        }
+        setStockPriceStr("");
+        setHardwareUnitPriceStr("");
+      } else if (newCat === "Hardware") {
+        setDescription("Series 798 Sash Roller");
+        setStockPriceStr("");
+        setHardwareUnitPriceStr("");
+        setBillingUnit("pc");
+      } else if (newCat === "Consumable") {
+        setDescription("Silicone Sealant 300ml");
+        setStockPriceStr("");
+        setHardwareUnitPriceStr("");
+        setBillingUnit("tube");
+      }
+    }
+  };
+
+  const handleGlassModeSwitch = (mode: "sheet" | "piece") => {
+    setGlassMode(mode);
+    if (!isEditing) {
+      if (mode === "piece") {
+        setDescription('4" x 24" Jalousie Glass Blade');
+        setBillingUnit("pc");
+      } else {
+        setDescription("Standard Float Glass Sheet");
+        setBillingUnit("sqm");
+      }
+      setStockPriceStr("");
+    } else {
+      setBillingUnit(mode === "piece" ? "pc" : "sqm");
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMessage(null);
+
+    if (category === "Aluminum" || category === "Glass") {
+      if (!stockPriceStr.trim() || numericStockPrice <= 0) {
+        setErrorMessage("Please enter a valid stock price greater than 0");
+        return;
+      }
+    } else {
+      if (!hardwareUnitPriceStr.trim() || numericHardwarePrice <= 0) {
+        setErrorMessage("Please enter a valid unit selling price greater than 0");
+        return;
+      }
+    }
+
+    const rawInput: UpsertRawMaterialInput = {
+      ...(material?.id ? { id: material.id } : {}),
+      material_code: activeMaterialCode,
+      description: description.trim(),
+      category,
+      finish_type: defaultFinish,
+      billing_unit: derivedRate.unitLabel,
+      unit_price: derivedRate.unitPrice,
+      waste_allowance: category === "Glass" && glassMode === "piece" ? 0.0 : wasteAllowance,
+      is_active: isActive,
+      stock_length_meters: category === "Aluminum" ? STANDARD_STOCK_LENGTH_METERS : undefined,
+      stock_price_rrd: category === "Aluminum" || category === "Glass" ? numericStockPrice : numericHardwarePrice,
+      sheet_width_ft: category === "Glass" && glassMode === "sheet" ? glassWidthFt : undefined,
+      sheet_height_ft: category === "Glass" && glassMode === "sheet" ? glassHeightFt : undefined,
+      is_premium_trigger: false,
+      pricing_tier: "Standard",
+      supported_thicknesses: category === "Glass" ? [6, 8, 12] : undefined,
+    };
+
+    const validation = UpsertRawMaterialInputSchema.safeParse(rawInput);
+    if (!validation.success) {
+      const firstIssue = validation.error.issues[0];
+      setErrorMessage(firstIssue?.message || "Invalid input parameters");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const saved = await onUpsertAction(validation.data);
+      onSave(saved);
+      onClose();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to save raw material";
+      setErrorMessage(message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const content = (
+    <div
+      className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4 overflow-y-auto"
+      onClick={() => {
+        if (!isSubmitting) onClose();
+      }}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        className="bg-white rounded-[20px] p-6 sm:p-8 w-full max-w-[640px] shadow-[0px_4px_30px_0px_rgba(0,0,0,0.15)] flex flex-col gap-5 my-8 select-none animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Modal Header */}
+        <div className="flex items-center justify-between border-b border-neutral-100 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="size-10 rounded-xl bg-gradient-to-tr from-[#097283]/10 to-[#45c9e3]/20 flex items-center justify-center text-[#097283]">
+              <Layers className="size-5" />
+            </div>
+            <div>
+              <h2 className="text-xl font-medium text-[#0f1422] leading-tight">
+                {isEditing ? "Edit Raw Material" : "Add Raw Material"}
+              </h2>
+              <p className="text-xs text-neutral-500 font-normal">
+                {isEditing
+                  ? "Update R.R.D. base stock selling rates and dimensions"
+                  : "Register standard aluminum profiles, glass stock sheets, or hardware"}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isSubmitting}
+            className="p-1.5 rounded-lg text-neutral-400 hover:text-black hover:bg-neutral-100 transition-colors cursor-pointer"
+          >
+            <X className="size-5" />
+          </button>
+        </div>
+
+        {/* Error Notification */}
+        {errorMessage && (
+          <div className="bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl p-3 flex items-center gap-2">
+            <AlertCircle className="size-4 shrink-0 text-red-600" />
+            <span className="flex-1">{errorMessage}</span>
+          </div>
+        )}
+
+        {/* Category Switcher Cards */}
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-semibold text-neutral-700">Select Material Category</label>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {CATEGORIES.map((cat) => {
+              const Icon = cat.icon;
+              const isSelected = category === cat.key;
+              return (
+                <button
+                  key={cat.key}
+                  type="button"
+                  onClick={() => handleCategorySwitch(cat.key)}
+                  className={cn(
+                    "flex flex-col items-center justify-center gap-1.5 p-3 rounded-[14px] border text-center transition-all cursor-pointer",
+                    isSelected
+                      ? "border-[#097283] bg-[#097283]/5 text-[#097283] shadow-xs"
+                      : "border-neutral-200 hover:border-neutral-300 bg-white text-neutral-600 hover:bg-neutral-50"
+                  )}
+                >
+                  <Icon className={cn("size-5", isSelected ? "text-[#097283]" : "text-neutral-500")} />
+                  <span className="text-xs font-medium leading-snug">{cat.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          {/* Aluminum Framing View */}
+          {category === "Aluminum" && (
+            <div className="flex flex-col gap-4 bg-neutral-50/70 border border-neutral-200 rounded-[16px] p-4">
+              {/* Profile Description */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-medium text-neutral-700">
+                  Profile Size / Description <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="e.g. 1 x 2 Aluminum Tube"
+                  className="w-full px-3.5 py-2 rounded-xl border border-neutral-300 text-sm bg-white text-[#0f1422] focus:outline-none focus:border-[#097283]"
+                  required
+                />
+                {/* Quick suggestions */}
+                <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                  <span className="text-[10px] text-neutral-400 font-normal">Common Profiles:</span>
+                  {ALUMINUM_SIZE_SUGGESTIONS.slice(0, 5).map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => setDescription(s)}
+                      className="text-[10px] bg-white border border-neutral-200 text-neutral-600 px-2 py-0.5 rounded-md hover:bg-neutral-100 transition-colors"
+                    >
+                      {s.split(" ")[0]} {s.split(" ")[1] || ""}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Price & Length Inputs */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-medium text-neutral-700">
+                    R.R.D. Base Price per 6m Bar (PHP) <span className="text-red-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-500 text-sm font-semibold">
+                      ₱
+                    </span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={stockPriceStr}
+                      onChange={(e) => setStockPriceStr(sanitizeDecimalInput(e.target.value))}
+                      placeholder="0.00"
+                      className="w-full pl-8 pr-3.5 py-2 rounded-xl border border-neutral-300 text-sm font-semibold bg-white text-[#0f1422] focus:outline-none focus:border-[#097283]"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-medium text-neutral-700">Standard Stock Length</label>
+                  <div className="px-3.5 py-2 rounded-xl border border-neutral-200 bg-neutral-100 text-sm text-neutral-600 font-medium">
+                    6.0 Meters (Standard)
+                  </div>
+                </div>
+              </div>
+
+              {/* Automated Variations Info Banner */}
+              <div className="flex items-start gap-2.5 text-xs text-blue-800 bg-blue-50 border border-blue-200/80 rounded-xl p-3">
+                <Info className="size-4 shrink-0 text-blue-600 mt-0.5" />
+                <div className="leading-relaxed">
+                  <span className="font-semibold block">Automatic Finish Multipliers:</span>
+                  Customers select their preferred aluminum finish (White, Analok, or Special Powder-Coated colors with the standardized x2 multiplier) on the 3D visualizer. Pricing is applied dynamically at checkout without requiring duplicate catalog entries.
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Glass Infill View */}
+          {category === "Glass" && (
+            <div className="flex flex-col gap-4 bg-neutral-50/70 border border-neutral-200 rounded-[16px] p-4">
+              {/* Glass Ingestion Mode Toggle */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-neutral-700">Glass Billing Mode</label>
+                <div className="grid grid-cols-2 gap-2 bg-neutral-200/60 p-1 rounded-xl">
+                  <button
+                    type="button"
+                    onClick={() => handleGlassModeSwitch("sheet")}
+                    className={cn(
+                      "py-1.5 px-3 rounded-lg text-xs font-medium transition-all cursor-pointer text-center",
+                      glassMode === "sheet"
+                        ? "bg-white text-[#097283] shadow-xs font-semibold"
+                        : "text-neutral-600 hover:text-neutral-900"
+                    )}
+                  >
+                    Standard Whole Sheet (Area)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleGlassModeSwitch("piece")}
+                    className={cn(
+                      "py-1.5 px-3 rounded-lg text-xs font-medium transition-all cursor-pointer text-center",
+                      glassMode === "piece"
+                        ? "bg-white text-[#097283] shadow-xs font-semibold"
+                        : "text-neutral-600 hover:text-neutral-900"
+                    )}
+                  >
+                    Jalousie / Louver Blade (Per Piece)
+                  </button>
+                </div>
+              </div>
+
+              {/* Description */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-medium text-neutral-700">
+                  {glassMode === "piece" ? "Jalousie Blade Description / Size" : "Glass Sheet Description"} <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder={glassMode === "piece" ? 'e.g. 4" x 24" Jalousie Glass Blade' : "e.g. Standard Architectural Glass Sheet"}
+                  className="w-full px-3.5 py-2 rounded-xl border border-neutral-300 text-sm bg-white text-[#0f1422] focus:outline-none focus:border-[#097283]"
+                  required
+                />
+                {/* Quick suggestions */}
+                <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                  <span className="text-[10px] text-neutral-400 font-normal">Suggestions:</span>
+                  {(glassMode === "piece" ? JALOUSIE_GLASS_SUGGESTIONS : GLASS_SUGGESTIONS).map((g) => (
+                    <button
+                      key={g}
+                      type="button"
+                      onClick={() => setDescription(g)}
+                      className="text-[10px] bg-white border border-neutral-200 text-neutral-600 px-2 py-0.5 rounded-md hover:bg-neutral-100 transition-colors"
+                    >
+                      {g}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Sheet Dimensions & Price */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-medium text-neutral-700">
+                    {glassMode === "piece" ? "Price per Blade (PHP / pc)" : "R.R.D. Whole Sheet Base Price (PHP)"} <span className="text-red-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-500 text-sm font-semibold">
+                      ₱
+                    </span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={stockPriceStr}
+                      onChange={(e) => setStockPriceStr(sanitizeDecimalInput(e.target.value))}
+                      placeholder="0.00"
+                      className="w-full pl-8 pr-3.5 py-2 rounded-xl border border-neutral-300 text-sm font-semibold bg-white text-[#0f1422] focus:outline-none focus:border-[#097283]"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-medium text-neutral-700">
+                    {glassMode === "piece" ? "Billing & Sizing Mode" : "Standard Stock Sheet Size"}
+                  </label>
+                  <div className="px-3.5 py-2 rounded-xl border border-neutral-200 bg-neutral-100 text-sm text-neutral-600 font-medium">
+                    {glassMode === "piece" ? "Per Piece (pc) Louver Slat" : `${glassWidthFt} ft x ${glassHeightFt} ft (${glassWidthFt * glassHeightFt} sq.ft.)`}
+                  </div>
+                </div>
+              </div>
+
+              {/* Automated Glass Options Info Banner */}
+              <div className="flex items-start gap-2.5 text-xs text-cyan-900 bg-cyan-50 border border-cyan-200/80 rounded-xl p-3">
+                <Info className="size-4 shrink-0 text-cyan-600 mt-0.5" />
+                <div className="leading-relaxed">
+                  {glassMode === "piece" ? (
+                    <>
+                      <span className="font-semibold block">Jalousie Blade Per-Piece Billing:</span>
+                      Jalousie glass slats are procured and billed per discrete blade. In parametric quotations, fixture pricing evaluates directly from slat count without scrap conversions. Special glass finish multipliers (Frosted, Reflective) still apply dynamically.
+                    </>
+                  ) : (
+                    <>
+                      <span className="font-semibold block">Automatic Glass Variations & Surcharges:</span>
+                      Customers choose glass types (Regular, Frosted, Mirror, Tempered, Reflective), glass colors (Clear, Bronze, Silver, Blue), and thicknesses (6mm, 8mm, 12mm) on the 3D visualizer. The single-application x2 premium multiplier and thickness surcharges (+₱400/+₱600, +₱1,000/+₱1,200) calculate dynamically at checkout.
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Hardware & Consumables View */}
+          {(category === "Hardware" || category === "Consumable") && (
+            <div className="flex flex-col gap-4 bg-neutral-50/70 border border-neutral-200 rounded-[16px] p-4">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-medium text-neutral-700">
+                  Item Description <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="e.g. Series 798 Single Sash Roller"
+                  className="w-full px-3.5 py-2 rounded-xl border border-neutral-300 text-sm bg-white text-[#0f1422] focus:outline-none focus:border-[#097283]"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-medium text-neutral-700">
+                    Unit Selling Price (PHP) <span className="text-red-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-500 text-sm font-semibold">
+                      ₱
+                    </span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={hardwareUnitPriceStr}
+                      onChange={(e) => setHardwareUnitPriceStr(sanitizeDecimalInput(e.target.value))}
+                      placeholder="0.00"
+                      className="w-full pl-8 pr-3.5 py-2 rounded-xl border border-neutral-300 text-sm font-semibold bg-white text-[#0f1422] focus:outline-none focus:border-[#097283]"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-medium text-neutral-700">Billing Unit</label>
+                  <select
+                    value={billingUnit}
+                    onChange={(e) => setBillingUnit(e.target.value as BillingUnit)}
+                    className="w-full px-3 py-2 rounded-xl border border-neutral-300 text-sm bg-white text-[#0f1422] outline-none"
+                  >
+                    <option value="pc">Piece (pc)</option>
+                    <option value="set">Kit / Set (set)</option>
+                    <option value="tube">Tube (tube)</option>
+                    <option value="lot">Lot (lot)</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Live Workshop Rate Card */}
+          <div className="bg-gradient-to-br from-neutral-50 to-slate-100/80 border border-neutral-200 rounded-[16px] p-4 flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-xs font-semibold text-[#0f1422]">
+                <Sparkles className="size-3.5 text-[#097283]" />
+                <span>Auto-Derived Workshop Rate</span>
+              </div>
+              <span className="text-[11px] text-neutral-500 font-mono">
+                Code: {activeMaterialCode}
+              </span>
+            </div>
+            <div className="pt-1 text-sm font-semibold text-[#097283]">
+              {derivedRate.displayText}
+            </div>
+          </div>
+
+          {/* Advanced Material Code Accordion (Optional) */}
+          <div className="border border-neutral-200 rounded-[14px] overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setIsCodeAccordionOpen((prev) => !prev)}
+              className="w-full flex items-center justify-between px-4 py-2.5 bg-neutral-50 text-xs font-medium text-neutral-700 hover:bg-neutral-100 transition-colors"
+            >
+              <span>Advanced: Custom Material Code</span>
+              {isCodeAccordionOpen ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+            </button>
+            {isCodeAccordionOpen && (
+              <div className="p-3 bg-white border-t border-neutral-200 flex flex-col gap-1.5">
+                <input
+                  type="text"
+                  value={customMaterialCode}
+                  onChange={(e) => setCustomMaterialCode(e.target.value)}
+                  placeholder={autoGeneratedCode}
+                  className="w-full px-3 py-1.5 rounded-lg border border-neutral-300 text-xs font-mono text-[#0f1422]"
+                />
+                <span className="text-[10px] text-neutral-400">
+                  Leave blank to use automatically generated code: {autoGeneratedCode}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Active Status Switch */}
+          <div className="flex items-center justify-between px-1 py-1">
+            <div>
+              <span className="text-xs font-medium text-neutral-800 block">Catalog Status</span>
+              <span className="text-[11px] text-neutral-500">
+                Active materials are available for 3D visualization and client quotations
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsActive((prev) => !prev)}
+              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                isActive ? "bg-[#05b64b]" : "bg-neutral-300"
+              }`}
+            >
+              <span
+                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                  isActive ? "translate-x-5" : "translate-x-0"
+                }`}
+              />
+            </button>
+          </div>
+
+          {/* Footer Actions */}
+          <div className="flex items-center justify-end gap-3 pt-3 border-t border-neutral-100">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={isSubmitting}
+              className="px-5 py-2.5 rounded-[12px] border border-neutral-300 text-xs font-medium text-neutral-700 hover:bg-neutral-100 transition-colors disabled:opacity-50 cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="bg-gradient-to-r from-[#097283] to-[#45c9e3] hover:opacity-95 text-white text-xs font-medium px-6 py-2.5 rounded-[12px] shadow-sm transition-all disabled:opacity-50 flex items-center gap-2 cursor-pointer"
+            >
+              {isSubmitting && (
+                <svg
+                  className="animate-spin h-3.5 w-3.5 text-white"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                >
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                  />
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                  />
+                </svg>
+              )}
+              {isSubmitting
+                ? "Saving..."
+                : isEditing
+                ? "Save Changes"
+                : "Create Material"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+
+  if (typeof document === "undefined") return null;
+  return createPortal(content, document.body);
+}

@@ -1,0 +1,668 @@
+"use client";
+
+import { useEffect, useMemo, useReducer, useState, useTransition } from "react";
+import Image from "next/image";
+import { RefreshCw } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { cn } from "@/lib/utils";
+import { SearchBar } from "@/components/shared/SearchBar";
+import {
+  type AdminBookingItem,
+  type BookingStatus,
+} from "./bookingData";
+import { bookingStateReducer, createBookingState } from "./bookingState";
+import { updateBookingRequestStatus, updateItemNegotiatedPrice, updateNegotiatedPrice, updateBookingLaborCharge } from "@/lib/booking/bookingActions";
+import { createQuotationDocumentViewModel } from "@/lib/pricing/quotationDocument";
+import { generateQuotationPdfHtml } from "@/lib/pricing/quotationPdfGenerator";
+import { openQuotationPreview } from "@/lib/pricing/quotationPreviewWindow";
+import { getR2AssetUrl } from "@/lib/r2";
+
+const statusBg: Record<BookingStatus, string> = {
+  Confirmed: "bg-[#05b64b]",
+  Pending: "bg-[#ffc876]",
+  Reviewing: "bg-[#ffc876]",
+  Cancelled: "bg-[#c50000]",
+};
+
+const filterTabs: Array<{ label: string; value: BookingStatus | "All" }> = [
+  { label: "All", value: "All" },
+  { label: "Pending", value: "Pending" },
+  { label: "Reviewing", value: "Reviewing" },
+  { label: "Confirmed", value: "Confirmed" },
+  { label: "Cancelled", value: "Cancelled" },
+];
+
+type BookingsContentProps = {
+  initialBookings: AdminBookingItem[];
+  loadError?: string | null;
+};
+
+export function BookingsContent({ initialBookings, loadError = null }: BookingsContentProps) {
+  const router = useRouter();
+  const [state, dispatch] = useReducer(
+    bookingStateReducer,
+    createBookingState(initialBookings, loadError)
+  );
+  const [isRefreshing, startRefreshTransition] = useTransition();
+  const [activeTab, setActiveTab] = useState<BookingStatus | "All">("All");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [feedbackToast, setFeedbackToast] = useState<string | null>(null);
+  const [isEditingPrice, setIsEditingPrice] = useState(false);
+  const [priceInput, setPriceInput] = useState("");
+  const [isEditingLabor, setIsEditingLabor] = useState(false);
+  const [laborInput, setLaborInput] = useState("");
+  const [isSavingLabor, setIsSavingLabor] = useState(false);
+  const [priceError, setPriceError] = useState<string | null>(null);
+  const [isSavingPrice, setIsSavingPrice] = useState(false);
+  const [zeroConfirmed, setZeroConfirmed] = useState(false);
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const { bookings, selectedBookingId, currentStatus } = state;
+
+  useEffect(() => {
+    dispatch({ type: "server-refresh", bookings: initialBookings, loadError });
+  }, [initialBookings, loadError]);
+
+  const counts = useMemo(() => {
+    return {
+      All: bookings.length,
+      Pending: bookings.filter((b) => b.status === "Pending").length,
+      Reviewing: bookings.filter((b) => b.status === "Reviewing").length,
+      Confirmed: bookings.filter((b) => b.status === "Confirmed").length,
+      Cancelled: bookings.filter((b) => b.status === "Cancelled").length,
+    };
+  }, [bookings]);
+
+  const filteredBookings = useMemo(() => {
+    return bookings.filter((b) => {
+      const matchesTab = activeTab === "All" || b.status === activeTab;
+      const q = searchQuery.toLowerCase().trim();
+      const matchesSearch =
+        !q ||
+        b.referenceNo.toLowerCase().includes(q) ||
+        b.customer.name.toLowerCase().includes(q) ||
+        b.customer.email.toLowerCase().includes(q) ||
+        b.productSummary.toLowerCase().includes(q);
+      return matchesTab && matchesSearch;
+    });
+  }, [bookings, activeTab, searchQuery]);
+
+  const selectedBooking = useMemo(() => {
+    return (
+      bookings.find((b) => b.id === selectedBookingId) ||
+      filteredBookings[0] ||
+      bookings[0]
+    );
+  }, [bookings, selectedBookingId, filteredBookings]);
+
+  const handleSelectBooking = (booking: AdminBookingItem) => {
+    dispatch({ type: "select", bookingId: booking.id });
+    setIsEditingPrice(false); setEditingItemId(null); setPriceError(null); setZeroConfirmed(false);
+  };
+
+  const buildSelectedQuotationHtml = () => {
+    if (!selectedBooking?.quotation.document) return null;
+    const base = process.env.NEXT_PUBLIC_R2_ASSET_BASE_URL;
+    const origins = [window.location.origin];
+    if (base) try { origins.push(new URL(base).origin); } catch { /* Ignore invalid asset origin. */ }
+    const view = createQuotationDocumentViewModel(selectedBooking.quotation.document, { brandLogoUrl: new URL("/Logo.svg", window.location.origin).href, shareableUrl: new URL(selectedBooking.quotation.document.shareablePath, window.location.origin).href, snapshotImageUrl: getR2AssetUrl(selectedBooking.quotation.document.snapshotObjectKey), allowedImageOrigins: origins, negotiatedAmount: selectedBooking.quotation.negotiatedFinalPrice ?? null, itemPriceOverrides: selectedBooking.quotation.itemPriceOverrides });
+    return generateQuotationPdfHtml(view);
+  };
+
+  const handleQuotationPreview = (autoPrint: boolean) => {
+    setPriceError(null);
+    const html = buildSelectedQuotationHtml();
+    if (!html) { setPriceError("Quotation data unavailable."); return; }
+    const result = openQuotationPreview(html, { autoPrint });
+    if (!result.ok) setPriceError(result.reason === "POPUP_BLOCKED" ? "Allow popups to open the quotation." : "The quotation could not be prepared.");
+  };
+
+  const saveNegotiatedPrice = async (amount: number | null) => {
+    if (!selectedBooking) return;
+    setIsSavingPrice(true); setPriceError(null);
+    if (!selectedBooking.quotation.id || !selectedBooking.quotation.updatedAt) { setPriceError("Quotation data unavailable."); setIsSavingPrice(false); return; }
+    const result = await updateNegotiatedPrice({ quotationId: selectedBooking.quotation.id, negotiatedAmount: amount, expectedUpdatedAt: selectedBooking.quotation.updatedAt });
+    if (!result.ok) { setPriceError(result.message); if (result.code === "CONFLICT") startRefreshTransition(() => router.refresh()); setIsSavingPrice(false); return; }
+    dispatch({ type: "quotation-price-saved", bookingId: selectedBooking.id, quotation: { ...selectedBooking.quotation, ...result } });
+    setIsEditingPrice(false); setZeroConfirmed(false); setIsSavingPrice(false); setFeedbackToast("Final price updated successfully");
+    startRefreshTransition(() => router.refresh());
+  };
+
+  const handleLaborSave = async () => {
+    if (!selectedBooking?.quotation.id || !selectedBooking.quotation.updatedAt) return;
+    if (!laborInput.trim()) { setPriceError("Enter a labor fee. Enter 0 to reset."); return; }
+    if (!/^\d+(?:\.\d{1,2})?$/.test(laborInput)) { setPriceError("Enter a nonnegative amount with at most two decimal places."); return; }
+    const value = Number(laborInput);
+    if (!Number.isFinite(value) || value > 9_999_999_999.99) { setPriceError("Enter an amount within the supported range."); return; }
+
+    setIsSavingLabor(true);
+    setPriceError(null);
+    const result = await updateBookingLaborCharge({
+      quotationId: selectedBooking.quotation.id,
+      laborAmount: value === 0 ? null : value,
+      expectedUpdatedAt: selectedBooking.quotation.updatedAt,
+    });
+
+    if (!result.ok) {
+      setPriceError(result.message);
+      if (result.code === "CONFLICT") startRefreshTransition(() => router.refresh());
+      setIsSavingLabor(false);
+      return;
+    }
+
+    dispatch({
+      type: "quotation-price-saved",
+      bookingId: selectedBooking.id,
+      quotation: {
+        ...selectedBooking.quotation,
+        calculatedFinalPrice: result.calculatedFinalPrice,
+        negotiatedFinalPrice: result.negotiatedFinalPrice,
+        effectiveFinalPrice: result.effectiveFinalPrice,
+        isPriceModified: result.isPriceModified,
+        negotiatedBy: result.negotiatedBy,
+        negotiatedAt: result.negotiatedAt,
+        updatedAt: result.updatedAt,
+      },
+    });
+    setIsEditingLabor(false);
+    setIsSavingLabor(false);
+    setFeedbackToast("Installation and labor fee updated successfully");
+    startRefreshTransition(() => router.refresh());
+  };
+
+  const handlePriceSave = async () => {
+    if (!priceInput.trim()) { setPriceError("Enter a final price. Blank does not reset the price."); return; }
+    if (!/^\d+(?:\.\d{1,2})?$/.test(priceInput)) { setPriceError("Enter a nonnegative amount with at most two decimal places."); return; }
+    const value = Number(priceInput);
+    if (!Number.isFinite(value) || value > 9_999_999_999.99) { setPriceError("Enter an amount within the supported range."); return; }
+    if (value === 0 && !zeroConfirmed) { setZeroConfirmed(true); setPriceError("Zero is allowed. Select Save again to confirm a final price of ₱0.00."); return; }
+    await saveNegotiatedPrice(value);
+  };
+
+  const saveItemPrice = async (itemId: string, amount: number | null) => {
+    if (!selectedBooking?.quotation.id || !selectedBooking.quotation.updatedAt) return;
+    setIsSavingPrice(true); setPriceError(null);
+    const result = await updateItemNegotiatedPrice({ quotationId: selectedBooking.quotation.id, itemId, negotiatedSubtotal: amount, expectedUpdatedAt: selectedBooking.quotation.updatedAt });
+    if (!result.ok) {
+      setPriceError(result.message);
+      if (result.code === "CONFLICT") startRefreshTransition(() => router.refresh());
+      setIsSavingPrice(false); return;
+    }
+    const entries = selectedBooking.quotation.itemPriceOverrides?.entries.filter((entry) => entry.itemId !== itemId) ?? [];
+    if (result.item.negotiatedSubtotal !== null && result.negotiatedBy && result.negotiatedAt) entries.push({ itemId, negotiatedSubtotal: result.item.negotiatedSubtotal, negotiatedBy: result.negotiatedBy, negotiatedAt: result.negotiatedAt });
+    dispatch({ type: "quotation-price-saved", bookingId: selectedBooking.id, quotation: { ...selectedBooking.quotation, ...result.pricing, itemPricing: result.pricing.itemPricing, itemPriceOverrides: entries.length ? { schemaVersion: 1, entries } : null, negotiatedBy: result.negotiatedBy, negotiatedAt: result.negotiatedAt, updatedAt: result.updatedAt } });
+    setEditingItemId(null); setZeroConfirmed(false); setIsSavingPrice(false); setFeedbackToast("Item price updated successfully");
+    startRefreshTransition(() => router.refresh());
+  };
+
+  const handleItemPriceSave = async () => {
+    if (!editingItemId) return;
+    if (!priceInput.trim()) { setPriceError("Enter a final item price. Blank does not reset the price."); return; }
+    if (!/^\d+(?:\.\d{1,2})?$/.test(priceInput)) { setPriceError("Enter a nonnegative amount with at most two decimal places."); return; }
+    const value = Number(priceInput);
+    if (!Number.isFinite(value) || value > 9_999_999_999.99) { setPriceError("Enter an amount within the supported range."); return; }
+    if (value === 0 && !zeroConfirmed) { setZeroConfirmed(true); setPriceError("Zero is allowed. Select Save again to confirm a final item price of ₱0.00."); return; }
+    await saveItemPrice(editingItemId, value);
+  };
+
+  const handleStatusChange = (newStatus: BookingStatus) => {
+    dispatch({ type: "edit-status", status: newStatus });
+  };
+
+  const handleManualRefresh = () => {
+    startRefreshTransition(() => router.refresh());
+  };
+
+  const handleSaveChanges = async () => {
+    if (!selectedBooking) return;
+    setIsSaving(true);
+    try {
+      // Map UI Reviewing/Confirmed to DB status values
+      let dbStatus: "Pending" | "Ongoing" | "Done" | "Cancelled" = "Pending";
+      if (currentStatus === "Reviewing") dbStatus = "Ongoing";
+      else if (currentStatus === "Confirmed") dbStatus = "Done";
+      else if (currentStatus === "Cancelled") dbStatus = "Cancelled";
+
+      await updateBookingRequestStatus({
+        bookingRequestId: selectedBooking.id,
+        status: dbStatus,
+      });
+
+      dispatch({
+        type: "status-saved",
+        bookingId: selectedBooking.id,
+        status: currentStatus,
+      });
+      startRefreshTransition(() => router.refresh());
+
+      setFeedbackToast(`Status updated to ${currentStatus} successfully`);
+      setTimeout(() => setFeedbackToast(null), 3000);
+    } catch (err: unknown) {
+      console.error("Failed to update status:", err);
+      setFeedbackToast("Failed to save changes. Please try again.");
+      setTimeout(() => setFeedbackToast(null), 4000);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDiscardChanges = () => {
+    dispatch({ type: "discard-status" });
+  };
+
+  return (
+    <div className="flex flex-col items-start gap-6 sm:gap-8 w-full max-w-[1240px] pb-12 select-none">
+      <div className="w-full flex flex-col md:flex-row items-start md:items-center justify-between gap-4 md:gap-6">
+        <div className="flex flex-col gap-1 items-start min-w-0">
+          <h1 className="text-black text-2xl sm:text-3xl lg:text-[32px] font-medium leading-tight tracking-tight">
+            Booking Request
+          </h1>
+          <p className="text-neutral-700 text-sm sm:text-base lg:text-lg font-normal leading-snug">
+            Review and process customer booking consultations
+          </p>
+        </div>
+
+        <div className="w-full md:w-auto flex items-center gap-2">
+          <div className="flex-1 md:flex-none">
+            <SearchBar
+              value={searchQuery}
+              onChange={setSearchQuery}
+              placeholder="Search booking"
+              inputClassName="w-full md:w-[320px] lg:w-[340px]"
+            />
+          </div>
+          <button
+            type="button"
+            aria-label="Refresh booking requests"
+            aria-busy={isRefreshing}
+            disabled={isRefreshing}
+            onClick={handleManualRefresh}
+            className="size-11 shrink-0 rounded-[12px] bg-[#07b6d3] text-white flex items-center justify-center shadow-xs transition-colors hover:bg-cyan-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3] disabled:cursor-wait disabled:opacity-60"
+          >
+            <RefreshCw
+              aria-hidden="true"
+              className={cn("size-5", isRefreshing && "animate-spin motion-reduce:animate-none")}
+            />
+            <span className="sr-only">{isRefreshing ? "Refreshing" : "Refresh"}</span>
+          </button>
+        </div>
+      </div>
+
+      {state.loadError && (
+        <div
+          role="alert"
+          className="w-full rounded-[16px] border border-red-200 bg-red-50 px-4 py-3 text-sm text-[#c50000]"
+        >
+          {state.loadError}
+        </div>
+      )}
+
+      <div className="w-full overflow-x-auto pb-1 -mx-1 px-1">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-max">
+          {filterTabs.map((tab) => {
+            const isActive = activeTab === tab.value;
+            const count = counts[tab.value];
+            return (
+              <button
+                key={tab.value}
+                type="button"
+                onClick={() => setActiveTab(tab.value)}
+                className={cn(
+                  "px-4 sm:px-5 py-2 sm:py-2.5 rounded-[25px] flex items-center gap-2.5 sm:gap-3 cursor-pointer transition-colors whitespace-nowrap",
+                  isActive
+                    ? "bg-[#07b6d3] text-white shadow-xs"
+                    : "bg-[#c3c3c3] text-white hover:bg-stone-400"
+                )}
+              >
+                <span className="text-sm sm:text-base font-normal leading-snug">
+                  {tab.label}
+                </span>
+                <span className="bg-white rounded-[10px] px-2 sm:px-2.5 py-[2px] text-xs text-[#0f1422] font-semibold leading-tight text-center min-w-[17px]">
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="w-full flex flex-col xl:flex-row items-start gap-6">
+        <div className="w-full xl:w-[420px] 2xl:w-[480px] shrink-0 flex flex-col gap-4">
+          {!state.loadError && filteredBookings.length === 0 ? (
+            <div className="bg-white rounded-[20px] p-6 flex items-center justify-center text-[#c3c3c3] text-base">
+              No bookings found
+            </div>
+          ) : (
+            filteredBookings.map((booking) => {
+              const isSelected = selectedBooking?.id === booking.id;
+              return (
+                <div
+                  key={booking.id}
+                  onClick={() => handleSelectBooking(booking)}
+                  className={cn(
+                    "bg-white p-4 sm:p-5 rounded-[20px] flex gap-4 items-start w-full cursor-pointer transition-all shadow-xs",
+                    isSelected ? "border-2 border-[#07b6d3]" : "border-2 border-transparent hover:border-neutral-200"
+                  )}
+                >
+                  <div className="flex flex-col gap-3 items-start flex-1 min-w-0">
+                    <p className="text-[#c3c3c3] text-xs sm:text-sm font-normal leading-snug">
+                      {booking.referenceNo}
+                    </p>
+                    <div className="flex flex-col gap-1 items-start w-full min-w-0">
+                      <p className="text-[#07b6d3] text-base sm:text-lg font-medium leading-snug truncate w-full">
+                        {booking.customer.name}
+                      </p>
+                      <p className="text-[#0f1422] text-xs sm:text-sm font-normal leading-snug truncate w-full">
+                        {booking.productSummary}
+                      </p>
+                      <p className="text-[#c3c3c3] text-xs sm:text-sm font-normal leading-snug">
+                        {booking.date}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div
+                    className={cn(
+                      "px-2.5 py-[5px] rounded-[20px] flex items-center justify-center shrink-0",
+                      statusBg[booking.status] || "bg-[#ffc876]"
+                    )}
+                  >
+                    <span className="text-white text-xs font-normal leading-tight whitespace-nowrap">
+                      {booking.status}
+                    </span>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {selectedBooking && (
+          <div className="flex-1 w-full bg-white rounded-[20px] p-5 sm:p-6 lg:p-[30px] flex flex-col gap-5 shadow-xs">
+            <div className="flex flex-col gap-5 items-start w-full">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 sm:gap-2.5 w-full">
+                <p className="text-[#0f1422] text-xl sm:text-2xl font-medium leading-tight">
+                  {selectedBooking.referenceNo}
+                </p>
+                <p className="text-[#c3c3c3] text-xs font-normal leading-snug">
+                  {selectedBooking.receivedDate}
+                </p>
+              </div>
+
+              <div className="bg-[#f5f5f5] p-4 sm:p-5 rounded-[20px] flex items-center justify-between w-full">
+                <p className="text-[#07b6d3] text-sm sm:text-base font-medium leading-snug">
+                  Update Status
+                </p>
+                <div className="relative">
+                  <select
+                    value={currentStatus}
+                    onChange={(e) =>
+                      handleStatusChange(e.target.value as BookingStatus)
+                    }
+                    className={cn(
+                      "appearance-none text-white text-xs sm:text-sm font-medium pl-4 pr-8 py-1.5 rounded-[25px] cursor-pointer outline-none shadow-xs",
+                      statusBg[currentStatus] || "bg-[#ffc876]"
+                    )}
+                  >
+                    <option value="Pending" className="text-black bg-white">
+                      Pending
+                    </option>
+                    <option value="Reviewing" className="text-black bg-white">
+                      Reviewing
+                    </option>
+                    <option value="Confirmed" className="text-black bg-white">
+                      Confirmed
+                    </option>
+                    <option value="Cancelled" className="text-black bg-white">
+                      Cancelled
+                    </option>
+                  </select>
+                  <div className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-white">
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 16 16"
+                      fill="none"
+                      xmlns="http://www.w3.org/2000/svg"
+                    >
+                      <path
+                        d="M4 6L8 10L12 6"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </div>
+                </div>
+              </div>
+
+              <div className="w-full border-t border-[#e5e5e5]" />
+
+              <div className="bg-[#f5f5f5] p-4 sm:p-5 rounded-[20px] flex flex-col gap-3 w-full">
+                <p className="text-[#07b6d3] text-lg sm:text-xl font-medium leading-snug">
+                  Customer Details
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4 text-xs sm:text-sm leading-snug">
+                  <div className="flex flex-col gap-1 min-w-0">
+                    <span className="text-[#c3c3c3] text-xs">Name</span>
+                    <span className="text-[#0f1422] font-medium truncate">
+                      {selectedBooking.customer.name}
+                    </span>
+                  </div>
+                  <div className="flex flex-col gap-1 min-w-0">
+                    <span className="text-[#c3c3c3] text-xs">Email</span>
+                    <span className="text-[#0f1422] font-medium truncate" title={selectedBooking.customer.email}>
+                      {selectedBooking.customer.email}
+                    </span>
+                  </div>
+                  <div className="flex flex-col gap-1 min-w-0">
+                    <span className="text-[#c3c3c3] text-xs">Phone Number</span>
+                    <span className="text-[#0f1422] font-medium truncate">
+                      {selectedBooking.customer.phone}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-[#f5f5f5] p-4 sm:p-5 rounded-[20px] flex flex-col gap-4 w-full">
+                <div aria-busy={isSavingPrice || isSavingLabor} className="rounded-[16px] bg-white p-4 flex flex-col gap-3">
+                  <div className="flex flex-col gap-1 border-b border-[#e5e5e5] pb-3">
+                    <p className="text-xs text-[#c3c3c3]">Raw Product Fabrication Subtotal</p>
+                    <p className="text-base font-semibold text-[#0f1422]">
+                      ₱{(selectedBooking.quotation.calculatedFinalPrice ?? 0).toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                    </p>
+                  </div>
+
+                  {/* Labor & Installation Fee Section */}
+                  <div className="rounded-[12px] border border-[#e5e5e5] bg-neutral-50/70 p-3 flex flex-col gap-2">
+                    <div className="flex flex-wrap justify-between items-center gap-2">
+                      <div>
+                        <p className="text-sm font-medium text-[#0f1422]">Site Installation & Labor Fee</p>
+                        <p className="text-xs text-neutral-500">
+                          {selectedBooking.quotation.negotiatedFinalPrice !== null && selectedBooking.quotation.isPriceModified
+                            ? `Confirmed Fee: ₱${Math.max(0, (selectedBooking.quotation.effectiveFinalPrice ?? 0) - (selectedBooking.quotation.calculatedFinalPrice ?? 0)).toLocaleString("en-PH", { minimumFractionDigits: 2 })}`
+                            : "Pending admin review / site assessment"}
+                        </p>
+                      </div>
+                      {!isEditingLabor && (
+                        <button
+                          type="button"
+                          disabled={isSavingLabor || isSavingPrice}
+                          onClick={() => {
+                            const diff = Math.max(0, (selectedBooking.quotation.effectiveFinalPrice ?? 0) - (selectedBooking.quotation.calculatedFinalPrice ?? 0));
+                            setLaborInput(diff > 0 ? diff.toFixed(2) : "");
+                            setIsEditingLabor(true);
+                            setPriceError(null);
+                          }}
+                          className="bg-[#097283] text-white text-xs px-3 py-1.5 rounded-[10px] hover:bg-cyan-700 transition-colors disabled:opacity-50"
+                        >
+                          {selectedBooking.quotation.isPriceModified ? "Edit Labor Fee" : "Add Labor Fee"}
+                        </button>
+                      )}
+                    </div>
+                    {isEditingLabor && (
+                      <div className="flex flex-col gap-2 pt-1">
+                        <label className="text-xs font-medium text-neutral-700" htmlFor="admin-labor-input">
+                          Enter installation / site labor amount (PHP)
+                        </label>
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500 text-xs font-semibold">₱</span>
+                          <input
+                            id="admin-labor-input"
+                            inputMode="decimal"
+                            step="0.01"
+                            value={laborInput}
+                            onChange={(e) => setLaborInput(e.target.value)}
+                            placeholder="e.g. 1500.00"
+                            disabled={isSavingLabor}
+                            className="w-full pl-7 pr-3 py-1.5 rounded-[10px] border border-neutral-300 text-sm font-semibold bg-white text-[#0f1422] focus-visible:outline-2 focus-visible:outline-[#07b6d3]"
+                          />
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            disabled={isSavingLabor}
+                            onClick={() => void handleLaborSave()}
+                            className="bg-[#05b64b] text-white text-xs px-3 py-1.5 rounded-[10px] hover:bg-emerald-600 transition-colors disabled:opacity-50"
+                          >
+                            Save Labor
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isSavingLabor}
+                            onClick={() => {
+                              setIsEditingLabor(false);
+                              setPriceError(null);
+                            }}
+                            className="bg-neutral-200 text-xs px-3 py-1.5 rounded-[10px] hover:bg-neutral-300 transition-colors"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {selectedBooking.quotation.supportsItemNegotiation ? <>
+                    <p className="text-sm font-medium text-[#0f1422]">Per-item final prices</p>
+                    {(selectedBooking.quotation.itemPricing ?? []).map((item) => <div key={item.itemId} className="rounded-[12px] border border-[#e5e5e5] p-3 flex flex-col gap-2">
+                      <div className="flex flex-wrap justify-between gap-3"><div><p className="text-sm font-medium text-[#0f1422]">{item.productName} <span className="text-xs text-[#c3c3c3]">× {item.quantity}</span></p><p className="text-xs text-[#c3c3c3]">Calculated: ₱{item.calculatedSubtotal.toLocaleString("en-PH", { minimumFractionDigits: 2 })}</p></div><div className="text-right"><p className="font-semibold text-emerald-700">₱{item.effectiveSubtotal.toLocaleString("en-PH", { minimumFractionDigits: 2 })}</p>{item.isPriceModified && <span className="text-[11px] text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full">Negotiated</span>}</div></div>
+                      {editingItemId === item.itemId ? <div className="flex flex-col gap-2"><label className="text-xs font-medium" htmlFor={`item-price-${item.itemId}`}>Final item price for {item.productName}</label><input id={`item-price-${item.itemId}`} inputMode="decimal" step="0.01" value={priceInput} onChange={(event) => { setPriceInput(event.target.value); setZeroConfirmed(false); }} disabled={isSavingPrice} className="rounded-[10px] border border-neutral-300 px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-[#07b6d3]"/><div className="flex gap-2"><button type="button" disabled={isSavingPrice} onClick={() => void handleItemPriceSave()} className="bg-[#05b64b] text-white text-xs px-3 py-2 rounded-[10px] disabled:opacity-50">Save</button><button type="button" disabled={isSavingPrice} onClick={() => { setEditingItemId(null); setPriceError(null); }} className="bg-neutral-200 text-xs px-3 py-2 rounded-[10px]">Cancel</button></div></div> : <div className="flex gap-2"><button type="button" disabled={isSavingPrice} onClick={() => { setEditingItemId(item.itemId); setPriceInput(item.effectiveSubtotal.toFixed(2)); setPriceError(null); setZeroConfirmed(false); }} className="bg-[#0f1422] text-white text-xs px-3 py-2 rounded-[10px] disabled:opacity-50">Edit Price</button><button type="button" disabled={isSavingPrice || !item.isPriceModified} onClick={() => void saveItemPrice(item.itemId, null)} className="bg-[#c50000] text-white text-xs px-3 py-2 rounded-[10px] disabled:opacity-40">Reset</button></div>}
+                    </div>)}
+                  </> : <><p className="text-xs text-amber-800">Per-item editing unavailable for legacy quotation</p><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs text-[#c3c3c3]">Calculated price</p><p className="font-medium">₱{(selectedBooking.quotation.calculatedFinalPrice ?? 0).toLocaleString("en-PH", { minimumFractionDigits: 2 })}</p></div><div className="text-right"><p className="text-xs text-[#c3c3c3]">Final price</p><p className="text-xl font-semibold text-emerald-700">₱{(selectedBooking.quotation.effectiveFinalPrice ?? 0).toLocaleString("en-PH", { minimumFractionDigits: 2 })}</p></div></div>{isEditingPrice ? <div className="flex flex-col gap-2"><input aria-label="Negotiated final price" inputMode="decimal" step="0.01" value={priceInput} onChange={(event) => setPriceInput(event.target.value)} className="rounded-[10px] border px-3 py-2"/><div className="flex gap-2"><button type="button" onClick={() => void handlePriceSave()} className="bg-[#05b64b] text-white text-xs px-3 py-2 rounded-[10px]">Save</button><button type="button" onClick={() => setIsEditingPrice(false)} className="bg-neutral-200 text-xs px-3 py-2 rounded-[10px]">Cancel</button><button type="button" disabled={!selectedBooking.quotation.isPriceModified} onClick={() => void saveNegotiatedPrice(null)} className="bg-[#c50000] text-white text-xs px-3 py-2 rounded-[10px] disabled:opacity-40">Reset</button></div></div> : <button type="button" disabled={isSavingPrice} onClick={() => { setPriceInput((selectedBooking.quotation.effectiveFinalPrice ?? 0).toFixed(2)); setIsEditingPrice(true); }} className="self-start bg-[#0f1422] text-white text-xs px-3 py-2 rounded-[10px]">Edit Final Price</button>}</>}
+
+                  <div className="flex flex-wrap items-end justify-between gap-3 border-t border-[#e5e5e5] pt-3">
+                    <div>
+                      <p className="text-xs text-[#c3c3c3]">Effective Grand Total</p>
+                      <p className="text-xl font-semibold text-emerald-700">
+                        ₱{(selectedBooking.quotation.effectiveFinalPrice ?? 0).toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                    {selectedBooking.quotation.isPriceModified && (
+                      <span className="text-[11px] text-amber-800 bg-amber-100 px-2.5 py-1 rounded-full font-medium">
+                        Adjusted / Confirmed Total
+                      </span>
+                    )}
+                  </div>
+                  {priceError && <p role="alert" className="text-xs text-[#c50000]">{priceError}</p>}
+                </div>
+                <div className="flex flex-col gap-1 items-start">
+                  <p className="text-[#07b6d3] text-lg sm:text-xl font-medium leading-snug">
+                    Customer Quotation PDF
+                  </p>
+                  <p className="text-[#c3c3c3] text-xs font-normal leading-snug">
+                    The PDF the customer downloaded and shared
+                  </p>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center w-full">
+                  <div className="bg-white p-3 sm:p-4 rounded-[16px] size-[80px] sm:size-[90px] flex items-center justify-center shrink-0 shadow-xs">
+                    <Image
+                      src="/admin/pdf-file.svg"
+                      alt="PDF file"
+                      width={50}
+                      height={50}
+                      className="w-10 sm:w-12 h-auto"
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-3 items-start flex-1 min-w-0 w-full">
+                    <div className="flex flex-col gap-0.5 items-start w-full">
+                      <p className="text-[#0f1422] text-sm font-medium leading-snug truncate w-full">
+                        {selectedBooking.quotation.filename}
+                      </p>
+                      <p className="text-[#c3c3c3] text-xs font-normal leading-snug">
+                        {selectedBooking.quotation.generatedDate} · {selectedBooking.quotation.size}
+                      </p>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2.5 items-start">
+                      <button
+                        type="button"
+                        onClick={() => handleQuotationPreview(false)}
+                        disabled={isSavingPrice || !selectedBooking.quotation.document}
+                        className="bg-[#0f1422] text-white text-xs font-normal px-3.5 py-1.5 rounded-[10px] cursor-pointer hover:bg-black transition-colors whitespace-nowrap"
+                      >
+                        View PDF
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleQuotationPreview(true)}
+                        disabled={isSavingPrice || !selectedBooking.quotation.document}
+                        className="bg-[#07b6d3] text-white text-xs font-normal px-3.5 py-1.5 rounded-[10px] cursor-pointer hover:bg-cyan-600 transition-colors whitespace-nowrap"
+                      >
+                        Download PDF
+                      </button>
+                      <span className="w-full text-[11px] text-[#c3c3c3]">Download opens Print / Save as PDF.</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="w-full border-t border-[#e5e5e5]" />
+            </div>
+
+            <div className="flex gap-2.5 items-center justify-end w-full pt-1">
+              <button
+                type="button"
+                onClick={handleDiscardChanges}
+                disabled={isSaving}
+                className="bg-[#c50000] text-white text-xs font-medium px-4 py-2 rounded-[10px] cursor-pointer hover:bg-red-700 transition-colors disabled:opacity-50"
+              >
+                Discard
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveChanges}
+                disabled={isSaving}
+                className="bg-[#05b64b] text-white text-xs font-medium px-4 py-2 rounded-[10px] cursor-pointer hover:bg-emerald-600 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+              >
+                {isSaving && (
+                  <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                )}
+                <span>{isSaving ? "Saving..." : "Save Changes"}</span>
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Floating feedback toast */}
+      {feedbackToast && (
+        <div className="fixed bottom-6 right-6 z-50 bg-[#0f1422] text-white py-3 px-5 rounded-[12px] shadow-xl flex items-center gap-3 border border-neutral-800 transition-all duration-300">
+          <div className="bg-[#05b64b] flex items-center justify-center w-5 h-5 rounded-full shrink-0">
+            <Image
+              src="/send-booking/check.svg"
+              alt="Success"
+              width={10}
+              height={10}
+              className="object-contain"
+            />
+          </div>
+          <span className="text-sm font-normal tracking-tight">{feedbackToast}</span>
+        </div>
+      )}
+    </div>
+  );
+}
