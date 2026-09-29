@@ -33,7 +33,7 @@ const socialMediaIcons = [
   },
   {
     key: "youtube",
-    src: "/social_media_icons/YouTube.svg",
+    src: "/social_media_icons/Youtube.svg",
     width: 25,
     height: 18.06,
     alt: "YouTube",
