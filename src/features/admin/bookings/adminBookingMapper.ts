@@ -6,7 +6,13 @@ import type {
 } from "@/lib/booking/types";
 import type { BookingRequest } from "../data";
 import type { AdminBookingItem, BookingStatus } from "./bookingData";
-import { deriveQuotationPricing, deriveQuotationPricingFromItems, QuotationDocumentSnapshotV1Schema, QuotationItemPriceOverridesV1Schema, reconstructLegacyQuotationDocument } from "@/lib/pricing/quotationDocument";
+import {
+  deriveQuotationPricingFromItems,
+  QuotationDocumentSnapshotV1Schema,
+  QuotationItemPriceOverridesV1Schema,
+  reconstructLegacyQuotationDocument,
+  type QuotationPricingView,
+} from "@/lib/pricing/quotationDocument";
 
 type Fixture = { name: string; quantity: number };
 
@@ -137,11 +143,33 @@ export function mapAdminBookingRow(
   }) : null;
   const overrideResult = QuotationItemPriceOverridesV1Schema.safeParse(quotation?.item_price_overrides);
   const itemPriceOverrides = overrideResult.success ? overrideResult.data : null;
-  let pricing = parsedDocument.success
-    ? deriveQuotationPricingFromItems(parsedDocument.data, itemPriceOverrides)
-    : deriveQuotationPricing(Number(quotation?.total_estimated_amount ?? 0), quotation?.negotiated_amount === null || quotation?.negotiated_amount === undefined ? null : Number(quotation.negotiated_amount));
+  const supportsItemNegotiation = parsedDocument.success || Boolean(document && document.items && document.items.length > 0);
+  const adminLaborCharge = quotation?.admin_labor_charge !== null && quotation?.admin_labor_charge !== undefined
+    ? Number(quotation.admin_labor_charge)
+    : null;
 
-  if (parsedDocument.success && quotation?.negotiated_amount !== null && quotation?.negotiated_amount !== undefined) {
+  let pricing: QuotationPricingView;
+  if (document) {
+    pricing = deriveQuotationPricingFromItems(document, itemPriceOverrides, adminLaborCharge);
+  } else {
+    const rawBaseline = Number(quotation?.total_estimated_amount ?? 0);
+    const labor = adminLaborCharge ?? 0;
+    const effectiveTotal = quotation?.negotiated_amount !== null && quotation?.negotiated_amount !== undefined
+      ? Number(quotation.negotiated_amount)
+      : rawBaseline + labor;
+    const isModified = quotation?.negotiated_amount !== null || labor > 0;
+    pricing = {
+      itemPricing: [],
+      calculatedFinalPrice: rawBaseline,
+      effectiveProductSubtotal: rawBaseline,
+      adminLaborCharge,
+      negotiatedFinalPrice: isModified ? effectiveTotal : null,
+      effectiveFinalPrice: effectiveTotal,
+      isPriceModified: isModified,
+    };
+  }
+
+  if (document && quotation?.negotiated_amount !== null && quotation?.negotiated_amount !== undefined) {
     const negotiatedCents = Math.round(Number(quotation.negotiated_amount) * 100);
     const calculatedCents = Math.round(pricing.calculatedFinalPrice * 100);
     if (negotiatedCents !== calculatedCents) {
@@ -173,7 +201,7 @@ export function mapAdminBookingRow(
       size: "N/A",
       document,
       quotationSource: parsedDocument.success ? "canonical-v1" : "legacy-reconstructed",
-      supportsItemNegotiation: parsedDocument.success,
+      supportsItemNegotiation,
       itemPriceOverrides,
       ...pricing,
       negotiatedBy: quotation?.negotiated_by ?? null,

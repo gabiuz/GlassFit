@@ -139,8 +139,13 @@ export type ItemPricingView = {
   negotiatedSubtotal: number | null; effectiveSubtotal: number; isPriceModified: boolean;
 };
 export type QuotationPricingView = {
-  itemPricing: ItemPricingView[]; calculatedFinalPrice: number; negotiatedFinalPrice: number | null;
-  effectiveFinalPrice: number; isPriceModified: boolean;
+  itemPricing: ItemPricingView[];
+  calculatedFinalPrice: number;
+  negotiatedFinalPrice: number | null;
+  effectiveFinalPrice: number;
+  isPriceModified: boolean;
+  effectiveProductSubtotal: number;
+  adminLaborCharge: number | null;
 };
 
 function groupsFromBom(bom: CalculatedBOMResult) {
@@ -168,6 +173,7 @@ export function createQuotationDocumentSnapshotV1(input: {
   fallbackBom: CalculatedBOMResult;
   hasSill: boolean;
   structuralWaiver: boolean;
+  adminLaborCharge?: number | null;
 }): QuotationDocumentDraftV1 {
   const sourceItems = input.items.length > 0 ? input.items : [{
     itemId: "primary-item", productId: "", productName: input.projectName, productType: "Window & Door",
@@ -198,7 +204,12 @@ export function deriveQuotationPricing(calculatedFinalPrice: number, negotiatedF
   const calculatedCents = Math.round(calculatedFinalPrice * 100);
   const negotiatedCents = negotiatedFinalPrice === null ? null : Math.round(negotiatedFinalPrice * 100);
   const isPriceModified = negotiatedCents !== null && negotiatedCents !== calculatedCents;
-  return { calculatedFinalPrice: calculatedCents / 100, negotiatedFinalPrice: isPriceModified ? negotiatedCents / 100 : null, effectiveFinalPrice: (isPriceModified ? negotiatedCents : calculatedCents) / 100, isPriceModified };
+  return {
+    calculatedFinalPrice: calculatedCents / 100,
+    negotiatedFinalPrice: isPriceModified ? negotiatedCents / 100 : null,
+    effectiveFinalPrice: (isPriceModified ? negotiatedCents : calculatedCents) / 100,
+    isPriceModified,
+  };
 }
 
 export function deriveItemPricing(
@@ -220,13 +231,26 @@ export function deriveItemPricing(
 export function deriveQuotationPricingFromItems(
   snapshot: QuotationDocumentSnapshotV1,
   overrides: QuotationItemPriceOverridesV1 | null,
+  adminLaborCharge: number | null = null,
 ): QuotationPricingView {
   const overrideMap = new Map((overrides?.entries ?? []).map((entry) => [entry.itemId, entry]));
   const itemPricing = snapshot.items.map((item) => deriveItemPricing(item, overrideMap.get(item.itemId)));
   const calculatedCents = itemPricing.reduce((sum, item) => sum + Math.round(item.calculatedSubtotal * 100), 0);
-  const effectiveCents = itemPricing.reduce((sum, item) => sum + Math.round(item.effectiveSubtotal * 100), 0);
-  const isPriceModified = itemPricing.some((item) => item.isPriceModified);
-  return { itemPricing, calculatedFinalPrice: calculatedCents / 100, negotiatedFinalPrice: isPriceModified ? effectiveCents / 100 : null, effectiveFinalPrice: effectiveCents / 100, isPriceModified };
+  const effectiveProductCents = itemPricing.reduce((sum, item) => sum + Math.round(item.effectiveSubtotal * 100), 0);
+  const laborCents = adminLaborCharge !== null ? Math.round(adminLaborCharge * 100) : 0;
+  const grandTotalCents = effectiveProductCents + laborCents;
+  const hasItemOverrides = itemPricing.some((item) => item.isPriceModified);
+  const hasLabor = adminLaborCharge !== null && laborCents > 0;
+  const isPriceModified = hasItemOverrides || hasLabor;
+  return {
+    itemPricing,
+    calculatedFinalPrice: calculatedCents / 100,
+    effectiveProductSubtotal: effectiveProductCents / 100,
+    adminLaborCharge: adminLaborCharge !== null ? laborCents / 100 : null,
+    negotiatedFinalPrice: isPriceModified ? grandTotalCents / 100 : null,
+    effectiveFinalPrice: grandTotalCents / 100,
+    isPriceModified,
+  };
 }
 
 export interface QuotationDocumentViewModel extends QuotationDocumentSnapshotV1 {
@@ -238,13 +262,25 @@ export interface QuotationDocumentViewModel extends QuotationDocumentSnapshotV1 
   negotiatedFinalPrice: number | null;
   effectiveFinalPrice: number;
   isPriceModified: boolean;
+  effectiveProductSubtotal: number;
+  adminLaborCharge: number | null;
   itemPricing: ItemPricingView[];
 }
 
 export function createQuotationDocumentViewModel(snapshot: QuotationDocumentSnapshotV1, runtime: {
-  brandLogoUrl: string; shareableUrl: string; snapshotImageUrl: string | null; allowedImageOrigins: string[]; negotiatedAmount: number | null; itemPriceOverrides?: QuotationItemPriceOverridesV1 | null;
+  brandLogoUrl: string;
+  shareableUrl: string;
+  snapshotImageUrl: string | null;
+  allowedImageOrigins: string[];
+  negotiatedAmount: number | null;
+  adminLaborCharge?: number | null;
+  itemPriceOverrides?: QuotationItemPriceOverridesV1 | null;
 }): QuotationDocumentViewModel {
-  const itemPricingResult = deriveQuotationPricingFromItems(snapshot, runtime.itemPriceOverrides ?? null);
+  const itemPricingResult = deriveQuotationPricingFromItems(
+    snapshot,
+    runtime.itemPriceOverrides ?? null,
+    runtime.adminLaborCharge ?? null,
+  );
   let effectiveFinalPrice = itemPricingResult.effectiveFinalPrice;
   let negotiatedFinalPrice = itemPricingResult.negotiatedFinalPrice;
   let isPriceModified = itemPricingResult.isPriceModified;

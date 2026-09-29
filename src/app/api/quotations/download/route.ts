@@ -30,6 +30,7 @@ export async function GET(request: NextRequest): Promise<Response> {
       negotiated_amount,
       negotiated_by,
       negotiated_at,
+      admin_labor_charge,
       item_price_overrides,
       quotation_document_snapshot,
       pdf_r2_object_key,
@@ -112,6 +113,7 @@ export async function GET(request: NextRequest): Promise<Response> {
       snapshotImageUrl,
       allowedImageOrigins: origins,
       negotiatedAmount: quoteRecord.negotiated_amount === null ? null : Number(quoteRecord.negotiated_amount),
+      adminLaborCharge: quoteRecord.admin_labor_charge !== null && quoteRecord.admin_labor_charge !== undefined ? Number(quoteRecord.admin_labor_charge) : null,
       itemPriceOverrides,
     });
     html = generateQuotationPdfHtml(view);
@@ -146,6 +148,7 @@ export async function GET(request: NextRequest): Promise<Response> {
         snapshotImageUrl,
         allowedImageOrigins: origins,
         negotiatedAmount: quoteRecord.negotiated_amount === null ? null : Number(quoteRecord.negotiated_amount),
+        adminLaborCharge: quoteRecord.admin_labor_charge !== null && quoteRecord.admin_labor_charge !== undefined ? Number(quoteRecord.admin_labor_charge) : null,
         itemPriceOverrides,
       });
       html = generateQuotationPdfHtml(view);

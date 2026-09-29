@@ -155,6 +155,8 @@ export function BookingsContent({ initialBookings, loadError = null }: BookingsC
       bookingId: selectedBooking.id,
       quotation: {
         ...selectedBooking.quotation,
+        effectiveProductSubtotal: result.effectiveProductSubtotal ?? selectedBooking.quotation.effectiveProductSubtotal,
+        adminLaborCharge: result.adminLaborCharge ?? null,
         calculatedFinalPrice: result.calculatedFinalPrice,
         negotiatedFinalPrice: result.negotiatedFinalPrice,
         effectiveFinalPrice: result.effectiveFinalPrice,
@@ -470,7 +472,7 @@ export function BookingsContent({ initialBookings, loadError = null }: BookingsC
                   <div className="flex flex-col gap-1 border-b border-[#e5e5e5] pb-3">
                     <p className="text-xs text-[#c3c3c3]">Raw Product Fabrication Subtotal</p>
                     <p className="text-base font-semibold text-[#0f1422]">
-                      ₱{(selectedBooking.quotation.calculatedFinalPrice ?? 0).toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                      ₱{(selectedBooking.quotation.effectiveProductSubtotal ?? selectedBooking.quotation.calculatedFinalPrice ?? 0).toLocaleString("en-PH", { minimumFractionDigits: 2 })}
                     </p>
                   </div>
 
@@ -480,8 +482,8 @@ export function BookingsContent({ initialBookings, loadError = null }: BookingsC
                       <div>
                         <p className="text-sm font-medium text-[#0f1422]">Site Installation & Labor Fee</p>
                         <p className="text-xs text-neutral-500">
-                          {selectedBooking.quotation.negotiatedFinalPrice !== null && selectedBooking.quotation.isPriceModified
-                            ? `Confirmed Fee: ₱${Math.max(0, (selectedBooking.quotation.effectiveFinalPrice ?? 0) - (selectedBooking.quotation.calculatedFinalPrice ?? 0)).toLocaleString("en-PH", { minimumFractionDigits: 2 })}`
+                          {typeof selectedBooking.quotation.adminLaborCharge === "number" && selectedBooking.quotation.adminLaborCharge > 0
+                            ? `Confirmed Fee: ₱${selectedBooking.quotation.adminLaborCharge.toLocaleString("en-PH", { minimumFractionDigits: 2 })}`
                             : "Pending admin review / site assessment"}
                         </p>
                       </div>
@@ -490,14 +492,14 @@ export function BookingsContent({ initialBookings, loadError = null }: BookingsC
                           type="button"
                           disabled={isSavingLabor || isSavingPrice}
                           onClick={() => {
-                            const diff = Math.max(0, (selectedBooking.quotation.effectiveFinalPrice ?? 0) - (selectedBooking.quotation.calculatedFinalPrice ?? 0));
-                            setLaborInput(diff > 0 ? diff.toFixed(2) : "");
+                            const fee = selectedBooking.quotation.adminLaborCharge;
+                            setLaborInput(typeof fee === "number" && fee > 0 ? fee.toFixed(2) : "");
                             setIsEditingLabor(true);
                             setPriceError(null);
                           }}
                           className="bg-[#097283] text-white text-xs px-3 py-1.5 rounded-[10px] hover:bg-cyan-700 transition-colors disabled:opacity-50"
                         >
-                          {selectedBooking.quotation.isPriceModified ? "Edit Labor Fee" : "Add Labor Fee"}
+                          {typeof selectedBooking.quotation.adminLaborCharge === "number" && selectedBooking.quotation.adminLaborCharge > 0 ? "Edit Labor Fee" : "Add Labor Fee"}
                         </button>
                       )}
                     </div>

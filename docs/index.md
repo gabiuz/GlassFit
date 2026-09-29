@@ -80,6 +80,7 @@ GlassFit is a responsive, web-based photo-simulation and consultation-support pl
 | September 24, 2026 | `docs/qad-glassfit.md`, `docs/index.md` | GlassFit Capstone Team | Added QAD-TC29 and IMP-MS15 traceability for admin booking reflection, relational query integrity, and route freshness | Pending |
 | September 25, 2026 | `docs/erd-glassfit.md`, `docs/build-glassfit.md`, `docs/qad-glassfit.md`, `docs/index.md` | GlassFit Capstone Team | Added IMP-MS16 canonical quotation snapshots, negotiated-price auditability, deployment order, and QAD-TC30 | Pending |
 | September 26, 2026 | `docs/implementation/ms17.md` and upstream PRD, SDD, DSD, ERD, QAD, milestone, build, and index specifications | GlassFit Capstone Team | Reconciled simplified customer price disclosure, canonical per-item negotiation, DSD-UI11, ERD-E13 JSON overrides, migration 007, and QAD-TC31 | Pending |
+| September 29, 2026 | `docs/implementation/ms25.md`, `docs/qad-glassfit.md`, `docs/index.md` | GlassFit Capstone Team | Reconciled single-product quotation negotiation parity, offset-tolerant ISO datetime validation, optimistic concurrency normalization, and QAD-TC41 | Pending |
 
 ---
 
