@@ -5,7 +5,7 @@
 **Version:** 1.0 (Capstone Production Release)  
 **Owner:** Reynard John B. Rabanal (Lead Product / Systems Architect) & GlassFit Capstone Team (PUP CCIS)  
 **Status:** Locked  
-**Last reconciled:** September 26, 2026 (Added IMP-MS17 simplified customer quotation and per-item negotiation traceability)
+**Last reconciled:** September 29, 2026 (Added IMP-MS-DOCKER FastAPI CV microservice containerization and cloud deployment specification)
 
 ---
 
@@ -81,6 +81,7 @@ GlassFit is a responsive, web-based photo-simulation and consultation-support pl
 | September 25, 2026 | `docs/erd-glassfit.md`, `docs/build-glassfit.md`, `docs/qad-glassfit.md`, `docs/index.md` | GlassFit Capstone Team | Added IMP-MS16 canonical quotation snapshots, negotiated-price auditability, deployment order, and QAD-TC30 | Pending |
 | September 26, 2026 | `docs/implementation/ms17.md` and upstream PRD, SDD, DSD, ERD, QAD, milestone, build, and index specifications | GlassFit Capstone Team | Reconciled simplified customer price disclosure, canonical per-item negotiation, DSD-UI11, ERD-E13 JSON overrides, migration 007, and QAD-TC31 | Pending |
 | September 29, 2026 | `docs/implementation/ms25.md`, `docs/qad-glassfit.md`, `docs/index.md` | GlassFit Capstone Team | Reconciled single-product quotation negotiation parity, offset-tolerant ISO datetime validation, optimistic concurrency normalization, and QAD-TC41 | Pending |
+| September 29, 2026 | `docs/implementation/ms-docker.md`, `docs/plans/docker-guide.md`, `docs/index.md` | GlassFit Capstone Team | Reconciled FastAPI CV microservice containerization, USE_TMP_STORAGE flag, ALLOWED_ORIGINS CORS configuration, and cloud deployment runbook | Pending |
 
 ---
 

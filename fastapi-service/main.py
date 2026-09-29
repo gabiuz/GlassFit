@@ -21,7 +21,7 @@ from segmentation import SegmentationError, analyze_objects
 BASE_DIR = Path(__file__).resolve().parent
 GENERATED_DIR = (
     Path("/tmp/glassfit/generated")
-    if os.getenv("VERCEL")
+    if os.getenv("USE_TMP_STORAGE")
     else BASE_DIR / "generated"
 )
 MASK_DIR = GENERATED_DIR / "masks"
@@ -37,13 +37,31 @@ SESSION_DIR.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(title="GlassFit Image Analysis Service")
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origin_regex=r"http://(localhost|127\.0\.0\.1):\d+",
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+_ALLOWED_ORIGINS_ENV = os.getenv("ALLOWED_ORIGINS", "")
+_EXTRA_ORIGINS: list[str] = [
+    origin.strip()
+    for origin in _ALLOWED_ORIGINS_ENV.split(",")
+    if origin.strip()
+]
+_LOCALHOST_REGEX = r"http://(localhost|127\.0\.0\.1):\d+"
+
+if _EXTRA_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_EXTRA_ORIGINS,
+        allow_origin_regex=_LOCALHOST_REGEX,
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=_LOCALHOST_REGEX,
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 @app.on_event("startup")
 async def warmup_models():

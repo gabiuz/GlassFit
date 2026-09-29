@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+generated/
+uvicorn.log
+.pytest_cache/
+tests/
+test_brightness.py
+.gitignore
+.env
+*.md
