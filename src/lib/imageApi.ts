@@ -1,4 +1,4 @@
-const IMAGE_ANALYSIS_API_PATH = "/api/image-analysis";
+const LOCAL_IMAGE_ANALYSIS_API_URL = "http://localhost:8000";
 
 export const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/png"];
 export const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
@@ -110,7 +110,21 @@ export interface SpaceImageSession {
 }
 
 export function getImageApiBaseUrl() {
-  return IMAGE_ANALYSIS_API_PATH;
+  const configuredUrl = process.env.NEXT_PUBLIC_IMAGE_API_URL?.trim();
+
+  if (!configuredUrl) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("NEXT_PUBLIC_IMAGE_API_URL must be configured for production.");
+    }
+    return LOCAL_IMAGE_ANALYSIS_API_URL;
+  }
+
+  const normalizedUrl = configuredUrl.replace(/\/+$/, "");
+  if (process.env.NODE_ENV === "production" && !normalizedUrl.startsWith("https://")) {
+    throw new Error("NEXT_PUBLIC_IMAGE_API_URL must use HTTPS in production.");
+  }
+
+  return normalizedUrl;
 }
 
 export function validateImageFile(file: File) {
@@ -186,13 +200,13 @@ function toSpaceImageSession(
     originalFileName,
     workspaceImage: {
       ...payload.workspace_image,
-      url: toAbsoluteApiUrl(payload.workspace_image.url, apiBaseUrl),
+      url: resolveImageApiUrl(payload.workspace_image.url, apiBaseUrl),
     },
     brightness: payload.brightness,
     lighting: payload.lighting,
     objects: (payload.objects || []).map((object) => ({
       ...object,
-      mask_url: toAbsoluteApiUrl(object.mask_url, apiBaseUrl),
+      mask_url: resolveImageApiUrl(object.mask_url, apiBaseUrl),
     })),
     segmentation: payload.segmentation,
     depth: payload.depth
@@ -215,13 +229,14 @@ function toSpaceImageSession(
 }
 
 function toAbsoluteOptionalApiUrl(url: string | null, apiBaseUrl: string) {
-  return url ? toAbsoluteApiUrl(url, apiBaseUrl) : null;
+  return url ? resolveImageApiUrl(url, apiBaseUrl) : null;
 }
 
-function toAbsoluteApiUrl(url: string, apiBaseUrl: string) {
+export function resolveImageApiUrl(url: string, apiBaseUrl: string) {
   if (/^https?:\/\//i.test(url)) {
     return url;
   }
 
-  return `${apiBaseUrl}${url.startsWith("/") ? "" : "/"}${url}`;
+  const normalizedBaseUrl = apiBaseUrl.replace(/\/+$/, "");
+  return `${normalizedBaseUrl}${url.startsWith("/") ? "" : "/"}${url}`;
 }

@@ -5,7 +5,7 @@
 **Version:** 1.0 (Capstone Production Release)  
 **Owner:** Reynard John B. Rabanal (Lead Product / Systems Architect) & GlassFit Capstone Team (PUP CCIS)  
 **Status:** Locked  
-**Last reconciled:** September 9, 2026 (Reconciled with 16-table Supabase schema, Next.js 16 frontend, and FastAPI CV backend)  
+**Last reconciled:** September 29, 2026 (Reconciled fix-11 direct browser traffic and Render Free preview capability profile)
 **BRD:** N/A (Capstone Specification & PUP CCIS Manuscript Chapters 1-3)
 
 ---
@@ -40,8 +40,8 @@ GlassFit bridges this gap through an accessible, asynchronous **"Photo-Based Sim
 |---|---|---|---|
 | **PRD-F1** | Public Product Catalog & 2D Inspection | Responsive, public catalog to browse glass and aluminum products with category filters, detailed specs, and variation options without mandatory login. | Must-Have |
 | **PRD-F2** | Interactive 3D Product Inspector | WebGL-based viewer on product detail pages enabling 360° orbit, rotation, and zoom of 3D preview assets on-demand from Cloudflare R2 without heavy catalog preloading. | Must-Have |
-| **PRD-F3** | Space Photo Upload & Client Pre-Flight | Upload room photos from mobile camera or storage with client-side aspect-ratio, format, and dimension validation, providing an immediate preview canvas. | Must-Have |
-| **PRD-F4** | Backend Computer Vision Image Analysis | FastAPI service analyzing uploaded space image for ambient luminance, color temperature, contrast, sharpness, and running YOLOv8 segmentation for foreground objects. | Must-Have |
+| **PRD-F3** | Space Photo Upload & Client Pre-Flight | Upload room photos from mobile camera or storage with client-side aspect-ratio, format, and dimension validation, then transmit the validated payload directly to the configured FastAPI origin. | Must-Have |
+| **PRD-F4** | Backend Computer Vision Image Analysis | FastAPI service analyzing uploaded space images for ambient luminance, color temperature, contrast, sharpness, and YOLOv8 segmentation. The Render Free preview profile keeps YOLO required while returning deterministic unavailable responses for disabled depth and scene analysis. | Must-Have |
 | **PRD-F5** | Parametric 3D Assembly & Structural Guardrails | Data-driven structural generation where products (e.g., multi-pane windows) dynamically add, remove, or reposition components based on width thresholds, dead-load limits, and Behavior B hybrid confirmation modals. | Must-Have |
 | **PRD-F6** | Photo-Based Visualization Workspace | Interactive canvas allowing movement, scaling, rotation, yaw/pitch perspective adjustments, and layer ordering with a single active Three.js overlay and cached layer composition. | Must-Have |
 | **PRD-F7** | Environmental Realism & Glass Modes | Automated ambient lighting tinting, contact grounding shadows, edge softness blending, and glass appearance modes (Clear, Frosted, Opaque, Reflective, Outdoor View). | Must-Have |
@@ -86,7 +86,7 @@ GlassFit bridges this gap through an accessible, asynchronous **"Photo-Based Sim
 
 **Acceptance Criteria:**
 - Given the upload screen (`/visualize/[productId]/upload`), when a user selects or captures a photo, then the client validates that the file is an image (JPEG/PNG/WebP) and under 15MB.
-- Given a valid image file, when uploaded, then the client immediately displays a local object URL preview and transmits the payload asynchronously to the FastAPI backend service.
+- Given a valid image file, when uploaded, then the client immediately displays a local object URL preview and transmits the payload asynchronously and directly to the configured FastAPI backend origin.
 
 ### US-04: Automated Lighting & Scene Analysis (traces to PRD-F4)
 > As a customer configuring a fixture in my room photo, I want the system to automatically analyze the image lighting so that the 3D model looks naturally integrated rather than pasted on.
@@ -459,7 +459,7 @@ If the FastAPI service experiences a timeout or segmentation failure:
 3. The customer can complete their visualization without interruption.
 
 ### Token / Cost Budget:
-- Self-hosted containerized FastAPI microservice running on an independent compute node. Zero third-party per-token API fees. Storage costs bounded by 24-hour Cloudflare R2 lifecycle deletion rules on temporary assets.
+- Render native Python FastAPI web service for constrained preview validation. Temporary analysis artifacts use disposable local storage and confirmed snapshots continue through the permanent Cloudflare R2 pipeline.
 
 ---
 
@@ -492,7 +492,7 @@ If the FastAPI service experiences a timeout or segmentation failure:
 | **M6** | Quotation, PDF & Booking Handoff | M5 completed | Dimension confirmation modal, itemized quotation logic, PDF generation, and signed Messenger/Viber links | Complete End-to-End Consultation Flow | M5 | Gabriel Pelagio | Quotation pricing formula discrepancy with SME owner |
 | **M7** | Protected Admin Portal | M6 completed | `/admin/login` gated by `profiles.admin_role_id`, CRUD interfaces for products, variations, rules, and bookings | Admin Management Dashboard | M6 | Jedia Sagun | Privilege escalation or leaking admin routes |
 | **M8** | Quality Assurance & Pilot Testing | M7 completed | 0 P0/P1 bugs, ISO/IEC 25010 evaluation conducted with SME owner and 20 test users | QA Sign-off & Evaluation Report | M7 | All Team Members | Low user comprehension of manual dimension modal |
-| **M9** | Production Deployment & Rollout | M8 signed off | Vercel production deployment green, FastAPI container deployed, Supabase production RLS locked | Live Production System (`glassfit.shop`) | M8 | Reynard Rabanal | Network latency between Vercel and local FastAPI host |
+| **M9** | Production Deployment & Rollout | M8 signed off | Vercel frontend deployment green, Render FastAPI preview feasibility gate passed, Supabase production RLS locked, and production NFR exceptions explicitly approved or resolved on suitable compute | Live Production System (`glassfit.shop`) | M8 | Reynard Rabanal | Render Free cold starts, memory capacity, and production NFR mismatch |
 
 ### Rollout Strategy:
 - **Phased Rollout:**
@@ -513,8 +513,8 @@ If the FastAPI service experiences a timeout or segmentation failure:
 |---|---|---|---|---|
 | **PRD-F1** | Catalog Listing | `products`, `product_assets`, `product_variations` | Supabase Client (Public Read) | `/product` |
 | **PRD-F2** | 3D Inspector | `product_assets` (`Catalog 3D Preview`) | Cloudflare R2 / Three.js | `/product-details/[id]` |
-| **PRD-F3** | Photo Pre-flight | N/A (Temporary Client State) | Next.js API / Browser File API | `/visualize/[productId]/upload` |
-| **PRD-F4** | CV Scene Engine | N/A (Session Memory) | FastAPI (`main.py`, `yolov8s-seg.pt`) | `POST /analyze-space` |
+| **PRD-F3** | Photo Pre-flight | N/A (Temporary Client State) | Browser File API and direct FastAPI request | `/visualize/[productId]/upload` |
+| **PRD-F4** | CV Scene Engine | N/A (Session Memory) | FastAPI (`main.py`, `yolov8s-seg.pt`) | `POST /analyze-image` |
 | **PRD-F5** | Parametric Builder | `product_templates`, `product_parameters`, `product_components`, `structural_rules` | Three.js Structural Assembler | `/visualize/[productId]/workspace` |
 | **PRD-F6** | Workspace Fitting | N/A (Active Client Canvas) | Canvas Compositor / Three.js | `/visualize/[productId]/workspace` |
 | **PRD-F7** | Realism & Shaders | N/A (Active Client Canvas) | Custom Three.js Glass & Shadow Shaders | `/visualize/[productId]/workspace` |

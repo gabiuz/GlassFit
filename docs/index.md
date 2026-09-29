@@ -5,7 +5,7 @@
 **Version:** 1.0 (Capstone Production Release)  
 **Owner:** Reynard John B. Rabanal (Lead Product / Systems Architect) & GlassFit Capstone Team (PUP CCIS)  
 **Status:** Locked  
-**Last reconciled:** September 26, 2026 (Added IMP-MS17 simplified customer quotation and per-item negotiation traceability)
+**Last reconciled:** September 29, 2026 (Added fix-11 Render Free native Python preview deployment traceability)
 
 ---
 
@@ -33,6 +33,7 @@ GlassFit is a responsive, web-based photo-simulation and consultation-support pl
 | BUILD| Build & Deployment Runbook | `docs/build-glassfit.md` | Locked | September 9, 2026 | Reynard John B. Rabanal |
 | PRICE| Parametric Fenestration Pricing Engine | `docs/pricing.md` | Active | September 9, 2026 | Reynard John B. Rabanal |
 | MILE | Master Implementation Milestones | `docs/milestone.md` | Active | September 9, 2026 | Reynard John B. Rabanal |
+| FIX-11 | Render Free Native Python CV Migration | `docs/implementation/fix-11.md` | Implemented Locally, Preview Gate Pending | September 29, 2026 | Reynard John B. Rabanal |
 
 ---
 
@@ -80,6 +81,7 @@ GlassFit is a responsive, web-based photo-simulation and consultation-support pl
 | September 24, 2026 | `docs/qad-glassfit.md`, `docs/index.md` | GlassFit Capstone Team | Added QAD-TC29 and IMP-MS15 traceability for admin booking reflection, relational query integrity, and route freshness | Pending |
 | September 25, 2026 | `docs/erd-glassfit.md`, `docs/build-glassfit.md`, `docs/qad-glassfit.md`, `docs/index.md` | GlassFit Capstone Team | Added IMP-MS16 canonical quotation snapshots, negotiated-price auditability, deployment order, and QAD-TC30 | Pending |
 | September 26, 2026 | `docs/implementation/ms17.md` and upstream PRD, SDD, DSD, ERD, QAD, milestone, build, and index specifications | GlassFit Capstone Team | Reconciled simplified customer price disclosure, canonical per-item negotiation, DSD-UI11, ERD-E13 JSON overrides, migration 007, and QAD-TC31 | Pending |
+| September 29, 2026 | `docs/implementation/fix-11.md`, `docs/prd-glassfit.md`, `docs/sdd-glassfit.md`, `docs/qad-glassfit.md`, `docs/build-glassfit.md`, and `docs/index.md` | GlassFit Capstone Team | Implemented the Render Free native Python preview profile, direct browser CV traffic, readiness, overload controls, cleanup, and deployment gates for PRD-F3, PRD-F4, PRD-F8, SDD-C2, and SDD-C3 | Pending |
 
 ---
 

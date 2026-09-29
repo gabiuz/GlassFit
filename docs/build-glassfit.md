@@ -5,7 +5,7 @@
 **Version:** 1.0 (Capstone Production Release)  
 **Owner:** Reynard John B. Rabanal (Lead Product / Systems Architect) & GlassFit Capstone Team (PUP CCIS)  
 **Status:** Locked  
-**Last reconciled:** September 9, 2026 (Reconciled with Next.js 16 package.json, FastAPI dependencies, and Supabase migrations)  
+**Last reconciled:** September 29, 2026 (Reconciled fix-11 Render Free native Python preview deployment)
 **SDD:** docs/sdd-glassfit.md
 
 ---
@@ -35,7 +35,7 @@
 | BLD-ENV2 | `NEXT_PUBLIC_SUPABASE_URL` | Yes | `https://xyzcompany.supabase.co` | No | Public Supabase project HTTPS URL |
 | BLD-ENV3 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | `eyJhbGciOi...` | No | Public anon key for client authentication |
 | BLD-ENV4 | `SUPABASE_SERVICE_ROLE_KEY` | Yes | `eyJhbGciOi...` | Yes | Administrative secret key for server actions and RLS bypass |
-| BLD-ENV5 | `FASTAPI_SERVICE_URL` | Vercel only | Vercel-generated service URL | No | Runtime-only binding from the `app` service to the internal `fastapi-service`. Do not configure this value manually. Local Next.js development falls back to `http://localhost:8000`. |
+| BLD-ENV5 | `NEXT_PUBLIC_IMAGE_API_URL` | Preview and Production | `https://glassfit-cv.onrender.com` | No | Exact public HTTPS origin of the Render FastAPI service. Local development falls back to `http://localhost:8000`. |
 | BLD-ENV6 | `CLOUDFLARE_R2_ACCOUNT_ID` | Yes | `a1b2c3d4e5f6...` | Yes | Cloudflare account identifier for R2 storage |
 | BLD-ENV7 | `R2_ACCESS_KEY_ID` | Yes | `e7f8g9...` | Yes | S3-compatible API access key for R2 uploads |
 | BLD-ENV8 | `R2_SECRET_ACCESS_KEY` | Yes | `123456789abcdef...` | Yes | S3-compatible API secret key for R2 uploads |
@@ -43,6 +43,14 @@
 | BLD-ENV10 | `NEXT_PUBLIC_R2_PUBLIC_URL` | Yes | `https://cdn.glassfit.ph` | No | Public CDN distribution domain for catalog 3D models and images |
 | BLD-ENV11 | `TEMP_SESSION_TTL_MINUTES` | No | `120` | No | Retention time for temporary room photos and YOLOv8 masks |
 | BLD-ENV12 | `PORT` | No | `8000` | No | Microservice binding port for FastAPI Uvicorn server |
+| BLD-ENV13 | `ALLOWED_ORIGINS` | Render | Exact comma-separated Vercel origins | No | CORS allow list with no wildcard or path entries |
+| BLD-ENV14 | `RENDER_FREE_MODE` | Render Free | `true` | No | Activates the constrained preview profile |
+| BLD-ENV15 | `ENABLE_DEPTH_ANALYSIS` | Render Free | `false` | No | Disables Depth Anything in the 512 MB preview instance |
+| BLD-ENV16 | `ENABLE_SCENE_ANALYSIS` | Render Free | `false` | No | Disables SegFormer scene analysis in the 512 MB preview instance |
+| BLD-ENV17 | `MAX_CONCURRENT_ANALYSES` | Render Free | `1` | No | Limits model execution to one request |
+| BLD-ENV18 | `ANALYSIS_QUEUE_TIMEOUT_SECONDS` | Render Free | `5` | No | Maximum wait before `ANALYSIS_BUSY` |
+| BLD-ENV19 | `RATE_LIMIT_REQUESTS` | Render Free | `5` | No | Per-client preview request count |
+| BLD-ENV20 | `RATE_LIMIT_WINDOW_SECONDS` | Render Free | `600` | No | Rolling preview throttle window |
 
 ---
 
@@ -96,12 +104,7 @@
    - `supabase/migrations/005_parametric_pricing_engine.sql` (Raw materials table ERD-E17, product component 1D/2D bindings, structural rule guardrails, grouped quotation items, and Philippine market benchmark seed data)
 
 ### 3.4 Launching Development Servers
-For Vercel-compatible local routing and automatic service binding injection, run:
-   ```bash
-   vercel dev -L
-   ```
-
-For standalone development without the Vercel CLI:
+For local development:
 1. Start the FastAPI microservice in terminal 1:
    ```bash
    cd fastapi-service
@@ -112,6 +115,7 @@ For standalone development without the Vercel CLI:
    ```bash
    npm run dev
    ```
+   `NEXT_PUBLIC_IMAGE_API_URL` may be omitted locally because the client defaults to `http://localhost:8000` outside production.
    Open `http://localhost:3000` to interact with the GlassFit application.
 
 ---
@@ -124,27 +128,25 @@ For standalone development without the Vercel CLI:
 | BLD-S2 | Static Type Verification | `npx tsc --noEmit` | TypeScript compiler completes with zero type errors |
 | BLD-S3 | Automated Test Suite | `npm run test` | All Vitest and Playwright test assertions pass successfully |
 | BLD-S4 | Next.js Production Build | `npm run build` | Next.js App Router bundles compiled into `.next` without bundle warnings |
-| BLD-S5 | CV Container Build | `docker build -t glassfit-cv ./fastapi-service` | Docker engine completes multi-stage container build |
-| BLD-S6 | Production Deployment | `vercel --prod` (or Git Push to `main`) | Hosting platform reports active healthy deployment status |
+| BLD-S5 | Python 3.11 Native Dependency Preflight | `python3.11 -m pip install -r fastapi-service/requirements.txt` | OpenCV, PyTorch 2.13.0, Torchvision 0.28.0, Ultralytics, and the bundled YOLO model import successfully |
+| BLD-S6 | Render Preview Deployment | Render MCP creates `glassfit-cv` from the reviewed Git branch and native Python configuration | `/health` and `/ready` pass and one representative image produces YOLO masks without restart or memory failure |
+| BLD-S7 | Vercel Preview Deployment | Vercel MCP deploys the existing `glassfit` project with `NEXT_PUBLIC_IMAGE_API_URL` | Browser uploads go directly to Render and QAD-TC3, QAD-TC4, QAD-TC8, QAD-TC41, and QAD-TC42 pass |
 
-The root `vercel.json` deploys the Next.js `app` service publicly and keeps the
-`fastapi-service` internal. The `app` service calls FastAPI with its
-`FASTAPI_SERVICE_URL` binding through `/api/image-analysis/*` route handlers.
-The FastAPI service installs pinned CPU-only PyTorch and Torchvision wheels to
-avoid packaging unused CUDA libraries.
-If Vercel still applies the standard 500 MB Python function limit, set
-`VERCEL_SUPPORT_LARGE_FUNCTIONS=1` in the Vercel project environment and
-redeploy with Fluid compute enabled.
+The repository root `render.yaml` defines one Render Free native Python web service. It installs the pinned CPU-index packages from `fastapi-service/requirements.txt` and starts Uvicorn on `0.0.0.0:$PORT`. Docker is not used.
+
+During preview migration, retain the Vercel proxy until the direct Render path passes the feasibility gate. After that gate, remove `src/app/api/image-analysis/[...path]/route.ts`, reduce `vercel.json` to the standard Next.js schema entry, and verify that the Vercel build does not package `fastapi-service/`.
 
 ---
 
 ## 5. Post-Deployment Verification & Emergency Rollback
 
 **Smoke test verification checklist:**
-- Synthetic health probe (`GET /api/image-analysis/health`) returns HTTP 200 with `{"status": "ok"}` through the public Next.js service and its internal FastAPI binding.
+- Render liveness probe (`GET /health`) returns HTTP 200 with `{"status": "ok"}`.
+- Render readiness probe (`GET /ready`) returns HTTP 200 with YOLO available and optional models marked disabled in the Free profile.
 - Next.js root page (`GET /`) loads in < 800ms with catalog products visible.
 - Product detail 3D inspector loads GLB mesh from Cloudflare R2 without WebGL errors.
-- Test room image uploaded to `/analyze-image` returns lighting and object masks in < 2,500ms.
+- Test room image uploaded directly from the browser to Render `/analyze-image` returns lighting and object masks. Record cold and warm duration without claiming QAD-VG2 passed unless the measured p95 is below 2,500ms.
+- A valid upload above 4.5 MB and at or below 12 MB completes without passing through a Vercel Function.
 - Test simulation snapshot composites cleanly and saves record to `visualization_snapshots`.
 - Signed consultation booking link successfully triggers Facebook Messenger / Viber protocol redirect.
 
@@ -155,7 +157,7 @@ redeploy with Fluid compute enabled.
   - Any P0 defect (such as 3D canvas rendering crash or silent pricing computation failure) is observed.
 - Rollback Execution Steps:
   1. Instantly revert the Next.js deployment to the previous immutable deployment commit in Vercel.
-  2. Roll back containerized CV microservice to previous stable container tag.
+  2. Restore the prior successful Render deploy or suspend repeated failed preview deploys without deleting the service during incident response.
   3. If database schema migrations were applied, run down-migration scripts or restore snapshot backup from Supabase.
   4. Perform post-rollback smoke verification against restored production URLs.
   5. Convene technical post-mortem and log incident findings in `docs/index.md`.

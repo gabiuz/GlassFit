@@ -2,10 +2,10 @@
 
 **Project:** GlassFit (Web-Based Client-Space Visualization System for Customized Glass & Aluminum)  
 **Date:** September 9, 2026  
-**Version:** 1.2 (Capstone Production Release)
+**Version:** 1.3 (Capstone Production Release)
 **Owner:** Jedia Nicole I. Sagun (Quality Assurance Lead) & GlassFit Capstone Team (PUP CCIS)  
 **Status:** Locked  
-**Last reconciled:** September 24, 2026 (Added QAD-TC29 for admin booking reflection and relational query integrity)
+**Last reconciled:** September 29, 2026 (Added QAD-TC41 and QAD-TC42 for fix-11 Render Free preview verification)
 **PRD:** docs/prd-glassfit.md
 
 ---
@@ -28,7 +28,7 @@
 | QAD-TC1 | PRD-F1 | Public catalog rendering and category filtering | Unauthenticated user on homepage | 1. Navigate to `/product`<br>2. Click category filter 'Window'<br>3. Verify displayed cards | Only products categorized under 'Window' are displayed; cards show image, name, and base price | P1 |
 | QAD-TC2 | PRD-F2 | Interactive 3D model inspector orbit and inspection | Product detail page loaded | 1. Open product page<br>2. Drag on 3D canvas to orbit<br>3. Pinch or scroll to zoom | 3D GLB model rotates smoothly in 360 degrees; texture maps load without WebGL context loss | P1 |
 | QAD-TC3 | PRD-F3 | Space image upload and client-side pre-flight validation | Visualization workspace open | 1. Attempt upload of 15MB file<br>2. Attempt upload of .pdf file<br>3. Upload valid 4MB JPG image | Over-limit and invalid files trigger clear validation toasts; valid image renders on preview canvas immediately | P0 |
-| QAD-TC4 | PRD-F4 | FastAPI computer vision image analysis execution | Valid space photo uploaded | 1. Dispatch photo to `/analyze-image`<br>2. Await response | Status 200 returned within 2,500ms; JSON provides brightness, lighting condition, and YOLOv8 object masks | P0 |
+| QAD-TC4 | PRD-F4 | FastAPI computer vision image analysis execution | Valid space photo uploaded | 1. Dispatch photo directly to `/analyze-image` on the configured CV origin<br>2. Await response | Status 200 returned; JSON provides brightness, lighting condition, and YOLOv8 object masks. The production 2,500ms target remains governed by QAD-VG2. | P0 |
 | QAD-TC5 | PRD-F5 | Parametric window structural rebuild on width change | Window model active in workspace | 1. Set width to 900mm<br>2. Increase width to 1,500mm (crossing threshold) | 3D model dynamically reconfigures from 2-pane/1-mullion structure to 3-pane/2-mullion assembly | P0 |
 | QAD-TC6 | PRD-F6 | 3D overlay placement, translation, scaling, and rotation | Space photo loaded in canvas | 1. Add product overlay<br>2. Drag overlay across canvas<br>3. Adjust scale and yaw angle | Model translates synchronously with pointer; yaw rotation updates perspective cleanly; transform bounds remain constrained | P0 |
 | QAD-TC7 | PRD-F7 | Environmental lighting matching and glass mode changes | Active product on workspace | 1. Toggle glass mode between Clear, Frosted, and Bronze<br>2. Adjust shadow opacity slider | Three.js material transparency and roughness update in real time; contact shadow renders beneath frame | P1 |
@@ -49,6 +49,8 @@
 | QAD-TC29 | PRD-F13, PRD-F14 | Admin booking reflection and relational query integrity | Authenticated customer quotation and authorized admin account | 1. Submit a Messenger or Viber booking<br>2. Navigate to `/admin` and `/admin/bookings`<br>3. Refresh both views<br>4. Update status<br>5. Simulate a relational query failure | Both admin views show the correct customer and deduplicated fixture summary; status persists; refresh retrieves current data; query failure displays an error, retains the last successful rows when available, and never appears as an empty success | P0 |
 | QAD-TC30 | PRD-F10, PRD-F11, PRD-F14 | Canonical quotation and effective final price | Saved V1 quotation and authorized booking manager | 1. Compare customer, public, and admin document previews<br>2. Apply item price overrides<br>3. Print the quotation | Every customer document surface uses the persisted V1 configuration and effective item prices; the internal calculated snapshot remains immutable; item prices reconcile to the grand total; no negotiation metadata is disclosed | P0 |
 | QAD-TC31 | PRD-F10, PRD-F11, PRD-F14 | Per-item negotiation contract | Canonical, migrated, and legacy quotations plus authorized and unauthorized users | 1. Exercise item edit, equal reset, zero confirmation, partial and final reset<br>2. Test proportional migration, audit metadata, aggregate overflow, stale updates, and RLS<br>3. Verify legacy fallback and customer/public reads | Canonical item overrides are deterministic, authorized, atomic, audit-preserving, conflict-safe, and sanitized; totals reconcile in centavos; legacy total editing remains available only to legacy quotations | P0 |
+| QAD-TC41 | PRD-F3, PRD-F4, PRD-F8 | Render Free direct CV preview profile | Render `glassfit-cv` preview service and exact Vercel Preview origin configured | 1. Verify `/health` and `/ready`<br>2. Upload valid JPG above 4.5 MB and at or below 12 MB directly from the browser<br>3. Test rejected origin, MIME, oversized upload, sixth request in 600 seconds, and concurrent admission timeout<br>4. Restart the service and request an old artifact | Required YOLO remains available; optional depth and scene report disabled; exact-origin CORS applies; overload responses use stable codes; old disposable artifacts fail after restart; the browser can start a new session | P0 |
+| QAD-TC42 | PRD-F4 | Temporary artifact expiry and traversal protection | FastAPI generated-session directory contains current and expired fixtures | 1. Run startup cleanup<br>2. Run periodic cleanup<br>3. Request an artifact using a parent-directory path | Expired sessions are removed, current sessions remain, cleanup errors do not terminate the process, and traversal returns HTTP 404 without exposing a filesystem path | P0 |
 
 ---
 

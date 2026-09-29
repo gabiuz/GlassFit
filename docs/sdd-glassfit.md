@@ -5,7 +5,7 @@
 **Version:** 1.0 (Capstone Production Release)  
 **Owner:** Reynard John B. Rabanal (Lead Product / Systems Architect) & GlassFit Capstone Team (PUP CCIS)  
 **Status:** Locked  
-**Last reconciled:** September 9, 2026 (Reconciled with 16-table Supabase schema, Next.js 16 App Router, and FastAPI CV backend)  
+**Last reconciled:** September 29, 2026 (Reconciled fix-11 Render Free native Python preview architecture)
 **PRD:** docs/prd-glassfit.md
 
 ---
@@ -15,13 +15,13 @@
 **Core architectural pattern:**
 Asynchronous hybrid multi-tier web architecture decoupling interactive client-side 3D WebGL rendering from compute-heavy backend computer vision and relational persistence. The system combines:
 1. A Next.js 16 (React 19, TypeScript) presentation and edge orchestration layer hosted on Node.js 20 LTS.
-2. A decoupled Python 3.11 FastAPI microservice running OpenCV, YOLOv8 segmentation, and Depth Anything V2 for asynchronous space image analysis.
+2. A decoupled Python 3.11 FastAPI microservice running OpenCV and required YOLOv8 segmentation for asynchronous space image analysis. Depth Anything V2 and SegFormer remain optional and are disabled in the Render Free preview profile.
 3. A managed Supabase PostgreSQL 16 database enforcing 16 relational tables with Row-Level Security (RLS) and security definer functions.
 4. A Cloudflare R2 S3-compatible object storage infrastructure distributing 3D GLB assets, component models, processed space photos, composite snapshots, and quotation PDFs via globally cached edge CDN endpoints.
 
 **Runtime infrastructure:**
-- Compute Frontend & API Layer: Node.js 20 LTS executing Next.js 16 App Router on Vercel / serverless runtime with standalone proxy middleware.
-- Compute Computer Vision Layer: Python 3.11 runtime running FastAPI and Uvicorn workers on containerized Linux compute equipped with OpenCV-Python, Ultralytics YOLOv8s-seg, and PyTorch inference pipelines.
+- Compute Frontend & API Layer: Node.js 20 LTS executing the Next.js 16 App Router on Vercel. The browser receives the public CV origin through `NEXT_PUBLIC_IMAGE_API_URL`.
+- Compute Computer Vision Layer: Python 3.11 running FastAPI and one Uvicorn process on a Render native Python Free web service with OpenCV-Python, Ultralytics YOLOv8s-seg, and CPU PyTorch. This preview service has 0.1 CPU, 512 MB memory, idle spin-down, one instance, and disposable local storage.
 - Persistence Engine: Supabase PostgreSQL 16 with pgvector capability, RLS policies, automated schema triggers, and connection pooling.
 - Object & Asset Storage: Cloudflare R2 bucket with private signed upload policies and public CDN distribution for static catalog assets.
 - Identity & Authentication Provider: Supabase Auth supporting Email/Password and Google OAuth 2.0 PKCE flows, synchronized with internal user profiles.
@@ -30,7 +30,7 @@ Asynchronous hybrid multi-tier web architecture decoupling interactive client-si
 **Primary execution flow:**
 1. Ingress Boundary: Client browser initiates TLS 1.3 HTTPS request to the Next.js edge route.
 2. Authentication Verification: Next.js middleware and proxy handlers validate Supabase session JWT cookies, resolving user role context.
-3. Space Image Upload and CV Analysis: The client transmits a space photograph to FastAPI `/analyze-image`. The service validates MIME headers, normalizes orientation, compresses to WebP, analyzes ambient luminance/color temperature, extracts foreground segmentation masks via YOLOv8, and returns a JSON scene descriptor within 1,800 milliseconds.
+3. Space Image Upload and CV Analysis: The browser transmits a space photograph directly to the configured FastAPI `/analyze-image` origin. The service validates MIME headers and bytes, normalizes orientation, compresses to WebP, analyzes ambient luminance and color temperature, extracts foreground segmentation masks via YOLOv8, and returns a JSON scene descriptor. The Render Free preview records cold-start and warm timings but does not waive SDD-NFR1.
 4. Client Visualization Assembly: The browser initializes a single Three.js WebGL canvas. Parametric models (such as multi-pane windows) query structural definitions from Supabase, dynamically instantiating frames, mullions, and glass panes based on real-time width parameters. Placed objects are cached as offscreen canvas layers to minimize mobile GPU pressure.
 5. Canvas Compositing and Snapshot Generation: Upon configuration confirmation, the client composites the background photo, environmental light filters, 3D overlays, contact shadows, and YOLOv8 occlusion cutouts onto an HTML5 canvas. The flattened high-resolution image is uploaded directly to Cloudflare R2.
 6. Quotation and Booking Handoff: The user enters real-world dimensions in the measurement modal. The server computes budgetary pricing, records `visualization_snapshots`, `product_configurations`, and `quotation_estimates`, generates a token-hashed `signed_booking_links` record, creates a PDF summary, and deep-links the client to the fabricator on Messenger or Viber.
@@ -43,7 +43,7 @@ Asynchronous hybrid multi-tier web architecture decoupling interactive client-si
 |---|---|---|---|---|---|
 | SDD-C1 | Public Catalog & 3D Inspector | Next.js Client / SSR | Renders public product browsing catalog, filter grids, and interactive 360-degree Three.js WebGL model inspector on product detail pages. | PRD-F1, PRD-F2 | Supabase `products`, `product_assets`, Cloudflare R2 CDN, Three.js GLTFLoader |
 | SDD-C2 | Space Image Pre-Flight Validator | Next.js Client | Performs client-side image validation (MIME type, file size <= 12MB, image decode integrity, aspect ratio sanity) prior to network transit. | PRD-F3 | HTML5 File API, Image Decode API, `src/lib/imageApi.ts` |
-| SDD-C3 | Computer Vision Scene Analyzer | FastAPI Python Backend | Ingests uploaded room photo, extracts average brightness, color temperature (warm/cool), contrast, sharpness, runs YOLOv8s-seg foreground masks, and caches session WebP images. | PRD-F4, PRD-F7, PRD-F8 | FastAPI, OpenCV, NumPy, Ultralytics YOLOv8, PyTorch |
+| SDD-C3 | Computer Vision Scene Analyzer | Render Native Python FastAPI Backend | Ingests uploaded room photos directly from the browser, extracts average brightness, color temperature, contrast, and sharpness, runs required YOLOv8s-seg foreground masks, and caches disposable session WebP images. One process-local inference slot, a five-second admission timeout, and per-IP preview throttling protect the Free instance. | PRD-F4, PRD-F7, PRD-F8 | FastAPI 0.124.2, OpenCV 4.11.0.86, NumPy 1.26.4, Ultralytics 8.3.235, PyTorch 2.13.0, Torchvision 0.28.0 |
 | SDD-C4 | Parametric 3D Assembly & Guardrail Engine | Three.js Client Runtime | Evaluates structural rules, leaf dead loads (2.5 rule), and width thresholds (W >= 2400mm) to dynamically assemble modular components or trigger Behavior B hybrid confirmation modals. | PRD-F5 | Three.js, `src/lib/visualization/guardrailEngine.ts`, Supabase `structural_rules` |
 | SDD-C5 | Photo-Based Visualization Canvas | Next.js Client / HTML5 | Manages interactive placement, drag translation, uniform scaling, yaw/pitch rotation, layer reordering, environmental lighting filters, glass modes, and foreground occlusion. | PRD-F6, PRD-F7, PRD-F8, PRD-F16 | HTML Canvas 2D, Three.js WebGLRenderer, FastAPI Mask endpoints |
 | SDD-C6 | Canvas Compositor & Snapshot Pipeline | Next.js Client / Edge | Blends background space photo, active/cached 3D product layers, contact shadows, and foreground occlusion masks into a flattened PNG snapshot; uploads to Cloudflare R2. | PRD-F9, PRD-F15 | HTML5 Canvas `toBlob()`, S3 Presigned URL client, Cloudflare R2, Supabase `visualization_snapshots` |
@@ -60,6 +60,7 @@ Asynchronous hybrid multi-tier web architecture decoupling interactive client-si
 | Method | Endpoint Route | Auth Required | Request Payload / DTO | Response Payload / DTO | Target Latency (p95) |
 |---|---|---|---|---|---|
 | GET | `/health` | No | None | `{"status": "ok"}` | < 50 ms |
+| GET | `/ready` | No | None | Active profile, YOLO availability, generated-directory writability, and analysis capacity | Deployment readiness only |
 | POST | `/analyze-image` | No | Multipart Form: `image` (JPG/PNG <= 12MB) | JSON: `SpaceImageSession` (session_id, brightness, lighting, objects, masks) | < 2,000 ms |
 | GET | `/masks/{session_id}/{filename}` | No | URL parameters | Binary image stream (PNG mask) | < 150 ms |
 | GET | `/generated/sessions/{session_id}/workspace.webp` | No | URL parameters | Binary image stream (Optimized WebP workspace) | < 200 ms |
@@ -84,6 +85,9 @@ Asynchronous hybrid multi-tier web architecture decoupling interactive client-si
   - `detected_objects`: Array of objects containing `object_id` (string), `label` (string: chair, couch, potted plant, dining table), `confidence` (float: 0.0 to 1.0), `bounding_box` (array of 4 floats: x, y, width, height), and `mask_url` (string path to binary cutout mask).
 - Error Response (HTTP 400 Bad Request):
   - `detail`: String error description (e.g., "Upload a JPG, JPEG, or PNG image." or "Upload an image smaller than 12 MB.").
+- Capacity Response (HTTP 503 Service Unavailable): `{"detail":"Image analysis capacity is busy.","code":"ANALYSIS_BUSY","retryable":true}` after five seconds without an analysis slot.
+- Throttle Response (HTTP 429 Too Many Requests): `{"detail":"Too many image analysis requests.","code":"RATE_LIMITED","retryable":true}` after five admitted requests from one client IP in 600 seconds.
+- Render Free optional-model contract: `depth.available` and `scene.available` are `false`, and their error fields identify that each feature is disabled for the Render Free profile.
 
 **Contract 2: Signed Booking Reference Generation (`POST /api/booking/generate-link`)**
 - Request Parameters:

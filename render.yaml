@@ -1,0 +1,35 @@
+services:
+  - type: web
+    name: glassfit-cv
+    runtime: python
+    plan: free
+    rootDir: fastapi-service
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.11
+      - key: TEMP_SESSION_TTL_MINUTES
+        value: "120"
+      - key: CLEANUP_INTERVAL_SECONDS
+        value: "900"
+      - key: ALLOWED_ORIGINS
+        sync: false
+      - key: RENDER_FREE_MODE
+        value: "true"
+      - key: SEGMENTATION_MODE
+        value: yolo
+      - key: ENABLE_DEPTH_ANALYSIS
+        value: "false"
+      - key: ENABLE_SCENE_ANALYSIS
+        value: "false"
+      - key: MAX_CONCURRENT_ANALYSES
+        value: "1"
+      - key: ANALYSIS_QUEUE_TIMEOUT_SECONDS
+        value: "5"
+      - key: RATE_LIMIT_REQUESTS
+        value: "5"
+      - key: RATE_LIMIT_WINDOW_SECONDS
+        value: "600"
