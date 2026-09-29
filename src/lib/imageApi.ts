@@ -1,4 +1,4 @@
-const FALLBACK_API_URL = "http://localhost:8000";
+const IMAGE_ANALYSIS_API_PATH = "/api/image-analysis";
 
 export const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/png"];
 export const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
@@ -110,7 +110,7 @@ export interface SpaceImageSession {
 }
 
 export function getImageApiBaseUrl() {
-  return (process.env.NEXT_PUBLIC_IMAGE_API_URL || FALLBACK_API_URL).replace(/\/$/, "");
+  return IMAGE_ANALYSIS_API_PATH;
 }
 
 export function validateImageFile(file: File) {

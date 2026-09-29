@@ -8,7 +8,7 @@ import cv2
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 from brightness import analyze_brightness, analyze_lighting
 from depth import estimate_depth, get_depth_pipeline
@@ -19,7 +19,11 @@ from scene_detection import detect_scene_regions, get_scene_model
 from segmentation import SegmentationError, analyze_objects
 
 BASE_DIR = Path(__file__).resolve().parent
-GENERATED_DIR = BASE_DIR / "generated"
+GENERATED_DIR = (
+    Path("/tmp/glassfit/generated")
+    if os.getenv("VERCEL")
+    else BASE_DIR / "generated"
+)
 MASK_DIR = GENERATED_DIR / "masks"
 UPLOAD_DIR = GENERATED_DIR / "uploads"
 SESSION_DIR = GENERATED_DIR / "sessions"
@@ -40,10 +44,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-app.mount("/masks", StaticFiles(directory=MASK_DIR), name="masks")
-app.mount("/generated", StaticFiles(directory=GENERATED_DIR), name="generated")
-
 
 @app.on_event("startup")
 async def warmup_models():
@@ -74,6 +74,16 @@ async def warmup_models():
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/masks/{artifact_path:path}")
+def get_legacy_mask(artifact_path: str) -> FileResponse:
+    return _serve_generated_artifact(MASK_DIR, artifact_path)
+
+
+@app.get("/generated/{artifact_path:path}")
+def get_generated_artifact(artifact_path: str) -> FileResponse:
+    return _serve_generated_artifact(GENERATED_DIR, artifact_path)
 
 
 @app.post("/analyze-image")
@@ -261,6 +271,16 @@ def cleanup_expired_sessions() -> None:
                 shutil.rmtree(child)
         except OSError:
             pass
+
+
+def _serve_generated_artifact(root: Path, artifact_path: str) -> FileResponse:
+    resolved_root = root.resolve()
+    resolved_artifact = (resolved_root / artifact_path).resolve()
+
+    if resolved_root not in resolved_artifact.parents or not resolved_artifact.is_file():
+        raise HTTPException(status_code=404, detail="Generated artifact not found.")
+
+    return FileResponse(resolved_artifact)
 
 
 def _rewrite_object_mask_urls(objects: list[dict], url_prefix: str) -> None:
