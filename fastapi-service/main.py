@@ -8,7 +8,7 @@ import cv2
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 from brightness import analyze_brightness, analyze_lighting
 from depth import estimate_depth, get_depth_pipeline
@@ -44,6 +44,7 @@ _EXTRA_ORIGINS: list[str] = [
     if origin.strip()
 ]
 _LOCALHOST_REGEX = r"http://(localhost|127\.0\.0\.1):\d+"
+
 if _EXTRA_ORIGINS:
     app.add_middleware(
         CORSMiddleware,
@@ -61,10 +62,6 @@ else:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-
-app.mount("/masks", StaticFiles(directory=MASK_DIR), name="masks")
-app.mount("/generated", StaticFiles(directory=GENERATED_DIR), name="generated")
-
 
 @app.on_event("startup")
 async def warmup_models():
@@ -95,6 +92,16 @@ async def warmup_models():
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/masks/{artifact_path:path}")
+def get_legacy_mask(artifact_path: str) -> FileResponse:
+    return _serve_generated_artifact(MASK_DIR, artifact_path)
+
+
+@app.get("/generated/{artifact_path:path}")
+def get_generated_artifact(artifact_path: str) -> FileResponse:
+    return _serve_generated_artifact(GENERATED_DIR, artifact_path)
 
 
 @app.post("/analyze-image")
@@ -282,6 +289,16 @@ def cleanup_expired_sessions() -> None:
                 shutil.rmtree(child)
         except OSError:
             pass
+
+
+def _serve_generated_artifact(root: Path, artifact_path: str) -> FileResponse:
+    resolved_root = root.resolve()
+    resolved_artifact = (resolved_root / artifact_path).resolve()
+
+    if resolved_root not in resolved_artifact.parents or not resolved_artifact.is_file():
+        raise HTTPException(status_code=404, detail="Generated artifact not found.")
+
+    return FileResponse(resolved_artifact)
 
 
 def _rewrite_object_mask_urls(objects: list[dict], url_prefix: str) -> None:
