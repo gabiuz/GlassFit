@@ -1,13 +1,25 @@
 "use server";
 
+import crypto from "crypto";
 import { revalidatePath } from "next/cache";
-import { requirePermission } from "@/lib/auth/admin";
+import { requirePermission, requireOwner } from "@/lib/auth/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import { validateEmail } from "@/features/auth/utils/auth-utils";
+import { sendStaffInviteEmail } from "@/lib/email/resendClient";
 
 export type StaffActionResult =
     | { success: true; message: string }
+    | { success: false; error: string };
+
+export type InviteStaffResult =
+    | {
+          success: true;
+          message: string;
+          verificationCode: string;
+          email: string;
+          expiresAt: string;
+      }
     | { success: false; error: string };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -15,45 +27,34 @@ export type StaffActionResult =
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function inviteStaff(formData: {
-    firstName: string;
-    lastName: string;
     email: string;
-}): Promise<StaffActionResult> {
-    // Layer 3 authorization — must have manage_roles permission
+    firstName?: string;
+    lastName?: string;
+}): Promise<InviteStaffResult> {
+    // Authorization: requires manage_roles permission or Owner
     const ctx = await requirePermission("manage_roles");
 
-    const { firstName, lastName, email } = formData;
+    const { email } = formData;
+    const trimmedEmail = email ? email.trim().toLowerCase() : "";
 
-    // Validate inputs
-    const trimmedEmail = email.trim().toLowerCase();
-    const trimmedFirst = firstName.trim();
-    const trimmedLast = lastName.trim();
-
-    if (!validateEmail(trimmedEmail)) {
+    if (!trimmedEmail || !validateEmail(trimmedEmail)) {
         return { success: false, error: "Please enter a valid email address." };
     }
 
-    if (trimmedFirst.length < 1 || trimmedFirst.length > 50) {
-        return { success: false, error: "First name must be between 1 and 50 characters." };
-    }
-
-    if (trimmedLast.length < 1 || trimmedLast.length > 50) {
-        return { success: false, error: "Last name must be between 1 and 50 characters." };
-    }
-
     const supabase = await createSupabaseServerClient();
+    const service = createSupabaseServiceClient();
 
-    // Check for existing profile — block if account already exists (Customer or Admin)
+    // Check for existing profile: block if already an active Admin
     const { data: existingProfile } = await supabase
         .from("profiles")
-        .select("profile_id, account_type")
+        .select("profile_id, account_type, status")
         .eq("email", trimmedEmail)
         .maybeSingle();
 
-    if (existingProfile) {
+    if (existingProfile && existingProfile.account_type === "Admin" && existingProfile.status === "Active") {
         return {
             success: false,
-            error: "An account with this email already exists.",
+            error: "This user is already an active administrator.",
         };
     }
 
@@ -61,9 +62,9 @@ export async function inviteStaff(formData: {
     const { data: staffRole } = await supabase
         .from("admin_roles")
         .select("role_id")
-        .eq("role_name", "Staff")
+        .ilike("role_name", "Staff")
         .eq("status", "Active")
-        .single();
+        .maybeSingle();
 
     if (!staffRole) {
         return {
@@ -72,83 +73,54 @@ export async function inviteStaff(formData: {
         };
     }
 
-    // Use service client to invite via Supabase Auth Admin API
-    let invitedUserId: string | null = null;
+    // Revoke any existing pending invitations for this email
+    await service
+        .from("staff_invitations")
+        .update({ status: "Revoked" })
+        .eq("email", trimmedEmail)
+        .eq("status", "Pending");
 
-    try {
-        const service = createSupabaseServiceClient();
+    // Generate credentials
+    const token = crypto.randomBytes(32).toString("hex");
+    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
 
-        const origin =
-            process.env.NEXT_PUBLIC_SITE_URL ??
-            process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(".supabase.co", "").replace("https://", "https://") ??
-            "http://localhost:3000";
+    // Persist invitation record
+    const { error: insertError } = await service
+        .from("staff_invitations")
+        .insert({
+            email: trimmedEmail,
+            token,
+            verification_code: verificationCode,
+            role_id: staffRole.role_id,
+            invited_by: ctx.profileId,
+            status: "Pending",
+            expires_at: expiresAt,
+        });
 
-        const { data: inviteData, error: inviteError } = await service.auth.admin.inviteUserByEmail(
-            trimmedEmail,
-            {
-                data: {
-                    first_name: trimmedFirst,
-                    last_name: trimmedLast,
-                },
-                redirectTo: `${origin}/admin/auth/callback?type=invite`,
-            }
-        );
-
-        if (inviteError || !inviteData?.user) {
-            console.error("[inviteStaff] Supabase invite failed:", inviteError?.message);
-            return {
-                success: false,
-                error: "Failed to send invitation. Please try again.",
-            };
-        }
-
-        invitedUserId = inviteData.user.id;
-    } catch (err) {
-        console.error("[inviteStaff] Service client error:", err);
+    if (insertError) {
+        console.error("[inviteStaff] Failed to insert invitation record:", insertError.message);
         return {
             success: false,
-            error: "Failed to send invitation. Please try again.",
+            error: "Failed to create invitation record. Please try again.",
         };
     }
 
-    // Promote the profile to Admin with the Staff role.
-    // The auth trigger creates a Customer profile on invite; we update it here.
-    try {
-        // Wait briefly for the trigger to fire
-        await new Promise((r) => setTimeout(r, 800));
+    // Dispatch branded invitation email via Resend
+    const origin = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+    const activationUrl = `${origin}/admin/invite?token=${token}`;
 
-        const { error: profileError } = await supabase
-            .from("profiles")
-            .upsert(
-                {
-                    profile_id: invitedUserId,
-                    first_name: trimmedFirst,
-                    last_name: trimmedLast,
-                    email: trimmedEmail,
-                    auth_provider: "Email",
-                    account_type: "Admin",
-                    admin_role_id: staffRole.role_id,
-                    status: "Active",
-                },
-                { onConflict: "profile_id" }
-            );
+    const emailResult = await sendStaffInviteEmail({
+        to: trimmedEmail,
+        activationUrl,
+    });
 
-        if (profileError) {
-            console.error("[inviteStaff] Profile promotion failed:", profileError.message);
-            // The Auth user was created but profile promotion failed.
-            // Log and return an error — do not silently report success.
-            return {
-                success: false,
-                error:
-                    "Invitation sent but account setup failed. " +
-                    "Please check the Staff list and retry if needed.",
-            };
-        }
-    } catch (err) {
-        console.error("[inviteStaff] Profile upsert error:", err);
+    if (!emailResult.success) {
+        // Rollback invitation record on email failure
+        await service.from("staff_invitations").delete().eq("token", token);
         return {
             success: false,
-            error: "Account setup failed after invitation. Please check the Staff list.",
+            error: emailResult.error || "Failed to deliver invitation email. Please try again.",
         };
     }
 
@@ -156,8 +128,172 @@ export async function inviteStaff(formData: {
 
     return {
         success: true,
-        message: `Invitation sent to ${trimmedEmail}. They will receive an email to activate their account.`,
+        verificationCode,
+        email: trimmedEmail,
+        expiresAt,
+        message: `Invitation email sent to ${trimmedEmail}. Provide the 6-digit code to the staff member to complete activation.`,
     };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// resendStaffInvite
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function resendStaffInvite(email: string): Promise<InviteStaffResult> {
+    const ctx = await requirePermission("manage_roles");
+
+    const trimmedEmail = email ? email.trim().toLowerCase() : "";
+    if (!trimmedEmail || !validateEmail(trimmedEmail)) {
+        return { success: false, error: "Please enter a valid email address." };
+    }
+
+    const supabase = await createSupabaseServerClient();
+    const service = createSupabaseServiceClient();
+
+    // Look up Staff role
+    const { data: staffRole } = await supabase
+        .from("admin_roles")
+        .select("role_id")
+        .ilike("role_name", "Staff")
+        .eq("status", "Active")
+        .maybeSingle();
+
+    if (!staffRole) {
+        return {
+            success: false,
+            error: "Staff role is not available. Please contact the system administrator.",
+        };
+    }
+
+    // Revoke previous pending invitations
+    await service
+        .from("staff_invitations")
+        .update({ status: "Revoked" })
+        .eq("email", trimmedEmail)
+        .eq("status", "Pending");
+
+    // Generate fresh credentials
+    const token = crypto.randomBytes(32).toString("hex");
+    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+
+    const { error: insertError } = await service
+        .from("staff_invitations")
+        .insert({
+            email: trimmedEmail,
+            token,
+            verification_code: verificationCode,
+            role_id: staffRole.role_id,
+            invited_by: ctx.profileId,
+            status: "Pending",
+            expires_at: expiresAt,
+        });
+
+    if (insertError) {
+        console.error("[resendStaffInvite] Database insert error:", insertError.message);
+        return { success: false, error: "Failed to refresh invitation. Please try again." };
+    }
+
+    const origin = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+    const activationUrl = `${origin}/admin/invite?token=${token}`;
+
+    const emailResult = await sendStaffInviteEmail({
+        to: trimmedEmail,
+        activationUrl,
+    });
+
+    if (!emailResult.success) {
+        await service.from("staff_invitations").delete().eq("token", token);
+        return {
+            success: false,
+            error: emailResult.error || "Failed to deliver refreshed invitation email.",
+        };
+    }
+
+    revalidatePath("/admin/staff");
+
+    return {
+        success: true,
+        verificationCode,
+        email: trimmedEmail,
+        expiresAt,
+        message: `Invitation resent to ${trimmedEmail}.`,
+    };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// removeStaff (Owner Exclusive)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function removeStaff(targetProfileId: string): Promise<StaffActionResult> {
+    const ctx = await requireOwner();
+
+    // Protect: cannot remove yourself
+    if (ctx.profileId === targetProfileId) {
+        return { success: false, error: "You cannot remove your own account." };
+    }
+
+    const supabase = await createSupabaseServerClient();
+    const service = createSupabaseServiceClient();
+
+    // Ensure target is an Admin and not an Owner
+    const { data: targetProfile, error: profileError } = await supabase
+        .from("profiles")
+        .select(`
+            profile_id,
+            email,
+            account_type,
+            status,
+            admin_roles (
+                role_name
+            )
+        `)
+        .eq("profile_id", targetProfileId)
+        .single();
+
+    if (profileError || !targetProfile || targetProfile.account_type !== "Admin") {
+        return { success: false, error: "Staff account not found." };
+    }
+
+    const targetRole = (targetProfile.admin_roles as unknown) as { role_name?: string } | null;
+    if (targetRole?.role_name?.toLowerCase() === "owner") {
+        return { success: false, error: "Owners cannot be removed through this interface." };
+    }
+
+    // Invalidate active sessions via service client
+    try {
+        await service.auth.admin.signOut(targetProfileId, "others");
+    } catch (err) {
+        console.warn("[removeStaff] Session revocation warning:", err);
+    }
+
+    // De-escalate profile to Customer and Inactive status to preserve relational history
+    const { error: updateError } = await service
+        .from("profiles")
+        .update({
+            account_type: "Customer",
+            admin_role_id: null,
+            status: "Inactive",
+            updated_at: new Date().toISOString(),
+        })
+        .eq("profile_id", targetProfileId);
+
+    if (updateError) {
+        console.error("[removeStaff] Profile de-escalation failed:", updateError.message);
+        return { success: false, error: "Failed to remove staff account. Please try again." };
+    }
+
+    // Revoke any pending invitations associated with target email
+    if (targetProfile.email) {
+        await service
+            .from("staff_invitations")
+            .update({ status: "Revoked" })
+            .eq("email", targetProfile.email.toLowerCase())
+            .eq("status", "Pending");
+    }
+
+    revalidatePath("/admin/staff");
+    return { success: true, message: "Staff member has been removed and back-office access revoked." };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -174,7 +310,7 @@ export async function suspendStaff(targetProfileId: string): Promise<StaffAction
 
     const supabase = await createSupabaseServerClient();
 
-    // Ensure target is an Admin (not a Customer)
+    // Ensure target is an Admin
     const { data: targetProfile } = await supabase
         .from("profiles")
         .select("profile_id, account_type, status")
@@ -199,12 +335,11 @@ export async function suspendStaff(targetProfileId: string): Promise<StaffAction
         return { success: false, error: "Failed to suspend account. Please try again." };
     }
 
-    // Best-effort: revoke active sessions via service client
+    // Revoke active sessions via service client
     try {
         const service = createSupabaseServiceClient();
         await service.auth.admin.signOut(targetProfileId, "others");
     } catch (err) {
-        // Non-fatal — the status change already blocks future Admin checks
         console.warn("[suspendStaff] Session revocation failed (non-fatal):", err);
     }
 
@@ -260,35 +395,13 @@ export async function reactivateStaff(targetProfileId: string): Promise<StaffAct
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// resendInvite
+// resendInvite (Legacy Wrapper)
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function resendInvite(email: string): Promise<StaffActionResult> {
-    await requirePermission("manage_roles");
-
-    if (!validateEmail(email)) {
-        return { success: false, error: "Invalid email address." };
+    const res = await resendStaffInvite(email);
+    if (!res.success) {
+        return { success: false, error: res.error };
     }
-
-    try {
-        const service = createSupabaseServiceClient();
-
-        const origin =
-            process.env.NEXT_PUBLIC_SITE_URL ??
-            "http://localhost:3000";
-
-        const { error } = await service.auth.admin.inviteUserByEmail(email.trim().toLowerCase(), {
-            redirectTo: `${origin}/admin/auth/callback?type=invite`,
-        });
-
-        if (error) {
-            console.error("[resendInvite] Failed:", error.message);
-            return { success: false, error: "Failed to resend invitation. Please try again." };
-        }
-    } catch (err) {
-        console.error("[resendInvite] Service error:", err);
-        return { success: false, error: "Failed to resend invitation. Please try again." };
-    }
-
-    return { success: true, message: `Invitation resent to ${email}.` };
+    return { success: true, message: res.message };
 }

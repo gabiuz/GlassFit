@@ -124,10 +124,6 @@ export function StaffContent({ initialStaff }: StaffContentProps) {
                 onClose={() => setIsInviteOpen(false)}
                 onResult={(result) => {
                     showToast(result);
-                    // Refresh list after successful invite — page revalidation via server
-                    if (result.success) {
-                        window.location.reload();
-                    }
                 }}
             />
         </div>
@@ -141,7 +137,7 @@ function StaffTableRow({
     member: StaffMember;
     onActionResult: (result: StaffActionResult) => void;
 }) {
-    const roleName = member.admin_roles?.role_name ?? "—";
+    const roleName = member.admin_roles?.role_name ?? "Staff";
     const isOwner = roleName.toLowerCase() === "owner";
 
     const createdDate = new Date(member.created_at).toLocaleDateString("en-US", {
@@ -161,7 +157,7 @@ function StaffTableRow({
                     </div>
                     <div className="flex flex-col">
                         <span className="text-sm font-medium text-[#0f1422] leading-tight">
-                            {member.full_name ?? "—"}
+                            {member.full_name ?? "-"}
                         </span>
                         {isOwner && (
                             <span className="text-[10px] text-[#07b6d3] font-medium">Owner</span>
@@ -194,6 +190,8 @@ function StaffTableRow({
                     profileId={member.profile_id}
                     email={member.email}
                     status={member.status}
+                    roleName={roleName}
+                    fullName={member.full_name}
                     onResult={onActionResult}
                 />
             </td>
