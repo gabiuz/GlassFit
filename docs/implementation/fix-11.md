@@ -5,7 +5,7 @@
 **Version:** 2.0.0
 **Date:** September 29, 2026
 **Owner:** Reynard John B. Rabanal (Lead Product / Systems Architect) & GlassFit Capstone Team (PUP CCIS)
-**Status:** Local implementation complete; Render and Vercel preview cutover pending the mandatory cloud feasibility gate in Section 8
+**Status:** Cloud feasibility gate failed on Render Free; migration stopped before Vercel preview cutover
 **Upstream Specifications:** PRD-F3, PRD-F4, PRD-F7, PRD-F8, SDD-C2, SDD-C3, SDD-C5, SDD-NFR1, SDD-NFR4, SDD-NFR5, BLD-ENV5, BLD-ENV11, BLD-ENV12, BLD-S5, BLD-S6, QAD-TC3, QAD-TC4, QAD-TC8, QAD-VG2
 
 ---
@@ -500,16 +500,16 @@ Files that must not be created:
 
 ## 12. Verification Checklist
 
-- [ ] Vercel MCP is loaded and authenticated before cloud changes begin.
+- [x] Vercel MCP is loaded and authenticated before cloud changes begin.
 - [x] Render MCP is loaded and authenticated before cloud changes begin.
-- [ ] Vercel MCP resolves exactly one existing `glassfit` project connected to the expected repository.
+- [x] Vercel MCP resolves exactly one existing `glassfit` project connected to the expected repository.
 - [x] Render MCP confirms that no duplicate GlassFit CV service exists before `glassfit-cv` is created.
 - [x] Provider project, workspace, and deployment identifiers are kept out of committed documentation.
 - [x] Environment-variable values are not exposed in logs or agent responses.
 - [x] No Dockerfile or Docker deployment step is introduced.
 - [x] `render.yaml` uses `runtime: python`, `plan: free`, and `rootDir: fastapi-service`.
 - [x] The native service command starts Uvicorn on `$PORT`.
-- [ ] The actual Python version is 3.11.x.
+- [x] The actual Python version is 3.11.x.
 - [x] The browser client is implemented to send image uploads directly to the configured FastAPI origin.
 - [ ] A valid upload above 4.5 MB and at or below 12 MB completes successfully.
 - [ ] No production image upload passes through a Vercel Function.
@@ -528,9 +528,9 @@ Files that must not be created:
 - [x] `npm run build` passes.
 - [x] FastAPI tests pass under Python 3.11.
 - [ ] QAD-TC3, QAD-TC4, and QAD-TC8 pass in Vercel Preview.
-- [ ] Cold-start and warm-analysis measurements are recorded without claiming the production NFR gate passed unless it actually did.
-- [ ] A tested immutable rollback deployment or commit is recorded before cutover.
-- [ ] Vercel and Render MCP deploy and log inspection results are recorded in the implementation evidence.
+- [x] Cold-start and failed-analysis measurements are recorded without claiming that the production NFR gate passed.
+- [x] The existing production deployment and pre-cutover commit remain unchanged as rollback references.
+- [x] Vercel and Render MCP deploy and log inspection results are recorded in the implementation evidence.
 
 ---
 
@@ -563,5 +563,21 @@ Evidence recorded on September 29, 2026:
 | Local Free-profile liveness and readiness | `/health` and `/ready` returned HTTP 200; YOLO available; depth and scene disabled |
 | Representative local analysis | HTTP 200, YOLO mode active, foreground mask produced, and workspace plus mask artifacts returned HTTP 200 |
 | Unauthorized-origin preflight | Rejected with HTTP 400 and no `Access-Control-Allow-Origin` header |
-| Render MCP inventory | Dedicated `GlassFit` workspace exists and contains no services |
-| Vercel MCP detail access | Blocked pending reauthorization to the project team scope; no Vercel or Render cloud mutation was attempted |
+| Render MCP inventory before creation | Dedicated `GlassFit` workspace existed and contained no services |
+| Vercel MCP detail access | Passed through the project-scoped connection; the existing `glassfit` project and production deployment were resolved without changing production |
+
+### 12.2 Cloud feasibility evidence
+
+Evidence recorded on September 29, 2026:
+
+| Check | Result |
+|---|---|
+| Source branch | `fix/deployment` pushed at commit `460aee1` |
+| Render service | Native Python Free web service created in Singapore from `fix/deployment`; Docker was not used |
+| Native dependency build | Passed; Python 3.11 wheels installed for OpenCV, CPU PyTorch, Torchvision, and Ultralytics |
+| First deployment | Build completed and deployment reached `live` |
+| Live liveness | `/health` returned HTTP 200 with `{"status":"ok"}` |
+| Live readiness | `/ready` returned HTTP 200 with YOLO available, writable generated storage, and depth and scene disabled |
+| Representative analysis | Failed with HTTP 502; the Uvicorn process restarted before the request completed and produced no analysis response |
+| Gate decision | Failed under the Render Free resource profile; migration stopped under Section 8.2 |
+| Vercel preview cutover | Not attempted; `NEXT_PUBLIC_IMAGE_API_URL`, the existing proxy route, and the Vercel Services configuration remain unchanged |
