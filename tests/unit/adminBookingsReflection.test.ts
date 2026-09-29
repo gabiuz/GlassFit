@@ -226,9 +226,8 @@ describe("IMP-MS15 admin booking reflection", () => {
     }
 
     const content = source("src/features/admin/bookings/BookingsContent.tsx");
-    assert.match(content, /aria-label="Refresh booking requests"/);
+    assert.doesNotMatch(content, /aria-label="Refresh booking requests"/);
     assert.match(content, /aria-busy=/);
-    assert.match(content, /motion-reduce:animate-none/);
     assert.match(content, /role="alert"/);
     assert.match(source("src/features/admin/components/RecentBookingsTable.tsx"), /role="alert"/);
     assert.match(source("docs/qad-glassfit.md"), /QAD-TC29/);

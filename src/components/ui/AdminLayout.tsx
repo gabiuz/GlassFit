@@ -19,7 +19,7 @@ export default function AdminLayout({ children, context }: AdminLayoutProps) {
                 context={context}
                 onToggleSidebar={() => setIsSidebarOpen((prev) => !prev)}
             />
-            <div className="flex flex-1 w-full relative items-stretch">
+            <div className="flex flex-1 w-full relative items-start">
                 <AdminSidePanel
                     isOpen={isSidebarOpen}
                     onClose={() => setIsSidebarOpen(false)}

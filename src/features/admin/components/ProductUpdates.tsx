@@ -9,12 +9,12 @@ export function ProductUpdates({ updates }: ProductUpdatesProps) {
   return (
     <div className="p-5 sm:p-6 lg:p-[30px] bg-white rounded-[20px] flex flex-col gap-4 sm:gap-5 w-full select-none shadow-xs">
       <div className="w-full flex items-center justify-between gap-4">
-        <h2 className="text-[#07b6d3] text-xl sm:text-2xl font-medium leading-tight tracking-tight whitespace-nowrap">
+        <h2 className="text-[#07b6d3] text-xl sm:text-2xl font-medium leading-tight tracking-tight min-w-0 truncate">
           Product Update
         </h2>
         <Link
           href="/admin/products"
-          className="text-[#c3c3c3] text-sm sm:text-base font-normal leading-[1.4] tracking-tight whitespace-nowrap hover:text-black transition-colors"
+          className="text-[#c3c3c3] text-sm sm:text-base font-normal leading-[1.4] tracking-tight whitespace-nowrap shrink-0 hover:text-black transition-colors"
         >
           View All
         </Link>
