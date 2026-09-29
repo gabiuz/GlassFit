@@ -35,7 +35,7 @@
 | BLD-ENV2 | `NEXT_PUBLIC_SUPABASE_URL` | Yes | `https://xyzcompany.supabase.co` | No | Public Supabase project HTTPS URL |
 | BLD-ENV3 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | `eyJhbGciOi...` | No | Public anon key for client authentication |
 | BLD-ENV4 | `SUPABASE_SERVICE_ROLE_KEY` | Yes | `eyJhbGciOi...` | Yes | Administrative secret key for server actions and RLS bypass |
-| BLD-ENV5 | `NEXT_PUBLIC_IMAGE_API_URL` | Yes | `http://localhost:8000` | No | Ingress endpoint URL for the FastAPI CV microservice |
+| BLD-ENV5 | `FASTAPI_SERVICE_URL` | Vercel only | Vercel-generated service URL | No | Runtime-only binding from the `app` service to the internal `fastapi-service`. Do not configure this value manually. Local Next.js development falls back to `http://localhost:8000`. |
 | BLD-ENV6 | `CLOUDFLARE_R2_ACCOUNT_ID` | Yes | `a1b2c3d4e5f6...` | Yes | Cloudflare account identifier for R2 storage |
 | BLD-ENV7 | `R2_ACCESS_KEY_ID` | Yes | `e7f8g9...` | Yes | S3-compatible API access key for R2 uploads |
 | BLD-ENV8 | `R2_SECRET_ACCESS_KEY` | Yes | `123456789abcdef...` | Yes | S3-compatible API secret key for R2 uploads |
@@ -96,6 +96,12 @@
    - `supabase/migrations/005_parametric_pricing_engine.sql` (Raw materials table ERD-E17, product component 1D/2D bindings, structural rule guardrails, grouped quotation items, and Philippine market benchmark seed data)
 
 ### 3.4 Launching Development Servers
+For Vercel-compatible local routing and automatic service binding injection, run:
+   ```bash
+   vercel dev -L
+   ```
+
+For standalone development without the Vercel CLI:
 1. Start the FastAPI microservice in terminal 1:
    ```bash
    cd fastapi-service
@@ -121,12 +127,16 @@
 | BLD-S5 | CV Container Build | `docker build -t glassfit-cv ./fastapi-service` | Docker engine completes multi-stage container build |
 | BLD-S6 | Production Deployment | `vercel --prod` (or Git Push to `main`) | Hosting platform reports active healthy deployment status |
 
+The root `vercel.json` deploys the Next.js `app` service publicly and keeps the
+`fastapi-service` internal. The `app` service calls FastAPI with its
+`FASTAPI_SERVICE_URL` binding through `/api/image-analysis/*` route handlers.
+
 ---
 
 ## 5. Post-Deployment Verification & Emergency Rollback
 
 **Smoke test verification checklist:**
-- Synthetic health probe (`GET http://cv-service/health`) returns HTTP 200 with `{"status": "ok"}`.
+- Synthetic health probe (`GET /api/image-analysis/health`) returns HTTP 200 with `{"status": "ok"}` through the public Next.js service and its internal FastAPI binding.
 - Next.js root page (`GET /`) loads in < 800ms with catalog products visible.
 - Product detail 3D inspector loads GLB mesh from Cloudflare R2 without WebGL errors.
 - Test room image uploaded to `/analyze-image` returns lighting and object masks in < 2,500ms.
