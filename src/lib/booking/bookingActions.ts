@@ -16,7 +16,14 @@ import { revalidatePath } from "next/cache";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import { requirePermission } from "@/lib/auth/admin";
-import { deriveQuotationPricing, deriveQuotationPricingFromItems, QuotationDocumentSnapshotV1Schema, QuotationItemPriceOverridesV1Schema, type QuotationItemPriceOverride } from "@/lib/pricing/quotationDocument";
+import {
+  deriveQuotationPricing,
+  deriveQuotationPricingFromItems,
+  QuotationDocumentSnapshotV1Schema,
+  QuotationItemPriceOverridesV1Schema,
+  reconstructLegacyQuotationDocument,
+  type QuotationItemPriceOverride,
+} from "@/lib/pricing/quotationDocument";
 import { getServerBaseUrl, generateBookingUrls } from "./urlResolver";
 import { uploadSnapshotImage, resolveSnapshotUrl } from "./snapshotStorage";
 import { BOOKING_REVALIDATION_PATHS } from "./bookingRevalidationPaths";
@@ -38,7 +45,10 @@ import {
   type UpdateItemNegotiatedPriceInput,
   type UpdateItemNegotiatedPriceResult,
   type UpdateBookingLaborInput,
+  areTimestampsEquivalent,
 } from "./types";
+
+export { areTimestampsEquivalent };
 
 function revalidateBookingPaths(): void {
   for (const path of BOOKING_REVALIDATION_PATHS) revalidatePath(path);
@@ -379,6 +389,7 @@ export async function getPublicBookingReference(
         quotation_number,
         total_estimated_amount,
         negotiated_amount,
+        admin_labor_charge,
         item_price_overrides,
         quotation_document_snapshot,
         created_at,
@@ -599,6 +610,7 @@ export async function getPublicBookingReference(
       ? deriveQuotationPricingFromItems(
           QuotationDocumentSnapshotV1Schema.parse(quote.quotation_document_snapshot),
           QuotationItemPriceOverridesV1Schema.safeParse(quote.item_price_overrides).success ? QuotationItemPriceOverridesV1Schema.parse(quote.item_price_overrides) : null,
+          quote.admin_labor_charge !== null && quote.admin_labor_charge !== undefined ? Number(quote.admin_labor_charge) : null,
         )
       : deriveQuotationPricing(Number(quote.total_estimated_amount), quote.negotiated_amount === null ? null : Number(quote.negotiated_amount))),
     createdAtFormatted,
@@ -646,13 +658,70 @@ export async function getOwnQuotationDocument(quotationId: string) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
   const { data, error } = await supabase.from("quotation_estimates")
-    .select("quotation_id, quotation_document_snapshot, total_estimated_amount, negotiated_amount, item_price_overrides, updated_at")
+    .select(`
+      quotation_id,
+      quotation_number,
+      quotation_document_snapshot,
+      total_estimated_amount,
+      negotiated_amount,
+      admin_labor_charge,
+      item_price_overrides,
+      created_at,
+      updated_at,
+      quotation_items (
+        item_name,
+        item_group_name,
+        quantity,
+        unit,
+        unit_price,
+        estimated_subtotal,
+        pricing_details
+      )
+    `)
     .eq("quotation_id", quotationId).eq("profile_id", user.id).maybeSingle();
-  if (error || !data?.quotation_document_snapshot) return null;
+  if (error || !data) return null;
+
+  let snapshotDocument: import("@/lib/pricing/quotationDocument").QuotationDocumentSnapshotV1 | null = null;
   const document = QuotationDocumentSnapshotV1Schema.safeParse(data.quotation_document_snapshot);
-  if (!document.success) return null;
+  if (document.success) {
+    snapshotDocument = document.data;
+  } else if (Array.isArray(data.quotation_items) && data.quotation_items.length > 0) {
+    const rawItems = data.quotation_items as Array<{
+      item_name: string;
+      item_group_name?: string;
+      quantity?: number | string;
+      unit?: string;
+      unit_price?: number | string;
+      estimated_subtotal?: number | string;
+      pricing_details: Record<string, unknown> | null;
+    }>;
+    snapshotDocument = reconstructLegacyQuotationDocument({
+      quotationNumber: data.quotation_number,
+      referenceCode: data.quotation_number.replace("Q-", "CF-"),
+      createdAt: data.created_at,
+      customer: { name: user.email || "Customer", email: user.email || null, phone: null, siteLocation: null },
+      totalEstimatedAmount: Number(data.total_estimated_amount),
+      snapshotObjectKey: null,
+      rows: rawItems.map((item) => ({
+        ...item,
+        quantity: Number(item.quantity) || 0,
+        unit: item.unit ?? "item",
+        unit_price: Number(item.unit_price) || 0,
+        estimated_subtotal: Number(item.estimated_subtotal) || 0,
+      })),
+    });
+  }
+
+  if (!snapshotDocument) return null;
   const overrides = QuotationItemPriceOverridesV1Schema.safeParse(data.item_price_overrides);
-  return { quotationId: data.quotation_id, quotationDocument: document.data, itemPriceOverrides: overrides.success ? overrides.data : null, updatedAt: data.updated_at, ...deriveQuotationPricingFromItems(document.data, overrides.success ? overrides.data : null) };
+  const labor = data.admin_labor_charge !== null && data.admin_labor_charge !== undefined ? Number(data.admin_labor_charge) : null;
+  return {
+    quotationId: data.quotation_id,
+    quotationDocument: snapshotDocument,
+    itemPriceOverrides: overrides.success ? overrides.data : null,
+    updatedAt: data.updated_at,
+    ...deriveQuotationPricingFromItems(snapshotDocument, overrides.success ? overrides.data : null, labor),
+  };
 }
 
 function zUuid(value: string): boolean {
@@ -669,13 +738,15 @@ export async function updateNegotiatedPrice(input: UpdateNegotiatedPriceInput): 
   if (readError) return { ok: false, code: "PERSISTENCE_ERROR", message: "Unable to read quotation" };
   if (!current) return { ok: false, code: "NOT_FOUND", message: "Quotation not found" };
   if (current.quotation_document_snapshot !== null) return { ok: false, code: "UNSUPPORTED_QUOTATION", message: "Canonical quotations require per-item price editing." };
-  if (current.updated_at !== parsed.data.expectedUpdatedAt) return { ok: false, code: "CONFLICT", message: "This quotation was updated in another session. Review the latest values and try again." };
+  if (!areTimestampsEquivalent(current.updated_at, parsed.data.expectedUpdatedAt)) {
+    return { ok: false, code: "CONFLICT", message: "This quotation was updated in another session. Review the latest values and try again." };
+  }
   const calculated = Number(current.total_estimated_amount);
   const pricing = deriveQuotationPricing(calculated, parsed.data.negotiatedAmount);
   const negotiatedAt = pricing.negotiatedFinalPrice === null ? null : new Date().toISOString();
   const negotiatedBy = pricing.negotiatedFinalPrice === null ? null : admin.profileId;
   const { data: updated, error } = await supabase.from("quotation_estimates").update({ negotiated_amount: pricing.negotiatedFinalPrice, negotiated_by: negotiatedBy, negotiated_at: negotiatedAt })
-    .eq("quotation_id", parsed.data.quotationId).eq("updated_at", parsed.data.expectedUpdatedAt)
+    .eq("quotation_id", parsed.data.quotationId).eq("updated_at", current.updated_at)
     .select("updated_at").maybeSingle();
   if (error) return { ok: false, code: "PERSISTENCE_ERROR", message: "Unable to save negotiated price" };
   if (!updated) return { ok: false, code: "CONFLICT", message: "This quotation changed before the price could be saved." };
@@ -689,14 +760,68 @@ export async function updateItemNegotiatedPrice(input: UpdateItemNegotiatedPrice
   if (!parsed.success) return { ok: false, code: "VALIDATION_ERROR", message: parsed.error.issues[0]?.message ?? "Invalid item price" };
   const supabase = await createSupabaseServerClient();
   const { data: current, error: readError } = await supabase.from("quotation_estimates")
-    .select("quotation_id, quotation_document_snapshot, item_price_overrides, updated_at")
+    .select(`
+      quotation_id,
+      quotation_number,
+      total_estimated_amount,
+      quotation_document_snapshot,
+      item_price_overrides,
+      admin_labor_charge,
+      created_at,
+      updated_at,
+      quotation_items (
+        item_name,
+        item_group_name,
+        quantity,
+        unit,
+        unit_price,
+        estimated_subtotal,
+        pricing_details
+      )
+    `)
     .eq("quotation_id", parsed.data.quotationId).maybeSingle();
   if (readError) return { ok: false, code: "PERSISTENCE_ERROR", message: "Unable to read quotation" };
   if (!current) return { ok: false, code: "NOT_FOUND", message: "Quotation not found" };
-  if (current.updated_at !== parsed.data.expectedUpdatedAt) return { ok: false, code: "CONFLICT", message: "This quotation was updated in another session. Review the latest values and try again." };
+  if (!areTimestampsEquivalent(current.updated_at, parsed.data.expectedUpdatedAt)) {
+    return { ok: false, code: "CONFLICT", message: "This quotation was updated in another session. Review the latest values and try again." };
+  }
+
+  let snapshotDocument: import("@/lib/pricing/quotationDocument").QuotationDocumentSnapshotV1 | null = null;
   const snapshotResult = QuotationDocumentSnapshotV1Schema.safeParse(current.quotation_document_snapshot);
-  if (!snapshotResult.success) return { ok: false, code: "UNSUPPORTED_QUOTATION", message: "Per-item editing requires a valid canonical quotation." };
-  const matches = snapshotResult.data.items.filter((item) => item.itemId === parsed.data.itemId);
+  if (snapshotResult.success) {
+    snapshotDocument = snapshotResult.data;
+  } else if (Array.isArray(current.quotation_items) && current.quotation_items.length > 0) {
+    const rawItems = current.quotation_items as Array<{
+      item_name: string;
+      item_group_name?: string;
+      quantity?: number | string;
+      unit?: string;
+      unit_price?: number | string;
+      estimated_subtotal?: number | string;
+      pricing_details: Record<string, unknown> | null;
+    }>;
+    snapshotDocument = reconstructLegacyQuotationDocument({
+      quotationNumber: current.quotation_number,
+      referenceCode: current.quotation_number.replace("Q-", "CF-"),
+      createdAt: current.created_at,
+      customer: { name: "Customer", email: null, phone: null, siteLocation: null },
+      totalEstimatedAmount: Number(current.total_estimated_amount),
+      snapshotObjectKey: null,
+      rows: rawItems.map((item) => ({
+        ...item,
+        quantity: Number(item.quantity) || 0,
+        unit: item.unit ?? "item",
+        unit_price: Number(item.unit_price) || 0,
+        estimated_subtotal: Number(item.estimated_subtotal) || 0,
+      })),
+    });
+  }
+
+  if (!snapshotDocument) {
+    return { ok: false, code: "UNSUPPORTED_QUOTATION", message: "Per-item editing requires a valid canonical quotation." };
+  }
+
+  const matches = snapshotDocument.items.filter((item) => item.itemId === parsed.data.itemId);
   if (matches.length === 0) return { ok: false, code: "ITEM_NOT_FOUND", message: "Quotation item not found" };
   if (matches.length !== 1) return { ok: false, code: "UNSUPPORTED_QUOTATION", message: "Quotation item identity is ambiguous" };
   const existingResult = QuotationItemPriceOverridesV1Schema.safeParse(current.item_price_overrides);
@@ -709,15 +834,31 @@ export async function updateItemNegotiatedPrice(input: UpdateItemNegotiatedPrice
   } satisfies QuotationItemPriceOverride;
   const prior = new Map((existingResult.success ? existingResult.data.entries : []).map((entry) => [entry.itemId, entry]));
   if (nextEntry) prior.set(nextEntry.itemId, nextEntry); else prior.delete(parsed.data.itemId);
-  const entries = snapshotResult.data.items.flatMap((item) => { const entry = prior.get(item.itemId); return entry ? [entry] : []; });
+  const entries = snapshotDocument.items.flatMap((item) => { const entry = prior.get(item.itemId); return entry ? [entry] : []; });
   const overrideDocument = entries.length ? { schemaVersion: 1 as const, entries } : null;
-  const pricing = deriveQuotationPricingFromItems(snapshotResult.data, overrideDocument);
+
+  // Derive pricing preserving existing administrative labor charge
+  const currentLabor = current.admin_labor_charge !== null && current.admin_labor_charge !== undefined ? Number(current.admin_labor_charge) : null;
+  const pricing = deriveQuotationPricingFromItems(snapshotDocument, overrideDocument, currentLabor);
   if (pricing.effectiveFinalPrice > 9_999_999_999.99) return { ok: false, code: "VALIDATION_ERROR", message: "Effective quotation total exceeds the supported range" };
-  const negotiatedBy = entries.length ? admin.profileId : null;
-  const negotiatedAt = entries.length ? now : null;
-  const { data: updated, error } = await supabase.from("quotation_estimates").update({
-    item_price_overrides: overrideDocument, negotiated_amount: pricing.negotiatedFinalPrice, negotiated_by: negotiatedBy, negotiated_at: negotiatedAt,
-  }).eq("quotation_id", parsed.data.quotationId).eq("updated_at", parsed.data.expectedUpdatedAt).select("updated_at").maybeSingle();
+
+  const isModified = pricing.isPriceModified;
+  const negotiatedBy = isModified ? admin.profileId : null;
+  const negotiatedAt = isModified ? now : null;
+
+  const updatePayload: Record<string, unknown> = {
+    item_price_overrides: overrideDocument,
+    negotiated_amount: isModified ? pricing.effectiveFinalPrice : null,
+    negotiated_by: negotiatedBy,
+    negotiated_at: negotiatedAt,
+  };
+  if (current.quotation_document_snapshot === null && snapshotDocument) {
+    updatePayload.quotation_document_snapshot = snapshotDocument;
+  }
+
+  const { data: updated, error } = await supabase.from("quotation_estimates").update(updatePayload)
+    .eq("quotation_id", parsed.data.quotationId).eq("updated_at", current.updated_at).select("updated_at").maybeSingle();
+
   if (error) return { ok: false, code: "PERSISTENCE_ERROR", message: "Unable to save item price" };
   if (!updated) return { ok: false, code: "CONFLICT", message: "This quotation changed before the price could be saved." };
   revalidateBookingPaths();
@@ -727,7 +868,7 @@ export async function updateItemNegotiatedPrice(input: UpdateItemNegotiatedPrice
 }
 
 /**
- * Admin action to enter or adjust administrative labor and installation charges for a booking (IMP-MS24).
+ * Admin action to enter or adjust administrative labor and installation charges for a booking (IMP-MS24, IMP-MS26).
  */
 export async function updateBookingLaborCharge(
   input: UpdateBookingLaborInput
@@ -745,13 +886,31 @@ export async function updateBookingLaborCharge(
   const supabase = await createSupabaseServerClient();
   const { data: current, error: readError } = await supabase
     .from("quotation_estimates")
-    .select("quotation_id, total_estimated_amount, quotation_document_snapshot, updated_at")
+    .select(`
+      quotation_id,
+      quotation_number,
+      total_estimated_amount,
+      quotation_document_snapshot,
+      item_price_overrides,
+      admin_labor_charge,
+      created_at,
+      updated_at,
+      quotation_items (
+        item_name,
+        item_group_name,
+        quantity,
+        unit,
+        unit_price,
+        estimated_subtotal,
+        pricing_details
+      )
+    `)
     .eq("quotation_id", parsed.data.quotationId)
     .maybeSingle();
 
   if (readError) return { ok: false, code: "PERSISTENCE_ERROR", message: "Unable to read quotation" };
   if (!current) return { ok: false, code: "NOT_FOUND", message: "Quotation not found" };
-  if (current.updated_at !== parsed.data.expectedUpdatedAt) {
+  if (!areTimestampsEquivalent(current.updated_at, parsed.data.expectedUpdatedAt)) {
     return {
       ok: false,
       code: "CONFLICT",
@@ -759,23 +918,83 @@ export async function updateBookingLaborCharge(
     };
   }
 
-  const rawProductPrice = Number(current.total_estimated_amount);
-  const labor = parsed.data.laborAmount;
-  const newEffectiveGrandTotal = labor === null ? null : Math.round((rawProductPrice + labor) * 100) / 100;
+  // 1. Resolve Effective Product Subtotal
+  let effectiveProductSubtotal: number;
+  let snapshotDocument: import("@/lib/pricing/quotationDocument").QuotationDocumentSnapshotV1 | null = null;
+  const snapshotResult = QuotationDocumentSnapshotV1Schema.safeParse(current.quotation_document_snapshot);
+  const existingOverrides = QuotationItemPriceOverridesV1Schema.safeParse(current.item_price_overrides);
 
-  const pricing = deriveQuotationPricing(rawProductPrice, newEffectiveGrandTotal);
-  const negotiatedAt = pricing.negotiatedFinalPrice === null ? null : new Date().toISOString();
-  const negotiatedBy = pricing.negotiatedFinalPrice === null ? null : admin.profileId;
+  if (snapshotResult.success) {
+    snapshotDocument = snapshotResult.data;
+  } else if (Array.isArray(current.quotation_items) && current.quotation_items.length > 0) {
+    const rawItems = current.quotation_items as Array<{
+      item_name: string;
+      item_group_name?: string;
+      quantity?: number | string;
+      unit?: string;
+      unit_price?: number | string;
+      estimated_subtotal?: number | string;
+      pricing_details: Record<string, unknown> | null;
+    }>;
+    snapshotDocument = reconstructLegacyQuotationDocument({
+      quotationNumber: current.quotation_number,
+      referenceCode: current.quotation_number.replace("Q-", "CF-"),
+      createdAt: current.created_at,
+      customer: { name: "Customer", email: null, phone: null, siteLocation: null },
+      totalEstimatedAmount: Number(current.total_estimated_amount),
+      snapshotObjectKey: null,
+      rows: rawItems.map((item) => ({
+        ...item,
+        quantity: Number(item.quantity) || 0,
+        unit: item.unit ?? "item",
+        unit_price: Number(item.unit_price) || 0,
+        estimated_subtotal: Number(item.estimated_subtotal) || 0,
+      })),
+    });
+  }
+
+  if (snapshotDocument) {
+    const itemPricingResult = deriveQuotationPricingFromItems(
+      snapshotDocument,
+      existingOverrides.success ? existingOverrides.data : null,
+      null
+    );
+    effectiveProductSubtotal = itemPricingResult.effectiveProductSubtotal;
+  } else {
+    effectiveProductSubtotal = Number(current.total_estimated_amount);
+  }
+
+  // 2. Compute Reconciled Grand Total
+  const labor = parsed.data.laborAmount;
+  const laborCents = labor === null ? 0 : Math.round(labor * 100);
+  const productCents = Math.round(effectiveProductSubtotal * 100);
+  const grandTotalCents = productCents + laborCents;
+  const newGrandTotal = grandTotalCents / 100;
+
+  if (newGrandTotal > 9_999_999_999.99) {
+    return { ok: false, code: "VALIDATION_ERROR", message: "Effective quotation total exceeds supported range" };
+  }
+
+  const hasItemOverrides = existingOverrides.success && existingOverrides.data.entries.length > 0;
+  const isModified = hasItemOverrides || (labor !== null && labor > 0);
+  const now = new Date().toISOString();
+
+  // 3. Persist Labor Charge and Reconciled Grand Total
+  const updatePayload: Record<string, unknown> = {
+    admin_labor_charge: labor,
+    negotiated_amount: isModified ? newGrandTotal : null,
+    negotiated_by: isModified ? admin.profileId : null,
+    negotiated_at: isModified ? now : null,
+  };
+  if (current.quotation_document_snapshot === null && snapshotDocument) {
+    updatePayload.quotation_document_snapshot = snapshotDocument;
+  }
 
   const { data: updated, error } = await supabase
     .from("quotation_estimates")
-    .update({
-      negotiated_amount: pricing.negotiatedFinalPrice,
-      negotiated_by: negotiatedBy,
-      negotiated_at: negotiatedAt,
-    })
+    .update(updatePayload)
     .eq("quotation_id", parsed.data.quotationId)
-    .eq("updated_at", parsed.data.expectedUpdatedAt)
+    .eq("updated_at", current.updated_at)
     .select("updated_at")
     .maybeSingle();
 
@@ -786,9 +1005,14 @@ export async function updateBookingLaborCharge(
   return {
     ok: true,
     quotationId: parsed.data.quotationId,
-    ...pricing,
-    negotiatedBy,
-    negotiatedAt,
+    calculatedFinalPrice: Number(current.total_estimated_amount),
+    effectiveProductSubtotal,
+    adminLaborCharge: labor,
+    negotiatedFinalPrice: isModified ? newGrandTotal : null,
+    effectiveFinalPrice: newGrandTotal,
+    isPriceModified: isModified,
+    negotiatedBy: isModified ? admin.profileId : null,
+    negotiatedAt: isModified ? now : null,
     updatedAt: updated.updated_at,
   };
 }
