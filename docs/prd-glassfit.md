@@ -529,6 +529,10 @@ If the FastAPI service experiences a timeout or segmentation failure:
 
 ---
 
+### MS30 Reconciliation (PRD-F12 and PRD-F14)
+
+Person identity uses a required first name and optional last name with canonical Unicode normalization. Administrator email changes are self-service: Staff requests require Owner or Manager approval, while active Owners and Managers change their own address immediately. All targets and roles are derived from the authenticated session.
+
 ## Self-Check & Verification
 
 - [x] Every Must-Have feature in Section 3 has at least one user story in Section 4 with permanent PRD-F# tracking.

@@ -74,6 +74,10 @@
 
 ---
 
+## QAD-TC45: Role-Aware Administrator Email Change
+
+MS30 automated coverage validates canonical Unicode names, mononyms, field limits, the self-targeted admin action interface, hashed approval tokens, generated-column safety, ERD-E20 RLS, and Auth email synchronization. Manual smoke coverage verifies Staff request delivery, protected approval and rejection, cancellation, retry, concurrent decision behavior, and immediate Owner or Manager self-change.
+
 ## Self-Check
 
 - [x] Test distribution matrix defines tooling and coverage targets for all testing layers

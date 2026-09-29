@@ -413,6 +413,10 @@ MS17 adds nullable `item_price_overrides jsonb`. Null represents no canonical ov
 
 ---
 
+## ERD-E20: Admin Email Change Events
+
+`admin_email_change_events` stores immutable identity snapshots, role-derived change mode, hashed approval tokens, lifecycle status, delivery audit data, processing ownership, decision identity, and completion timestamps. RLS exposes no authenticated mutation path. A partial unique index permits at most one pending Staff request per profile. Migration 012 also permits an empty `profiles.last_name` while retaining `NOT NULL`.
+
 ## Self-Check
 
 - [x] Storage engines and tenancy partitioning strategy are clearly defined

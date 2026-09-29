@@ -9,11 +9,18 @@
 // ---------------------------------------------------------------------------
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Eye, EyeOff, User, Plus, Trash2, ShieldAlert, Clock, Calendar } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAdminSession } from "@/features/admin/auth/AdminSessionProvider";
 import {
     updateAdminProfile,
+    changeAdminEmail,
+    getOwnStaffEmailChangeRequest,
+    listStaffEmailChangeRequests,
+    cancelOwnStaffEmailChange,
+    retryStaffEmailChangeApprovalDelivery,
+    type AdminEmailChangeEventView,
     updateAdminPassword,
     getSystemPreferences,
     updateSystemPreferences,
@@ -101,6 +108,7 @@ function InputField({
     type = "text",
     rightElement,
     hint,
+    maxLength,
 }: {
     value: string;
     onChange?: (v: string) => void;
@@ -109,6 +117,7 @@ function InputField({
     type?: string;
     rightElement?: React.ReactNode;
     hint?: string;
+    maxLength?: number;
 }) {
     return (
         <div className="flex flex-col gap-1.5 w-full">
@@ -126,6 +135,7 @@ function InputField({
                     onChange={(e) => onChange?.(e.target.value)}
                     placeholder={placeholder}
                     disabled={disabled}
+                    maxLength={maxLength}
                     className={cn(
                         "flex-1 min-w-0 bg-transparent outline-none text-sm font-normal leading-snug tracking-[-0.266px]",
                         disabled ? "text-[#737373] cursor-default" : "text-[#0f1422] placeholder:text-[#c3c3c3]"
@@ -200,39 +210,74 @@ function SaveButton({
 // ---------------------------------------------------------------------------
 
 function AdminProfileCard({
-    initialName,
-    email,
+    initialFirstName,
+    initialLastName,
+    initialEmail,
     role,
-    profileId,
     onToast,
 }: {
-    initialName: string;
-    email: string;
+    initialFirstName: string;
+    initialLastName: string;
+    initialEmail: string;
     role: string;
-    profileId: string;
     onToast: (msg: string, variant: "success" | "error") => void;
 }) {
-    const [isEditing, setIsEditing] = useState(false);
-    const [fullName, setFullName] = useState(initialName);
-    const [draftName, setDraftName] = useState(initialName);
-    const [loading, setLoading] = useState(false);
+    const router = useRouter();
+    const [firstName, setFirstName] = useState(initialFirstName);
+    const [lastName, setLastName] = useState(initialLastName);
+    const [email, setEmail] = useState(initialEmail);
+    const [nameLoading, setNameLoading] = useState(false);
+    const [emailLoading, setEmailLoading] = useState(false);
+    const [request, setRequest] = useState<AdminEmailChangeEventView | null>(null);
+    const [reviewRequests, setReviewRequests] = useState<AdminEmailChangeEventView[]>([]);
+    const fullName = [firstName, lastName].filter(Boolean).join(" ");
+    const privileged = role === "Owner" || role === "Manager";
 
-    const handleEdit = () => {
-        setDraftName(fullName);
-        setIsEditing(true);
+    const reloadRequests = async () => {
+        if (role === "Staff") {
+            const result = await getOwnStaffEmailChangeRequest();
+            if (result.ok) setRequest(result.data ?? null);
+        } else if (privileged) {
+            const result = await listStaffEmailChangeRequests();
+            if (result.ok) setReviewRequests(result.data ?? []);
+        }
     };
 
-    const handleSave = async () => {
-        setLoading(true);
-        const result = await updateAdminProfile(profileId, draftName);
-        setLoading(false);
+    useEffect(() => {
+        let active = true;
+        const load = async () => {
+            if (role === "Staff") {
+                const result = await getOwnStaffEmailChangeRequest();
+                if (active && result.ok) setRequest(result.data ?? null);
+            } else if (privileged) {
+                const result = await listStaffEmailChangeRequests();
+                if (active && result.ok) setReviewRequests(result.data ?? []);
+            }
+        };
+        void load();
+        return () => { active = false; };
+    }, [role, privileged]);
 
-        if (result.ok) {
-            setFullName(draftName);
-            setIsEditing(false);
+    const handleSaveName = async () => {
+        setNameLoading(true);
+        const result = await updateAdminProfile({ firstName, lastName });
+        setNameLoading(false);
+        if (result.ok && result.data) {
+            setFirstName(result.data.firstName);
+            setLastName(result.data.lastName);
             onToast(result.message, "success");
-        } else {
-            onToast(result.error, "error");
+        } else if (!result.ok) onToast(result.error, "error");
+    };
+
+    const handleEmailChange = async () => {
+        setEmailLoading(true);
+        const result = await changeAdminEmail(email);
+        setEmailLoading(false);
+        onToast(result.ok ? result.message : result.error, result.ok ? "success" : "error");
+        if (result.ok) {
+            if (result.data?.mode === "staff_approval_required") setEmail(initialEmail);
+            else router.refresh();
+            void reloadRequests();
         }
     };
 
@@ -241,13 +286,6 @@ function AdminProfileCard({
             <SectionHeading
                 title="Admin Profile"
                 subtitle="Update your administrator information"
-                action={
-                    isEditing ? (
-                        <SaveButton onClick={handleSave} loading={loading} />
-                    ) : (
-                        <EditButton onClick={handleEdit} />
-                    )
-                }
             />
 
             {/* Avatar + name */}
@@ -267,22 +305,42 @@ function AdminProfileCard({
 
             {/* Fields */}
             <div className="flex flex-col gap-4 w-full">
-                <FormRow label="Full Name">
+                <FormRow label="First Name">
                     <InputField
-                        value={isEditing ? draftName : fullName}
-                        onChange={setDraftName}
-                        placeholder="Full name"
-                        disabled={!isEditing}
+                        value={firstName}
+                        onChange={setFirstName}
+                        placeholder="First name"
+                        maxLength={50}
                     />
                 </FormRow>
+
+                <FormRow label="Last Name (Optional)">
+                    <InputField value={lastName} onChange={setLastName} placeholder="Last name" maxLength={50} />
+                </FormRow>
+
+                <div className="flex justify-end"><SaveButton onClick={handleSaveName} loading={nameLoading} /></div>
 
                 <FormRow label="Email Address">
                     <InputField
                         value={email}
+                        onChange={setEmail}
                         placeholder="Email address"
-                        disabled
+                        type="email"
+                        maxLength={254}
                     />
                 </FormRow>
+
+                <p className="text-xs text-neutral-500">
+                    {role === "Staff"
+                        ? "Changing your email creates a request. Your current email remains active until an Owner or Manager approves it."
+                        : "Your email change applies immediately without approval or email delivery."}
+                </p>
+                <div className="flex justify-end">
+                    <button type="button" onClick={handleEmailChange} disabled={emailLoading}
+                        className="rounded-[10px] bg-[#07b6d3] px-4 py-1.5 text-sm text-white disabled:opacity-60">
+                        {emailLoading ? "Submitting..." : "Change Email"}
+                    </button>
+                </div>
 
                 <FormRow label="Role">
                     <InputField
@@ -291,6 +349,38 @@ function AdminProfileCard({
                         disabled
                     />
                 </FormRow>
+
+                {role === "Staff" && request && (
+                    <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 text-xs text-neutral-700">
+                        <p className="font-medium">Latest request: {request.status}</p>
+                        <p>{request.previousEmail} to {request.proposedEmail}</p>
+                        {request.status === "PendingApproval" && (
+                            <button type="button" className="mt-2 text-red-700 underline" onClick={async () => {
+                                const result = await cancelOwnStaffEmailChange(request.eventId);
+                                onToast(result.ok ? result.message : result.error, result.ok ? "success" : "error");
+                                void reloadRequests();
+                            }}>Cancel request</button>
+                        )}
+                    </div>
+                )}
+                {privileged && reviewRequests && reviewRequests.length > 0 && (
+                    <div className="flex flex-col gap-2 border-t border-neutral-100 pt-3">
+                        <p className="text-sm font-medium">Staff email requests</p>
+                        {reviewRequests.map((item) => (
+                            <div key={item.eventId} className="rounded-lg border border-neutral-200 p-3 text-xs">
+                                <p className="font-medium">{item.staffName}: {item.status}</p>
+                                <p>{item.previousEmail} to {item.proposedEmail}</p>
+                                {(item.deliveryStatus === "Partial" || item.deliveryStatus === "Failed") && (
+                                    <button type="button" className="mt-2 text-[#078ba1] underline" onClick={async () => {
+                                        const result = await retryStaffEmailChangeApprovalDelivery(item.eventId);
+                                        onToast(result.ok ? result.message : result.error, result.ok ? "success" : "error");
+                                        void reloadRequests();
+                                    }}>Retry delivery</button>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                )}
             </div>
         </div>
     );
@@ -928,7 +1018,7 @@ function FeedbackToast({ toast }: { toast: ToastState }) {
 // ---------------------------------------------------------------------------
 
 export function SettingsContent() {
-    const { profileId, fullName, email, role } = useAdminSession();
+    const { firstName, lastName, email, role } = useAdminSession();
     const { toast, show: showToast } = useToast();
 
     return (
@@ -948,10 +1038,10 @@ export function SettingsContent() {
                 {/* Left column */}
                 <div className="flex flex-col gap-6">
                     <AdminProfileCard
-                        initialName={fullName}
-                        email={email}
+                        initialFirstName={firstName}
+                        initialLastName={lastName}
+                        initialEmail={email}
                         role={role.roleName}
-                        profileId={profileId}
                         onToast={showToast}
                     />
                     <DataManagementCard onToast={showToast} />

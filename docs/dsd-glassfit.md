@@ -115,6 +115,10 @@ Modern architectural precision engineered for clarity, spatial focus, and techni
 
 ---
 
+## MS30 Settings Interaction (DSD-UI10)
+
+The Admin Profile card uses existing input, button, toast, spacing, color, and typography patterns. Name and email actions have independent loading states. Staff receive approval guidance and durable request status, while Owners and Managers receive pending request review and delivery retry controls.
+
 ## Self-Check
 
 - [x] Color tokens specify values for both light and dark modes with contrast verifications

@@ -9,6 +9,8 @@ import { parsePermissions, type AdminPermissions, type AdminPermissionKey } from
 export type AdminContext = {
     userId: string;
     profileId: string;
+    firstName: string;
+    lastName: string;
     fullName: string;
     email: string;
     role: {
@@ -58,6 +60,8 @@ export async function checkAdminAuth(): Promise<AdminAuthResult> {
         .from("profiles")
         .select(`
             profile_id,
+            first_name,
+            last_name,
             full_name,
             email,
             account_type,
@@ -105,6 +109,8 @@ export async function checkAdminAuth(): Promise<AdminAuthResult> {
         context: {
             userId: user.id,
             profileId: profile.profile_id,
+            firstName: profile.first_name,
+            lastName: profile.last_name,
             fullName: profile.full_name ?? profile.email,
             email: profile.email,
             role: {
