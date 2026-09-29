@@ -289,7 +289,7 @@ export function MaterialsContent({ initialMaterials }: MaterialsContentProps) {
           >
             <Plus className="size-4" />
             <span className="text-sm sm:text-base font-medium whitespace-nowrap">
-              + Add Material
+              Add Material
             </span>
           </button>
         </div>

@@ -201,11 +201,23 @@ export const UpdateNegotiatedPriceInputSchema = z.object({
     (value) => value === null || Math.abs(value * 100 - Math.round(value * 100)) < 1e-7,
     "Negotiated amount must have at most two decimal places",
   ),
-  expectedUpdatedAt: z.string().datetime(),
+  expectedUpdatedAt: z.string().datetime({ offset: true }).or(z.string().datetime()),
 });
 export type UpdateNegotiatedPriceInput = z.infer<typeof UpdateNegotiatedPriceInputSchema>;
 export type UpdateNegotiatedPriceResult =
-  | { ok: true; quotationId: string; calculatedFinalPrice: number; negotiatedFinalPrice: number | null; effectiveFinalPrice: number; isPriceModified: boolean; negotiatedBy: string | null; negotiatedAt: string | null; updatedAt: string }
+  | {
+      ok: true;
+      quotationId: string;
+      calculatedFinalPrice: number;
+      effectiveProductSubtotal?: number;
+      adminLaborCharge?: number | null;
+      negotiatedFinalPrice: number | null;
+      effectiveFinalPrice: number;
+      isPriceModified: boolean;
+      negotiatedBy: string | null;
+      negotiatedAt: string | null;
+      updatedAt: string;
+    }
   | { ok: false; code: "VALIDATION_ERROR" | "NOT_FOUND" | "UNSUPPORTED_QUOTATION" | "CONFLICT" | "PERSISTENCE_ERROR"; message: string };
 
 export const UpdateItemNegotiatedPriceInputSchema = z.object({
@@ -214,7 +226,7 @@ export const UpdateItemNegotiatedPriceInputSchema = z.object({
     (value) => value === null || Math.abs(value * 100 - Math.round(value * 100)) < 1e-7,
     "Negotiated subtotal must have at most two decimal places",
   ),
-  expectedUpdatedAt: z.string().datetime({ offset: true }),
+  expectedUpdatedAt: z.string().datetime({ offset: true }).or(z.string().datetime()),
 });
 export type UpdateItemNegotiatedPriceInput = z.infer<typeof UpdateItemNegotiatedPriceInputSchema>;
 export type UpdateItemNegotiatedPriceResult =
@@ -231,6 +243,13 @@ export const UpdateBookingLaborInputSchema = z.object({
   expectedUpdatedAt: z.string().datetime({ offset: true }).or(z.string().datetime()),
 });
 export type UpdateBookingLaborInput = z.infer<typeof UpdateBookingLaborInputSchema>;
+
+export function areTimestampsEquivalent(dbTimestamp: string, expectedTimestamp: string): boolean {
+  if (dbTimestamp === expectedTimestamp) return true;
+  const dbTime = new Date(dbTimestamp).getTime();
+  const expectedTime = new Date(expectedTimestamp).getTime();
+  return !Number.isNaN(dbTime) && !Number.isNaN(expectedTime) && dbTime === expectedTime;
+}
 
 // ----------------------------------------------------------------------------
 // 6. Admin relational query contracts (IMP-MS15, QAD-TC29)
@@ -258,6 +277,7 @@ export interface RawQuotationEstimateRecord {
   negotiated_amount: number | null;
   negotiated_by: string | null;
   negotiated_at: string | null;
+  admin_labor_charge?: number | null;
   item_price_overrides?: unknown | null;
   quotation_document_snapshot: unknown | null;
   quotation_items: RawQuotationItemRecord[];
