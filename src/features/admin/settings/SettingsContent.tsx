@@ -92,7 +92,7 @@ function FormRow({
 }) {
     return (
         <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-4 w-full">
-            <span className="text-[#0f1422] text-sm sm:text-base font-medium leading-snug tracking-[-0.304px] whitespace-nowrap sm:w-[130px] shrink-0 sm:text-right">
+            <span className="text-[#0f1422] text-sm sm:text-base font-medium leading-snug tracking-[-0.304px] whitespace-nowrap sm:w-[180px] shrink-0 sm:text-right">
                 {label}
             </span>
             <div className="flex-1 min-w-0">{children}</div>
