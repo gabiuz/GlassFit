@@ -2,14 +2,21 @@
 
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
+import {
+    SystemPreferencesSchema,
+    type SystemPreferencesInput,
+    type SystemPreferencesRecord,
+    type OperatingScheduleRange,
+} from "@/lib/settings/types";
+import { formatTime12h } from "@/lib/settings/formatters";
 
 // ---------------------------------------------------------------------------
-// PRD-F# (Settings): Admin profile self-management
-// SDD-C# (AdminAuth): Server actions enforce authenticated Supabase session
+// PRD-F14 (Settings): Admin profile self-management & Owner-governed preferences
+// SDD-C10 (AdminAuth): Server actions enforce authenticated Supabase session and Owner role
 // ---------------------------------------------------------------------------
 
-export type SettingsActionResult =
-    | { ok: true; message: string }
+export type SettingsActionResult<T = void> =
+    | { ok: true; message: string; data?: T }
     | { ok: false; error: string };
 
 /**
@@ -41,7 +48,7 @@ export async function updateAdminProfile(
 
 /**
  * Updates the authenticated admin's password via Supabase Auth.
- * Supabase requires the user's current session to call updateUser — the
+ * Supabase requires the user's current session to call updateUser: the
  * browser-side client handles the active session; we use the server client
  * here only to validate the current password via a re-auth sign-in first.
  */
@@ -91,4 +98,156 @@ export async function updateAdminPassword(
     }
 
     return { ok: true, message: "Password updated successfully." };
+}
+
+/**
+ * Retrieves the current system preferences.
+ * Safe for use by both admin settings and quotation generation.
+ */
+export async function getSystemPreferences(): Promise<SettingsActionResult<SystemPreferencesRecord>> {
+    const supabase = createSupabaseServiceClient();
+
+    const { data, error } = await supabase
+        .from("system_preferences")
+        .select("*")
+        .eq("singleton_key", "GLOBAL_PREFERENCES")
+        .maybeSingle();
+
+    if (error || !data) {
+        // Return enterprise fallback if table or row not yet initialized
+        return {
+            ok: true,
+            message: "Using default preferences",
+            data: {
+                id: "default",
+                businessName: "GlassFit",
+                contactEmail: "glassfit@gmail.com",
+                contactPhone: "+63 917 123 4567",
+                operatingDaysRange: "Monday - Saturday",
+                operatingHoursRange: "8:00 AM - 5:00 PM",
+                operatingSchedules: [
+                    {
+                        id: "default-1",
+                        startDay: "Monday",
+                        endDay: "Saturday",
+                        startTime: "08:00",
+                        endTime: "17:00",
+                    },
+                ],
+                updatedAt: new Date().toISOString(),
+                updatedBy: null,
+            },
+        };
+    }
+
+    return {
+        ok: true,
+        message: "Preferences loaded",
+        data: {
+            id: data.id,
+            businessName: data.business_name,
+            contactEmail: data.contact_email,
+            contactPhone: data.contact_phone,
+            operatingDaysRange: data.operating_days_range,
+            operatingHoursRange: data.operating_hours_range,
+            operatingSchedules: (data.operating_schedules as OperatingScheduleRange[]) ?? [],
+            updatedAt: data.updated_at,
+            updatedBy: data.updated_by,
+        },
+    };
+}
+
+/**
+ * Updates system preferences. Strictly restricted to Owner administrators.
+ */
+export async function updateSystemPreferences(
+    input: SystemPreferencesInput
+): Promise<SettingsActionResult<SystemPreferencesRecord>> {
+    // 1. Validate payload against Zod schema
+    const parsed = SystemPreferencesSchema.safeParse(input);
+    if (!parsed.success) {
+        return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid preferences payload" };
+    }
+
+    // 2. Verify authenticated caller role is Owner
+    const serverSupabase = await createSupabaseServerClient();
+    const { data: { user } } = await serverSupabase.auth.getUser();
+
+    if (!user) {
+        return { ok: false, error: "Authentication required." };
+    }
+
+    const serviceClient = createSupabaseServiceClient();
+    const { data: profile } = await serviceClient
+        .from("profiles")
+        .select(`
+            profile_id,
+            account_type,
+            status,
+            admin_roles ( role_name )
+        `)
+        .eq("profile_id", user.id)
+        .maybeSingle();
+
+    const rawRoles = profile?.admin_roles as unknown;
+    const roleName = Array.isArray(rawRoles)
+        ? (rawRoles[0] as { role_name?: string } | undefined)?.role_name
+        : (rawRoles as { role_name?: string } | null | undefined)?.role_name;
+
+    if (
+        profile?.account_type !== "Admin" ||
+        profile?.status !== "Active" ||
+        roleName?.toLowerCase() !== "owner"
+    ) {
+        return {
+            ok: false,
+            error: "Unauthorized: Only business Owners can modify system preferences and operating schedules.",
+        };
+    }
+
+    // 3. Derive primary summary strings
+    const primarySchedule = parsed.data.schedules[0];
+    const derivedDaysRange = primarySchedule.startDay === primarySchedule.endDay
+        ? primarySchedule.startDay
+        : `${primarySchedule.startDay} - ${primarySchedule.endDay}`;
+
+    const derivedHoursRange = `${formatTime12h(primarySchedule.startTime)} - ${formatTime12h(primarySchedule.endTime)}`;
+
+    // 4. Upsert singleton system preferences
+    const { data: updatedRecord, error: updateError } = await serviceClient
+        .from("system_preferences")
+        .upsert({
+            singleton_key: "GLOBAL_PREFERENCES",
+            business_name: parsed.data.businessName,
+            contact_email: parsed.data.contactEmail,
+            contact_phone: parsed.data.contactPhone,
+            operating_days_range: derivedDaysRange,
+            operating_hours_range: derivedHoursRange,
+            operating_schedules: parsed.data.schedules,
+            updated_by: user.id,
+            updated_at: new Date().toISOString(),
+        }, { onConflict: "singleton_key" })
+        .select()
+        .single();
+
+    if (updateError || !updatedRecord) {
+        console.error("[updateSystemPreferences] Error:", updateError?.message);
+        return { ok: false, error: "Failed to save system preferences. Please try again." };
+    }
+
+    return {
+        ok: true,
+        message: "System preferences updated successfully.",
+        data: {
+            id: updatedRecord.id,
+            businessName: updatedRecord.business_name,
+            contactEmail: updatedRecord.contact_email,
+            contactPhone: updatedRecord.contact_phone,
+            operatingDaysRange: updatedRecord.operating_days_range,
+            operatingHoursRange: updatedRecord.operating_hours_range,
+            operatingSchedules: updatedRecord.operating_schedules,
+            updatedAt: updatedRecord.updated_at,
+            updatedBy: updatedRecord.updated_by,
+        },
+    };
 }

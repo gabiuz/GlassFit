@@ -1,20 +1,32 @@
 "use client";
 
 // ---------------------------------------------------------------------------
-// PRD-F# (Settings): Admin self-management UI
-// SDD-C# (AdminAuth): Client state backed by server actions; uses AdminSessionProvider
-// DSD-UI# (AdminSettings): Matches Figma node 1354-7041
+// PRD-F14 (Settings): Admin self-management UI and Owner-governed preferences
+// SDD-C9 (AdminWorkbench): Client state backed by server actions; uses AdminSessionProvider
+// DSD-UI11 (AdminSettings): Matches Figma node 1354-7041 styling and tokens
 // BAN-UI-09: Strictly reuses existing design tokens and color palette
+// BAN-PUNCT-01: Zero em-dashes across all code and comments
 // ---------------------------------------------------------------------------
 
-import { useState } from "react";
-import { Eye, EyeOff, User } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Eye, EyeOff, User, Plus, Trash2, ShieldAlert, Clock, Calendar } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAdminSession } from "@/features/admin/auth/AdminSessionProvider";
 import {
     updateAdminProfile,
     updateAdminPassword,
+    getSystemPreferences,
+    updateSystemPreferences,
 } from "./settingsActions";
+import {
+    DAYS_OF_WEEK,
+    type OperatingScheduleRange,
+    type SystemPreferencesInput,
+} from "@/lib/settings/types";
+import {
+    formatTime12h,
+    formatScheduleSummary,
+} from "@/lib/settings/formatters";
 
 // ---------------------------------------------------------------------------
 // Toast
@@ -72,8 +84,8 @@ function FormRow({
     children: React.ReactNode;
 }) {
     return (
-        <div className="flex items-center gap-4 w-full">
-            <span className="text-[#0f1422] text-sm sm:text-base font-medium leading-snug tracking-[-0.304px] whitespace-nowrap w-[130px] shrink-0 text-right">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-4 w-full">
+            <span className="text-[#0f1422] text-sm sm:text-base font-medium leading-snug tracking-[-0.304px] whitespace-nowrap sm:w-[130px] shrink-0 sm:text-right">
                 {label}
             </span>
             <div className="flex-1 min-w-0">{children}</div>
@@ -99,7 +111,7 @@ function InputField({
     hint?: string;
 }) {
     return (
-        <div className="flex flex-col gap-1.5">
+        <div className="flex flex-col gap-1.5 w-full">
             <div
                 className={cn(
                     "flex items-center gap-2 px-4 py-3 rounded-lg border w-full",
@@ -116,7 +128,7 @@ function InputField({
                     disabled={disabled}
                     className={cn(
                         "flex-1 min-w-0 bg-transparent outline-none text-sm font-normal leading-snug tracking-[-0.266px]",
-                        disabled ? "text-[#c3c3c3] cursor-default" : "text-[#0f1422] placeholder:text-[#c3c3c3]"
+                        disabled ? "text-[#737373] cursor-default" : "text-[#0f1422] placeholder:text-[#c3c3c3]"
                     )}
                 />
                 {rightElement}
@@ -127,6 +139,25 @@ function InputField({
                 </p>
             )}
         </div>
+    );
+}
+
+function EyeToggle({
+    show,
+    onToggle,
+}: {
+    show: boolean;
+    onToggle: () => void;
+}) {
+    return (
+        <button
+            type="button"
+            onClick={onToggle}
+            aria-label={show ? "Hide password" : "Show password"}
+            className="text-[#c3c3c3] hover:text-[#0f1422] transition-colors shrink-0"
+        >
+            {show ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+        </button>
     );
 }
 
@@ -315,23 +346,6 @@ function SecurityCard({
         }
     };
 
-    const EyeToggle = ({
-        show,
-        onToggle,
-    }: {
-        show: boolean;
-        onToggle: () => void;
-    }) => (
-        <button
-            type="button"
-            onClick={onToggle}
-            aria-label={show ? "Hide password" : "Show password"}
-            className="text-[#c3c3c3] hover:text-[#0f1422] transition-colors shrink-0"
-        >
-            {show ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-        </button>
-    );
-
     return (
         <div className="bg-white rounded-[20px] p-6 sm:p-[30px] flex flex-col gap-5 w-full">
             <SectionHeading
@@ -422,17 +436,17 @@ function DataManagementCard({
     const lastBackupDate = "Sep 12, 2026 · 10:30 AM";
 
     const handleExportBookings = () => {
-        // TODO: Wire to route handler /api/admin/export/bookings when implemented
+        // Wire to route handler /api/admin/export/bookings when implemented
         onToast("Booking CSV export coming soon.", "success");
     };
 
     const handleExportProducts = () => {
-        // TODO: Wire to route handler /api/admin/export/products when implemented
+        // Wire to route handler /api/admin/export/products when implemented
         onToast("Product CSV export coming soon.", "success");
     };
 
     const handleDownloadBackup = () => {
-        // TODO: Wire to route handler /api/admin/export/backup when implemented
+        // Wire to route handler /api/admin/export/backup when implemented
         onToast("System backup download coming soon.", "success");
     };
 
@@ -510,83 +524,370 @@ function DataManagementCard({
 }
 
 // ---------------------------------------------------------------------------
+// Operating Schedule Range Helpers
+// ---------------------------------------------------------------------------
+
+const TIME_OPTIONS = [
+    "06:00", "06:30", "07:00", "07:30", "08:00", "08:30", "09:00", "09:30",
+    "10:00", "10:30", "11:00", "11:30", "12:00", "12:30", "13:00", "13:30",
+    "14:00", "14:30", "15:00", "15:30", "16:00", "16:30", "17:00", "17:30",
+    "18:00", "18:30", "19:00", "19:30", "20:00", "20:30", "21:00", "21:30", "22:00",
+];
+
+const DEFAULT_SCHEDULES: OperatingScheduleRange[] = [
+    {
+        id: "default-schedule-1",
+        startDay: "Monday",
+        endDay: "Saturday",
+        startTime: "08:00",
+        endTime: "17:00",
+    },
+];
+
+const DEFAULT_PREFERENCES: SystemPreferencesInput = {
+    businessName: "GlassFit",
+    contactEmail: "glassfit@gmail.com",
+    contactPhone: "+63 917 123 4567",
+    schedules: DEFAULT_SCHEDULES,
+};
+
+// ---------------------------------------------------------------------------
 // System Preferences Card
 // ---------------------------------------------------------------------------
 
-// TODO (BAN-MIGR-06): Wire to a supabase/migrations/006_system_preferences.sql
-// migration once the schema is approved. For now, preferences are local-state-only.
-const DEFAULT_PREFERENCES = {
-    businessName: "GlassFit",
-    contactEmail: "glassfit@gmail.com",
-    operatingHours: "Monday - Friday",
-};
-
 function SystemPreferencesCard({
+    roleName,
     onToast,
 }: {
+    roleName: string;
     onToast: (msg: string, variant: "success" | "error") => void;
 }) {
+    const isOwner = roleName.trim().toLowerCase() === "owner";
     const [isEditing, setIsEditing] = useState(false);
-    const [saved, setSaved] = useState(DEFAULT_PREFERENCES);
-    const [draft, setDraft] = useState(DEFAULT_PREFERENCES);
+    const [loading, setLoading] = useState(false);
+    const [fetching, setFetching] = useState(true);
+
+    const [saved, setSaved] = useState<SystemPreferencesInput>(DEFAULT_PREFERENCES);
+    const [draft, setDraft] = useState<SystemPreferencesInput>(DEFAULT_PREFERENCES);
+
+    useEffect(() => {
+        async function loadPreferences() {
+            setFetching(true);
+            const res = await getSystemPreferences();
+            if (res.ok && res.data) {
+                const loaded: SystemPreferencesInput = {
+                    businessName: res.data.businessName || DEFAULT_PREFERENCES.businessName,
+                    contactEmail: res.data.contactEmail || DEFAULT_PREFERENCES.contactEmail,
+                    contactPhone: res.data.contactPhone || DEFAULT_PREFERENCES.contactPhone,
+                    schedules: res.data.operatingSchedules && res.data.operatingSchedules.length > 0
+                        ? res.data.operatingSchedules
+                        : DEFAULT_SCHEDULES,
+                };
+                setSaved(loaded);
+                setDraft(loaded);
+            }
+            setFetching(false);
+        }
+        loadPreferences();
+    }, []);
 
     const handleEdit = () => {
         setDraft(saved);
         setIsEditing(true);
     };
 
-    const handleSave = () => {
-        setSaved(draft);
+    const handleCancel = () => {
+        setDraft(saved);
         setIsEditing(false);
-        onToast("System preferences updated.", "success");
-        // TODO: Call a server action once migration 006 is in place
     };
 
-    const updateDraft = (key: keyof typeof draft) => (value: string) => {
+    const handleSave = async () => {
+        if (!draft.businessName.trim()) {
+            onToast("Business name cannot be empty.", "error");
+            return;
+        }
+        if (!draft.contactEmail.trim() || !draft.contactEmail.includes("@")) {
+            onToast("Please enter a valid contact email.", "error");
+            return;
+        }
+        if (!draft.contactPhone.trim()) {
+            onToast("Contact phone number is required.", "error");
+            return;
+        }
+        if (!draft.schedules || draft.schedules.length === 0) {
+            onToast("At least one operating schedule is required.", "error");
+            return;
+        }
+        for (let i = 0; i < draft.schedules.length; i++) {
+            const sch = draft.schedules[i];
+            if (sch.startTime >= sch.endTime) {
+                onToast(`Schedule window #${i + 1}: Closing time must be after opening time.`, "error");
+                return;
+            }
+        }
+
+        setLoading(true);
+        const res = await updateSystemPreferences(draft);
+        setLoading(false);
+
+        if (res.ok) {
+            if (res.data) {
+                const updated: SystemPreferencesInput = {
+                    businessName: res.data.businessName,
+                    contactEmail: res.data.contactEmail,
+                    contactPhone: res.data.contactPhone,
+                    schedules: res.data.operatingSchedules,
+                };
+                setSaved(updated);
+                setDraft(updated);
+            }
+            setIsEditing(false);
+            onToast(res.message, "success");
+        } else {
+            onToast(res.error, "error");
+        }
+    };
+
+    const updateDraftField = (key: keyof Omit<SystemPreferencesInput, "schedules">) => (value: string) => {
         setDraft((prev) => ({ ...prev, [key]: value }));
     };
+
+    const handleScheduleChange = (
+        index: number,
+        field: keyof OperatingScheduleRange,
+        value: string
+    ) => {
+        setDraft((prev) => {
+            const newSchedules = [...prev.schedules];
+            newSchedules[index] = {
+                ...newSchedules[index],
+                [field]: value,
+            };
+            return { ...prev, schedules: newSchedules };
+        });
+    };
+
+    const handleAddSchedule = () => {
+        const newSchedule: OperatingScheduleRange = {
+            id: `sch-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+            startDay: "Saturday",
+            endDay: "Saturday",
+            startTime: "08:00",
+            endTime: "12:00",
+        };
+        setDraft((prev) => ({
+            ...prev,
+            schedules: [...prev.schedules, newSchedule],
+        }));
+    };
+
+    const handleRemoveSchedule = (index: number) => {
+        if (draft.schedules.length <= 1) return;
+        setDraft((prev) => ({
+            ...prev,
+            schedules: prev.schedules.filter((_, i) => i !== index),
+        }));
+    };
+
+    const currentData = isEditing ? draft : saved;
 
     return (
         <div className="bg-white rounded-[20px] p-6 sm:p-[30px] flex flex-col gap-5 w-full">
             <SectionHeading
                 title="System Preferences"
-                subtitle="Manage business information and system settings."
+                subtitle="Manage business information and shop operating schedules."
                 action={
-                    isEditing ? (
-                        <SaveButton onClick={handleSave} loading={false} />
+                    !isOwner ? (
+                        <span className="px-3 py-1 rounded-full text-xs font-medium bg-neutral-100 text-neutral-600 border border-neutral-200 whitespace-nowrap">
+                            Owner Only
+                        </span>
+                    ) : isEditing ? (
+                        <div className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={handleCancel}
+                                disabled={loading}
+                                className="bg-white border border-[#c3c3c3] text-[#0f1422] text-sm font-normal px-3.5 py-1.5 rounded-[10px] cursor-pointer hover:bg-neutral-50 transition-colors whitespace-nowrap shrink-0 disabled:opacity-60"
+                            >
+                                Cancel
+                            </button>
+                            <SaveButton onClick={handleSave} loading={loading} />
+                        </div>
                     ) : (
                         <EditButton onClick={handleEdit} />
                     )
                 }
             />
 
+            {!isOwner && (
+                <div className="flex items-center gap-2.5 p-3 rounded-lg bg-neutral-50 border border-neutral-200 text-xs text-neutral-600">
+                    <ShieldAlert className="w-4 h-4 text-neutral-400 shrink-0" />
+                    <span>
+                        System preferences and operating schedules are managed exclusively by the business Owner.
+                    </span>
+                </div>
+            )}
+
             <div className="flex flex-col gap-4 w-full">
                 <FormRow label="Business Name">
                     <InputField
-                        value={isEditing ? draft.businessName : saved.businessName}
-                        onChange={updateDraft("businessName")}
+                        value={currentData.businessName}
+                        onChange={updateDraftField("businessName")}
                         placeholder="Business name"
-                        disabled={!isEditing}
+                        disabled={!isEditing || !isOwner}
                     />
                 </FormRow>
 
                 <FormRow label="Contact Email">
                     <InputField
-                        value={isEditing ? draft.contactEmail : saved.contactEmail}
-                        onChange={updateDraft("contactEmail")}
+                        value={currentData.contactEmail}
+                        onChange={updateDraftField("contactEmail")}
                         placeholder="contact@example.com"
-                        disabled={!isEditing}
+                        type="email"
+                        disabled={!isEditing || !isOwner}
                     />
                 </FormRow>
 
-                <FormRow label="Operating Hours">
+                <FormRow label="Contact Phone">
                     <InputField
-                        value={isEditing ? draft.operatingHours : saved.operatingHours}
-                        onChange={updateDraft("operatingHours")}
-                        placeholder="e.g. Monday - Friday, 8AM - 5PM"
-                        disabled={!isEditing}
+                        value={currentData.contactPhone}
+                        onChange={updateDraftField("contactPhone")}
+                        placeholder="+63 917 123 4567"
+                        disabled={!isEditing || !isOwner}
                     />
                 </FormRow>
+            </div>
+
+            {/* Operating Schedule Section */}
+            <div className="flex flex-col gap-3 pt-2 border-t border-[#f0f0f0] w-full">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-sm font-medium text-[#0f1422]">
+                        <Clock className="w-4 h-4 text-[#07b6d3]" />
+                        <span>Operating Schedules &amp; Consultation Hours</span>
+                    </div>
+                </div>
+
+                {fetching ? (
+                    <div className="py-6 text-center text-xs text-neutral-400">Loading operating schedule...</div>
+                ) : (
+                    <div className="flex flex-col gap-3 w-full">
+                        {currentData.schedules.map((schedule, idx) => {
+                            const summary = formatScheduleSummary(schedule);
+                            return (
+                                <div
+                                    key={schedule.id || `schedule-${idx}`}
+                                    className={cn(
+                                        "p-4 rounded-xl border flex flex-col gap-3 transition-colors",
+                                        isEditing
+                                            ? "bg-[#fafafa] border-[#e2e8f0]"
+                                            : "bg-[#f8fafc] border-[#e2e8f0]"
+                                    )}
+                                >
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                            <Calendar className="w-3.5 h-3.5 text-neutral-500" />
+                                            <span className="text-xs font-semibold text-neutral-700">
+                                                Schedule Window #{idx + 1}
+                                            </span>
+                                        </div>
+                                        {isEditing && isOwner && currentData.schedules.length > 1 && (
+                                            <button
+                                                type="button"
+                                                onClick={() => handleRemoveSchedule(idx)}
+                                                className="text-red-500 hover:text-red-700 text-xs flex items-center gap-1 cursor-pointer transition-colors"
+                                                title="Remove this schedule window"
+                                            >
+                                                <Trash2 className="w-3.5 h-3.5" />
+                                                <span>Remove</span>
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    {isEditing && isOwner ? (
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full">
+                                            {/* Days Range Selectors */}
+                                            <div className="flex flex-col gap-1.5">
+                                                <span className="text-xs font-medium text-neutral-600">Operating Days Range</span>
+                                                <div className="flex items-center gap-2">
+                                                    <select
+                                                        value={schedule.startDay}
+                                                        onChange={(e) => handleScheduleChange(idx, "startDay", e.target.value)}
+                                                        className="flex-1 px-3 py-2 text-xs rounded-lg border border-[#c3c3c3] bg-white text-[#0f1422] outline-none focus:border-[#07b6d3]"
+                                                    >
+                                                        {DAYS_OF_WEEK.map((d) => (
+                                                            <option key={d} value={d}>{d}</option>
+                                                        ))}
+                                                    </select>
+                                                    <span className="text-xs text-neutral-400 font-medium">to</span>
+                                                    <select
+                                                        value={schedule.endDay}
+                                                        onChange={(e) => handleScheduleChange(idx, "endDay", e.target.value)}
+                                                        className="flex-1 px-3 py-2 text-xs rounded-lg border border-[#c3c3c3] bg-white text-[#0f1422] outline-none focus:border-[#07b6d3]"
+                                                    >
+                                                        {DAYS_OF_WEEK.map((d) => (
+                                                            <option key={d} value={d}>{d}</option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                            </div>
+
+                                            {/* Hours Range Selectors */}
+                                            <div className="flex flex-col gap-1.5">
+                                                <span className="text-xs font-medium text-neutral-600">Operating Hours Range</span>
+                                                <div className="flex items-center gap-2">
+                                                    <select
+                                                        value={schedule.startTime}
+                                                        onChange={(e) => handleScheduleChange(idx, "startTime", e.target.value)}
+                                                        className="flex-1 px-3 py-2 text-xs rounded-lg border border-[#c3c3c3] bg-white text-[#0f1422] outline-none focus:border-[#07b6d3]"
+                                                    >
+                                                        {!TIME_OPTIONS.includes(schedule.startTime) && (
+                                                            <option value={schedule.startTime}>{formatTime12h(schedule.startTime)}</option>
+                                                        )}
+                                                        {TIME_OPTIONS.map((t) => (
+                                                            <option key={t} value={t}>{formatTime12h(t)}</option>
+                                                        ))}
+                                                    </select>
+                                                    <span className="text-xs text-neutral-400 font-medium">to</span>
+                                                    <select
+                                                        value={schedule.endTime}
+                                                        onChange={(e) => handleScheduleChange(idx, "endTime", e.target.value)}
+                                                        className="flex-1 px-3 py-2 text-xs rounded-lg border border-[#c3c3c3] bg-white text-[#0f1422] outline-none focus:border-[#07b6d3]"
+                                                    >
+                                                        {!TIME_OPTIONS.includes(schedule.endTime) && (
+                                                            <option value={schedule.endTime}>{formatTime12h(schedule.endTime)}</option>
+                                                        )}
+                                                        {TIME_OPTIONS.map((t) => (
+                                                            <option key={t} value={t}>{formatTime12h(t)}</option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ) : null}
+
+                                    {/* Summary preview pill */}
+                                    <div className="flex items-center gap-2 mt-1">
+                                        <span className="text-xs text-neutral-500 font-normal">Active window:</span>
+                                        <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-[#07b6d3]/10 text-[#0f1422] border border-[#07b6d3]/20">
+                                            {summary}
+                                        </span>
+                                    </div>
+                                </div>
+                            );
+                        })}
+
+                        {isEditing && isOwner && (
+                            <button
+                                type="button"
+                                onClick={handleAddSchedule}
+                                className="flex items-center justify-center gap-2 py-2.5 px-4 rounded-[10px] border border-[#07b6d3] text-[#07b6d3] text-xs sm:text-sm font-medium hover:bg-[#07b6d3]/5 transition-colors cursor-pointer w-full"
+                            >
+                                <Plus className="w-4 h-4" />
+                                <span>Add Operating Schedule Range</span>
+                            </button>
+                        )}
+                    </div>
+                )}
             </div>
         </div>
     );
@@ -659,7 +960,10 @@ export function SettingsContent() {
                 {/* Right column */}
                 <div className="flex flex-col gap-6">
                     <SecurityCard email={email} onToast={showToast} />
-                    <SystemPreferencesCard onToast={showToast} />
+                    <SystemPreferencesCard
+                        roleName={role.roleName}
+                        onToast={showToast}
+                    />
                 </div>
             </div>
 
