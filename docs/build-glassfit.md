@@ -130,6 +130,11 @@ For standalone development without the Vercel CLI:
 The root `vercel.json` deploys the Next.js `app` service publicly and keeps the
 `fastapi-service` internal. The `app` service calls FastAPI with its
 `FASTAPI_SERVICE_URL` binding through `/api/image-analysis/*` route handlers.
+The FastAPI service installs pinned CPU-only PyTorch and Torchvision wheels to
+avoid packaging unused CUDA libraries.
+If Vercel still applies the standard 500 MB Python function limit, set
+`VERCEL_SUPPORT_LARGE_FUNCTIONS=1` in the Vercel project environment and
+redeploy with Fluid compute enabled.
 
 ---
 
