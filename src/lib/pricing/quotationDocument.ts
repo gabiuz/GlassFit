@@ -265,6 +265,9 @@ export interface QuotationDocumentViewModel extends QuotationDocumentSnapshotV1 
   effectiveProductSubtotal: number;
   adminLaborCharge: number | null;
   itemPricing: ItemPricingView[];
+  operatingDays?: string | null;
+  operatingHours?: string | null;
+  operatingScheduleFormatted?: string | null;
 }
 
 export function createQuotationDocumentViewModel(snapshot: QuotationDocumentSnapshotV1, runtime: {
@@ -275,6 +278,9 @@ export function createQuotationDocumentViewModel(snapshot: QuotationDocumentSnap
   negotiatedAmount: number | null;
   adminLaborCharge?: number | null;
   itemPriceOverrides?: QuotationItemPriceOverridesV1 | null;
+  operatingDays?: string | null;
+  operatingHours?: string | null;
+  operatingScheduleFormatted?: string | null;
 }): QuotationDocumentViewModel {
   const itemPricingResult = deriveQuotationPricingFromItems(
     snapshot,

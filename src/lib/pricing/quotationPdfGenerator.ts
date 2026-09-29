@@ -1,4 +1,4 @@
-/** Browser quotation preview. Traceability: IMP-MS14, PRD-F9, PRD-F10, partial PRD-F11, SDD-C6, SDD-C7, QAD-TC10. */
+/** Browser quotation preview. Traceability: IMP-MS14, PRD-F9, PRD-F10, partial PRD-F11, SDD-C6, SDD-C7, QAD-TC10, IMP-MS28. */
 import type { CalculatedBOMResult } from "@/lib/pricing/pricingEngine";
 import { QUOTATION_TERMS_CONTENT } from "@/lib/pricing/quotationPdfContent";
 import type { ConsolidatedQuotationSummary, ItemizedProductQuotation } from "@/lib/pricing/types";
@@ -24,9 +24,21 @@ export interface QuotationPdfMetadata {
   bomResult: CalculatedBOMResult;
   items?: ItemizedProductQuotation[];
   consolidatedSummary?: ConsolidatedQuotationSummary;
+  operatingDays?: string | null;
+  operatingHours?: string | null;
+  operatingScheduleFormatted?: string | null;
 }
 
-export interface GeneratedPdfDocument { quotationNumber: string; referenceCode: string; fileName: string; htmlContent: string; documentTitle: string; r2ObjectKey: string; hasStructuralWaiver: boolean; totalEstimatedAmount: number; }
+export interface GeneratedPdfDocument {
+  quotationNumber: string;
+  referenceCode: string;
+  fileName: string;
+  htmlContent: string;
+  documentTitle: string;
+  r2ObjectKey: string;
+  hasStructuralWaiver: boolean;
+  totalEstimatedAmount: number;
+}
 
 export function escapeHtml(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;").replace(/'/g, "&#39;");
@@ -79,7 +91,26 @@ function canonicalToLegacy(view: QuotationDocumentViewModel): QuotationPdfMetada
     finalQuotation: view.effectiveFinalPrice, frozenDetails: { width_m: item.widthMm / 1000, height_m: item.heightMm / 1000, panel_count: item.panelCount, has_sill: item.hasSill, finish_type: item.finishLabel, glass_type: item.glassLabel, items_breakdown: [], raw_material_subtotal: materials, waste_allowance_subtotal: 0, direct_material_subtotal: materials, labor_cost: labor, contractor_margin: margin, margin_rate: .25, total_estimate: view.effectiveFinalPrice },
     bomSummary: { total_estimated_amount: view.effectiveFinalPrice, currency: "PHP" as const, has_sill: item.hasSill, structural_waiver: item.structuralWaiver, groups: [] },
   } satisfies CalculatedBOMResult;
-  return { quotationNumber: view.quotationNumber, referenceCode: view.referenceCode, shareableUrl: view.shareableUrl, customerName: view.customer.name, customerPhone: view.customer.phone, customerEmail: view.customer.email, siteLocation: view.customer.siteLocation, createdAtFormatted: new Intl.DateTimeFormat("en-US", { dateStyle: "long" }).format(new Date(view.createdAt)), projectName: view.projectName, snapshotImageUrl: view.snapshotImageUrl, brandLogoUrl: view.brandLogoUrl, allowedImageOrigins: view.allowedImageOrigins, hasSill: view.hasSill, structuralWaiver: view.structuralWaiver, bomResult: placeholder };
+  return {
+    quotationNumber: view.quotationNumber,
+    referenceCode: view.referenceCode,
+    shareableUrl: view.shareableUrl,
+    customerName: view.customer.name,
+    customerPhone: view.customer.phone,
+    customerEmail: view.customer.email,
+    siteLocation: view.customer.siteLocation,
+    createdAtFormatted: new Intl.DateTimeFormat("en-US", { dateStyle: "long" }).format(new Date(view.createdAt)),
+    projectName: view.projectName,
+    snapshotImageUrl: view.snapshotImageUrl,
+    brandLogoUrl: view.brandLogoUrl,
+    allowedImageOrigins: view.allowedImageOrigins,
+    hasSill: view.hasSill,
+    structuralWaiver: view.structuralWaiver,
+    bomResult: placeholder,
+    operatingDays: view.operatingDays,
+    operatingHours: view.operatingHours,
+    operatingScheduleFormatted: view.operatingScheduleFormatted,
+  };
 }
 
 export function generateQuotationPdfHtml(metadata: QuotationPdfMetadata | QuotationDocumentViewModel): string {
@@ -162,11 +193,11 @@ export function generateQuotationPdfHtml(metadata: QuotationPdfMetadata | Quotat
   p,li { orphans:3; widows:3; }
 }
 </style></head><body><nav class="preview-toolbar no-print" aria-label="Quotation preview controls"><div><strong>Quotation preview</strong><div>${escapeHtml(metadata.quotationNumber)}</div></div><div class="toolbar-actions"><button class="primary" type="button" onclick="window.print()">Print / Save as PDF</button><button type="button" onclick="window.close()">Close preview</button></div></nav>
-<main class="document-sheet"><header class="document-header"><div><img class="brand-logo" src="${escapeHtml(metadata.brandLogoUrl)}" alt="GlassFit"><p>Consultation Partner: R.R.D. Aluminum &amp; Glass Works</p></div><div><h1>PRELIMINARY CONSULTATION ESTIMATE</h1><strong>No. ${escapeHtml(metadata.quotationNumber)}</strong><div>${escapeHtml(metadata.createdAtFormatted)}</div>${reference}${metadata.quotationValidityText ? `<div>${escapeHtml(metadata.quotationValidityText)}</div>` : ""}</div></header>
+<main class="document-sheet"><header class="document-header"><div><img class="brand-logo" src="${escapeHtml(metadata.brandLogoUrl)}" alt="GlassFit"><p>Consultation Partner: R.R.D. Aluminum &amp; Glass Works</p>${metadata.operatingScheduleFormatted ? `<div class="partner-schedule" style="margin-top:4px;font-size:11px;color:#475569;"><span>Operating Schedule: </span><strong style="color:#0f1422;">${escapeHtml(metadata.operatingScheduleFormatted)}</strong></div>` : ""}</div><div><h1>PRELIMINARY CONSULTATION ESTIMATE</h1><strong>No. ${escapeHtml(metadata.quotationNumber)}</strong><div>${escapeHtml(metadata.createdAtFormatted)}</div>${reference}${metadata.quotationValidityText ? `<div>${escapeHtml(metadata.quotationValidityText)}</div>` : ""}</div></header>
 <section class="meta-grid"><div><span>Customer</span><strong>${escapeHtml(metadata.customerName)}</strong></div>${field("Phone",metadata.customerPhone)}${field("Email",metadata.customerEmail)}${field("Site location",metadata.siteLocation)}<div><span>Project</span><strong>${escapeHtml(metadata.projectName)}</strong></div></section>${waiver}${snapshot(sanitizeImageSource(metadata.snapshotImageUrl,origins),"Client-space visualization preview")}${!isMulti ? `<div class="fixture-specs"><span><b>Dimensions:</b> W: ${Math.round(metadata.bomResult.widthM * 1000)} mm × H: ${Math.round(metadata.bomResult.heightM * 1000)} mm</span><span><b>Panels:</b> ${metadata.bomResult.panelCount}</span><span><b>Finish:</b> ${escapeHtml(metadata.bomResult.frozenDetails.finish_type)}</span><span><b>Glass:</b> ${escapeHtml(metadata.bomResult.frozenDetails.glass_type)}</span><span><b>Sill:</b> ${metadata.hasSill ? "Standard sill" : "Bottom Sill Omitted. Net material reduction applied."}</span></div>` : ""}
 <section class="summary-card"><span>${escapeHtml(metadata.projectName)}</span><strong>${money(total)}</strong><span>Preliminary estimated total</span></section><h2>${isMulti ? `ITEMIZED FIXTURE BREAKDOWN (${items.length} FIXTURES)` : "Itemized quotation breakdown"}</h2>${fixtures}
 <table class="total-table"><tr class="grand-total-row"><td>Grand total</td><td>${money(total)}</td></tr></table>
-<section class="ocular-card"><h2>Ocular inspection checklist</h2><ul class="checklist"><li>Aperture dimensions physically measured.</li><li>Opening checked for square, plumb, and level.</li><li>Perimeter substrate inspected.</li><li>Access and work area reviewed.</li><li>Final specifications reviewed with customer.</li></ul><div class="signature-grid"><div class="signature-block"><div class="line"></div><p>Customer signature / Printed name / Date</p></div><div class="signature-block"><div class="line"></div><p>Estimator signature / Printed name / Date</p></div></div></section>
+<section class="ocular-card"><h2>Ocular inspection checklist</h2><ul class="checklist"><li>Aperture dimensions physically measured.</li><li>Opening checked for square, plumb, and level.</li><li>Perimeter substrate inspected.</li><li>Access and work area reviewed.</li><li>Final specifications reviewed with customer.</li></ul>${metadata.operatingDays && metadata.operatingHours ? `<div class="consultation-availability" style="margin-top:14px;padding:10px 14px;background:#f8fafc;border-radius:6px;border-left:3px solid #07b6d3;font-size:11px;color:#334155;"><strong>Consultation &amp; Ocular Measurement Hours:</strong><p style="margin:4px 0 0 0;">Site visits and ocular inspections are scheduled during partner operating days (<strong>${escapeHtml(metadata.operatingDays)}</strong>) between <strong>${escapeHtml(metadata.operatingHours)}</strong>.</p></div>` : ""}<div class="signature-grid"><div class="signature-block"><div class="line"></div><p>Customer signature / Printed name / Date</p></div><div class="signature-block"><div class="line"></div><p>Estimator signature / Printed name / Date</p></div></div></section>
 <footer class="consumer-notice"><strong>Preliminary Estimate and Consumer Notice</strong><p>This is a preliminary computer-generated estimate based on customer-provided inputs and current configured material rates. It is not a final binding contract. Dimensions, site conditions, access requirements, structural conditions, accessories, and final pricing must be verified during the on-site consultation before material cutting or fabrication.</p><small>Project traceability reference: Consumer Act of the Philippines RA 7394.</small></footer>${termsAppendix()}</main></body></html>`;
 }
 
