@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useReducer, useState, useTransition } from "react";
 import Image from "next/image";
-import { RefreshCw } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { SearchBar } from "@/components/shared/SearchBar";
@@ -43,7 +42,7 @@ export function BookingsContent({ initialBookings, loadError = null }: BookingsC
     bookingStateReducer,
     createBookingState(initialBookings, loadError)
   );
-  const [isRefreshing, startRefreshTransition] = useTransition();
+  const [, startRefreshTransition] = useTransition();
   const [activeTab, setActiveTab] = useState<BookingStatus | "All">("All");
   const [searchQuery, setSearchQuery] = useState("");
   const [isSaving, setIsSaving] = useState(false);
@@ -211,10 +210,6 @@ export function BookingsContent({ initialBookings, loadError = null }: BookingsC
     dispatch({ type: "edit-status", status: newStatus });
   };
 
-  const handleManualRefresh = () => {
-    startRefreshTransition(() => router.refresh());
-  };
-
   const handleSaveChanges = async () => {
     if (!selectedBooking) return;
     setIsSaving(true);
@@ -264,30 +259,13 @@ export function BookingsContent({ initialBookings, loadError = null }: BookingsC
           </p>
         </div>
 
-        <div className="w-full md:w-auto flex items-center gap-2">
-          <div className="flex-1 md:flex-none">
-            <SearchBar
-              value={searchQuery}
-              onChange={setSearchQuery}
-              placeholder="Search booking"
-              inputClassName="w-full md:w-[320px] lg:w-[340px]"
-            />
-          </div>
-          <button
-            type="button"
-            aria-label="Refresh booking requests"
-            aria-busy={isRefreshing}
-            disabled={isRefreshing}
-            onClick={handleManualRefresh}
-            className="size-11 shrink-0 rounded-[12px] bg-[#07b6d3] text-white flex items-center justify-center shadow-xs transition-colors hover:bg-cyan-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3] disabled:cursor-wait disabled:opacity-60"
-          >
-            <RefreshCw
-              aria-hidden="true"
-              className={cn("size-5", isRefreshing && "animate-spin motion-reduce:animate-none")}
-            />
-            <span className="sr-only">{isRefreshing ? "Refreshing" : "Refresh"}</span>
-          </button>
-        </div>
+        <SearchBar
+          value={searchQuery}
+          onChange={setSearchQuery}
+          placeholder="Search booking"
+          inputClassName="w-full md:w-[320px] lg:w-[340px]"
+          className="w-full md:w-auto"
+        />
       </div>
 
       {state.loadError && (
