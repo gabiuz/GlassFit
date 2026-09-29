@@ -35,13 +35,8 @@ Create a `.env.local` file in the project root with the following keys:
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
 NEXT_PUBLIC_R2_ASSET_BASE_URL=
+NEXT_PUBLIC_IMAGE_API_URL=
 ```
-
-The browser reaches the FastAPI image service through the same-origin Next.js
-route at `/api/image-analysis`. In Vercel, the `app` service receives the
-internal FastAPI URL through the `FASTAPI_SERVICE_URL` service binding. Do not
-set that binding variable manually. Local `npm run dev` uses
-`http://localhost:8000` as the server-side fallback.
 
 ---
 
@@ -80,9 +75,6 @@ uvicorn main:app --reload --port 8000
 
 The service will be available at [http://localhost:8000](http://localhost:8000).  
 Health check: [http://localhost:8000/health](http://localhost:8000/health).
-
-Run `vercel dev -L` from the repository root to start both services with the
-same routing and binding behavior used by Vercel deployments.
 
 > **Note:** On first startup, the service downloads and caches YOLOv8, Depth Anything V2, and SegFormer model weights. This may take a few minutes depending on your connection.
 
