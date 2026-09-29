@@ -84,7 +84,7 @@ export function GuideLine() {
     };
 
     return (
-        <div className="w-full flex flex-col gap-6 px-6 md:px-12 lg:pl-35 lg:pr-0">
+        <div className="w-full flex flex-col gap-6 px-0 sm:px-6 md:px-12 lg:pl-35 lg:pr-0">
             {/* Section heading */}
             <h2 className="text-3xl font-medium text-black">Photo Guideline</h2>
 
@@ -95,18 +95,18 @@ export function GuideLine() {
                 onMouseMove={onMouseMove}
                 onMouseUp={stopDrag}
                 onMouseLeave={stopDrag}
-                className="flex gap-8 overflow-x-auto scroll-smooth snap-x snap-mandatory pb-2"
+                className="flex gap-4 sm:gap-8 overflow-x-auto scroll-smooth snap-x snap-mandatory pb-2"
                 style={{ scrollbarWidth: "none", cursor: "grab" }}
             >
                 {guidelines.map((card) => (
                     <div
                         key={card.id}
-                        className="snap-start shrink-0 w-[387px] p-7 bg-gray-900 rounded-[20px] inline-flex flex-col justify-center items-start gap-7"
+                        className="snap-start shrink-0 w-[calc(100vw-3rem)] max-w-[387px] sm:w-[387px] h-[490px] sm:h-auto p-5 sm:p-7 bg-gray-900 rounded-[20px] flex flex-col justify-between items-start gap-4 sm:gap-7"
                     >
                         {/* Card header */}
-                        <div className="inline-flex justify-start items-center gap-7">
+                        <div className="flex justify-start items-center gap-4 sm:gap-7 w-full">
                             {/* Icon — replace logoSrc in the data above */}
-                            <div className="size-16 relative overflow-hidden shrink-0">
+                            <div className="size-14 sm:size-16 relative overflow-hidden shrink-0">
                                 {card.logoSrc ? (
                                     <Image src={card.logoSrc} alt={card.title} fill className="object-contain select-none" draggable="false" />
                                 ) : (
@@ -123,18 +123,18 @@ export function GuideLine() {
                                 )}
                             </div>
                             {/* Text */}
-                            <div className="w-56 min-h-[120px] inline-flex flex-col justify-start items-start gap-1.5">
-                                <div className="text-white text-2xl font-medium leading-7">
+                            <div className="flex-1 min-w-0 sm:w-56 min-h-[72px] sm:min-h-[120px] flex flex-col justify-center sm:justify-start items-start gap-1 sm:gap-1.5">
+                                <div className="text-white text-lg sm:text-2xl font-medium leading-snug sm:leading-7">
                                     {card.title}
                                 </div>
-                                <div className="self-stretch text-white text-xl font-normal leading-7">
+                                <div className="self-stretch text-white text-sm sm:text-xl font-normal leading-snug sm:leading-7">
                                     {card.description}
                                 </div>
                             </div>
                         </div>
 
                         {/* Card image — replace imageSrc in the data above */}
-                        <div className="self-stretch h-72 overflow-hidden relative bg-gray-700 flex items-center justify-center">
+                        <div className="self-stretch flex-1 sm:flex-initial sm:h-72 overflow-hidden relative bg-gray-700 flex items-center justify-center rounded-xl sm:rounded-none">
                             {card.imageSrc ? (
                                 <Image src={card.imageSrc} alt={card.title} fill className="object-cover select-none" draggable="false" />
                             ) : (
