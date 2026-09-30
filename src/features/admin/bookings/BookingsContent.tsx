@@ -24,6 +24,7 @@ import { generateQuotationPdfHtml } from "@/lib/pricing/quotationPdfGenerator";
 import { openQuotationPreview } from "@/lib/pricing/quotationPreviewWindow";
 import { getR2AssetUrl } from "@/lib/r2";
 import { DiscardBookingModal } from "./components/DiscardBookingModal";
+import { useAdminSession } from "@/features/admin/auth/AdminSessionProvider";
 
 const statusBg: Record<BookingStatus, string> = {
   Confirmed: "bg-[#05b64b]",
@@ -113,6 +114,7 @@ function BookingStatusOption({ value, label }: { value: string; label: string })
 }
 
 export function BookingsContent({ initialBookings, loadError = null }: BookingsContentProps) {
+  const { fullName: estimatorName } = useAdminSession();
   const router = useRouter();
   const [state, dispatch] = useReducer(
     bookingStateReducer,
@@ -182,7 +184,7 @@ export function BookingsContent({ initialBookings, loadError = null }: BookingsC
     const base = process.env.NEXT_PUBLIC_R2_ASSET_BASE_URL;
     const origins = [window.location.origin];
     if (base) try { origins.push(new URL(base).origin); } catch { /* Ignore invalid asset origin. */ }
-    const view = createQuotationDocumentViewModel(selectedBooking.quotation.document, { brandLogoUrl: new URL("/Logo.svg", window.location.origin).href, shareableUrl: new URL(selectedBooking.quotation.document.shareablePath, window.location.origin).href, snapshotImageUrl: getR2AssetUrl(selectedBooking.quotation.document.snapshotObjectKey), allowedImageOrigins: origins, negotiatedAmount: selectedBooking.quotation.negotiatedFinalPrice ?? null, itemPriceOverrides: selectedBooking.quotation.itemPriceOverrides });
+    const view = createQuotationDocumentViewModel(selectedBooking.quotation.document, { brandLogoUrl: new URL("/Logo.svg", window.location.origin).href, shareableUrl: new URL(selectedBooking.quotation.document.shareablePath, window.location.origin).href, snapshotImageUrl: getR2AssetUrl(selectedBooking.quotation.document.snapshotObjectKey), allowedImageOrigins: origins, negotiatedAmount: selectedBooking.quotation.negotiatedFinalPrice ?? null, itemPriceOverrides: selectedBooking.quotation.itemPriceOverrides, estimatorName });
     return generateQuotationPdfHtml(view);
   };
 
@@ -738,4 +740,3 @@ export function BookingsContent({ initialBookings, loadError = null }: BookingsC
     </div>
   );
 }
-

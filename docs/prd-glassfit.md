@@ -152,6 +152,7 @@ The customer quotation document presents configuration details, quantity, one fi
 
 **Acceptance Criteria:**
 - Given a generated quotation, when the customer clicks "Download PDF Reference", then a server-side PDF generator embeds the finalized snapshot image, customer details, itemized breakdown, and terms, saving the document to R2 and storing `pdf_r2_object_key` in `quotation_estimates`.
+- Given a quotation prepared for printing, then the customer and estimator sections retain blank wet-signature lines while displaying each party's name and the quotation date as digital text.
 
 ### US-13: Customer Authentication & Registration (traces to PRD-F12)
 > As a customer ready to save my consultation reference, I want to sign up or log in using email or Google so that my snapshot and quotation are securely tied to my account.
