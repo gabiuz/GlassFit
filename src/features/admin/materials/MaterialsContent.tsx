@@ -239,27 +239,30 @@ export function MaterialsContent({ initialMaterials }: MaterialsContentProps) {
       )}
 
       {/* Header & Main Actions */}
-      <div className="w-full flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4 xl:gap-6">
-        <div className="flex flex-col gap-1 items-start min-w-0">
-          <h1 className="text-black text-2xl sm:text-3xl lg:text-[32px] font-medium leading-tight tracking-tight">
-            Raw Materials Catalog
-          </h1>
-          <p className="text-neutral-700 text-sm sm:text-base lg:text-lg font-normal leading-snug">
-            Manage standard aluminum profiles, whole glass stock sheets, and hardware accessories
-          </p>
+      <div className="w-full flex flex-col gap-4">
+        {/* Row 1: Title & Subtitle on left, Search bar on right with space-between */}
+        <div className="w-full flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div className="flex flex-col gap-1 items-start min-w-0">
+            <h1 className="text-black text-2xl sm:text-3xl lg:text-[32px] font-medium leading-tight tracking-tight">
+              Raw Materials Catalog
+            </h1>
+            <p className="text-neutral-700 text-sm sm:text-base lg:text-lg font-normal leading-snug max-w-lg">
+              Manage standard aluminum profiles, whole glass stock sheets, and hardware accessories
+            </p>
+          </div>
 
-        </div>
-
-        <div className="w-full xl:w-auto flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-          <div className="flex-1 sm:w-auto">
+          <div className="w-full md:w-auto shrink-0">
             <SearchBar
               value={searchQuery}
               onChange={setSearchQuery}
               placeholder="Search code or description..."
-              inputClassName="w-full sm:w-[260px] md:w-[300px]"
+              inputClassName="w-full sm:w-[280px] md:w-[320px]"
             />
           </div>
+        </div>
 
+        {/* Row 2: Action buttons placed below */}
+        <div className="w-full flex items-center justify-end gap-3 flex-wrap">
           <button
             type="button"
             onClick={() => setIsUploadOpen(true)}
@@ -277,7 +280,6 @@ export function MaterialsContent({ initialMaterials }: MaterialsContentProps) {
             <TrendingUp className="size-4 text-[#097283]" />
             <span className="text-sm font-medium whitespace-nowrap">Batch Price Adjust</span>
           </button>
-
 
           <button
             type="button"

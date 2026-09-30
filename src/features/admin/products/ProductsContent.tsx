@@ -358,10 +358,10 @@ export function ProductsContent({ initialProducts }: { initialProducts: AdminPro
 
           <Link
             href="/admin/products/new"
-            className="bg-[#0f1422] text-white rounded-[25px] px-5 py-3 sm:py-3.5 flex items-center justify-center gap-2 cursor-pointer hover:bg-black transition-colors shrink-0 shadow-xs"
+            className="bg-[#0f1422] text-white rounded-[25px] px-5 py-2.5 sm:py-3 flex items-center justify-center gap-2 cursor-pointer hover:bg-black transition-colors shrink-0 shadow-xs"
           >
             <Plus className="size-4" />
-            <span className="text-white text-base sm:text-lg font-medium leading-tight whitespace-nowrap">
+            <span className="text-sm sm:text-base font-medium whitespace-nowrap">
               Add Product
             </span>
           </Link>
