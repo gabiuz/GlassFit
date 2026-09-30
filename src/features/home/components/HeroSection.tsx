@@ -66,16 +66,16 @@ export function HeroSection() {
         />
         <div className="relative z-10">
           <div className="px-6 pt-32 pb-12 flex justify-start items-start md:pl-16 md:pt-48 lg:pl-27 lg:pt-57 lg:pb-0 4xl:pl-36 4xl:pt-64 5xl:pl-48! 5xl:pt-72!">
-            <div className="flex flex-col gap-8.5 4xl:gap-10 5xl:gap-12">
-              <div className="flex flex-col gap-2.5 4xl:gap-4 5xl:gap-6">
-                <h3 className="text-green text-xl md:text-2xl lg:text-3xl 4xl:text-4xl 5xl:text-5xl! font-normal leading-7 lg:leading-10 4xl:leading-13">
-                  See. Fit. Transform.
+            <div className="flex flex-col gap-7.5 4xl:gap-10 5xl:gap-12">
+              <div className="flex flex-col gap-1 4xl:gap-4 5xl:gap-6">
+                <h3 className="text-green text-lg sm:text-xl md:text-2xl 4xl:text-[28px] 5xl:text-4xl font-normal leading-normal">
+                  See the Fit Before Installation
                 </h3>
-                <h1 className="text-4xl md:text-7xl lg:text-8xl 4xl:text-[112px] 5xl:text-[150px]! text-black font-medium uppercase leading-tight lg:leading-[115.20px] 4xl:leading-32 5xl:leading-38!">
-                  The Future Is
+                <h1 className="text-4xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-[44px] 2xl:text-5xl 3xl:text-6xl 4xl:text-[64px] 5xl:text-8xl text-black font-medium uppercase leading-[1.12] tracking-tight">
+                  The Smarter Way to Fit
                   <br />
                   <span className="bg-grad-light bg-clip-text text-transparent">
-                    Visualize
+                    Glass & Aluminum
                   </span>
                 </h1>
               </div>
