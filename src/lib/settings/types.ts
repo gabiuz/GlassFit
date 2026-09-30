@@ -43,6 +43,51 @@ export interface SystemPreferencesRecord {
   operatingDaysRange: string;
   operatingHoursRange: string;
   operatingSchedules: OperatingScheduleRange[];
+  lastBackupAt?: string | null;
+  lastBackupBy?: string | null;
   updatedAt: string;
   updatedBy: string | null;
 }
+
+export interface BusinessAnalyticsOverview {
+  total_bookings: number;
+  pending_count: number;
+  ongoing_count: number;
+  done_count: number;
+  total_estimated_value: number;
+  total_negotiated_value: number;
+  avg_quotation_value: number;
+}
+
+export interface BusinessAnalyticsPlatforms {
+  messenger_count: number;
+  viber_count: number;
+  other_count: number;
+}
+
+export interface BusinessAnalyticsCatalog {
+  total_products: number;
+  active_products: number;
+  draft_products: number;
+  avg_base_price: number;
+}
+
+export interface BusinessAnalyticsProductDistribution {
+  type_name: string;
+  count: number;
+}
+
+export interface BusinessAnalyticsMonthlyTrend {
+  month_label: string;
+  count: number;
+  total_value: number;
+}
+
+export interface BusinessAnalyticsData {
+  overview: BusinessAnalyticsOverview;
+  platforms: BusinessAnalyticsPlatforms;
+  catalog: BusinessAnalyticsCatalog;
+  product_distribution: BusinessAnalyticsProductDistribution[];
+  monthly_trends: BusinessAnalyticsMonthlyTrend[];
+}
+
