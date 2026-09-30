@@ -1,5 +1,7 @@
 -- IMP-MS30, PRD-F12, PRD-F14, ERD-E2, ERD-E20
 
+begin;
+
 alter table public.profiles alter column last_name set default '';
 alter table public.profiles drop constraint if exists profiles_last_name_not_blank;
 
@@ -59,7 +61,7 @@ declare
   v_google_name text;
   v_space integer;
 begin
-  if (new.app_metadata->'providers') @> '["google"]'::jsonb then
+  if (new.raw_app_meta_data->'providers') @> '["google"]'::jsonb then
     v_provider := 'Google';
     v_google_name := nullif(regexp_replace(trim(normalize(new.raw_user_meta_data->>'name', NFC)), '\s+', ' ', 'g'), '');
     v_space := position(' ' in coalesce(v_google_name, ''));
@@ -108,3 +110,5 @@ create trigger on_auth_user_email_updated
 after update of email on auth.users
 for each row when (old.email is distinct from new.email)
 execute function public.sync_profile_email_from_auth();
+
+commit;
