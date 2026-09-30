@@ -86,7 +86,16 @@ export function TermsContent() {
                       <span className="font-bold text-black">
                         {contact.label}{" "}
                       </span>
-                      <span className="text-black/90">{contact.value}</span>
+                      {contact.href ? (
+                        <a
+                          href={contact.href}
+                          className="text-black/90 underline underline-offset-2 hover:text-[#07b6d3]"
+                        >
+                          {contact.value}
+                        </a>
+                      ) : (
+                        <span className="text-black/90">{contact.value}</span>
+                      )}
                     </li>
                   ))}
                 </ul>
