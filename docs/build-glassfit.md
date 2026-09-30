@@ -5,7 +5,7 @@
 **Version:** 1.0 (Capstone Production Release)  
 **Owner:** Reynard John B. Rabanal (Lead Product / Systems Architect) & GlassFit Capstone Team (PUP CCIS)  
 **Status:** Locked  
-**Last reconciled:** September 9, 2026 (Reconciled with Next.js 16 package.json, FastAPI dependencies, and Supabase migrations)  
+**Last reconciled:** September 30, 2026 (Added IMP-MS35 HEIC/HEIF decoder installation and readiness requirements)
 **SDD:** docs/sdd-glassfit.md
 
 ---
@@ -83,6 +83,7 @@ MS30 deployment applies migration `012_identity_name_and_admin_email_workflow.sq
    ```bash
    pip install -r requirements.txt
    ```
+   The requirements file pins the approved `pillow-heif` version used to decode HEIC and HEIF uploads. Installation must fail if the decoder cannot be installed. The service must not silently start without the declared decoder capability.
 4. Return to project root:
    ```bash
    cd ..
