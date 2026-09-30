@@ -120,7 +120,7 @@ export function getBookingStatusBadge(status: BookingRequestStatus): StatusBadge
       };
     case "Ongoing":
       return {
-        label: "Under Review",
+        label: "Reviewing",
         variant: "amber",
         bgClass: "bg-[#ffc876]",
         textClass: "text-white",
@@ -128,7 +128,7 @@ export function getBookingStatusBadge(status: BookingRequestStatus): StatusBadge
       };
     case "Done":
       return {
-        label: "Completed",
+        label: "Complete",
         variant: "green",
         bgClass: "bg-[#05b64b]",
         textClass: "text-white",
@@ -138,7 +138,7 @@ export function getBookingStatusBadge(status: BookingRequestStatus): StatusBadge
       return {
         label: "Cancelled",
         variant: "red",
-        bgClass: "bg-[#c50000]",
+        bgClass: "bg-[#e74242]",
         textClass: "text-white",
         borderClass: "border-transparent",
       };
@@ -154,15 +154,15 @@ export function getBookingStatusBanner(status: BookingRequestStatus): StatusBann
   switch (status) {
     case "Pending":
       return {
-        title: "Your request was received",
-        description: "We will review your consultation PDF and contact you.",
+        title: "Your Request was received",
+        description: "We will review your PDF and contact you",
         treatment: "cyan",
       };
     case "Ongoing":
       return {
-        title: "Review in progress",
-        description: "Our team is reviewing the request details.",
-        treatment: "amber",
+        title: "Your Request was received",
+        description: "We will review your PDF and contact you",
+        treatment: "cyan",
       };
     case "Done":
       return {
