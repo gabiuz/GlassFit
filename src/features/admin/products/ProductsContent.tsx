@@ -8,7 +8,7 @@ import {
   type AdminProductStatus,
 } from "./productData";
 import Link from "next/link";
-import { Copy, Check } from "lucide-react";
+import { Copy, Check, Plus } from "lucide-react";
 import { deleteProduct } from "@/lib/admin/products/productMutations";
 import { duplicateProductPreset } from "@/lib/admin/products/presetDuplication";
 import { DeleteProductModal } from "./DeleteProductModal";
@@ -292,10 +292,11 @@ export function ProductsContent({ initialProducts }: { initialProducts: AdminPro
 
           <Link
             href="/admin/products/new"
-            className="bg-[#0f1422] rounded-[25px] px-5 py-3 sm:py-3.5 flex items-center justify-center gap-2 cursor-pointer hover:bg-black transition-colors shrink-0 shadow-xs"
+            className="bg-[#0f1422] text-white rounded-[25px] px-5 py-3 sm:py-3.5 flex items-center justify-center gap-2 cursor-pointer hover:bg-black transition-colors shrink-0 shadow-xs"
           >
+            <Plus className="size-4" />
             <span className="text-white text-base sm:text-lg font-medium leading-tight whitespace-nowrap">
-              + Add Product
+              Add Product
             </span>
           </Link>
         </div>
@@ -401,9 +402,9 @@ function ProductRow({
         <StatusBadge status={product.status} />
       </ColCell>
       <ColCell align="center">
-        <ActionButtons 
-          productId={product.id} 
-          onDelete={onDelete} 
+        <ActionButtons
+          productId={product.id}
+          onDelete={onDelete}
           onDuplicate={onDuplicate}
           isDuplicating={isDuplicating}
         />

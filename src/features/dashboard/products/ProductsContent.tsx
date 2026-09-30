@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SearchBar } from "@/components/shared/SearchBar";
 import {
@@ -150,9 +151,10 @@ export function ProductsContent() {
         {/* Add Product button */}
         <button
           type="button"
-          className="bg-[#0f1422] rounded-[25px] px-5 py-[15px] flex items-start gap-[15px] cursor-pointer hover:bg-black transition-colors shrink-0"
+          className="bg-[#0f1422] rounded-[25px] px-5 py-3 sm:py-3.5 flex items-center justify-center gap-2 cursor-pointer hover:bg-black transition-colors shrink-0 shadow-xs text-white"
         >
-          <span className="text-white text-xl font-normal leading-[1.4] tracking-[-0.38px] whitespace-nowrap">
+          <Plus className="size-4" />
+          <span className="text-white text-base sm:text-lg font-medium leading-tight whitespace-nowrap">
             Add Product
           </span>
         </button>
