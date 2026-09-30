@@ -5,6 +5,8 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { SearchBar } from "@/components/shared/SearchBar";
+import { Check, ChevronDown } from "lucide-react";
+import { Select } from "radix-ui";
 import {
   type AdminBookingItem,
   type BookingStatus,
@@ -42,6 +44,73 @@ type BookingsContentProps = {
   initialBookings: AdminBookingItem[];
   loadError?: string | null;
 };
+
+const BOOKING_STATUS_OPTIONS: BookingStatus[] = [
+  "Pending",
+  "Reviewing",
+  "Confirmed",
+  "Cancelled",
+];
+
+function BookingStatusSelect({
+  value,
+  onChange,
+}: {
+  value: BookingStatus;
+  onChange: (val: BookingStatus) => void;
+}) {
+  return (
+    <Select.Root
+      value={value}
+      onValueChange={(nextVal) => onChange(nextVal as BookingStatus)}
+    >
+      <Select.Trigger
+        aria-label="Update booking status"
+        className={cn(
+          "group inline-flex items-center gap-2 whitespace-nowrap text-white text-xs sm:text-sm font-medium pl-4 pr-3 py-1.5 rounded-[25px] cursor-pointer outline-none shadow-xs transition-colors focus-visible:ring-2 focus-visible:ring-offset-2",
+          statusBg[value] || "bg-[#ffc876]"
+        )}
+      >
+        <Select.Value />
+        <Select.Icon asChild>
+          <ChevronDown
+            aria-hidden="true"
+            className="size-3.5 text-white transition-transform duration-200 group-data-[state=open]:rotate-180"
+          />
+        </Select.Icon>
+      </Select.Trigger>
+
+      <Select.Portal>
+        <Select.Content
+          position="popper"
+          sideOffset={6}
+          collisionPadding={12}
+          className="z-50 min-w-[var(--radix-select-trigger-width)] overflow-hidden rounded-[16px] border border-neutral-200 bg-white p-1.5 text-[#0f1422] shadow-[0_12px_32px_rgba(15,20,34,0.14)]"
+        >
+          <Select.Viewport>
+            {BOOKING_STATUS_OPTIONS.map((status) => (
+              <BookingStatusOption key={status} value={status} label={status} />
+            ))}
+          </Select.Viewport>
+        </Select.Content>
+      </Select.Portal>
+    </Select.Root>
+  );
+}
+
+function BookingStatusOption({ value, label }: { value: string; label: string }) {
+  return (
+    <Select.Item
+      value={value}
+      className="relative flex min-h-9 cursor-default select-none items-center rounded-[10px] py-1.5 pl-3 pr-8 text-xs sm:text-sm font-normal text-neutral-800 outline-none data-[highlighted]:bg-[#e9f9fb] data-[highlighted]:text-[#097283] data-[state=checked]:font-medium data-[state=checked]:text-[#097283]"
+    >
+      <Select.ItemText>{label}</Select.ItemText>
+      <Select.ItemIndicator className="absolute right-2.5 inline-flex items-center justify-center text-[#07b6d3]">
+        <Check aria-hidden="true" className="size-3.5" strokeWidth={2.5} />
+      </Select.ItemIndicator>
+    </Select.Item>
+  );
+}
 
 export function BookingsContent({ initialBookings, loadError = null }: BookingsContentProps) {
   const router = useRouter();
@@ -412,48 +481,10 @@ export function BookingsContent({ initialBookings, loadError = null }: BookingsC
                 <p className="text-[#07b6d3] text-sm sm:text-base font-medium leading-snug">
                   Update Status
                 </p>
-                <div className="relative">
-                  <select
-                    value={currentStatus}
-                    onChange={(e) =>
-                      handleStatusChange(e.target.value as BookingStatus)
-                    }
-                    className={cn(
-                      "appearance-none text-white text-xs sm:text-sm font-medium pl-4 pr-8 py-1.5 rounded-[25px] cursor-pointer outline-none shadow-xs",
-                      statusBg[currentStatus] || "bg-[#ffc876]"
-                    )}
-                  >
-                    <option value="Pending" className="text-black bg-white">
-                      Pending
-                    </option>
-                    <option value="Reviewing" className="text-black bg-white">
-                      Reviewing
-                    </option>
-                    <option value="Confirmed" className="text-black bg-white">
-                      Confirmed
-                    </option>
-                    <option value="Cancelled" className="text-black bg-white">
-                      Cancelled
-                    </option>
-                  </select>
-                  <div className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-white">
-                    <svg
-                      width="14"
-                      height="14"
-                      viewBox="0 0 16 16"
-                      fill="none"
-                      xmlns="http://www.w3.org/2000/svg"
-                    >
-                      <path
-                        d="M4 6L8 10L12 6"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  </div>
-                </div>
+                <BookingStatusSelect
+                  value={currentStatus}
+                  onChange={handleStatusChange}
+                />
               </div>
 
               <div className="w-full border-t border-[#e5e5e5]" />
