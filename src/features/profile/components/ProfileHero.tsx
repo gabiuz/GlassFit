@@ -33,7 +33,7 @@ export function ProfileHero() {
                 height={16}
                 aria-hidden="true"
               />
-              <p className="text-sm tracking-[-0.3px]">{item.label}</p>
+              <p>{item.label}</p>
             </div>
           ))}
         </div>
