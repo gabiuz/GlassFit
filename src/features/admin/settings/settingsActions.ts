@@ -387,6 +387,8 @@ export async function getSystemPreferences(): Promise<SettingsActionResult<Syste
                 ],
                 updatedAt: new Date().toISOString(),
                 updatedBy: null,
+                lastBackupAt: null,
+                lastBackupBy: null,
             },
         };
     }
@@ -402,6 +404,8 @@ export async function getSystemPreferences(): Promise<SettingsActionResult<Syste
             operatingDaysRange: data.operating_days_range,
             operatingHoursRange: data.operating_hours_range,
             operatingSchedules: (data.operating_schedules as OperatingScheduleRange[]) ?? [],
+            lastBackupAt: data.last_backup_at ?? null,
+            lastBackupBy: data.last_backup_by ?? null,
             updatedAt: data.updated_at,
             updatedBy: data.updated_by,
         },
@@ -497,8 +501,41 @@ export async function updateSystemPreferences(
             operatingDaysRange: updatedRecord.operating_days_range,
             operatingHoursRange: updatedRecord.operating_hours_range,
             operatingSchedules: updatedRecord.operating_schedules,
+            lastBackupAt: updatedRecord.last_backup_at ?? null,
+            lastBackupBy: updatedRecord.last_backup_by ?? null,
             updatedAt: updatedRecord.updated_at,
             updatedBy: updatedRecord.updated_by,
         },
     };
 }
+
+/**
+ * Fetches aggregated business analytics data for the Business Intelligence Modal.
+ */
+export async function getAdminBusinessAnalyticsAction(
+    startDate?: string | null,
+    endDate?: string | null
+): Promise<SettingsActionResult<import("@/lib/settings/types").BusinessAnalyticsData>> {
+    const authorization = await checkAdminAuth();
+    if (!authorization.ok) {
+        return { ok: false, error: "An active administrator session is required." };
+    }
+
+    const supabase = await createSupabaseServerClient();
+    const { data, error } = await supabase.rpc("get_admin_business_analytics", {
+        p_start_date: startDate || null,
+        p_end_date: endDate || null,
+    });
+
+    if (error) {
+        console.error("[getAdminBusinessAnalyticsAction] Error:", error.message);
+        return { ok: false, error: "Failed to load business analytics." };
+    }
+
+    return {
+        ok: true,
+        message: "Analytics loaded successfully",
+        data: data as import("@/lib/settings/types").BusinessAnalyticsData,
+    };
+}
+

@@ -51,6 +51,7 @@
 | QAD-TC31 | PRD-F10, PRD-F11, PRD-F14 | Per-item negotiation contract | Canonical, migrated, and legacy quotations plus authorized and unauthorized users | 1. Exercise item edit, equal reset, zero confirmation, partial and final reset<br>2. Test proportional migration, audit metadata, aggregate overflow, stale updates, and RLS<br>3. Verify legacy fallback and customer/public reads | Canonical item overrides are deterministic, authorized, atomic, audit-preserving, conflict-safe, and sanitized; totals reconcile in centavos; legacy total editing remains available only to legacy quotations | P0 |
 | QAD-TC41 | PRD-F10, PRD-F11, PRD-F14 | Single-Product Negotiation Parity & ISO Datetime Normalization | Single-product and multi-product quotations with varying datetime timezone offsets | 1. Validate offset-tolerant ISO datetime strings in booking action schemas<br>2. Map single-product quotation to per-item negotiation view<br>3. Verify optimistic concurrency timestamp equivalence<br>4. Test item price override on single fixture quotation | Single-product quotations render standard Edit Price buttons; offset-bearing PostgreSQL timestamps validate cleanly without Invalid ISO datetime errors; equivalent timestamps prevent false conflict rejections | P0 |
 | QAD-TC46 | PRD-F10, PRD-F12, PRD-F13, PRD-F14 | Admin Booking Discard-to-Hard-Delete and Quotation Purge | User authenticated as Admin with manage_bookings permission and active consultation booking | 1. Click Discard button in /admin/bookings<br>2. Confirm modal displays warning and consequence note<br>3. Cancel deletion and verify record remains intact<br>4. Re-open and confirm hard deletion<br>5. Check customer /my-requests and public /q/[code] routes | Discard opens confirmation modal; deletion executes atomic hard-delete cascade across booking_requests, signed_booking_links, quotation_items, and quotation_estimates; inspector focuses adjacent booking; customer /my-requests removes quotation; /q/[code] returns 404 | P0 |
+| QAD-TC47 | PRD-F14, PRD-F10, PRD-F12, PRD-F13 | Admin Data Management Export, GlassFit Business Intelligence CSV, Native Analytics Charts, and System Backup | User authenticated as Admin with Owner role and active booking/catalog records | 1. Trigger Booking Records CSV export<br>2. Inspect Business Intelligence Modal and native visual charts<br>3. Trigger Product Records CSV export<br>4. Download System Backup JSON snapshot<br>5. Verify non-Owner 403 Forbidden enforcement | Booking export produces GlassFit branded CSV with executive KPI summary; Product export produces catalog specifications CSV; Business Intelligence Modal displays responsive SVG charts; Backup compiles complete JSON snapshot, updates last_backup_at in system_preferences, and enforces Owner-only authorization | P0 |
 
 ---
 
@@ -87,6 +88,12 @@ MS31 coverage validates the destructive confirmation guard (`DiscardBookingModal
 
 ---
 
+## QAD-TC47: Admin Data Management Export, Business Intelligence CSV, Native Analytics Charts, and System Backup
+
+MS32 coverage validates authenticated streaming route handlers (`/api/admin/export/bookings`, `/api/admin/export/products`, `/api/admin/export/backup`), GlassFit-branded business intelligence CSV compilation with executive KPI blocks and UTF-8 BOM, the interactive Business Intelligence Modal with pure SVG charts (`StatusDonutChart`, `TrendAreaChart`, `ChannelBarChart`, `ProductDistributionChart`), the JSON system backup snapshot engine with SHA-256 integrity checksum, live database audit updates via `public.record_system_backup`, and Owner-only security gate enforcement.
+
+---
+
 ## Self-Check
 
 - [x] Test distribution matrix defines tooling and coverage targets for all testing layers
@@ -94,4 +101,5 @@ MS31 coverage validates the destructive confirmation guard (`DiscardBookingModal
 - [x] Non-functional verification gates define automated pass/fail criteria
 - [x] Defect severity definitions and release blocker policies are documented
 - [x] AGENTS hard bans applied; VOICE polish pass completed without em-dashes
+
 
