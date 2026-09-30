@@ -6,9 +6,16 @@ import { SearchBar } from "@/components/shared/SearchBar";
 import {
   type AdminProductItem,
   type AdminProductStatus,
+  type ProductStatusFilter,
+  type ProductTypeFilter,
 } from "./productData";
+import {
+  deriveProductTypeOptions,
+  filterAdminProducts,
+} from "./productFilters";
 import Link from "next/link";
-import { Copy, Check, Plus } from "lucide-react";
+import { Check, Copy, Plus } from "lucide-react";
+import { Select } from "radix-ui";
 import { deleteProduct } from "@/lib/admin/products/productMutations";
 import { duplicateProductPreset } from "@/lib/admin/products/presetDuplication";
 import { DeleteProductModal } from "./DeleteProductModal";
@@ -180,42 +187,86 @@ function ActionButtons({
   );
 }
 
-function DropdownChevron({
-  isOpen: controlledIsOpen,
-  onClick,
+const ALL_FILTER_VALUE = "__glassfit_all__";
+
+function ProductFilterSelect({
+  accessibleName,
+  allLabel,
+  value,
+  options,
+  onValueChange,
 }: {
-  isOpen?: boolean;
-  onClick?: () => void;
+  accessibleName: string;
+  allLabel: string;
+  value: string | null;
+  options: readonly string[];
+  onValueChange: (value: string | null) => void;
 }) {
-  const [internalIsOpen, setInternalIsOpen] = useState(false);
-  const isOpen = controlledIsOpen !== undefined ? controlledIsOpen : internalIsOpen;
-
-  const handleClick = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (onClick) {
-      onClick();
-    } else if (controlledIsOpen === undefined) {
-      setInternalIsOpen((prev) => !prev);
-    }
-  };
-
   return (
-    <svg
-      width="25"
-      height="25"
-      viewBox="0 0 25 25"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      onClick={handleClick}
-      className={cn(
-        "transition-transform duration-200 ease-in-out shrink-0",
-        isOpen && "rotate-180"
-      )}
+    <Select.Root
+      value={value ?? ALL_FILTER_VALUE}
+      onValueChange={(nextValue) =>
+        onValueChange(nextValue === ALL_FILTER_VALUE ? null : nextValue)
+      }
     >
-      <path opacity="0.4" d="M7.75781 10.625L12.5 15.3672L17.2422 10.625H7.75781Z" fill="white" />
-      <path d="M13.3829 17.1328C12.8946 17.6211 12.1017 17.6211 11.6134 17.1328L5.36339 10.8828C5.00402 10.5234 4.89855 9.98828 5.09386 9.51953C5.28917 9.05078 5.7462 8.75 6.25011 8.75H18.7501C19.254 8.75 19.711 9.05469 19.9064 9.52344C20.1017 9.99219 19.9923 10.5273 19.6368 10.8867L13.3868 17.1367L13.3829 17.1328ZM17.2423 10.625H7.75792L12.5001 15.3672L17.2423 10.625Z" fill="white" />
-    </svg>
+      <Select.Trigger
+        aria-label={accessibleName}
+        className="group flex items-center gap-2.5 whitespace-nowrap rounded-[25px] bg-[#c3c3c3] px-4 py-2 text-xs font-normal text-white shadow-xs transition-colors hover:bg-stone-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-600 focus-visible:ring-offset-2 sm:text-sm"
+      >
+        <Select.Value />
+        <Select.Icon asChild>
+          <svg
+            width="25"
+            height="25"
+            viewBox="0 0 25 25"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            aria-hidden="true"
+            className="shrink-0 transition-transform duration-200 ease-in-out group-data-[state=open]:rotate-180 motion-reduce:transition-none"
+          >
+            <path
+              opacity="0.4"
+              d="M7.75781 10.625L12.5 15.3672L17.2422 10.625H7.75781Z"
+              fill="white"
+            />
+            <path
+              d="M13.3829 17.1328C12.8946 17.6211 12.1017 17.6211 11.6134 17.1328L5.36339 10.8828C5.00402 10.5234 4.89855 9.98828 5.09386 9.51953C5.28917 9.05078 5.7462 8.75 6.25011 8.75H18.7501C19.254 8.75 19.711 9.05469 19.9064 9.52344C20.1017 9.99219 19.9923 10.5273 19.6368 10.8867L13.3868 17.1367L13.3829 17.1328ZM17.2423 10.625H7.75792L12.5001 15.3672L17.2423 10.625Z"
+              fill="white"
+            />
+          </svg>
+        </Select.Icon>
+      </Select.Trigger>
+
+      <Select.Portal>
+        <Select.Content
+          position="popper"
+          sideOffset={8}
+          collisionPadding={12}
+          className="z-50 min-w-[var(--radix-select-trigger-width)] overflow-hidden rounded-[16px] border border-neutral-200 bg-white p-1.5 text-[#0f1422] shadow-[0_12px_32px_rgba(15,20,34,0.14)]"
+        >
+          <Select.Viewport>
+            <ProductFilterOption value={ALL_FILTER_VALUE} label={allLabel} />
+            {options.map((option) => (
+              <ProductFilterOption key={option} value={option} label={option} />
+            ))}
+          </Select.Viewport>
+        </Select.Content>
+      </Select.Portal>
+    </Select.Root>
+  );
+}
+
+function ProductFilterOption({ value, label }: { value: string; label: string }) {
+  return (
+    <Select.Item
+      value={value}
+      className="relative flex min-h-10 cursor-default select-none items-center rounded-[10px] py-2 pl-3 pr-9 text-sm outline-none data-[highlighted]:bg-[#e9f9fb] data-[highlighted]:text-[#097283] data-[state=checked]:font-medium data-[state=checked]:text-[#097283]"
+    >
+      <Select.ItemText>{label}</Select.ItemText>
+      <Select.ItemIndicator className="absolute right-3 inline-flex items-center justify-center text-[#07b6d3]">
+        <Check aria-hidden="true" className="size-4" strokeWidth={2.5} />
+      </Select.ItemIndicator>
+    </Select.Item>
   );
 }
 
@@ -223,23 +274,31 @@ export function ProductsContent({ initialProducts }: { initialProducts: AdminPro
   const router = useRouter();
   const [products, setProducts] = useState<AdminProductItem[]>(initialProducts);
   const [searchQuery, setSearchQuery] = useState("");
-  const [isCategoryOpen, setIsCategoryOpen] = useState(false);
-  const [isStatusOpen, setIsStatusOpen] = useState(false);
+  const [selectedType, setSelectedType] = useState<ProductTypeFilter>(null);
+  const [selectedStatus, setSelectedStatus] = useState<ProductStatusFilter>(null);
   const [productToDelete, setProductToDelete] = useState<AdminProductItem | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
 
-  const filtered = useMemo(() => {
-    if (!searchQuery.trim()) return products;
-    const q = searchQuery.toLowerCase();
-    return products.filter(
-      (p) =>
-        p.id.toLowerCase().includes(q) ||
-        p.name.toLowerCase().includes(q) ||
-        p.type.toLowerCase().includes(q) ||
-        p.description.toLowerCase().includes(q)
-    );
-  }, [products, searchQuery]);
+  const productTypeOptions = useMemo(
+    () => deriveProductTypeOptions(products),
+    [products],
+  );
+  const filtered = useMemo(
+    () =>
+      filterAdminProducts(products, {
+        searchQuery,
+        selectedType,
+        selectedStatus,
+      }),
+    [products, searchQuery, selectedStatus, selectedType],
+  );
+
+  const resetFilters = () => {
+    setSearchQuery("");
+    setSelectedType(null);
+    setSelectedStatus(null);
+  };
 
   const handleDuplicateProduct = async (product: AdminProductItem) => {
     try {
@@ -259,7 +318,14 @@ export function ProductsContent({ initialProducts }: { initialProducts: AdminPro
     setIsDeleting(true);
     try {
       await deleteProduct(productToDelete.id);
-      setProducts((prev) => prev.filter((p) => p.id !== productToDelete.id));
+      const remainingProducts = products.filter((p) => p.id !== productToDelete.id);
+      setProducts(remainingProducts);
+      if (
+        selectedType !== null &&
+        !deriveProductTypeOptions(remainingProducts).includes(selectedType)
+      ) {
+        setSelectedType(null);
+      }
       setProductToDelete(null);
     } catch (e: unknown) {
       alert(`Error deleting product: ${e instanceof Error ? e.message : "Something went wrong"}`);
@@ -304,24 +370,25 @@ export function ProductsContent({ initialProducts }: { initialProducts: AdminPro
 
       <div className="w-full flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-2.5 sm:gap-3 flex-wrap">
-          <button
-            type="button"
-            onClick={() => setIsCategoryOpen((prev) => !prev)}
-            className="bg-[#c3c3c3] text-white text-xs sm:text-sm font-normal px-4 py-2 rounded-[25px] flex items-center gap-2.5 cursor-pointer hover:bg-stone-400 transition-colors whitespace-nowrap shadow-xs"
-          >
-            All categories
-            <DropdownChevron isOpen={isCategoryOpen} />
-          </button>
-          <button
-            type="button"
-            onClick={() => setIsStatusOpen((prev) => !prev)}
-            className="bg-[#c3c3c3] text-white text-xs sm:text-sm font-normal px-4 py-2 rounded-[25px] flex items-center gap-2.5 cursor-pointer hover:bg-stone-400 transition-colors whitespace-nowrap shadow-xs"
-          >
-            All Status
-            <DropdownChevron isOpen={isStatusOpen} />
-          </button>
+          <ProductFilterSelect
+            accessibleName="Filter products by product type"
+            allLabel="All categories"
+            value={selectedType}
+            options={productTypeOptions}
+            onValueChange={setSelectedType}
+          />
+          <ProductFilterSelect
+            accessibleName="Filter products by status"
+            allLabel="All Status"
+            value={selectedStatus}
+            options={["Published", "Draft"] satisfies readonly AdminProductStatus[]}
+            onValueChange={(value) => setSelectedStatus(value as ProductStatusFilter)}
+          />
         </div>
-        <p className="text-[#c3c3c3] text-xs sm:text-sm font-normal leading-snug whitespace-nowrap">
+        <p
+          aria-live="polite"
+          className="text-[#c3c3c3] text-xs sm:text-sm font-normal leading-snug whitespace-nowrap"
+        >
           Showing {filtered.length} of {products.length} products
         </p>
       </div>
@@ -341,15 +408,34 @@ export function ProductsContent({ initialProducts }: { initialProducts: AdminPro
 
             <div className="w-full border-t border-[#e5e5e5]" />
 
-            {filtered.map((product) => (
-              <ProductRow
-                key={product.id}
-                product={product}
-                onDelete={() => setProductToDelete(product)}
-                onDuplicate={() => handleDuplicateProduct(product)}
-                isDuplicating={duplicatingId === product.id}
-              />
-            ))}
+            {products.length === 0 ? (
+              <div className="w-full py-12 text-center text-sm text-neutral-500">
+                No products are currently available.
+              </div>
+            ) : filtered.length === 0 ? (
+              <div className="flex w-full flex-col items-center gap-4 py-12 text-center">
+                <p className="text-sm text-neutral-600">
+                  No products match the current search and filters.
+                </p>
+                <button
+                  type="button"
+                  onClick={resetFilters}
+                  className="min-h-11 rounded-[25px] bg-[#0f1422] px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-600 focus-visible:ring-offset-2"
+                >
+                  Reset filters
+                </button>
+              </div>
+            ) : (
+              filtered.map((product) => (
+                <ProductRow
+                  key={product.id}
+                  product={product}
+                  onDelete={() => setProductToDelete(product)}
+                  onDuplicate={() => handleDuplicateProduct(product)}
+                  isDuplicating={duplicatingId === product.id}
+                />
+              ))
+            )}
           </div>
         </div>
       </div>
@@ -412,4 +498,3 @@ function ProductRow({
     </div>
   );
 }
-

@@ -5,7 +5,7 @@
 **Version:** 1.0 (Capstone Production Release)  
 **Owner:** Gianne Crizzle A. Dasco (Design & Frontend Lead) & GlassFit Capstone Team (PUP CCIS)  
 **Status:** Locked  
-**Last reconciled:** September 30, 2026 (Added IMP-MS35 WebP and HEIC/HEIF dropzone guidance and safe fallback state)
+**Last reconciled:** September 30, 2026 (Added DSD-UI14 admin product catalog filters)
 **PRD:** docs/prd-glassfit.md
 
 ---
@@ -79,6 +79,7 @@ Modern architectural precision engineered for clarity, spatial focus, and techni
 | DSD-UI9 | ComparisonSlider | PRD-F15 | Enables interactive before-and-after comparison between photo and simulation | Dual-layer horizontal split swipe divider |
 | DSD-UI10 | AdminPartInspectorAndSimulator | PRD-F14, PRD-F19 | Split-screen Three.js viewport and Part Inspector Drawer with live BOM test-drive simulator | Tabbed multi-step management workbench with 60/40 viewport-to-drawer split |
 | DSD-UI13 | GlobalThemedScrollbarSystem | PRD-F1, PRD-F6, PRD-F14 | Provides unified brand-consistent scrollbars across root viewports and nested containers | Dual W3C standard and WebKit floating cyan pill with 8px/6px width |
+| DSD-UI14 | AdminProductCatalogFilters | PRD-F14 | Filters the admin products workbench by loaded product type and normalized Published or Draft status while composing with search | Two accessible single-select pill controls with synchronized result count and no-match reset |
 
 ### 3.2 State Behaviors & Visual Treatment
 
@@ -102,6 +103,9 @@ Modern architectural precision engineered for clarity, spatial focus, and techni
 | DSD-UI13 | Idle | Slim floating cyan pill (rgba(7, 182, 211, 0.45) light / rgba(7, 182, 211, 0.50) dark) | Viewport or container scroll idle | Maintains native browser scrolling semantics |
 | DSD-UI13 | Hover | Solid brand cyan (#07b6d3 light) / Electric cyan (#06e5ff dark) with 150ms smooth transition | Pointer hover over scrollbar thumb | Tactile visual feedback for interactive readiness |
 | DSD-UI13 | Active Drag | Architectural deep teal (#097283 light) / Brand cyan (#07b6d3 dark) | Mouse press and drag on thumb | Confirms pointer capture and viewport scrolling |
+| DSD-UI14 | Default | Existing muted pill treatment with labels "All categories" and "All Status" | Initial workbench render or filter reset | Each control exposes a distinct accessible name and its current selection |
+| DSD-UI14 | Filtered | Selected value replaces the default label; result count and table rows update without navigation | Administrator selects a product type or status | Keyboard selection is supported and visible focus is retained |
+| DSD-UI14 | No Match | Product table shows a concise no-match message and Reset filters action | Combined search and filters produce zero rows while products exist | No-match feedback is readable as text and reset is keyboard operable |
 
 ---
 

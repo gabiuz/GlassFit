@@ -3,7 +3,7 @@
 **Project:** GlassFit (Web-Based Client-Space Visualization System for Customized Glass & Aluminum)  
 **Document Function:** Master Implementation Roadmap and Milestone Verification Specification  
 **Version:** 1.0.0 (Capstone Production Roadmap)  
-**Date:** September 9, 2026  
+**Date:** September 30, 2026
 **Owner:** Reynard John B. Rabanal (Lead Product / Systems Architect) & GlassFit Capstone Team (PUP CCIS)  
 **Status:** Active  
 **Upstream Specifications:** `docs/pricing.md`, `docs/prd-glassfit.md`, `docs/sdd-glassfit.md`, `docs/erd-glassfit.md`, `docs/dsd-glassfit.md`, `docs/qad-glassfit.md`, `docs/build-glassfit.md`, `docs/index.md`  
@@ -42,6 +42,7 @@ When implementing or modifying any user interface within these milestones (such 
 | MS-9 | Master Documentation & Governance Reconciliation | Specifications / Docs Hub | Reconcile all 8 existing documentation files in `docs/` with `pricing.md` and `milestone.md` without em-dashes | Sprint 4 (Day 18) | `INDEX`, `BRD`, `PRD`, `SDD`, `DSD`, `ERD`, `QAD`, `BUILD` |
 | MS-10 | Admin Product Setup Wizard State & Component Persistence | Admin UI & State Layer | Bidirectional state synchronization, tab transition auto-refresh from DB, zero component loss between steps, seamless UX | Sprint 5 (Days 19-20) | `PRD-F14`, `SDD-C9`, `DSD-UI10`, `ERD-E4`, `ERD-E6`, `QAD-TC19` |
 | MS-35 | Multi-Format Space Image Ingestion | Visualization Client / FastAPI CV | Static WebP and HEIC/HEIF upload acceptance, browser-safe preview fallback, deterministic format resolution, server-side HEIF decoding, OpenCV normalization, and automated regression coverage | Maintenance Release | `PRD-F3`, `PRD-F4`, `PRD-F7`, `SDD-C2`, `SDD-C3`, `DSD-UI3`, `QAD-TC3`, `QAD-TC4`, `QAD-TC50` |
+| MS-36 | Admin Product Type and Status Filters | Admin Products UI | Interactive product type and lifecycle status filters composed with existing search, synchronized result count, no-match reset, and keyboard-operable controls | Maintenance Release | `PRD-F14`, `SDD-C9`, `DSD-UI14`, `ERD-E3`, `QAD-TC51` |
 
 ---
 
@@ -375,6 +376,7 @@ Eliminate state desynchronization, parameter loss, and rule-blocking traps in th
 | MS-32 | `PRD-F14`, `PRD-F10`, `PRD-F12`, `PRD-F13` | `SDD-C9`, `SDD-C10` | `ERD-E3`, `ERD-E13`, `ERD-E16`, `ERD-E18` | `DSD-UI11`, `DSD-UI12` | `QAD-TC47` |
 | MS-33 | `PRD-F1`, `PRD-F6`, `PRD-F14` | `SDD-C1`, `SDD-C5`, `SDD-C9` | N/A (Presentation) | `DSD-UI13` | `QAD-TC48` |
 | MS-35 | `PRD-F3`, `PRD-F4`, `PRD-F7` | `SDD-C2`, `SDD-C3` | N/A (Temporary Files) | `DSD-UI3` | `QAD-TC3`, `QAD-TC4`, `QAD-TC50` |
+| MS-36 | `PRD-F14` | `SDD-C9` | `ERD-E3` | `DSD-UI14` | `QAD-TC51` |
 
 ### MS-30: Inclusive Identity and Administrator Email Change
 
@@ -395,6 +397,10 @@ MS-33 implements a unified, brand-consistent scrollbar system in `src/app/global
 ### MS-35: Multi-Format Space Image Ingestion
 
 MS-35 extends the existing client-space upload workflow to accept static WebP and HEIC/HEIF files in addition to JPG and PNG. The browser validates and previews formats it can decode, presents an accessible metadata card for HEIC/HEIF files it cannot render, and sends the original bytes to FastAPI. The server verifies the declared and decoded formats, enforces byte, pixel, and single-frame limits, decodes HEIC/HEIF with the pinned decoder, normalizes it for OpenCV, and preserves the existing `workspace.webp` output contract.
+
+### MS-36: Admin Product Type and Status Filters
+
+MS-36 turns the two placeholder controls on `/admin/products` into accessible single-selection filters. The first control derives its options from loaded `products.product_type` values. The second filters the normalized Published or Draft client status originating from database values Active and Inactive. Both predicates compose with the existing search, update the visible result count, distinguish an empty catalog from a no-match result, and preserve all row actions.
 
 ---
 

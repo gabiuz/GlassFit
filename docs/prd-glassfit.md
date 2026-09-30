@@ -5,7 +5,7 @@
 **Version:** 1.0 (Capstone Production Release)  
 **Owner:** Reynard John B. Rabanal (Lead Product / Systems Architect) & GlassFit Capstone Team (PUP CCIS)  
 **Status:** Locked  
-**Last reconciled:** September 30, 2026 (Added IMP-MS35 static WebP and HEIC/HEIF upload requirements and unified 12 MB limit)
+**Last reconciled:** September 30, 2026 (Added IMP-MS36 admin product type and status filter requirements)
 **BRD:** N/A (Capstone Specification & PUP CCIS Manuscript Chapters 1-3)
 
 ---
@@ -173,6 +173,8 @@ The customer quotation document presents configuration details, quantity, one fi
 **Acceptance Criteria:**
 - Given navigation to `/admin/login`, when an authenticated user with `account_type = 'Admin'` and an active `admin_role_id` (Owner, Manager, Staff) logs in, then access is granted to `/admin/(protected)`. Customers attempting to access this route are redirected to `/login` with an unauthorized alert.
 - Given an admin on `/admin/products`, when creating or updating a product, then the admin can upload 2D images and GLB models directly to Cloudflare R2 and update template parameters and component pricing.
+- Given an admin on `/admin/products`, when selecting a product type from the "All categories" control, then the table displays only products whose `product_type` matches the selection.
+- Given an admin on `/admin/products`, when selecting Published or Draft from the "All Status" control, then the table displays only products whose normalized lifecycle status matches the selection, and this predicate combines with product type and search filters.
 
 ---
 

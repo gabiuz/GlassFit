@@ -5,7 +5,7 @@
 **Version:** 1.0 (Capstone Production Release)  
 **Owner:** Reynard John B. Rabanal (Lead Product / Systems Architect) & GlassFit Capstone Team (PUP CCIS)  
 **Status:** Locked  
-**Last reconciled:** September 30, 2026 (Added IMP-MS35 browser-safe validation and FastAPI HEIC/HEIF normalization contract)
+**Last reconciled:** September 30, 2026 (Added IMP-MS36 admin product filter component contract)
 **PRD:** docs/prd-glassfit.md
 
 ---
@@ -49,7 +49,7 @@ Asynchronous hybrid multi-tier web architecture decoupling interactive client-si
 | SDD-C6 | Canvas Compositor & Snapshot Pipeline | Next.js Client / Edge | Blends background space photo, active/cached 3D product layers, contact shadows, and foreground occlusion masks into a flattened PNG snapshot; uploads to Cloudflare R2. | PRD-F9, PRD-F15 | HTML5 Canvas `toBlob()`, S3 Presigned URL client, Cloudflare R2, Supabase `visualization_snapshots` |
 | SDD-C7 | Parametric BOM Pricing Engine & PDF Generator | Next.js Domain Service / Action | Computes and freezes the internal BOM, then renders a simplified customer document with configuration details, one effective final line price per product item, grand total, and structural waiver disclaimers. Server-owned per-item overrides are stored separately and never mutate the calculated snapshot. | PRD-F10, PRD-F11 | Supabase `raw_materials`, `quotation_estimates`, `quotation_items`, `src/lib/pricing/pricingEngine.ts`, Cloudflare R2 |
 | SDD-C8 | Signed Booking Link & Messaging Handoff | Next.js Server Action | Generates SHA-256 token-hashed consultation reference URLs (`signed_booking_links`), logs booking requests, and formats deep-links to Facebook Messenger and Viber. | PRD-F12, PRD-F13 | Supabase Auth, Crypto API, URL scheme builders (`m.me`, `viber://chat`) |
-| SDD-C9 | Role-Based Admin Portal & Part Inspector | Next.js Protected Routes | Administrative console (`/admin`) with split-screen Three.js Part Inspector, raw materials master catalog (`/admin/materials`), and live test-drive calculation sandbox. | PRD-F14, PRD-F19 | Supabase RLS, `src/lib/admin/materials/materialActions.ts`, `src/lib/admin/products/autoDetection.ts`, S3 Presigned Upload API |
+| SDD-C9 | Role-Based Admin Portal & Part Inspector | Next.js Protected Routes | Administrative console (`/admin`) with a searchable product workbench, client-side product type and lifecycle status filters, split-screen Three.js Part Inspector, raw materials master catalog (`/admin/materials`), and live test-drive calculation sandbox. | PRD-F14, PRD-F19 | Supabase RLS, `src/features/admin/products/ProductsContent.tsx`, `src/lib/admin/materials/materialActions.ts`, `src/lib/admin/products/autoDetection.ts`, S3 Presigned Upload API |
 
 ---
 
