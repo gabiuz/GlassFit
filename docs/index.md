@@ -5,7 +5,7 @@
 **Version:** 1.0 (Capstone Production Release)  
 **Owner:** Reynard John B. Rabanal (Lead Product / Systems Architect) & GlassFit Capstone Team (PUP CCIS)  
 **Status:** Locked  
-**Last reconciled:** September 26, 2026 (Added IMP-MS17 simplified customer quotation and per-item negotiation traceability)
+**Last reconciled:** September 30, 2026 (Added IMP-MS35 multi-format space image ingestion traceability)
 
 ---
 
@@ -37,6 +37,7 @@ GlassFit is a responsive, web-based photo-simulation and consultation-support pl
 | IMP-MS31 | Admin Booking Discard-to-Hard-Delete and Quotation Purge | `docs/implementation/ms31.md` | Implemented | September 30, 2026 | GlassFit Capstone Team |
 | IMP-MS32 | Admin Data Management, Business Intelligence Exports, Native Analytics, and System Backup | `docs/implementation/ms32.md` | Implemented | September 30, 2026 | GlassFit Capstone Team |
 | IMP-MS33 | Unified Cross-Browser GlassFit Brand Theme Scrollbar System | `docs/implementation/ms33.md` | Implemented | September 30, 2026 | GlassFit Capstone Team |
+| IMP-MS35 | Multi-Format Space Image Ingestion for WebP and HEIC/HEIF | `docs/implementation/ms35.md` | Ready for Implementation | September 30, 2026 | GlassFit Capstone Team |
 
 ---
 
@@ -54,6 +55,7 @@ GlassFit is a responsive, web-based photo-simulation and consultation-support pl
 | BRD-M5 (Minimize Estimator Overhead) | PRD-F13, PRD-F14 (Booking & Admin Workbench) | SDD-C8, SDD-C9 (Signed Link & Admin Portal) | ERD-E13, ERD-E14, ERD-E15, ERD-E16 | QAD-TC46 | Implemented |
 | BRD-M5 (Minimize Estimator Overhead) | PRD-F14 (Admin Data Management) | SDD-C9, SDD-C10 (Admin Workbench & Access Control) | ERD-E3, ERD-E13, ERD-E16, ERD-E18 | QAD-TC47 | Implemented |
 | BRD-M4 (Achieve High Usability) | PRD-F1, PRD-F6, PRD-F14 (Brand UI Consistency & Themed Viewports) | SDD-C1, SDD-C5, SDD-C9 | N/A (Presentation Layer) | QAD-TC48 | Implemented |
+| BRD-M4, BRD-M6 (Usability and Space Intake Reliability) | PRD-F3, PRD-F4, PRD-F7 | SDD-C2, SDD-C3 | N/A (Temporary Files) | QAD-TC3, QAD-TC4, QAD-TC50 | Ready for Implementation |
 
 ---
 
@@ -92,6 +94,7 @@ GlassFit is a responsive, web-based photo-simulation and consultation-support pl
 | September 30, 2026 | `docs/implementation/ms31.md`, `docs/erd-glassfit.md`, `docs/qad-glassfit.md`, `docs/index.md` | GlassFit Capstone Team | Reconciled admin booking Discard hard deletion, cascading foreign keys, R2 asset purge, and QAD-TC46 | Pending |
 | September 30, 2026 | `docs/implementation/ms32.md`, `docs/erd-glassfit.md`, `docs/qad-glassfit.md`, `docs/index.md` | GlassFit Capstone Team | Reconciled admin data management CSV exports, executive KPI summaries, native SVG/Tailwind analytics charts, system backup engine, migration 014, and QAD-TC47 | Pending |
 | September 30, 2026 | `docs/implementation/ms33.md`, `src/app/globals.css`, `docs/dsd-glassfit.md`, `docs/qad-glassfit.md`, `docs/milestone.md`, `docs/index.md` | GlassFit Capstone Team | Reconciled unified cross-browser GlassFit brand theme scrollbar system, W3C standard properties, WebKit pseudo-elements, DSD-UI13 tokens, and QAD-TC48 | Pending |
+| September 30, 2026 | `docs/implementation/ms35.md`, `docs/prd-glassfit.md`, `docs/sdd-glassfit.md`, `docs/dsd-glassfit.md`, `docs/qad-glassfit.md`, `docs/build-glassfit.md`, `docs/milestone.md`, `docs/index.md` | GlassFit Capstone Team | Reconciled static WebP and HEIC/HEIF upload requirements, browser-safe previews, server decoding and normalization, dependency readiness, and QAD-TC50 | Pending |
 
 
 

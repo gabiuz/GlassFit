@@ -28,9 +28,61 @@ GENERATED_DIR = (
 MASK_DIR = GENERATED_DIR / "masks"
 UPLOAD_DIR = GENERATED_DIR / "uploads"
 SESSION_DIR = GENERATED_DIR / "sessions"
-ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png"}
+MIME_FORMATS: dict[str, tuple[str, set[str]]] = {
+    "image/jpeg": ("jpeg", {".jpg", ".jpeg"}),
+    "image/png": ("png", {".png"}),
+    "image/webp": ("webp", {".webp"}),
+    "image/heic": ("heif", {".heic", ".heif"}),
+    "image/heif": ("heif", {".heic", ".heif"}),
+}
+EXTENSION_FORMATS = {
+    ".jpg": "jpeg",
+    ".jpeg": "jpeg",
+    ".png": "png",
+    ".webp": "webp",
+    ".heic": "heif",
+    ".heif": "heif",
+}
+GENERIC_CONTENT_TYPES = {"", "application/octet-stream"}
 MAX_UPLOAD_BYTES = 12 * 1024 * 1024
 TEMP_SESSION_TTL_MINUTES = int(os.getenv("TEMP_SESSION_TTL_MINUTES", "120"))
+
+
+def _resolve_image_format(
+    content_type: str | None,
+    filename: str | None,
+) -> tuple[str, str]:
+    """Resolve the approved source suffix and declared image format family."""
+    normalized_content_type = (content_type or "").lower().strip()
+    extension = Path(filename or "").suffix.lower()
+    extension_format = EXTENSION_FORMATS.get(extension)
+    if extension_format is None:
+        raise HTTPException(400, "Upload a JPG, PNG, WebP, or HEIC/HEIF image.")
+
+    if normalized_content_type in GENERIC_CONTENT_TYPES:
+        return extension, extension_format
+
+    mime_contract = MIME_FORMATS.get(normalized_content_type)
+    if mime_contract is None:
+        raise HTTPException(400, "Upload a JPG, PNG, WebP, or HEIC/HEIF image.")
+
+    declared_format, allowed_extensions = mime_contract
+    if extension not in allowed_extensions:
+        raise HTTPException(400, "The file type and filename extension do not match.")
+
+    return extension, declared_format
+
+
+def _assert_decoded_format(declared_format: str, decoded_format: str) -> None:
+    normalized_decoded = decoded_format.lower()
+    compatible = normalized_decoded == declared_format or (
+        declared_format == "heif" and normalized_decoded in {"heic", "heif"}
+    )
+    if not compatible:
+        raise HTTPException(
+            status_code=400,
+            detail="The uploaded image contents do not match its declared format.",
+        )
 
 
 def _env_flag(name: str, default: bool = True) -> bool:
@@ -125,19 +177,19 @@ def get_generated_artifact(artifact_path: str) -> FileResponse:
 
 @app.post("/analyze-image")
 async def analyze_image(image: UploadFile = File(...)) -> dict:
-    if image.content_type not in ALLOWED_CONTENT_TYPES:
-        raise HTTPException(status_code=400, detail="Upload a JPG, JPEG, or PNG image.")
+    suffix, declared_format = _resolve_image_format(image.content_type, image.filename)
+    is_heif = declared_format == "heif"
 
     cleanup_expired_sessions()
 
-    suffix = ".png" if image.content_type == "image/png" else ".jpg"
     session_id = str(uuid4())
     upload_id = session_id.replace("-", "")[:12]
     session_dir = SESSION_DIR / session_id
     session_mask_dir = session_dir / "masks"
     session_mask_url_prefix = f"/generated/sessions/{session_id}/masks"
     raw_upload_path = UPLOAD_DIR / f"{upload_id}_raw{suffix}"
-    upload_path = UPLOAD_DIR / f"{upload_id}{suffix}"
+    intermediate_suffix = ".jpg" if is_heif else suffix
+    upload_path = UPLOAD_DIR / f"{upload_id}{intermediate_suffix}"
     workspace_path = session_dir / "workspace.webp"
 
     try:
@@ -156,6 +208,7 @@ async def analyze_image(image: UploadFile = File(...)) -> dict:
             original_metadata = save_oriented_upload(raw_upload_path, upload_path)
         except ImagePreparationError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        _assert_decoded_format(declared_format, original_metadata["source_format"])
 
         brightness = analyze_brightness(upload_path)
         lighting = analyze_lighting(upload_path)

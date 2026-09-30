@@ -2,7 +2,12 @@
 
 import { ChangeEvent, DragEvent, useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
-import { validateImageDecode, validateImageFile } from "@/lib/imageApi";
+import { Camera } from "lucide-react";
+import {
+    type ImagePreviewMode,
+    validateImageDecode,
+    validateImageFile,
+} from "@/lib/imageApi";
 
 interface UploadImageProps {
     onImageSelected?: (file: File, previewUrl: string) => void;
@@ -14,6 +19,8 @@ export function UploadImage({ onImageSelected }: UploadImageProps = {}) {
     const [isValidating, setIsValidating] = useState(false);
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const [fileName, setFileName] = useState<string | null>(null);
+    const [fileSize, setFileSize] = useState<number | null>(null);
+    const [previewMode, setPreviewMode] = useState<ImagePreviewMode | null>(null);
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
@@ -28,6 +35,9 @@ export function UploadImage({ onImageSelected }: UploadImageProps = {}) {
             return null;
         });
         setFileName(null);
+        setFileSize(null);
+        setPreviewMode(null);
+        if (fileInputRef.current) fileInputRef.current.value = "";
     }, []);
 
     const processFile = useCallback(async (file: File) => {
@@ -40,16 +50,18 @@ export function UploadImage({ onImageSelected }: UploadImageProps = {}) {
 
         setIsValidating(true);
         try {
-            await validateImageDecode(file);
-            const nextPreviewUrl = URL.createObjectURL(file);
+            const nextPreviewMode = await validateImageDecode(file);
+            const nextPreviewUrl = nextPreviewMode === "image" ? URL.createObjectURL(file) : null;
 
             setError(null);
             setFileName(file.name);
+            setFileSize(file.size);
+            setPreviewMode(nextPreviewMode);
             setPreviewUrl((currentUrl) => {
                 if (currentUrl) URL.revokeObjectURL(currentUrl);
                 return nextPreviewUrl;
             });
-            onImageSelected?.(file, nextPreviewUrl);
+            onImageSelected?.(file, nextPreviewUrl ?? "");
         } catch (decodeError) {
             setError(decodeError instanceof Error ? decodeError.message : "Uploaded image could not be decoded.");
             clearPreview();
@@ -112,16 +124,43 @@ export function UploadImage({ onImageSelected }: UploadImageProps = {}) {
                         : "bg-neutral-100/30 border-cyan-500",
                 ].join(" ")}
             >
-                {previewUrl ? (
+                {previewMode ? (
                     <div className="flex flex-col items-center gap-6 w-full">
-                        <div className="relative w-full max-w-lg rounded-xl overflow-hidden shadow-lg">
-                            <img
-                                src={previewUrl}
-                                alt="Uploaded preview"
-                                className="w-full h-auto object-contain max-h-80"
-                            />
-                        </div>
-                        <p className="text-base text-gray-600 truncate max-w-xs">{fileName}</p>
+                        {previewMode === "image" && previewUrl ? (
+                            <div className="relative w-full max-w-lg h-80 rounded-xl overflow-hidden shadow-lg">
+                                <Image
+                                    src={previewUrl}
+                                    alt="Uploaded space preview"
+                                    fill
+                                    sizes="(max-width: 640px) 90vw, 512px"
+                                    className="object-contain"
+                                    unoptimized
+                                />
+                            </div>
+                        ) : (
+                            <div className="w-full max-w-lg rounded-2xl border border-cyan-200 bg-cyan-50 p-6 text-left shadow-lg">
+                                <div className="flex items-start gap-4">
+                                    <div className="rounded-xl border border-cyan-200 bg-white/70 p-3 text-cyan-700">
+                                        <Camera aria-hidden="true" className="size-8" />
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                        <span className="inline-flex rounded-full bg-cyan-100 px-3 py-1 text-xs font-medium text-cyan-800">
+                                            High Efficiency Image (HEIC/HEIF)
+                                        </span>
+                                        <p className="mt-3 truncate text-base font-medium text-gray-900">{fileName}</p>
+                                        <p className="text-sm text-gray-600">
+                                            {fileSize === null ? "" : `${(fileSize / (1024 * 1024)).toFixed(2)} MB`}
+                                        </p>
+                                        <p className="mt-3 text-sm font-medium text-cyan-800">
+                                            Photo ready for 3D room analysis
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                        {previewMode === "image" && (
+                            <p className="text-base text-gray-600 truncate max-w-xs">{fileName}</p>
+                        )}
                         <button
                             onClick={(event) => {
                                 event.stopPropagation();
@@ -157,7 +196,7 @@ export function UploadImage({ onImageSelected }: UploadImageProps = {}) {
                             <p className="text-white text-xl font-thin leading-7">Browse Files</p>
                         </button>
                         <p className="text-xs sm:text-sm md:text-xl text-stone-300 font-normal tracking-tight leading-normal pointer-events-none max-w-[280px] sm:max-w-md md:max-w-none text-center">
-                            Accepted file types: JPG and PNG, up to 12 MB.
+                            Accepted file types: JPG, PNG, WebP, HEIC, and HEIF, up to 12 MB.
                         </p>
                     </>
                 )}
@@ -165,7 +204,7 @@ export function UploadImage({ onImageSelected }: UploadImageProps = {}) {
                 <input
                     ref={fileInputRef}
                     type="file"
-                    accept="image/jpeg,image/png"
+                    accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif,.webp,.jpg,.jpeg,.png"
                     className="hidden"
                     onChange={handleFileChange}
                 />
