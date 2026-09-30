@@ -2,7 +2,8 @@
 
 import { useState, useMemo, useTransition } from "react";
 import { SearchBar } from "@/components/shared/SearchBar";
-import { Copy, Check, Plus, TrendingUp, Layers, CheckCircle2, UploadCloud } from "lucide-react";
+import { Copy, Check, Plus, TrendingUp, Layers, CheckCircle2, UploadCloud, ChevronDown } from "lucide-react";
+import { Select } from "radix-ui";
 
 import { cn } from "@/lib/utils";
 import type { RawMaterial, RawMaterialCategory, RawMaterialFinishType } from "@/lib/pricing/types";
@@ -84,6 +85,83 @@ function MaterialCodeBadge({ code }: { code: string }) {
         </span>
       )}
     </button>
+  );
+}
+
+const ALL_FILTER_VALUE = "__glassfit_all__";
+
+type MaterialFilterOptionItem = string | { value: string; label: string };
+
+function MaterialFilterSelect({
+  accessibleName,
+  allLabel,
+  value,
+  options,
+  onValueChange,
+}: {
+  accessibleName: string;
+  allLabel: string;
+  value: string | null;
+  options: readonly MaterialFilterOptionItem[];
+  onValueChange: (value: string | null) => void;
+}) {
+  return (
+    <Select.Root
+      value={value ?? ALL_FILTER_VALUE}
+      onValueChange={(nextValue) =>
+        onValueChange(nextValue === ALL_FILTER_VALUE ? null : nextValue)
+      }
+    >
+      <Select.Trigger
+        aria-label={accessibleName}
+        className={cn(
+          "group inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#097283]",
+          value !== null
+            ? "bg-[#e9f9fb] text-[#097283]"
+            : "bg-neutral-100 hover:bg-neutral-200 text-neutral-700"
+        )}
+      >
+        <Select.Value />
+        <Select.Icon asChild>
+          <ChevronDown
+            aria-hidden="true"
+            className="size-3 text-neutral-500 transition-transform duration-200 group-data-[state=open]:rotate-180"
+          />
+        </Select.Icon>
+      </Select.Trigger>
+
+      <Select.Portal>
+        <Select.Content
+          position="popper"
+          sideOffset={6}
+          collisionPadding={12}
+          className="z-50 min-w-[var(--radix-select-trigger-width)] overflow-hidden rounded-[16px] border border-neutral-200 bg-white p-1.5 text-[#0f1422] shadow-[0_12px_32px_rgba(15,20,34,0.14)]"
+        >
+          <Select.Viewport>
+            <MaterialFilterOption value={ALL_FILTER_VALUE} label={allLabel} />
+            {options.map((option) => {
+              const optValue = typeof option === "string" ? option : option.value;
+              const optLabel = typeof option === "string" ? option : option.label;
+              return <MaterialFilterOption key={optValue} value={optValue} label={optLabel} />;
+            })}
+          </Select.Viewport>
+        </Select.Content>
+      </Select.Portal>
+    </Select.Root>
+  );
+}
+
+function MaterialFilterOption({ value, label }: { value: string; label: string }) {
+  return (
+    <Select.Item
+      value={value}
+      className="relative flex min-h-9 cursor-default select-none items-center rounded-[10px] py-1.5 pl-3 pr-8 text-xs font-normal text-neutral-800 outline-none data-[highlighted]:bg-[#e9f9fb] data-[highlighted]:text-[#097283] data-[state=checked]:font-medium data-[state=checked]:text-[#097283]"
+    >
+      <Select.ItemText>{label}</Select.ItemText>
+      <Select.ItemIndicator className="absolute right-2.5 inline-flex items-center justify-center text-[#07b6d3]">
+        <Check aria-hidden="true" className="size-3.5" strokeWidth={2.5} />
+      </Select.ItemIndicator>
+    </Select.Item>
   );
 }
 
@@ -322,29 +400,25 @@ export function MaterialsContent({ initialMaterials }: MaterialsContentProps) {
           <div className="h-4 w-px bg-neutral-200 mx-1 hidden sm:block" />
 
           {/* Finish Filter */}
-          <select
-            value={selectedFinish}
-            onChange={(e) => setSelectedFinish(e.target.value as RawMaterialFinishType | "ALL")}
-            className="text-xs bg-neutral-100 hover:bg-neutral-200 border-none rounded-full px-3 py-1.5 text-neutral-700 outline-none cursor-pointer"
-          >
-            <option value="ALL">All Finishes</option>
-            {FINISHES.filter((f) => f !== "ALL").map((f) => (
-              <option key={f} value={f}>
-                {f}
-              </option>
-            ))}
-          </select>
+          <MaterialFilterSelect
+            accessibleName="Filter materials by finish"
+            allLabel="All Finishes"
+            value={selectedFinish === "ALL" ? null : selectedFinish}
+            options={FINISHES.filter((f) => f !== "ALL")}
+            onValueChange={(val) => setSelectedFinish((val as RawMaterialFinishType) ?? "ALL")}
+          />
 
           {/* Status Filter */}
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as "ALL" | "ACTIVE" | "INACTIVE")}
-            className="text-xs bg-neutral-100 hover:bg-neutral-200 border-none rounded-full px-3 py-1.5 text-neutral-700 outline-none cursor-pointer"
-          >
-            <option value="ALL">All Status</option>
-            <option value="ACTIVE">Active Only</option>
-            <option value="INACTIVE">Inactive Only</option>
-          </select>
+          <MaterialFilterSelect
+            accessibleName="Filter materials by status"
+            allLabel="All Status"
+            value={statusFilter === "ALL" ? null : statusFilter}
+            options={[
+              { value: "ACTIVE", label: "Active Only" },
+              { value: "INACTIVE", label: "Inactive Only" },
+            ]}
+            onValueChange={(val) => setStatusFilter((val as "ACTIVE" | "INACTIVE") ?? "ALL")}
+          />
         </div>
 
         <p className="text-neutral-400 text-xs font-normal whitespace-nowrap self-end md:self-auto">
