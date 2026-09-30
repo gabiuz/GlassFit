@@ -9,7 +9,7 @@ export interface PrivacySectionItem {
   listTitle?: string;
   bullets?: string[];
   trailing?: string;
-  contacts?: { label: string; value: string }[];
+  contacts?: { label: string; value: string; href?: string }[];
 }
 
 export const PRIVACY_SECTIONS: PrivacySectionItem[] = [
@@ -269,11 +269,17 @@ export const PRIVACY_SECTIONS: PrivacySectionItem[] = [
     ],
     listTitle: "Contact Information:",
     contacts: [
-      { label: "Business Name:", value: "[Participating Business Name]" },
-      { label: "Privacy Contact:", value: "[Authorized Contact / Position]" },
-      { label: "Email Address:", value: "[Privacy or Business Email]" },
-      { label: "Contact Number:", value: "[Business Contact Number]" },
-      { label: "Business Address:", value: "[Business Address]" },
+      { label: "Business Name:", value: "GlassFit Glass and Aluminum Works" },
+      {
+        label: "Email Address:",
+        value: "glassfit.work@gmail.com",
+        href: "mailto:glassfit.work@gmail.com",
+      },
+      { label: "Contact Number:", value: "0918-601-4737" },
+      {
+        label: "Business Address:",
+        value: "3 Sta. Fe, Parañaque City, Metro Manila, Philippines",
+      },
     ],
   },
   {
@@ -292,11 +298,17 @@ export const PRIVACY_SECTIONS: PrivacySectionItem[] = [
     lead: "For questions about this Privacy Policy or the use of GlassFit, please contact:",
     listTitle: "Contact Information:",
     contacts: [
-      { label: "Business Name:", value: "[Participating Business Name]" },
-      { label: "Privacy Contact:", value: "[Authorized Contact / Position]" },
-      { label: "Email Address:", value: "[Privacy or Business Email]" },
-      { label: "Contact Number:", value: "[Business Contact Number]" },
-      { label: "Business Address:", value: "[Business Address]" },
+      { label: "Business Name:", value: "GlassFit Glass and Aluminum Works" },
+      {
+        label: "Email Address:",
+        value: "glassfit.work@gmail.com",
+        href: "mailto:glassfit.work@gmail.com",
+      },
+      { label: "Contact Number:", value: "0918-601-4737" },
+      {
+        label: "Business Address:",
+        value: "3 Sta. Fe, Parañaque City, Metro Manila, Philippines",
+      },
     ],
   },
 ];
