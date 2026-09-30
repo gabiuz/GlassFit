@@ -313,7 +313,7 @@ export function CatalogAssetsSection({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl">
         {/* 2D Catalog Images (Multi-Image Ingestion & Infinite Marquee) */}
         <div className="flex flex-col gap-3">
-          <div className="flex flex-col gap-1">
+          <div className="flex min-h-[66px] flex-col gap-1 md:min-h-[78px] xl:min-h-[66px]">
             <label className="text-[16px] font-medium leading-[1.4] text-[#0f1422]">
               2D Catalog Gallery <span className="text-[#e74242]">*</span>
             </label>
@@ -342,9 +342,8 @@ export function CatalogAssetsSection({
                       alt={activeAsset.file_name}
                       fill
                       unoptimized
-                      className={`transition-all duration-200 ${
-                        imageFitMode === "contain" ? "object-contain p-4" : "object-cover"
-                      }`}
+                      className={`transition-all duration-200 ${imageFitMode === "contain" ? "object-contain p-4" : "object-cover"
+                        }`}
                     />
 
                     {/* Hover Zoom Overlay */}
@@ -454,11 +453,10 @@ export function CatalogAssetsSection({
                     key={item.asset_id}
                     type="button"
                     onClick={() => setActiveIndex(idx)}
-                    className={`relative size-16 shrink-0 rounded-[10px] border-2 overflow-hidden transition-all cursor-pointer ${
-                      idx === activeIndex
+                    className={`relative size-16 shrink-0 rounded-[10px] border-2 overflow-hidden transition-all cursor-pointer ${idx === activeIndex
                         ? "border-[#07b6d3] ring-2 ring-[#07b6d3]/20 scale-105"
                         : "border-neutral-200 opacity-60 hover:opacity-100"
-                    }`}
+                      }`}
                   >
                     <Image
                       src={getR2AssetUrl(item.r2_object_key) || ""}
@@ -496,11 +494,10 @@ export function CatalogAssetsSection({
           ) : (
             /* Empty State Dropzone */
             <label
-              className={`w-full aspect-square border-2 border-dashed rounded-[16px] flex flex-col items-center justify-center cursor-pointer transition-colors p-6 text-center group ${
-                isDraggingImages
+              className={`w-full aspect-square border-2 border-dashed rounded-[16px] flex flex-col items-center justify-center cursor-pointer transition-colors p-6 text-center group ${isDraggingImages
                   ? "bg-[#07b6d3]/10 border-[#07b6d3]"
                   : "bg-[#f5f5f5]/50 border-[#07b6d3]/40 hover:bg-[#07b6d3]/5"
-              }`}
+                }`}
               onDragOver={(e) => {
                 e.preventDefault();
                 setIsDraggingImages(true);
@@ -555,7 +552,7 @@ export function CatalogAssetsSection({
 
         {/* Catalog 3D Preview Upload (Hardware-Accelerated WebGL Preview Canvas) */}
         <div className="flex flex-col gap-3">
-          <div className="flex flex-col gap-1">
+          <div className="flex min-h-[66px] flex-col gap-1 md:min-h-[78px] xl:min-h-[66px]">
             <label className="text-[16px] font-medium leading-[1.4] text-[#0f1422]">
               Whole 3D Preview
             </label>
@@ -589,11 +586,10 @@ export function CatalogAssetsSection({
             </div>
           ) : (
             <label
-              className={`w-full aspect-square border-2 border-dashed rounded-[16px] flex flex-col items-center justify-center cursor-pointer transition-colors p-6 text-center group ${
-                isDraggingPreview
+              className={`w-full aspect-square border-2 border-dashed rounded-[16px] flex flex-col items-center justify-center cursor-pointer transition-colors p-6 text-center group ${isDraggingPreview
                   ? "bg-[#07b6d3]/10 border-[#07b6d3]"
                   : "bg-[#f5f5f5]/50 border-[#07b6d3]/40 hover:bg-[#07b6d3]/5"
-              }`}
+                }`}
               onDragOver={(e) => {
                 e.preventDefault();
                 setIsDraggingPreview(true);

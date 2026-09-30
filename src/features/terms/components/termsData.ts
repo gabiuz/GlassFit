@@ -8,7 +8,7 @@ export interface TermSectionItem {
   listTitle?: string;
   bullets?: string[];
   trailing?: string;
-  contacts?: { label: string; value: string }[];
+  contacts?: { label: string; value: string; href?: string }[];
 }
 
 export const TERMS_SECTIONS: TermSectionItem[] = [
@@ -199,10 +199,17 @@ export const TERMS_SECTIONS: TermSectionItem[] = [
     tocLabel: "Contact",
     lead: "For questions about these Terms & Conditions or the use of GlassFit, please contact:",
     contacts: [
-      { label: "Business Name:", value: "[Participating Business Name]" },
-      { label: "Email Address:", value: "[Business Email]" },
-      { label: "Contact Number:", value: "[Business Contact Number]" },
-      { label: "Business Address:", value: "[Business Address]" },
+      { label: "Business Name:", value: "GlassFit Glass and Aluminum Works" },
+      {
+        label: "Email Address:",
+        value: "glassfit.work@gmail.com",
+        href: "mailto:glassfit.work@gmail.com",
+      },
+      { label: "Contact Number:", value: "0918-601-4737" },
+      {
+        label: "Business Address:",
+        value: "3 Sta. Fe, Parañaque City, Metro Manila, Philippines",
+      },
     ],
   },
 ];

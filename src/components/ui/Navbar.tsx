@@ -298,14 +298,14 @@ export default function Navbar({ className = "" }: ClassNameProps) {
             >
               <Link
                 href={href}
-                className={`text-base xl:text-lg leading-4 whitespace-nowrap navbar-link flex hover:text-green ${isActive ? "text-green" : ""
+                className={`text-base xl:text-lg leading-4 whitespace-nowrap navbar-link flex hover:text-green transition-colors ${isActive ? "text-green font-bold" : "text-[#0f1422] font-normal"
                   }`}
                 aria-current={isActive ? "page" : undefined}
               >
                 {label}
               </Link>
               <motion.span
-                className="pointer-events-none absolute left-1/2 -bottom-1 h-0.5 -translate-x-1/2 rounded-full"
+                className="pointer-events-none absolute left-1/2 -bottom-2.5 h-0.5 -translate-x-1/2 rounded-full"
                 variants={{
                   rest: { width: "12px", backgroundColor: "var(--color-black)" },
                   hover: { width: "100%", backgroundColor: "var(--color-green)" },
@@ -368,7 +368,7 @@ export default function Navbar({ className = "" }: ClassNameProps) {
                     key={label}
                     href={href}
                     onClick={() => setIsOpen(false)}
-                    className={`text-lg py-1 transition-colors ${isActive ? "text-green" : "text-black hover:text-green"
+                    className={`text-lg py-1 transition-colors ${isActive ? "text-green font-bold" : "text-black hover:text-green font-normal"
                       }`}
                     aria-current={isActive ? "page" : undefined}
                   >

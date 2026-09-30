@@ -62,7 +62,7 @@ export default function Footer({ className = "" }: FooterProps) {
               <p className="hidden md:block">Bicutan, Paranaque</p>
               <br className="hidden md:block" />
               <div>
-                <p className="">Contact Number: +639 6767 676</p>
+                <p className="">Contact Number: 0918-601-4737</p>
                 <p className="">Email: glassfit@gmail.com</p>
               </div>
             </div>

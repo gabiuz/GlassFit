@@ -23,7 +23,7 @@ export function RequestStatusProgress({ status }: RequestStatusProgressProps) {
     return (
       <div
         role="status"
-        className="rounded-[20px] bg-[#c50000] px-4 py-3.5 sm:px-5 flex items-center gap-3 text-white"
+        className="rounded-[20px] bg-[#e74242] px-4 py-3.5 sm:px-5 flex items-center gap-3 text-white"
       >
         <div className="size-8 rounded-full bg-white/20 flex items-center justify-center shrink-0">
           <Image
@@ -46,61 +46,82 @@ export function RequestStatusProgress({ status }: RequestStatusProgressProps) {
   }
 
   return (
-    <div className="w-full px-1 py-1">
-      <ol className="relative grid grid-cols-4 gap-0">
-        {behavior.steps.map((step, index) => {
-          const isCurrent = step.state === "current";
-          const isComplete = step.state === "complete";
-
-          return (
-            <li
-              key={step.id}
-              aria-current={isCurrent ? "step" : undefined}
-              className="relative flex flex-col items-center gap-2 text-center min-w-0"
-            >
-              {index < behavior.steps.length - 1 && (
-                <div
-                  aria-hidden="true"
-                  className={`absolute top-[9px] left-1/2 h-0.5 w-full ${
-                    isComplete ? "bg-[#05b64b]" : "bg-[#c3c3c3]"
-                  }`}
-                />
-              )}
-
+    <div className="w-full py-2">
+      <div className="relative">
+        {/* Horizontal connector line behind circles */}
+        <div
+          aria-hidden="true"
+          className="absolute top-[12.5px] left-[12.5%] right-[12.5%] h-[3px] -translate-y-1/2 grid grid-cols-3 pointer-events-none"
+        >
+          {behavior.steps.slice(0, 3).map((step, idx) => {
+            const isSegmentComplete = step.state === "complete";
+            return (
               <div
-                className={`relative z-10 size-5 rounded-full flex items-center justify-center shrink-0 border-[3px] bg-white ${
-                  isComplete
-                    ? "border-[#05b64b] bg-[#05b64b]"
-                    : isCurrent
-                    ? "border-[#07b6d3]"
-                    : "border-[#c3c3c3] bg-[#c3c3c3]"
+                key={idx}
+                className={`h-[3px] w-full transition-colors ${
+                  isSegmentComplete ? "bg-[#05b64b]" : "bg-[#c3c3c3]"
                 }`}
-              >
-                {isComplete ? (
-                  <Image
-                    src="/send-booking/check.svg"
-                    alt=""
-                    width={14}
-                    height={14}
-                    aria-hidden="true"
-                    className="scale-[1.35]"
-                  />
-                ) : null}
-              </div>
+              />
+            );
+          })}
+        </div>
 
-              <span className={`text-[10px] sm:text-xs leading-tight ${
-                isComplete
-                  ? "text-[#05b64b]"
-                  : isCurrent
-                  ? "text-[#07b6d3]"
-                  : "text-[#c3c3c3]"
-              }`}>
-                {step.label}
-              </span>
-            </li>
-          );
-        })}
-      </ol>
+        {/* 4 Step nodes */}
+        <ol className="relative grid grid-cols-4 gap-0 w-full">
+          {behavior.steps.map((step) => {
+            const isCurrent = step.state === "current";
+            const isComplete = step.state === "complete";
+
+            return (
+              <li
+                key={step.id}
+                aria-current={isCurrent ? "step" : undefined}
+                className="relative z-10 flex flex-col items-center gap-[10px] text-center min-w-0"
+              >
+                <div
+                  className={`size-[28px] rounded-full flex items-center justify-center shrink-0 transition-colors ${
+                    isComplete
+                      ? "bg-[#05b64b]"
+                      : isCurrent
+                      ? "bg-[#07b6d3] p-[5px]"
+                      : "bg-[#c3c3c3]"
+                  }`}
+                >
+                  {isComplete ? (
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="white"
+                      strokeWidth="3.2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  ) : isCurrent ? (
+                    <div className="size-[16px] rounded-full bg-white" />
+                  ) : null}
+                </div>
+
+                <span
+                  className={`text-[12px] sm:text-[14px] leading-[1.4] whitespace-nowrap ${
+                    isComplete
+                      ? "text-[#05b64b]"
+                      : isCurrent
+                      ? "text-[#07b6d3]"
+                      : "text-[#c3c3c3]"
+                  }`}
+                >
+                  {step.label}
+                </span>
+              </li>
+            );
+          })}
+        </ol>
+      </div>
     </div>
   );
 }

@@ -20,7 +20,7 @@ const contactItems = [
   {
     key: "phone",
     src: "/navbar_icons/phone.svg",
-    label: "+639 0676 676",
+    label: "0918-601-4737",
   },
   {
     key: "clock",
@@ -87,7 +87,7 @@ export async function MyRequestsPage() {
       </section>
 
       {/* Main Container Area */}
-      <div className="max-w-[1240px] mx-auto w-full px-4 sm:px-6 lg:px-8 py-8 lg:py-12">
+      <div className="max-w-[1360px] mx-auto w-full px-4 sm:px-6 lg:px-8 py-8 lg:py-12">
         <MyRequestsContent
           initialRequests={initialRequests}
           loadError={loadError}
