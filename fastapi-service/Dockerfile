@@ -1,10 +1,11 @@
 FROM python:3.11-slim
 
-# libglib2.0-0 is required by some ultralytics/torch transitive deps.
-# libgl1 is NOT needed because we use opencv-python-headless (no display/GUI).
-# libsm6, libxext6, libxrender-dev are also skipped for the same reason.
+# libglib2.0-0 and libgl1 are required by ultralytics/cv2 transitive deps.
+# opencv-python-headless is used (no display/GUI), but libgl1 is still needed
+# by ultralytics at runtime. libsm6, libxext6, libxrender-dev are not needed.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libglib2.0-0 \
+    libgl1 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -14,5 +15,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-EXPOSE 8000
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+EXPOSE ${PORT:-8000}
+CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}
