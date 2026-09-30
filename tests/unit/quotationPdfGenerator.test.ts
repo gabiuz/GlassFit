@@ -5,7 +5,7 @@ import { escapeHtml, generateQuotationPdfHtml, sanitizeImageSource, type Quotati
 import { openQuotationPreview, type QuotationPreviewWindowPort } from "../../src/lib/pricing/quotationPreviewWindow.js";
 
 const bom = calculateStandardSeries798({ widthMm: 1200, heightMm: 1200, panelCount: 2 });
-const base: QuotationPdfMetadata = { quotationNumber: "DRAFT", customerName: "A & B <script>alert('x')</script>", createdAtFormatted: "September 22, 2026", projectName: "Window <Prototype>", snapshotImageUrl: null, brandLogoUrl: "https://glassfit.test/Logo.svg", allowedImageOrigins: ["https://glassfit.test"], hasSill: true, structuralWaiver: false, bomResult: bom };
+const base: QuotationPdfMetadata = { quotationNumber: "DRAFT", customerName: "A & B <script>alert('x')</script>", estimatorName: "Estimator <Lead>", createdAtFormatted: "September 22, 2026", projectName: "Window <Prototype>", snapshotImageUrl: null, brandLogoUrl: "https://glassfit.test/Logo.svg", allowedImageOrigins: ["https://glassfit.test"], hasSill: true, structuralWaiver: false, bomResult: bom };
 
 describe("IMP-MS14 quotation preview", () => {
   it("escapes text and sanitizes image sources", () => {
@@ -43,6 +43,17 @@ describe("IMP-MS14 quotation preview", () => {
     assert.ok(!html.includes("null"));
     assert.ok(!html.includes("Metro Manila, Philippines"));
     assert.ok(!html.includes("certified code-compliant"));
+  });
+
+  it("prints the customer, estimator, and dates directly above the original signature lines", () => {
+    const html = generateQuotationPdfHtml(base);
+    assert.ok(html.includes("Customer signature / Printed name / Date"));
+    assert.ok(html.includes("Estimator signature / Printed name / Date"));
+    assert.ok(html.includes("A &amp; B &lt;script&gt;"));
+    assert.ok(html.includes("Estimator &lt;Lead&gt;"));
+    assert.strictEqual(html.match(/September 22, 2026/g)?.length, 3);
+    assert.ok(html.includes('.signature-block .line { height:30px; border-bottom:1px solid #64748b;'));
+    assert.ok(html.includes("justify-content:center; gap:18px;"));
   });
 
   it("uses bounded fragmentation rules without clipping long fixture cards", () => {
