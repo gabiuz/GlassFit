@@ -11,7 +11,7 @@ const navbarIcons = [
   {
     key: "phone",
     src: "/navbar_icons/phone.svg",
-    label: "+639 0676 676",
+    label: "0918-601-4737",
   },
   {
     key: "clock",
@@ -66,26 +66,27 @@ export function HeroSection() {
         />
         <div className="relative z-10">
           <div className="px-6 pt-32 pb-12 flex justify-start items-start md:pl-16 md:pt-48 lg:pl-27 lg:pt-57 lg:pb-0 4xl:pl-36 4xl:pt-64 5xl:pl-48! 5xl:pt-72!">
-            <div className="flex flex-col gap-7.5 4xl:gap-10 5xl:gap-12 max-w-full xl:max-w-[480px] 2xl:max-w-[560px] 3xl:max-w-[700px] 4xl:max-w-[850px] 5xl:max-w-none">
-              <div className="flex flex-col gap-1 4xl:gap-4 5xl:gap-6">
-                <h3 className="text-green text-lg sm:text-xl md:text-2xl 4xl:text-[28px] 5xl:text-4xl font-normal leading-normal">
+            <div className="flex w-full max-w-full flex-col gap-6 font-[family-name:var(--font-made-okine)] xl:max-w-[480px] xl:gap-7 2xl:max-w-[540px] 3xl:max-w-[700px] 4xl:max-w-[777px] 4xl:gap-[34px]">
+              <div className="flex flex-col gap-2 4xl:gap-[10px]">
+                <p className="bg-gradient-to-r from-[#097283] from-[6.931%] to-[#45c9e3] bg-clip-text text-lg font-normal leading-[1.4] tracking-[-0.532px] text-transparent sm:text-xl md:text-2xl xl:text-[28px]">
                   See the Fit Before Installation
-                </h3>
-                <h1 className="text-[26px] xs:text-[30px] sm:text-4xl md:text-5xl lg:text-5xl xl:text-[38px] 2xl:text-[42px] 3xl:text-5xl 4xl:text-6xl 5xl:text-7xl text-black font-medium uppercase leading-[1.12] tracking-tight">
-                  The Smarter Way to Fit
+                </p>
+                <h1 className="text-[28px] font-medium uppercase leading-[1.2] tracking-[-1.615px] text-[#0f1422] xs:text-[32px] sm:text-4xl md:text-5xl lg:text-[64px] xl:text-[clamp(46px,calc(6.09375vw-32px),85px)]">
+                  The Smarter
                   <br />
-                  <span className="bg-grad-light bg-clip-text text-transparent">
-                    Glass & Aluminum
+                  Way to Fit
+                  <br />
+                  <span className="whitespace-nowrap bg-gradient-to-r from-[#097283] from-[6.931%] to-[#45c9e3] bg-clip-text text-transparent">
+                    Glass &amp; Aluminum
                   </span>
                 </h1>
               </div>
               <div>
-                <p className="text-black text-sm sm:text-lg lg:text-xl 4xl:text-2xl 5xl:text-3xl! font-normal leading-relaxed 4xl:leading-9 5xl:leading-10!">
-                  A smarter way to preview customized fittings
-                  <br /> using your actual space photo
+                <p className="w-full text-sm font-normal leading-[1.4] tracking-[-0.456px] text-[#0f1422] sm:text-base md:text-lg lg:text-xl 4xl:text-[24px]">
+                  Preview custom fittings on your photo and get accurate estimates in minutes. Built for precise planning, instant quotes, and faster sign-offs.
                 </p>
               </div>
-              <div className="flex flex-col sm:flex-row gap-3.75 4xl:gap-5">
+              <div className="flex flex-col items-stretch gap-3.5 sm:flex-row sm:items-center sm:gap-5 4xl:gap-[30px]">
                 <Link href="/visualization" className="w-full sm:w-auto">
                   <Button
                     variant="lightGradWhiteText"
@@ -94,14 +95,14 @@ export function HeroSection() {
                     rightIcon={
                       <Image
                         src="/right_arrow.svg"
-                        width={25}
-                        height={25}
+                        width={17}
+                        height={16}
                         alt=""
-                        className="4xl:w-7 4xl:h-7 5xl:w-8 5xl:h-8"
-                      ></Image>
+                        className="h-[16px] w-[17px] 4xl:h-5 4xl:w-5"
+                      />
                     }
-                    className="w-full sm:w-auto justify-center 4xl:px-7 4xl:py-4 4xl:text-xl 5xl:px-9! 5xl:py-5! 5xl:text-3xl!"
-                  ></Button>
+                    className="w-full justify-center rounded-[25px]! px-[20px]! py-[15px]! text-[18px]! tracking-[-0.38px] sm:w-auto xl:text-[20px]!"
+                  />
                 </Link>
                 <Link href="/product" className="w-full sm:w-auto">
                   <Button
@@ -109,8 +110,8 @@ export function HeroSection() {
                     value="View Product Catalog"
                     leftIcon={null}
                     rightIcon={null}
-                    className="w-full sm:w-auto justify-center 4xl:px-7 4xl:py-4 4xl:text-xl 5xl:px-9! 5xl:py-5! 5xl:text-2xl"
-                  ></Button>
+                    className="w-full justify-center rounded-[25px]! px-[20px]! py-[15px]! text-[18px]! tracking-[-0.38px] sm:w-auto xl:text-[20px]!"
+                  />
                 </Link>
               </div>
             </div>

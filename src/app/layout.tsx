@@ -7,6 +7,7 @@ import LayoutWrapper from "@/components/shared/LayoutWrapper";
 const inter = Inter({ subsets: ["latin"] });
 
 const myFont = localFont({
+  variable: "--font-made-okine",
   src: [
     {
       path: "../../public/fonts/MADEOkineSansPERSONALUSE-Regular.otf",
@@ -44,7 +45,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${myFont.className} ${inter.className} h-full antialiased`}
+      className={`${myFont.className} ${myFont.variable} ${inter.className} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
         <LayoutWrapper>{children}</LayoutWrapper>

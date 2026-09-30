@@ -9,7 +9,7 @@ const contactItems = [
   {
     key: "phone",
     src: "/navbar_icons/phone.svg",
-    label: "+639 0676 676",
+    label: "0918-601-4737",
   },
   {
     key: "clock",
