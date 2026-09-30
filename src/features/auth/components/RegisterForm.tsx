@@ -12,6 +12,7 @@ import {
   formatPhoneNumber,
 } from "../utils/auth-utils";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { normalizePersonName } from "@/lib/identity/personName";
 
 export function RegisterForm() {
   const router = useRouter();
@@ -39,7 +40,6 @@ export function RegisterForm() {
   const isPhoneValid = phone !== "" && validatePhoneNumber(phone);
   const isFormValid =
     firstName.trim() !== "" &&
-    lastName.trim() !== "" &&
     isEmailValid &&
     isPhoneValid &&
     isPasswordValid;
@@ -60,32 +60,15 @@ export function RegisterForm() {
     setPhoneError("");
     setGeneralError("");
 
-    const normalizedFirstName = firstName.trim();
-    const normalizedLastName = lastName.trim();
+    const nameResult = normalizePersonName({ firstName, lastName });
     const normalizedEmail = email.trim().toLowerCase();
     const normalizedPhone = phone.replace(/\D/g, "");
 
     let hasErrors = false;
 
-    if (!normalizedFirstName) {
-      setFirstNameError("First name is required.");
-      hasErrors = true;
-    } else if (normalizedFirstName.length < 2) {
-      setFirstNameError("First name must contain at least 2 characters.");
-      hasErrors = true;
-    } else if (!/^[\p{L} .'-]+$/u.test(normalizedFirstName)) {
-      setFirstNameError("First name contains invalid characters.");
-      hasErrors = true;
-    }
-
-    if (!normalizedLastName) {
-      setLastNameError("Last name is required.");
-      hasErrors = true;
-    } else if (normalizedLastName.length < 2) {
-      setLastNameError("Last name must contain at least 2 characters.");
-      hasErrors = true;
-    } else if (!/^[\p{L} .'-]+$/u.test(normalizedLastName)) {
-      setLastNameError("Last name contains invalid characters.");
+    if (!nameResult.ok) {
+      if (nameResult.field === "firstName") setFirstNameError(nameResult.error);
+      else setLastNameError(nameResult.error);
       hasErrors = true;
     }
 
@@ -117,6 +100,10 @@ export function RegisterForm() {
 
     if (hasErrors) return;
 
+    if (!nameResult.ok) return;
+    const normalizedFirstName = nameResult.value.firstName;
+    const normalizedLastName = nameResult.value.lastName;
+
     setIsSubmitting(true);
 
     try {
@@ -131,7 +118,7 @@ export function RegisterForm() {
           data: {
             first_name: normalizedFirstName,
             last_name: normalizedLastName,
-            full_name: `${normalizedFirstName} ${normalizedLastName}`,
+            full_name: nameResult.value.fullName,
             phone: `+63${normalizedPhone}`,
           },
         },
@@ -324,7 +311,7 @@ export function RegisterForm() {
                 className="w-full bg-white border border-[#c3c3c3] rounded-lg px-4 py-3 text-sm font-normal text-black outline-none placeholder:text-[#c3c3c3] focus:border-green focus:ring-1 focus:ring-green transition-all"
                 required
                 autoComplete="given-name"
-                maxLength={60}
+                maxLength={50}
                 aria-invalid={Boolean(firstNameError)}
                 aria-describedby={firstNameError ? "first-name-error" : undefined}
               />
@@ -338,7 +325,7 @@ export function RegisterForm() {
             {/* Last Name */}
             <div className="flex flex-col gap-1.25 flex-1 items-start">
               <label className="text-green text-base font-normal leading-[1.4] tracking-[-0.304px]">
-                Last Name
+                Last Name (Optional)
               </label>
               <input
                 type="text"
@@ -349,9 +336,8 @@ export function RegisterForm() {
                 }}
                 placeholder="Dela Cruz"
                 className="w-full bg-white border border-[#c3c3c3] rounded-lg px-4 py-3 text-sm font-normal text-black outline-none placeholder:text-[#c3c3c3] focus:border-green focus:ring-1 focus:ring-green transition-all"
-                required
                 autoComplete="family-name"
-                maxLength={60}
+                maxLength={50}
                 aria-invalid={Boolean(lastNameError)}
                 aria-describedby={lastNameError ? "last-name-error" : undefined}
               />

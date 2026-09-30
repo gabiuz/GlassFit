@@ -11,6 +11,7 @@ export type BookingStateAction =
   | { type: "select"; bookingId: string }
   | { type: "edit-status"; status: BookingStatus }
   | { type: "discard-status" }
+  | { type: "delete-booking"; bookingId: string }
   | { type: "status-saved"; bookingId: string; status: BookingStatus }
   | { type: "quotation-price-saved"; bookingId: string; quotation: AdminBookingItem["quotation"] }
   | { type: "server-refresh"; bookings: AdminBookingItem[]; loadError: string | null };
@@ -63,6 +64,31 @@ export function bookingStateReducer(
         (booking) => booking.id === state.selectedBookingId
       );
       return { ...state, currentStatus: selected?.status ?? "Pending" };
+    }
+    case "delete-booking": {
+      const remainingBookings = state.bookings.filter(
+        (booking) => booking.id !== action.bookingId
+      );
+
+      let nextSelectedId = "";
+      let nextStatus: BookingStatus = "Pending";
+
+      if (remainingBookings.length > 0) {
+        const deletedIndex = state.bookings.findIndex((b) => b.id === action.bookingId);
+        const candidate =
+          remainingBookings[deletedIndex] ||
+          remainingBookings[deletedIndex - 1] ||
+          remainingBookings[0];
+        nextSelectedId = candidate.id;
+        nextStatus = candidate.status;
+      }
+
+      return {
+        ...state,
+        bookings: remainingBookings,
+        selectedBookingId: nextSelectedId,
+        currentStatus: nextStatus,
+      };
     }
     case "status-saved":
       return {

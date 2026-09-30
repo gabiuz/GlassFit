@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { getProductDraft } from "@/lib/admin/products/productMutations";
@@ -12,6 +12,7 @@ import { ParametersAndRulesSection } from "./ParametersAndRulesSection";
 import { ValidationWorkspaceSection } from "./ValidationWorkspaceSection";
 import { ReviewAndPublishSection } from "./ReviewAndPublishSection";
 import type { UpsertParameterInput, UpsertRuleInput } from "@/lib/admin/products/parameterMutations";
+import { buildProductSetupUrl, type StepKey } from "@/lib/admin/products/wizardSteps";
 
 export interface ProductAssetSummary {
     asset_id?: string;
@@ -54,16 +55,8 @@ export interface ProductSetupData {
 export type ProductSetupWizardProps = {
     productId: string;
     initialData: ProductSetupData | null;
+    initialStep: StepKey;
 };
-
-type StepKey = 
-    | "basic" 
-    | "strategy" 
-    | "assets" 
-    | "components" 
-    | "parameters" 
-    | "validation" 
-    | "review";
 
 const steps: { key: StepKey; label: string; number: number }[] = [
     { key: "basic", label: "Basic Info", number: 1 },
@@ -75,16 +68,22 @@ const steps: { key: StepKey; label: string; number: number }[] = [
     { key: "review", label: "Review", number: 7 },
 ];
 
-export function ProductSetupWizard({ productId, initialData }: ProductSetupWizardProps) {
+export function ProductSetupWizard({ productId, initialData, initialStep }: ProductSetupWizardProps) {
     const router = useRouter();
-    // Default to basic if draft, or determine from initialData state
-    const [activeStep, setActiveStep] = useState<StepKey>("basic");
     const [draftId, setDraftId] = useState<string>(productId === "draft" ? "" : productId);
+    const [activeStep, setActiveStep] = useState<StepKey>(initialStep);
     
     // We maintain a local copy of data to share across steps
-    const [productData, setProductData] = useState<ProductSetupData>((initialData || {}) as ProductSetupData);
+    const [productData, setProductData] = useState<ProductSetupData>(initialData ?? {});
 
     const isDraft = !draftId;
+    const currentProductId = draftId || productId;
+
+    useEffect(() => {
+        // Route state is authoritative when the server provides a new validated step.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setActiveStep(initialStep);
+    }, [initialStep]);
 
     const refreshDraft = useCallback(async (idToFetch?: string) => {
         const id = idToFetch || draftId;
@@ -101,16 +100,17 @@ export function ProductSetupWizard({ productId, initialData }: ProductSetupWizar
 
     const handleStepChange = async (targetStep: StepKey) => {
         setActiveStep(targetStep);
-        if (draftId && draftId !== "draft") {
-            refreshDraft(draftId);
+        if (currentProductId && currentProductId !== "draft") {
+            router.replace(buildProductSetupUrl(currentProductId, targetStep), { scroll: false });
+            await refreshDraft(currentProductId);
         }
     };
 
     const handleProductCreated = (newId: string, data: Record<string, unknown>) => {
         setDraftId(newId);
         setProductData({ ...productData, ...data, product_id: newId });
-        router.replace(`/admin/products/${newId}/setup`);
         setActiveStep("strategy");
+        router.replace(buildProductSetupUrl(newId, "strategy"));
     };
 
     const handleStrategySaved = (data: Record<string, unknown>) => {
@@ -126,6 +126,7 @@ export function ProductSetupWizard({ productId, initialData }: ProductSetupWizar
             product_templates: Array.isArray(productData?.product_templates) ? [mergedTemplate] : mergedTemplate,
         });
         setActiveStep("assets");
+        router.replace(buildProductSetupUrl(currentProductId, "assets"), { scroll: false });
         if (draftId) refreshDraft(draftId);
     };
 
@@ -180,6 +181,7 @@ export function ProductSetupWizard({ productId, initialData }: ProductSetupWizar
             <div className="w-full bg-white rounded-[20px] p-4 sm:p-6 lg:p-[30px] shadow-xs">
                 {activeStep === "basic" && (
                     <BasicInfoSection 
+                        productId={currentProductId}
                         initialData={productData} 
                         onSave={handleProductCreated} 
                         isEditing={!isDraft} 
@@ -229,12 +231,12 @@ export function ProductSetupWizard({ productId, initialData }: ProductSetupWizar
                 )}
                 {activeStep === "validation" && (
                     <ValidationWorkspaceSection
-                        productId={productId}
+                        productId={currentProductId}
                         onSave={() => handleStepChange("review")}
                     />
                 )}
                 {activeStep === "review" && (
-                    <ReviewAndPublishSection productId={productId} />
+                    <ReviewAndPublishSection productId={currentProductId} />
                 )}
             </div>
 

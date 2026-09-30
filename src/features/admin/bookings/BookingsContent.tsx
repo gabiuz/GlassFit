@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useReducer, useState, useTransition } from "react";
 import Image from "next/image";
-import { RefreshCw } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { SearchBar } from "@/components/shared/SearchBar";
@@ -11,11 +10,18 @@ import {
   type BookingStatus,
 } from "./bookingData";
 import { bookingStateReducer, createBookingState } from "./bookingState";
-import { updateBookingRequestStatus, updateItemNegotiatedPrice, updateNegotiatedPrice, updateBookingLaborCharge } from "@/lib/booking/bookingActions";
+import {
+  updateBookingRequestStatus,
+  updateItemNegotiatedPrice,
+  updateNegotiatedPrice,
+  updateBookingLaborCharge,
+  deleteBookingQuotation,
+} from "@/lib/booking/bookingActions";
 import { createQuotationDocumentViewModel } from "@/lib/pricing/quotationDocument";
 import { generateQuotationPdfHtml } from "@/lib/pricing/quotationPdfGenerator";
 import { openQuotationPreview } from "@/lib/pricing/quotationPreviewWindow";
 import { getR2AssetUrl } from "@/lib/r2";
+import { DiscardBookingModal } from "./components/DiscardBookingModal";
 
 const statusBg: Record<BookingStatus, string> = {
   Confirmed: "bg-[#05b64b]",
@@ -43,10 +49,12 @@ export function BookingsContent({ initialBookings, loadError = null }: BookingsC
     bookingStateReducer,
     createBookingState(initialBookings, loadError)
   );
-  const [isRefreshing, startRefreshTransition] = useTransition();
+  const [, startRefreshTransition] = useTransition();
   const [activeTab, setActiveTab] = useState<BookingStatus | "All">("All");
   const [searchQuery, setSearchQuery] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [isDiscardModalOpen, setIsDiscardModalOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [feedbackToast, setFeedbackToast] = useState<string | null>(null);
   const [isEditingPrice, setIsEditingPrice] = useState(false);
   const [priceInput, setPriceInput] = useState("");
@@ -211,10 +219,6 @@ export function BookingsContent({ initialBookings, loadError = null }: BookingsC
     dispatch({ type: "edit-status", status: newStatus });
   };
 
-  const handleManualRefresh = () => {
-    startRefreshTransition(() => router.refresh());
-  };
-
   const handleSaveChanges = async () => {
     if (!selectedBooking) return;
     setIsSaving(true);
@@ -248,9 +252,39 @@ export function BookingsContent({ initialBookings, loadError = null }: BookingsC
     }
   };
 
-  const handleDiscardChanges = () => {
-    dispatch({ type: "discard-status" });
+  const handleDiscardClick = () => {
+    if (!selectedBooking) return;
+    setIsDiscardModalOpen(true);
   };
+
+  const handleConfirmDelete = async () => {
+    if (!selectedBooking) return;
+    setIsDeleting(true);
+    try {
+      const result = await deleteBookingQuotation({
+        bookingRequestId: selectedBooking.id,
+        quotationId: selectedBooking.quotation.id,
+      });
+
+      if (result.success) {
+        dispatch({ type: "delete-booking", bookingId: selectedBooking.id });
+        setIsDiscardModalOpen(false);
+        setFeedbackToast(`Quotation ${result.quotationNumber} permanently deleted.`);
+        setTimeout(() => setFeedbackToast(null), 3000);
+        startRefreshTransition(() => router.refresh());
+      } else {
+        setFeedbackToast(result.error || "Failed to delete quotation.");
+        setTimeout(() => setFeedbackToast(null), 4000);
+      }
+    } catch (err: unknown) {
+      console.error("Delete quotation failed:", err);
+      setFeedbackToast("Failed to delete quotation. Please try again.");
+      setTimeout(() => setFeedbackToast(null), 4000);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
 
   return (
     <div className="flex flex-col items-start gap-6 sm:gap-8 w-full max-w-[1240px] pb-12 select-none">
@@ -264,30 +298,13 @@ export function BookingsContent({ initialBookings, loadError = null }: BookingsC
           </p>
         </div>
 
-        <div className="w-full md:w-auto flex items-center gap-2">
-          <div className="flex-1 md:flex-none">
-            <SearchBar
-              value={searchQuery}
-              onChange={setSearchQuery}
-              placeholder="Search booking"
-              inputClassName="w-full md:w-[320px] lg:w-[340px]"
-            />
-          </div>
-          <button
-            type="button"
-            aria-label="Refresh booking requests"
-            aria-busy={isRefreshing}
-            disabled={isRefreshing}
-            onClick={handleManualRefresh}
-            className="size-11 shrink-0 rounded-[12px] bg-[#07b6d3] text-white flex items-center justify-center shadow-xs transition-colors hover:bg-cyan-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3] disabled:cursor-wait disabled:opacity-60"
-          >
-            <RefreshCw
-              aria-hidden="true"
-              className={cn("size-5", isRefreshing && "animate-spin motion-reduce:animate-none")}
-            />
-            <span className="sr-only">{isRefreshing ? "Refreshing" : "Refresh"}</span>
-          </button>
-        </div>
+        <SearchBar
+          value={searchQuery}
+          onChange={setSearchQuery}
+          placeholder="Search booking"
+          inputClassName="w-full md:w-[320px] lg:w-[340px]"
+          className="w-full md:w-auto"
+        />
       </div>
 
       {state.loadError && (
@@ -628,8 +645,9 @@ export function BookingsContent({ initialBookings, loadError = null }: BookingsC
             <div className="flex gap-2.5 items-center justify-end w-full pt-1">
               <button
                 type="button"
-                onClick={handleDiscardChanges}
-                disabled={isSaving}
+                onClick={handleDiscardClick}
+                disabled={isSaving || isDeleting}
+                aria-label="Discard and permanently delete quotation"
                 className="bg-[#c50000] text-white text-xs font-medium px-4 py-2 rounded-[10px] cursor-pointer hover:bg-red-700 transition-colors disabled:opacity-50"
               >
                 Discard
@@ -637,7 +655,7 @@ export function BookingsContent({ initialBookings, loadError = null }: BookingsC
               <button
                 type="button"
                 onClick={handleSaveChanges}
-                disabled={isSaving}
+                disabled={isSaving || isDeleting}
                 className="bg-[#05b64b] text-white text-xs font-medium px-4 py-2 rounded-[10px] cursor-pointer hover:bg-emerald-600 transition-colors disabled:opacity-50 flex items-center gap-1.5"
               >
                 {isSaving && (
@@ -648,7 +666,28 @@ export function BookingsContent({ initialBookings, loadError = null }: BookingsC
             </div>
           </div>
         )}
+
+        {!selectedBooking && (
+          <div className="flex-1 w-full bg-white rounded-[20px] p-8 sm:p-12 flex flex-col items-center justify-center text-center gap-3 shadow-xs min-h-[300px]">
+            <p className="text-[#0f1422] text-lg font-medium">No Consultation Selected</p>
+            <p className="text-[#c3c3c3] text-sm max-w-[360px]">
+              Select a booking from the list to review details or no consultations are currently available.
+            </p>
+          </div>
+        )}
       </div>
+
+      {/* Discard & Hard-Delete Confirmation Modal */}
+      {selectedBooking && (
+        <DiscardBookingModal
+          isOpen={isDiscardModalOpen}
+          quotationNumber={selectedBooking.referenceNo}
+          customerName={selectedBooking.customer.name}
+          isDeleting={isDeleting}
+          onClose={() => !isDeleting && setIsDiscardModalOpen(false)}
+          onConfirm={() => void handleConfirmDelete()}
+        />
+      )}
 
       {/* Floating feedback toast */}
       {feedbackToast && (
@@ -668,3 +707,4 @@ export function BookingsContent({ initialBookings, loadError = null }: BookingsC
     </div>
   );
 }
+

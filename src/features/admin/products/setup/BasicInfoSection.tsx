@@ -1,11 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { createProductDraft } from "@/lib/admin/products/productMutations";
+import { createProductDraft, updateProductDraft } from "@/lib/admin/products/productMutations";
+import type { ProductSetupData } from "./ProductSetupWizard";
 
 export type BasicInfoSectionProps = {
-    initialData: any;
-    onSave: (productId: string, data: any) => void;
+    productId: string;
+    initialData: ProductSetupData;
+    onSave: (productId: string, data: Record<string, unknown>) => void;
     isEditing?: boolean;
 };
 
@@ -19,7 +21,7 @@ const PRODUCT_TYPES = [
     "Other"
 ];
 
-export function BasicInfoSection({ initialData, onSave, isEditing }: BasicInfoSectionProps) {
+export function BasicInfoSection({ productId, initialData, onSave, isEditing }: BasicInfoSectionProps) {
     const [name, setName] = useState(initialData?.product_name || "");
     const [type, setType] = useState(initialData?.product_type || "Window");
     const [description, setDescription] = useState(initialData?.description || "");
@@ -42,17 +44,17 @@ export function BasicInfoSection({ initialData, onSave, isEditing }: BasicInfoSe
             };
 
             if (isEditing) {
-                // If editing, we would call an update mutation. 
-                // For now, if we are editing and just passing to the next step, we could just fire onSave.
-                // Assuming we have an update function later.
-                onSave(initialData.product_id, data);
+                if (!productId || productId === "draft") {
+                    throw new Error("A persisted product is required before updating basic information.");
+                }
+                const updatedProductId = await updateProductDraft(productId, data);
+                onSave(updatedProductId, data);
             } else {
-                // Create draft
                 const newProductId = await createProductDraft(data);
                 onSave(newProductId, data);
             }
-        } catch (err: any) {
-            setError(err.message || "An error occurred while saving.");
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : "An error occurred while saving.");
         } finally {
             setIsSaving(false);
         }

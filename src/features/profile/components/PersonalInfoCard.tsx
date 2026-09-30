@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import type { UserProfileData, ProfileFormValues } from "../types";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { normalizePersonName } from "@/lib/identity/personName";
 
 interface PersonalInfoCardProps {
   profile: UserProfileData;
@@ -52,17 +53,15 @@ export function PersonalInfoCard({
     setErrorMessage("");
     setSuccessMessage("");
 
-    const trimmedFirstName = formValues.firstName.trim();
-    const trimmedLastName = formValues.lastName.trim();
-
-    if (!trimmedFirstName) {
-      setErrorMessage("First name is required.");
+    const nameResult = normalizePersonName({
+      firstName: formValues.firstName,
+      lastName: formValues.lastName,
+    });
+    if (!nameResult.ok) {
+      setErrorMessage(nameResult.error);
       return;
     }
-    if (!trimmedLastName) {
-      setErrorMessage("Last name is required.");
-      return;
-    }
+    const { firstName, lastName, fullName } = nameResult.value;
 
     setIsSaving(true);
 
@@ -73,8 +72,8 @@ export function PersonalInfoCard({
       const { error: profileError } = await supabase
         .from("profiles")
         .update({
-          first_name: trimmedFirstName,
-          last_name: trimmedLastName,
+          first_name: firstName,
+          last_name: lastName,
           contact_number: formValues.contactNumber.trim() || null,
         })
         .eq("profile_id", profile.profileId);
@@ -84,26 +83,27 @@ export function PersonalInfoCard({
       }
 
       // Also sync user metadata in Supabase Auth
-      await supabase.auth.updateUser({
+      const { error: metadataError } = await supabase.auth.updateUser({
         data: {
-          first_name: trimmedFirstName,
-          last_name: trimmedLastName,
-          full_name: `${trimmedFirstName} ${trimmedLastName}`,
+          first_name: firstName,
+          last_name: lastName,
+          full_name: fullName,
           phone: formValues.contactNumber.trim(),
           address: formValues.address.trim(),
         },
       });
 
-      const updatedFullName = `${trimmedFirstName} ${trimmedLastName}`.trim();
       onProfileUpdated({
-        firstName: trimmedFirstName,
-        lastName: trimmedLastName,
-        fullName: updatedFullName,
+        firstName,
+        lastName,
+        fullName,
         contactNumber: formValues.contactNumber.trim(),
         address: formValues.address.trim(),
       });
 
-      setSuccessMessage("Personal information updated successfully.");
+      setSuccessMessage(metadataError
+        ? "Profile saved, but sign-in metadata could not be synchronized. Your saved profile is unchanged."
+        : "Personal information updated successfully.");
       setIsEditing(false);
     } catch (err) {
       setErrorMessage(
@@ -207,15 +207,16 @@ export function PersonalInfoCard({
                 value={formValues.firstName}
                 onChange={handleInputChange}
                 required
+                maxLength={50}
                 className="border border-[#c3c3c3] rounded-[8px] px-3.5 py-2.5 text-sm text-[#0f1422] w-1/2 focus:outline-none focus:border-[#07b6d3] transition-colors"
               />
               <input
                 type="text"
                 name="lastName"
-                placeholder="Last Name"
+                placeholder="Last Name (Optional)"
                 value={formValues.lastName}
                 onChange={handleInputChange}
-                required
+                maxLength={50}
                 className="border border-[#c3c3c3] rounded-[8px] px-3.5 py-2.5 text-sm text-[#0f1422] w-1/2 focus:outline-none focus:border-[#07b6d3] transition-colors"
               />
             </div>

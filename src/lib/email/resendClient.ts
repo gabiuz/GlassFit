@@ -1,4 +1,5 @@
 import { renderStaffInviteEmailHtml } from "./templates/staffInviteEmail";
+import { renderStaffEmailChangeApprovalHtml, type StaffEmailChangeApprovalTemplateInput } from "./templates/staffEmailChangeApproval";
 
 export type SendEmailParams = {
     to: string;
@@ -18,6 +19,9 @@ export async function sendEmail({ to, subject, html }: SendEmailParams): Promise
     const from = process.env.RESEND_FROM_EMAIL ?? "GlassFit Back-Office <onboarding@resend.dev>";
 
     if (!apiKey) {
+        if (process.env.NODE_ENV === "production") {
+            return { success: false, error: "Email delivery is not configured." };
+        }
         console.warn("[resendClient] RESEND_API_KEY is not set. Email dispatch will be simulated in development.");
         // In local development or testing without key, simulate successful dispatch
         return { success: true, id: "simulated-msg-id" };
@@ -56,6 +60,16 @@ export async function sendEmail({ to, subject, html }: SendEmailParams): Promise
             error: err instanceof Error ? err.message : "Network error during email dispatch.",
         };
     }
+}
+
+export async function sendStaffEmailChangeApprovalEmail(
+    input: StaffEmailChangeApprovalTemplateInput & { to: string },
+): Promise<SendEmailResult> {
+    return sendEmail({
+        to: input.to,
+        subject: `Review ${input.staffName}'s GlassFit email change`,
+        html: renderStaffEmailChangeApprovalHtml(input),
+    });
 }
 
 /**

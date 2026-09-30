@@ -50,6 +50,9 @@
 | QAD-TC30 | PRD-F10, PRD-F11, PRD-F14 | Canonical quotation and effective final price | Saved V1 quotation and authorized booking manager | 1. Compare customer, public, and admin document previews<br>2. Apply item price overrides<br>3. Print the quotation | Every customer document surface uses the persisted V1 configuration and effective item prices; the internal calculated snapshot remains immutable; item prices reconcile to the grand total; no negotiation metadata is disclosed | P0 |
 | QAD-TC31 | PRD-F10, PRD-F11, PRD-F14 | Per-item negotiation contract | Canonical, migrated, and legacy quotations plus authorized and unauthorized users | 1. Exercise item edit, equal reset, zero confirmation, partial and final reset<br>2. Test proportional migration, audit metadata, aggregate overflow, stale updates, and RLS<br>3. Verify legacy fallback and customer/public reads | Canonical item overrides are deterministic, authorized, atomic, audit-preserving, conflict-safe, and sanitized; totals reconcile in centavos; legacy total editing remains available only to legacy quotations | P0 |
 | QAD-TC41 | PRD-F10, PRD-F11, PRD-F14 | Single-Product Negotiation Parity & ISO Datetime Normalization | Single-product and multi-product quotations with varying datetime timezone offsets | 1. Validate offset-tolerant ISO datetime strings in booking action schemas<br>2. Map single-product quotation to per-item negotiation view<br>3. Verify optimistic concurrency timestamp equivalence<br>4. Test item price override on single fixture quotation | Single-product quotations render standard Edit Price buttons; offset-bearing PostgreSQL timestamps validate cleanly without Invalid ISO datetime errors; equivalent timestamps prevent false conflict rejections | P0 |
+| QAD-TC46 | PRD-F10, PRD-F12, PRD-F13, PRD-F14 | Admin Booking Discard-to-Hard-Delete and Quotation Purge | User authenticated as Admin with manage_bookings permission and active consultation booking | 1. Click Discard button in /admin/bookings<br>2. Confirm modal displays warning and consequence note<br>3. Cancel deletion and verify record remains intact<br>4. Re-open and confirm hard deletion<br>5. Check customer /my-requests and public /q/[code] routes | Discard opens confirmation modal; deletion executes atomic hard-delete cascade across booking_requests, signed_booking_links, quotation_items, and quotation_estimates; inspector focuses adjacent booking; customer /my-requests removes quotation; /q/[code] returns 404 | P0 |
+| QAD-TC47 | PRD-F14, PRD-F10, PRD-F12, PRD-F13 | Admin Data Management Export, GlassFit Business Intelligence CSV, Native Analytics Charts, and System Backup | User authenticated as Admin with Owner role and active booking/catalog records | 1. Trigger Booking Records CSV export<br>2. Inspect Business Intelligence Modal and native visual charts<br>3. Trigger Product Records CSV export<br>4. Download System Backup JSON snapshot<br>5. Verify non-Owner 403 Forbidden enforcement | Booking export produces GlassFit branded CSV with executive KPI summary; Product export produces catalog specifications CSV; Business Intelligence Modal displays responsive SVG charts; Backup compiles complete JSON snapshot, updates last_backup_at in system_preferences, and enforces Owner-only authorization | P0 |
+| QAD-TC48 | PRD-F1, PRD-F6, PRD-F14 | Unified Cross-Browser Brand Theme Scrollbar System & Contrast Verification | Chrome/Edge, Firefox, Safari desktop/mobile viewports with scrollable content | 1. Verify root and nested scrollbar geometry and colors<br>2. Test light and dark mode transitions<br>3. Inspect hover and active drag tactile states<br>4. Confirm transparent corner intersections<br>5. Verify hidden scrollbar on GuideLine | Unified 8px/6px floating cyan pill renders across all browsers; track is transparent; light/dark themes adapt instantly; hover/active states provide tactile feedback; WCAG 2.1 AA contrast >= 3.0:1 is satisfied; gesture scrollbars remain hidden | P1 |
 
 ---
 
@@ -74,6 +77,30 @@
 
 ---
 
+## QAD-TC45: Role-Aware Administrator Email Change
+
+MS30 automated coverage validates canonical Unicode names, mononyms, field limits, the self-targeted admin action interface, hashed approval tokens, generated-column safety, ERD-E20 RLS, and Auth email synchronization. Manual smoke coverage verifies Staff request delivery, protected approval and rejection, cancellation, retry, concurrent decision behavior, and immediate Owner or Manager self-change.
+
+---
+
+## QAD-TC46: Admin Booking Discard-to-Hard-Delete Workflow and Bidirectional Quotation Purge
+
+MS31 coverage validates the destructive confirmation guard (`DiscardBookingModal`), atomic database procedure (`public.hard_delete_booking_quotation`), server action permission enforcement (`manage_bookings`), Next.js route revalidation, Cloudflare R2 object key deletion, customer `/my-requests` consultation purge, and `/q/[code]` invalidation.
+
+---
+
+## QAD-TC47: Admin Data Management Export, Business Intelligence CSV, Native Analytics Charts, and System Backup
+
+MS32 coverage validates authenticated streaming route handlers (`/api/admin/export/bookings`, `/api/admin/export/products`, `/api/admin/export/backup`), GlassFit-branded business intelligence CSV compilation with executive KPI blocks and UTF-8 BOM, the interactive Business Intelligence Modal with pure SVG charts (`StatusDonutChart`, `TrendAreaChart`, `ChannelBarChart`, `ProductDistributionChart`), the JSON system backup snapshot engine with SHA-256 integrity checksum, live database audit updates via `public.record_system_backup`, and Owner-only security gate enforcement.
+
+---
+
+## QAD-TC48: Unified Cross-Browser GlassFit Brand Theme Scrollbar System & Contrast Verification
+
+MS33 coverage validates the global and nested scrollbar implementation across Chromium, Blink, Gecko, and WebKit rendering engines in `src/app/globals.css`. Verification checks the 8px root floating pill geometry (6px for `.custom-scrollbar`), rounded ends (`border-radius: 9999px`), 2px transparent inset margins (`background-clip: content-box`), dynamic light/dark mode color token adaptation (`--scrollbar-thumb`, `--scrollbar-thumb-hover`, `--scrollbar-thumb-active`), WCAG 2.1 AA contrast compliance (>= 3.0:1 non-text contrast), transparent corner intersections, and preservation of hidden gesture scrollbars (`.scrollbar-none`, `.no-scrollbar` in `GuideLine.tsx`).
+
+---
+
 ## Self-Check
 
 - [x] Test distribution matrix defines tooling and coverage targets for all testing layers
@@ -81,3 +108,6 @@
 - [x] Non-functional verification gates define automated pass/fail criteria
 - [x] Defect severity definitions and release blocker policies are documented
 - [x] AGENTS hard bans applied; VOICE polish pass completed without em-dashes
+
+
+

@@ -25,7 +25,7 @@ import {
   type QuotationItemPriceOverride,
 } from "@/lib/pricing/quotationDocument";
 import { getServerBaseUrl, generateBookingUrls } from "./urlResolver";
-import { uploadSnapshotImage, resolveSnapshotUrl } from "./snapshotStorage";
+import { uploadSnapshotImage, resolveSnapshotUrl, deleteR2Asset } from "./snapshotStorage";
 import { BOOKING_REVALIDATION_PATHS } from "./bookingRevalidationPaths";
 import {
   GenerateBookingLinkInputSchema,
@@ -34,6 +34,7 @@ import {
   UpdateNegotiatedPriceInputSchema,
   UpdateItemNegotiatedPriceInputSchema,
   UpdateBookingLaborInputSchema,
+  DeleteBookingQuotationInputSchema,
   type GenerateBookingLinkInput,
   type GeneratedBookingLinkResult,
   type RecordBookingRequestInput,
@@ -45,6 +46,8 @@ import {
   type UpdateItemNegotiatedPriceInput,
   type UpdateItemNegotiatedPriceResult,
   type UpdateBookingLaborInput,
+  type DeleteBookingQuotationInput,
+  type DeleteBookingQuotationResult,
   areTimestampsEquivalent,
 } from "./types";
 
@@ -1045,3 +1048,74 @@ export async function updateBookingRequestStatus(
 
   return { success: true, status: validated.status };
 }
+
+/**
+ * Admin action to permanently hard-delete a consultation booking request,
+ * its signed booking link, and backing quotation estimate (IMP-MS31).
+ *
+ * Traceability: PRD-F13, PRD-F14, SDD-C8, SDD-C9, ERD-E13, ERD-E16, QAD-TC46
+ */
+export async function deleteBookingQuotation(
+  input: DeleteBookingQuotationInput
+): Promise<DeleteBookingQuotationResult> {
+  try {
+    // 1. Assert admin permission
+    await requirePermission("manage_bookings");
+    const validated = DeleteBookingQuotationInputSchema.parse(input);
+
+    const supabase = await createSupabaseServerClient();
+
+    // 2. Execute atomic database deletion function
+    const { data, error } = await supabase.rpc("hard_delete_booking_quotation", {
+      p_booking_request_id: validated.bookingRequestId,
+    });
+
+    if (error) {
+      console.error("[deleteBookingQuotation] RPC failed:", error);
+      return {
+        success: false,
+        code: "PERSISTENCE_ERROR",
+        error: error.message || "Failed to delete booking quotation.",
+      };
+    }
+
+    const payload = data as {
+      success: boolean;
+      booking_request_id: string;
+      quotation_id: string | null;
+      quotation_number: string;
+      pdf_r2_object_key: string | null;
+      image_r2_key: string | null;
+    };
+
+    // Clean up R2 assets asynchronously without blocking response
+    if (payload.pdf_r2_object_key) {
+      void deleteR2Asset(payload.pdf_r2_object_key);
+    }
+    if (payload.image_r2_key) {
+      void deleteR2Asset(payload.image_r2_key);
+    }
+
+    // 3. Purge cached Next.js routes for both admin and customer surfaces
+    revalidateBookingPaths();
+    revalidatePath("/admin/bookings");
+    revalidatePath("/admin");
+    revalidatePath("/my-requests");
+
+    return {
+      success: true,
+      bookingRequestId: payload.booking_request_id,
+      quotationId: payload.quotation_id,
+      quotationNumber: payload.quotation_number || "Quotation",
+      pdfR2ObjectKey: payload.pdf_r2_object_key,
+    };
+  } catch (err: unknown) {
+    console.error("[deleteBookingQuotation] Unexpected error:", err);
+    return {
+      success: false,
+      code: "PERSISTENCE_ERROR",
+      error: err instanceof Error ? err.message : "An unexpected error occurred.",
+    };
+  }
+}
+

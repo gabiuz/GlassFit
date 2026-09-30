@@ -5,7 +5,7 @@
 **Version:** 1.0 (Capstone Production Release)  
 **Owner:** Gianne Crizzle A. Dasco (Design & Frontend Lead) & GlassFit Capstone Team (PUP CCIS)  
 **Status:** Locked  
-**Last reconciled:** September 9, 2026 (Reconciled with Tailwind CSS 4 design tokens, globals.css, and 3D canvas viewport specifications)  
+**Last reconciled:** September 30, 2026 (Reconciled with Tailwind CSS 4 design tokens, globals.css, and unified themed scrollbar system IMP-MS33 / DSD-UI13)  
 **PRD:** docs/prd-glassfit.md
 
 ---
@@ -29,6 +29,10 @@ Modern architectural precision engineered for clarity, spatial focus, and techni
 | Feedback Error | `--color-feedback-error` | `#DC2626` | `#F87171` | 4.7:1 error toasts and validations |
 | Feedback Success | `--color-feedback-succ` | `#16A34A` | `#4ADE80` | 4.6:1 verified actions and bookings |
 | Feedback Warning | `--color-feedback-warn` | `#D97706` | `#FBBF24` | 4.5:1 estimation disclaimers |
+| Scrollbar Thumb | `--scrollbar-thumb` | `rgba(8, 145, 178, 0.75)` | `rgba(7, 182, 211, 0.75)` | >= 3.0:1 against canvas (WCAG AA non-text) |
+| Scrollbar Thumb Hover | `--scrollbar-thumb-hover` | `#0e7490` | `#06e5ff` | 4.8:1 / 11.8:1 interactive contrast (WCAG AAA) |
+| Scrollbar Thumb Active | `--scrollbar-thumb-active` | `#155e75` | `#0891b2` | 7.2:1 / 8.6:1 active grab contrast |
+| Scrollbar Track | `--scrollbar-track` | `transparent` | `transparent` | Canvas and container surface inherit |
 
 ### 1.2 Typography Hierarchy
 
@@ -74,6 +78,7 @@ Modern architectural precision engineered for clarity, spatial focus, and techni
 | DSD-UI8 | BookingHandoffCard | PRD-F13 | Displays signed reference QR code, summary badge, and Messenger/Viber links | High-contrast callout card with one-click social deep links |
 | DSD-UI9 | ComparisonSlider | PRD-F15 | Enables interactive before-and-after comparison between photo and simulation | Dual-layer horizontal split swipe divider |
 | DSD-UI10 | AdminPartInspectorAndSimulator | PRD-F14, PRD-F19 | Split-screen Three.js viewport and Part Inspector Drawer with live BOM test-drive simulator | Tabbed multi-step management workbench with 60/40 viewport-to-drawer split |
+| DSD-UI13 | GlobalThemedScrollbarSystem | PRD-F1, PRD-F6, PRD-F14 | Provides unified brand-consistent scrollbars across root viewports and nested containers | Dual W3C standard and WebKit floating cyan pill with 8px/6px width |
 
 ### 3.2 State Behaviors & Visual Treatment
 
@@ -93,6 +98,9 @@ Modern architectural precision engineered for clarity, spatial focus, and techni
 | DSD-UI8 | Success | Emerald checkmark badge, itemized breakdown, bright buttons | Quotation estimate generated | Announces quotation number and total amount in PHP |
 | DSD-UI10 | Inspector Active | Highlighted mesh selection outline, auto-detected dimension binding badge, span ratio slider | Part selected in Three.js viewport | Announces selected component name and linked raw material |
 | DSD-UI10 | Live Simulating | Dynamic price tally, scrap breakdown, labor floor badge, aspect ratio caution pill | Admin adjusts width/height/sill controls | Announces updated manufacturing cost and final estimate |
+| DSD-UI13 | Idle | Slim floating cyan pill (rgba(7, 182, 211, 0.45) light / rgba(7, 182, 211, 0.50) dark) | Viewport or container scroll idle | Maintains native browser scrolling semantics |
+| DSD-UI13 | Hover | Solid brand cyan (#07b6d3 light) / Electric cyan (#06e5ff dark) with 150ms smooth transition | Pointer hover over scrollbar thumb | Tactile visual feedback for interactive readiness |
+| DSD-UI13 | Active Drag | Architectural deep teal (#097283 light) / Brand cyan (#07b6d3 dark) | Mouse press and drag on thumb | Confirms pointer capture and viewport scrolling |
 
 ---
 
@@ -115,6 +123,18 @@ Modern architectural precision engineered for clarity, spatial focus, and techni
 
 ---
 
+## MS30 Settings Interaction (DSD-UI10)
+
+The Admin Profile card uses existing input, button, toast, spacing, color, and typography patterns. Name and email actions have independent loading states. Staff receive approval guidance and durable request status, while Owners and Managers receive pending request review and delivery retry controls.
+
+## DSD-UI11: Admin Per-Item Negotiation Card
+
+The existing admin booking quotation card lists canonical snapshot items with product identity, quantity, calculated line price, effective final line price, and a Negotiated badge when overridden. One inline decimal editor may be open at a time. Edit, save, reset, cancel, PDF, keyboard labels, focus-visible treatment, pending disablement, validation errors, conflict feedback, and zero confirmation reuse existing admin tokens, buttons, radii, typography, error styling, and toast behavior. The calculated and effective grand totals are read-only. Legacy reconstructed quotations display a per-item-unavailable notice and retain the total-level editor.
+
+## DSD-UI13: Global Themed Scrollbar System
+
+The GlassFit themed scrollbar system unifies desktop and nested container scrolling across Chromium, Blink, Gecko, and WebKit browser engines. Configured globally in `src/app/globals.css`, it applies an 8px width (6px in nested `.custom-scrollbar` containers) with fully rounded ends (`border-radius: 9999px`) and a 2px transparent inset border (`background-clip: content-box`). Thumb colors dynamically adapt between light and dark themes using GlassFit brand cyan and architectural teal tokens, while track and corner intersections remain transparent. Dedicated `.scrollbar-none` and `.no-scrollbar` utilities preserve gesture-only touch carousels without visual scrollbar tracks.
+
 ## Self-Check
 
 - [x] Color tokens specify values for both light and dark modes with contrast verifications
@@ -125,6 +145,4 @@ Modern architectural precision engineered for clarity, spatial focus, and techni
 - [x] Accessibility rules define keyboard focus behavior, contrast ratios, and ARIA attributes
 - [x] No interface wireframes or component trees use box-drawing characters in code blocks
 - [x] AGENTS hard bans applied; VOICE polish pass completed without em-dashes
-## DSD-UI11: Admin Per-Item Negotiation Card
 
-The existing admin booking quotation card lists canonical snapshot items with product identity, quantity, calculated line price, effective final line price, and a Negotiated badge when overridden. One inline decimal editor may be open at a time. Edit, save, reset, cancel, PDF, keyboard labels, focus-visible treatment, pending disablement, validation errors, conflict feedback, and zero confirmation reuse existing admin tokens, buttons, radii, typography, error styling, and toast behavior. The calculated and effective grand totals are read-only. Legacy reconstructed quotations display a per-item-unavailable notice and retain the total-level editor.

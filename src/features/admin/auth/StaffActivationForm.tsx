@@ -14,6 +14,7 @@ import {
     verifyStaffInviteToken,
     completeStaffRegistration,
 } from "@/app/admin/(auth)/invite/actions";
+import { normalizePersonName } from "@/lib/identity/personName";
 
 export function StaffActivationForm() {
     const router = useRouter();
@@ -40,6 +41,8 @@ export function StaffActivationForm() {
 
     // Validation & submission states
     const [codeError, setCodeError] = useState("");
+    const [firstNameError, setFirstNameError] = useState("");
+    const [lastNameError, setLastNameError] = useState("");
     const [phoneError, setPhoneError] = useState("");
     const [generalError, setGeneralError] = useState("");
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -93,6 +96,8 @@ export function StaffActivationForm() {
         e.preventDefault();
 
         setCodeError("");
+        setFirstNameError("");
+        setLastNameError("");
         setPhoneError("");
         setGeneralError("");
 
@@ -101,6 +106,15 @@ export function StaffActivationForm() {
         const cleanPhone = rawDigits.startsWith("63") ? rawDigits.slice(2) : rawDigits;
 
         let hasErrors = false;
+
+        if (firstName.trim() || lastName.trim()) {
+            const nameResult = normalizePersonName({ firstName, lastName });
+            if (!nameResult.ok) {
+                if (nameResult.field === "firstName") setFirstNameError(nameResult.error);
+                else setLastNameError(nameResult.error);
+                hasErrors = true;
+            }
+        }
 
         if (!trimmedCode || trimmedCode.length !== 6) {
             setCodeError("Enter the 6-digit numeric verification code.");
@@ -301,12 +315,13 @@ export function StaffActivationForm() {
                                         placeholder="Juan"
                                         className="w-full bg-white border border-[#c3c3c3] rounded-lg px-4 py-3 text-sm font-normal text-black outline-none placeholder:text-[#c3c3c3] focus:border-green focus:ring-1 focus:ring-green transition-all"
                                         autoComplete="given-name"
-                                        maxLength={60}
+                                        maxLength={50}
                                     />
+                                    {firstNameError && <p className="text-xs text-red-600">{firstNameError}</p>}
                                 </div>
                                 <div className="flex flex-col gap-1.25 flex-1 items-start">
                                     <label className="text-green text-base font-normal leading-[1.4] tracking-[-0.304px]">
-                                        Last Name
+                                        Last Name (Optional)
                                     </label>
                                     <input
                                         type="text"
@@ -315,8 +330,9 @@ export function StaffActivationForm() {
                                         placeholder="Dela Cruz"
                                         className="w-full bg-white border border-[#c3c3c3] rounded-lg px-4 py-3 text-sm font-normal text-black outline-none placeholder:text-[#c3c3c3] focus:border-green focus:ring-1 focus:ring-green transition-all"
                                         autoComplete="family-name"
-                                        maxLength={60}
+                                        maxLength={50}
                                     />
+                                    {lastNameError && <p className="text-xs text-red-600">{lastNameError}</p>}
                                 </div>
                             </div>
 

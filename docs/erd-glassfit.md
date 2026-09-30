@@ -316,8 +316,8 @@ MS17 adds nullable `item_price_overrides jsonb`. Null represents no canonical ov
 |---|---|---|---|---|---|
 | `link_id` | UUID | No | Primary Key | `gen_random_uuid()` | Unique link identifier |
 | `profile_id` | UUID | No | Foreign Key | None | References `profiles(profile_id)` ON DELETE RESTRICT |
-| `quotation_id` | UUID | No | Foreign Key, Unique | None | References `quotation_estimates(quotation_id)` ON DELETE RESTRICT |
-| `snapshot_id` | UUID | No | Foreign Key | None | References `visualization_snapshots(snapshot_id)` ON DELETE RESTRICT |
+| `quotation_id` | UUID | No | Foreign Key, Unique | None | References `quotation_estimates(quotation_id)` ON DELETE CASCADE (IMP-MS31) |
+| `snapshot_id` | UUID | No | Foreign Key | None | References `visualization_snapshots(snapshot_id)` ON DELETE SET NULL (IMP-MS31) |
 | `token_hash` | CHAR(64) | No | Unique | None | 64-character hexadecimal SHA-256 string |
 | `expires_at` | TIMESTAMPTZ | No | None | None | Must be greater than creation timestamp |
 | `status` | VARCHAR(20) | No | None | `'Active'` | In set: `'Active'`, `'Expired'`, `'Revoked'`, `'Used'` |
@@ -331,7 +331,7 @@ MS17 adds nullable `item_price_overrides jsonb`. Null represents no canonical ov
 |---|---|---|---|---|---|
 | `booking_request_id`| UUID | No | Primary Key | `gen_random_uuid()` | Unique booking identifier |
 | `profile_id` | UUID | No | Foreign Key | None | References `profiles(profile_id)` ON DELETE RESTRICT |
-| `link_id` | UUID | No | Foreign Key, Unique | None | References `signed_booking_links(link_id)` ON DELETE RESTRICT |
+| `link_id` | UUID | No | Foreign Key, Unique | None | References `signed_booking_links(link_id)` ON DELETE CASCADE (IMP-MS31) |
 | `selected_platform`| VARCHAR(20)| No | None | None | In set: `'Messenger'`, `'Viber'` |
 | `status` | VARCHAR(20) | No | None | `'Pending'` | In set: `'Pending'`, `'Ongoing'`, `'Done'`, `'Cancelled'` |
 | `updated_by` | UUID | Yes | Foreign Key | None | References `profiles(profile_id)` ON DELETE SET NULL |
@@ -375,8 +375,8 @@ MS17 adds nullable `item_price_overrides jsonb`. Null represents no canonical ov
 | ERD-REL11| `ERD-E11` (Configurations)| Many to Many| `ERD-E9` (Variations) | `configuration_variations.variation_id`| RESTRICT | Join Table FK |
 | ERD-REL12| `ERD-E10` (Snapshots) | 1 to 1 | `ERD-E13` (Quotations) | `quotation_estimates.snapshot_id`| RESTRICT | DB Unique FK |
 | ERD-REL13| `ERD-E13` (Quotations) | 1 to Many | `ERD-E14` (QuotationItems)| `quotation_items.quotation_id` | CASCADE | DB Foreign Key |
-| ERD-REL14| `ERD-E13` (Quotations) | 1 to 1 | `ERD-E15` (BookingLinks) | `signed_booking_links.quotation_id`| RESTRICT | DB Unique FK |
-| ERD-REL15| `ERD-E15` (BookingLinks) | 1 to 1 | `ERD-E16` (BookingRequests)| `booking_requests.link_id` | RESTRICT | DB Unique FK |
+| ERD-REL14| `ERD-E13` (Quotations) | 1 to 1 | `ERD-E15` (BookingLinks) | `signed_booking_links.quotation_id`| CASCADE (IMP-MS31) | DB Unique FK |
+| ERD-REL15| `ERD-E15` (BookingLinks) | 1 to 1 | `ERD-E16` (BookingRequests)| `booking_requests.link_id` | CASCADE (IMP-MS31) | DB Unique FK |
 | ERD-REL16| `ERD-E17` (RawMaterials) | 1 to Many | `ERD-E6` (ProductComponents)| `product_components.raw_material_id`| SET NULL | DB Foreign Key |
 
 ---
@@ -413,6 +413,39 @@ MS17 adds nullable `item_price_overrides jsonb`. Null represents no canonical ov
 
 ---
 
+## ERD-E20: Admin Email Change Events
+
+`admin_email_change_events` stores immutable identity snapshots, role-derived change mode, hashed approval tokens, lifecycle status, delivery audit data, processing ownership, decision identity, and completion timestamps. RLS exposes no authenticated mutation path. A partial unique index permits at most one pending Staff request per profile. Migration 012 also permits an empty `profiles.last_name` while retaining `NOT NULL`.
+
+---
+
+## 6. Administrative Hard Deletion Function (`IMP-MS31`)
+
+Migration 013 introduces `public.hard_delete_booking_quotation(p_booking_request_id uuid)` (Security Definer), which atomically removes `booking_requests`, `signed_booking_links`, `quotation_items`, and `quotation_estimates`. If a snapshot has no other referencing quotations, it is also purged. The procedure returns the quotation number and Cloudflare R2 object keys (`pdf_r2_object_key`, `image_r2_key`) so external assets can be purged. Execution requires `manage_bookings` administrative permission.
+
+---
+
+## 7. System Preferences Backup Tracking & Aggregated Analytics (`IMP-MS32`)
+
+Migration 014 extends `public.system_preferences` (`ERD-E18`) with durable backup audit tracking columns and introduces atomic stored procedures for backup registration and business telemetry aggregation:
+
+1. **Schema Extension (`public.system_preferences`):**
+   - `last_backup_at` (`TIMESTAMPTZ`, Nullable): Timestamp of the most recent successful system backup generation.
+   - `last_backup_by` (`UUID`, Nullable, Foreign Key referencing `public.profiles(profile_id)` on delete SET NULL): Profile ID of the Owner administrator who initiated the backup.
+
+2. **Atomic Backup Registration Function (`public.record_system_backup`):**
+   - Parameters: `p_admin_id UUID`
+   - Returns: `TIMESTAMPTZ`
+   - Security: Security Definer, verifies caller holds active `Owner` role in `public.profiles` joined with `public.admin_roles`.
+   - Behavior: Atomically updates `last_backup_at = now()`, `last_backup_by = p_admin_id`, and `updated_at = now()` on the singleton record where `singleton_key = 'GLOBAL_PREFERENCES'`.
+
+3. **High-Performance Aggregated Analytics Function (`public.get_admin_business_analytics`):**
+   - Parameters: `p_start_date TIMESTAMPTZ DEFAULT NULL`, `p_end_date TIMESTAMPTZ DEFAULT NULL`
+   - Returns: `JSONB` containing structured objects for `overview`, `platforms`, `catalog`, `product_distribution`, and `monthly_trends`.
+   - Security: Security Definer, asserts authenticated caller is an active administrator (`is_admin()` or `has_admin_permission('manage_settings')`).
+
+---
+
 ## Self-Check
 
 - [x] Storage engines and tenancy partitioning strategy are clearly defined
@@ -423,3 +456,4 @@ MS17 adds nullable `item_price_overrides jsonb`. Null represents no canonical ov
 - [x] Soft deletion, lifecycle retention, and PII protection controls are established
 - [x] No ASCII entity relationship diagrams inside code blocks; normalized tables used
 - [x] AGENTS hard bans applied; VOICE polish pass completed without em-dashes
+

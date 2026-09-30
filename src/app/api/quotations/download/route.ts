@@ -94,6 +94,17 @@ export async function GET(request: NextRequest): Promise<Response> {
   const parsedOverrides = QuotationItemPriceOverridesV1Schema.safeParse(quoteRecord.item_price_overrides);
   const itemPriceOverrides = parsedOverrides.success ? parsedOverrides.data : null;
 
+  // IMP-MS28: Fetch operating schedule preferences for dynamic quotation PDF embedding
+  const { data: preferences } = await serviceClient
+    .from("system_preferences")
+    .select("operating_days_range, operating_hours_range, operating_schedules")
+    .eq("singleton_key", "GLOBAL_PREFERENCES")
+    .maybeSingle();
+
+  const operatingDays = preferences?.operating_days_range ?? "Monday - Saturday";
+  const operatingHours = preferences?.operating_hours_range ?? "8:00 AM - 5:00 PM";
+  const operatingScheduleFormatted = `${operatingDays}: ${operatingHours}`;
+
   let html: string;
   const origin = request.nextUrl.origin;
   const origins = [origin];
@@ -115,6 +126,9 @@ export async function GET(request: NextRequest): Promise<Response> {
       negotiatedAmount: quoteRecord.negotiated_amount === null ? null : Number(quoteRecord.negotiated_amount),
       adminLaborCharge: quoteRecord.admin_labor_charge !== null && quoteRecord.admin_labor_charge !== undefined ? Number(quoteRecord.admin_labor_charge) : null,
       itemPriceOverrides,
+      operatingDays,
+      operatingHours,
+      operatingScheduleFormatted,
     });
     html = generateQuotationPdfHtml(view);
   } else {
@@ -150,6 +164,9 @@ export async function GET(request: NextRequest): Promise<Response> {
         negotiatedAmount: quoteRecord.negotiated_amount === null ? null : Number(quoteRecord.negotiated_amount),
         adminLaborCharge: quoteRecord.admin_labor_charge !== null && quoteRecord.admin_labor_charge !== undefined ? Number(quoteRecord.admin_labor_charge) : null,
         itemPriceOverrides,
+        operatingDays,
+        operatingHours,
+        operatingScheduleFormatted,
       });
       html = generateQuotationPdfHtml(view);
     } else {

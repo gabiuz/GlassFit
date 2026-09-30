@@ -13,17 +13,48 @@ export type CreateProductInput = {
     base_price: number;
 };
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const PRODUCT_TYPES = new Set([
+    "Window",
+    "Door",
+    "Partition",
+    "Cabinet",
+    "Enclosure",
+    "Railing",
+    "Other",
+]);
+
+function validateProductDraftInput(input: CreateProductInput): CreateProductInput {
+    const productName = input.product_name.trim();
+    if (!productName) throw new Error("Product name is required.");
+    if (!PRODUCT_TYPES.has(input.product_type)) throw new Error("Product type is invalid.");
+    if (!Number.isFinite(input.base_price) || input.base_price < 0) {
+        throw new Error("Base price must be a finite, non-negative number.");
+    }
+
+    return {
+        product_name: productName,
+        product_type: input.product_type,
+        description: input.description.trim(),
+        base_price: input.base_price,
+    };
+}
+
+export type UpdateProductInput = CreateProductInput;
+
 export async function createProductDraft(input: CreateProductInput) {
     const adminCtx = await requirePermission("manage_products");
     const supabase = await createSupabaseServerClient();
 
+    const normalizedInput = validateProductDraftInput(input);
+
     const { data, error } = await supabase
         .from("products")
         .insert({
-            product_name: input.product_name,
-            product_type: input.product_type,
-            description: input.description,
-            base_price: input.base_price,
+            product_name: normalizedInput.product_name,
+            product_type: normalizedInput.product_type,
+            description: normalizedInput.description,
+            base_price: normalizedInput.base_price,
             status: "Inactive", // Draft state
             created_by: adminCtx.profileId,
             updated_by: adminCtx.profileId,
@@ -37,6 +68,42 @@ export async function createProductDraft(input: CreateProductInput) {
     }
 
     revalidatePath("/admin/products");
+    return data.product_id;
+}
+
+export async function updateProductDraft(productId: string, input: UpdateProductInput) {
+    const adminCtx = await requirePermission("manage_products");
+    const supabase = await createSupabaseServerClient();
+
+    if (!UUID_PATTERN.test(productId)) {
+        throw new Error("A valid persisted product ID is required.");
+    }
+
+    const normalizedInput = validateProductDraftInput(input);
+    const { data, error } = await supabase
+        .from("products")
+        .update({
+            product_name: normalizedInput.product_name,
+            product_type: normalizedInput.product_type,
+            description: normalizedInput.description,
+            base_price: normalizedInput.base_price,
+            updated_by: adminCtx.profileId,
+        })
+        .eq("product_id", productId)
+        .select("product_id")
+        .single();
+
+    if (error) {
+        console.error("Failed to update product:", error);
+        throw new Error(error.message);
+    }
+
+    if (!data) {
+        throw new Error("Product draft was not found or could not be updated.");
+    }
+
+    revalidatePath("/admin/products");
+    revalidatePath(`/admin/products/${productId}/setup`);
     return data.product_id;
 }
 

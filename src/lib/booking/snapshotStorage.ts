@@ -8,7 +8,7 @@
  * Traceability Codes: PRD-F9, PRD-F13, SDD-C6, SDD-C8, ERD-E10, BAN-TYPE-05
  */
 
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { getR2AssetUrl } from "@/lib/r2";
 
 const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID;
@@ -86,3 +86,41 @@ export function resolveSnapshotUrl(objectKey: string | null | undefined): string
 
   return getR2AssetUrl(objectKey);
 }
+
+/**
+ * Deletes an asset from Cloudflare R2 bucket storage if configured.
+ */
+export async function deleteR2Asset(objectKey: string | null | undefined): Promise<boolean> {
+  if (!objectKey || objectKey.startsWith("data:")) {
+    return true;
+  }
+
+  if (!R2_ACCOUNT_ID || !R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY) {
+    return true;
+  }
+
+  try {
+    const s3Client = new S3Client({
+      region: "auto",
+      endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+      credentials: {
+        accessKeyId: R2_ACCESS_KEY_ID,
+        secretAccessKey: R2_SECRET_ACCESS_KEY,
+      },
+      forcePathStyle: true,
+    });
+
+    await s3Client.send(
+      new DeleteObjectCommand({
+        Bucket: R2_BUCKET_NAME,
+        Key: objectKey,
+      })
+    );
+
+    return true;
+  } catch (err) {
+    console.warn("Failed to delete asset from R2:", err);
+    return false;
+  }
+}
+

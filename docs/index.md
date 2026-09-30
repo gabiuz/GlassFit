@@ -33,6 +33,10 @@ GlassFit is a responsive, web-based photo-simulation and consultation-support pl
 | BUILD| Build & Deployment Runbook | `docs/build-glassfit.md` | Locked | September 9, 2026 | Reynard John B. Rabanal |
 | PRICE| Parametric Fenestration Pricing Engine | `docs/pricing.md` | Active | September 9, 2026 | Reynard John B. Rabanal |
 | MILE | Master Implementation Milestones | `docs/milestone.md` | Active | September 9, 2026 | Reynard John B. Rabanal |
+| IMP-MS30 | Inclusive Names and Admin Email Change | `docs/implementation/ms30.md` | Implemented | September 30, 2026 | GlassFit Capstone Team |
+| IMP-MS31 | Admin Booking Discard-to-Hard-Delete and Quotation Purge | `docs/implementation/ms31.md` | Implemented | September 30, 2026 | GlassFit Capstone Team |
+| IMP-MS32 | Admin Data Management, Business Intelligence Exports, Native Analytics, and System Backup | `docs/implementation/ms32.md` | Implemented | September 30, 2026 | GlassFit Capstone Team |
+| IMP-MS33 | Unified Cross-Browser GlassFit Brand Theme Scrollbar System | `docs/implementation/ms33.md` | Implemented | September 30, 2026 | GlassFit Capstone Team |
 
 ---
 
@@ -46,6 +50,10 @@ GlassFit is a responsive, web-based photo-simulation and consultation-support pl
 | BRD-M4 (Achieve High Usability) | PRD-F1 (Public Catalog), PRD-F2 (3D Inspector), PRD-F7 (Environmental Realism) | SDD-C1 (Public Catalog), SDD-C5 (Visualization Canvas) | ERD-E3 (products), ERD-E8 (product_assets), ERD-E9 (product_variations) | QAD-TC1, QAD-TC2, QAD-TC7 | Verified |
 | BRD-M5 (Minimize Estimator Overhead) | PRD-F10 (Quotation Measurement Modal), PRD-F11 (Consultation PDF), PRD-F14 (Admin Catalog), PRD-F19 (Batch Pricing) | SDD-C7 (Quotation Engine & PDF Generator), SDD-C9 (Admin Portal) | ERD-E11 (product_configurations), ERD-E13 (quotation_estimates), ERD-E14 (quotation_items), ERD-E15 (signed_booking_links), ERD-E16 (booking_requests), ERD-E17 (raw_materials) | QAD-TC10, QAD-TC11, QAD-TC15, QAD-TC18, QAD-TC19, QAD-TC29 | Verified |
 | BRD-M6 (Suppress On-Site Scrappage) | PRD-F3 (Space Image Upload), PRD-F4 (CV Image Analysis), PRD-F8 (Foreground Occlusion), PRD-F5 (Structural Guardrails) | SDD-C2 (Image Pre-Flight), SDD-C3 (CV Scene Analyzer), SDD-C4 (Parametric Builder), SDD-C5 (Visualization Canvas) | ERD-E6 (product_components), ERD-E7 (structural_rules), ERD-E10 (visualization_snapshots), ERD-E11 (product_configurations) | QAD-TC3, QAD-TC4, QAD-TC8, QAD-TC17 | Verified |
+| BRD-M4 (Achieve High Usability) | PRD-F12 (Auth and Identity), PRD-F14 (Admin Portal) | SDD-C8, SDD-C9 | ERD-E2, ERD-E20 | QAD-TC12, QAD-TC14, QAD-TC45 | Implemented |
+| BRD-M5 (Minimize Estimator Overhead) | PRD-F13, PRD-F14 (Booking & Admin Workbench) | SDD-C8, SDD-C9 (Signed Link & Admin Portal) | ERD-E13, ERD-E14, ERD-E15, ERD-E16 | QAD-TC46 | Implemented |
+| BRD-M5 (Minimize Estimator Overhead) | PRD-F14 (Admin Data Management) | SDD-C9, SDD-C10 (Admin Workbench & Access Control) | ERD-E3, ERD-E13, ERD-E16, ERD-E18 | QAD-TC47 | Implemented |
+| BRD-M4 (Achieve High Usability) | PRD-F1, PRD-F6, PRD-F14 (Brand UI Consistency & Themed Viewports) | SDD-C1, SDD-C5, SDD-C9 | N/A (Presentation Layer) | QAD-TC48 | Implemented |
 
 ---
 
@@ -81,6 +89,11 @@ GlassFit is a responsive, web-based photo-simulation and consultation-support pl
 | September 25, 2026 | `docs/erd-glassfit.md`, `docs/build-glassfit.md`, `docs/qad-glassfit.md`, `docs/index.md` | GlassFit Capstone Team | Added IMP-MS16 canonical quotation snapshots, negotiated-price auditability, deployment order, and QAD-TC30 | Pending |
 | September 26, 2026 | `docs/implementation/ms17.md` and upstream PRD, SDD, DSD, ERD, QAD, milestone, build, and index specifications | GlassFit Capstone Team | Reconciled simplified customer price disclosure, canonical per-item negotiation, DSD-UI11, ERD-E13 JSON overrides, migration 007, and QAD-TC31 | Pending |
 | September 29, 2026 | `docs/implementation/ms25.md`, `docs/qad-glassfit.md`, `docs/index.md` | GlassFit Capstone Team | Reconciled single-product quotation negotiation parity, offset-tolerant ISO datetime validation, optimistic concurrency normalization, and QAD-TC41 | Pending |
+| September 30, 2026 | `docs/implementation/ms31.md`, `docs/erd-glassfit.md`, `docs/qad-glassfit.md`, `docs/index.md` | GlassFit Capstone Team | Reconciled admin booking Discard hard deletion, cascading foreign keys, R2 asset purge, and QAD-TC46 | Pending |
+| September 30, 2026 | `docs/implementation/ms32.md`, `docs/erd-glassfit.md`, `docs/qad-glassfit.md`, `docs/index.md` | GlassFit Capstone Team | Reconciled admin data management CSV exports, executive KPI summaries, native SVG/Tailwind analytics charts, system backup engine, migration 014, and QAD-TC47 | Pending |
+| September 30, 2026 | `docs/implementation/ms33.md`, `src/app/globals.css`, `docs/dsd-glassfit.md`, `docs/qad-glassfit.md`, `docs/milestone.md`, `docs/index.md` | GlassFit Capstone Team | Reconciled unified cross-browser GlassFit brand theme scrollbar system, W3C standard properties, WebKit pseudo-elements, DSD-UI13 tokens, and QAD-TC48 | Pending |
+
+
 
 ---
 

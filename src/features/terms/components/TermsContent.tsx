@@ -1,4 +1,31 @@
+import type { ReactNode } from "react";
+import Link from "next/link";
 import { CLOSING_DISCLAIMER, TERMS_SECTIONS } from "./termsData";
+
+function renderParagraphContent(para: string): ReactNode {
+  if (!para.includes("Privacy Policy")) {
+    return para;
+  }
+
+  const parts = para.split("Privacy Policy");
+  return parts.reduce<ReactNode[]>((acc, part, index) => {
+    if (index > 0) {
+      acc.push(
+        <Link
+          key={`privacy-link-${index}`}
+          href="/privacy"
+          className="text-green hover:underline font-medium transition-colors cursor-pointer"
+        >
+          Privacy Policy
+        </Link>
+      );
+    }
+    if (part) {
+      acc.push(part);
+    }
+    return acc;
+  }, []);
+}
 
 export function TermsContent() {
   return (
@@ -16,7 +43,7 @@ export function TermsContent() {
                   key={pIdx}
                   className="text-base sm:text-lg xl:text-[20px] font-normal leading-[1.6] text-black/90 tracking-tight"
                 >
-                  {para}
+                  {renderParagraphContent(para)}
                 </p>
               ))}
 
