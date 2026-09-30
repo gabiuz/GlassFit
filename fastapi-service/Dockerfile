@@ -1,12 +1,10 @@
 FROM python:3.11-slim
 
-# Install system dependencies required by OpenCV and GLib
+# libglib2.0-0 is required by some ultralytics/torch transitive deps.
+# libgl1 is NOT needed because we use opencv-python-headless (no display/GUI).
+# libsm6, libxext6, libxrender-dev are also skipped for the same reason.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgl1-mesa-glx \
     libglib2.0-0 \
-    libsm6 \
-    libxext6 \
-    libxrender-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
