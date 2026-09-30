@@ -28,8 +28,12 @@ export function RequestTimeline({
   if (totalCount === 0) {
     return (
       <div className="flex flex-col gap-1">
-        <h3 className="text-[#07b6d3] text-lg sm:text-xl font-medium leading-snug">Request Updates</h3>
-        <p className="text-xs text-[#c3c3c3]">No request updates yet.</p>
+        <h4 className="text-[#07b6d3] text-[20px] font-medium leading-[1.4]">
+          Request Updates
+        </h4>
+        <p className="text-[12px] text-[#c3c3c3] leading-[1.4]">
+          No request updates yet.
+        </p>
       </div>
     );
   }
@@ -37,58 +41,69 @@ export function RequestTimeline({
   const displayedUpdates =
     isExpanded || totalCount <= 3 ? sortedUpdates : sortedUpdates.slice(0, 3);
 
-  const formatTimestamp = (isoString: string): string => {
-    const parts = isoString.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  const formatTimelineDate = (isoString: string): string => {
+    const parts = isoString.match(/^(\d{4})-(\d{2})-(\d{2})/);
     if (parts) {
       const months = [
-        "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December",
       ];
       const year = parts[1];
       const month = months[parseInt(parts[2], 10) - 1];
       const day = parseInt(parts[3], 10);
-      let hour = parseInt(parts[4], 10);
-      const minute = parts[5];
-      const ampm = hour >= 12 ? "PM" : "AM";
-      hour = hour % 12;
-      if (hour === 0) hour = 12;
-      return `${month} ${day}, ${year} at ${hour}:${minute} ${ampm}`;
+      return `${month} ${day}, ${year}`;
     }
-    return new Date(isoString).toLocaleString("en-US");
+    return new Date(isoString).toLocaleDateString("en-US", {
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+      timeZone: "Asia/Manila",
+    });
   };
 
   return (
-    <div className="flex flex-col gap-5">
-      <div className="flex flex-col gap-0.5">
-        <h3 className="text-[#07b6d3] text-lg sm:text-xl font-medium leading-snug">
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-[2px]">
+        <h4 className="text-[#07b6d3] text-[20px] font-medium leading-[1.4]">
           Request Updates
-        </h3>
-        <p className="text-xs text-[#c3c3c3]">Track your updates</p>
+        </h4>
+        <p className="text-[12px] text-[#c3c3c3] leading-[1.4]">
+          Track your updates
+        </p>
       </div>
 
-      <div className="relative pl-7 flex flex-col gap-5 before:content-[''] before:absolute before:left-[9px] before:top-2 before:bottom-2 before:w-0.5 before:bg-[#c3c3c3]">
+      <div className="relative flex flex-col gap-3">
+        {/* Continuous vertical connector line */}
+        {displayedUpdates.length > 1 && (
+          <div
+            aria-hidden="true"
+            className="absolute left-[13px] top-[14px] bottom-[14px] w-[2px] bg-[#c3c3c3] pointer-events-none"
+          />
+        )}
+
         {displayedUpdates.map((update, idx) => {
           const isLatest = idx === 0;
 
           return (
-            <div key={update.id} className="relative flex flex-col gap-1">
-              {/* Bullet node on timeline */}
+            <div
+              key={update.id}
+              className="relative z-10 flex items-center gap-[12px] min-h-[54px]"
+            >
               <div
-                className={`absolute -left-7 top-1 size-5 rounded-full transition-colors ${
-                  isLatest
-                    ? "bg-[#07b6d3]"
-                    : "bg-[#c3c3c3]"
+                className={`size-[28px] rounded-full shrink-0 transition-colors ${
+                  isLatest ? "bg-[#07b6d3]" : "bg-[#c3c3c3]"
                 }`}
               />
-
-              <div className="flex flex-col gap-0.5">
+              <div className="flex flex-col justify-center leading-[1.4]">
                 <time
                   dateTime={update.occurredAt}
-                  className="text-sm font-medium text-[#0f1422]"
+                  className="text-[14px] text-[#0f1422] font-normal"
                 >
-                  {formatTimestamp(update.occurredAt)}
+                  {formatTimelineDate(update.occurredAt)}
                 </time>
-                <p className="text-xs text-[#c3c3c3] leading-snug">{update.title}</p>
+                <p className="text-[14px] text-[#c3c3c3] font-normal">
+                  {update.title}
+                </p>
               </div>
             </div>
           );
@@ -96,11 +111,11 @@ export function RequestTimeline({
       </div>
 
       {totalCount > 3 && (
-        <div className="flex justify-start">
+        <div className="flex justify-start pt-1">
           <button
             type="button"
             onClick={onToggleExpand}
-            className="min-h-10 px-3 py-2 inline-flex items-center gap-2 rounded-[10px] text-xs font-medium text-[#07b6d3] hover:bg-[#e9f9fb] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]"
+            className="px-3 py-1.5 inline-flex items-center gap-2 rounded-[10px] text-xs font-medium text-[#07b6d3] hover:bg-[#e9f9fb] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3] cursor-pointer"
           >
             <span>{isExpanded ? "Show latest updates" : "View all updates"}</span>
             <svg
