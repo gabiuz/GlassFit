@@ -252,6 +252,30 @@ export function areTimestampsEquivalent(dbTimestamp: string, expectedTimestamp: 
 }
 
 // ----------------------------------------------------------------------------
+// Admin Booking Deletion Schemas (IMP-MS31, QAD-TC46)
+// ----------------------------------------------------------------------------
+
+export const DeleteBookingQuotationInputSchema = z.object({
+  bookingRequestId: z.string().uuid("Invalid booking request UUID"),
+  quotationId: z.string().uuid("Invalid quotation UUID").optional(),
+});
+export type DeleteBookingQuotationInput = z.infer<typeof DeleteBookingQuotationInputSchema>;
+
+export type DeleteBookingQuotationResult =
+  | {
+      success: true;
+      bookingRequestId: string;
+      quotationId: string | null;
+      quotationNumber: string;
+      pdfR2ObjectKey: string | null;
+    }
+  | {
+      success: false;
+      code: "UNAUTHENTICATED" | "UNAUTHORIZED" | "NOT_FOUND" | "PERSISTENCE_ERROR";
+      error: string;
+    };
+
+// ----------------------------------------------------------------------------
 // 6. Admin relational query contracts (IMP-MS15, QAD-TC29)
 // ----------------------------------------------------------------------------
 
