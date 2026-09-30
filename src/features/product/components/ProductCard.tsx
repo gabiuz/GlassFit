@@ -58,13 +58,14 @@ export function ProductCard({ product }: ProductCardProps) {
   const typeTags = [product.type];
 
   return (
-    <div className="max-w-68.25 rounded-[10px] bg-white/50 shadow-[0px_0px_5px_0px_rgba(0,0,0,0.25)] w-full flex flex-col justify-between overflow-hidden group">
+    <div className="w-full max-w-68.25 rounded-[10px] bg-white/50 shadow-[0px_0px_5px_0px_rgba(0,0,0,0.25)] flex flex-col justify-between overflow-hidden group">
       {/* Image Carousel Area */}
-      <div className="relative w-full h-[224px] overflow-hidden bg-neutral-100">
+      <div className="relative w-full aspect-[4/3] sm:aspect-auto sm:h-[224px] overflow-hidden bg-neutral-100">
         <Image
           src={activeSrc}
           alt={`${name} - Image ${currentImgIndex + 1}`}
           fill
+          sizes="(max-width: 639px) calc((100vw - 44px) / 2), 273px"
           className="object-cover transition-all duration-300"
           unoptimized={isExternalImage}
         />
@@ -103,26 +104,28 @@ export function ProductCard({ product }: ProductCardProps) {
           </>
         )}
       </div>
-      <div className="flex flex-col p-5 gap-7.5 flex-1 justify-between">
-        <div className="flex flex-col gap-2.5 justify-start items-start">
-          <h2 className="text-black text-xl font-normal leading-7 min-h-14">{name}</h2>
-          <div className="flex flex-wrap gap-1.25">
+      <div className="flex flex-col p-2.5 sm:p-5 gap-2.5 sm:gap-7.5 flex-1 justify-between">
+        <div className="flex flex-col gap-1.5 sm:gap-2.5 justify-start items-start w-full">
+          <h2 className="w-full text-black text-base sm:text-xl font-semibold sm:font-normal leading-snug sm:leading-7 min-h-11 sm:min-h-14 line-clamp-2">
+            {name}
+          </h2>
+          <div className="flex flex-wrap gap-1 sm:gap-1.25">
             {typeTags.map((tag) => (
               <div
                 key={tag}
-                className="px-2.5 py-1.25 rounded-[20px] border border-[#C3C3C3]"
+                className="max-w-full px-1.5 py-0.5 sm:px-2.5 sm:py-1.25 rounded-[20px] border border-[#C3C3C3]"
               >
-                <span className="text-black text-xs">{tag}</span>
+                <span className="block max-w-full text-black text-xs break-words">{tag}</span>
               </div>
             ))}
           </div>
-          <div className="w-fit">
-            <p className="text-black text-sm font-normal leading-5">
+          <div className="w-full">
+            <p className="text-black text-sm font-normal leading-5 line-clamp-2">
               {description ?? ""}
             </p>
           </div>
         </div>
-        <div className="flex flex-col gap-2.5 justify-start items-start mt-4 w-full">
+        <div className="flex flex-col gap-1.5 sm:gap-2.5 justify-start items-start mt-2 sm:mt-4 w-full">
           {"message" in priceDisplay ? (
             <p className="text-xs text-neutral-400 italic">{priceDisplay.message}</p>
           ) : (
@@ -133,21 +136,21 @@ export function ProductCard({ product }: ProductCardProps) {
                 </span>
               </div>
               <div>
-                <span className="text-green text-xl font-medium leading-7">
+                <span className="text-green text-base sm:text-xl font-medium leading-tight sm:leading-7">
                   {priceDisplay.value}
                 </span>
               </div>
             </>
           )}
-          <div className="flex flex-wrap gap-2 w-full">
+          <div className="flex flex-col sm:flex-row gap-2 w-full">
             {/* feat/sql: routed buttons */}
-            <Link href={`/product-details/${product.id}`} style={{ flex: "1 1 105px" }}>
+            <Link href={`/product-details/${product.id}`} className="w-full sm:flex-1">
               <Button
                 leftIcon={null}
                 rightIcon={null}
                 variant="greenBtnWhiteText"
                 value="View Product"
-                className="whitespace-nowrap text-sm! "
+                className="min-h-11 sm:min-h-0 whitespace-nowrap text-sm! w-full justify-center"
                 style={{
                   gap: "8px",
                   borderRadius: "10px",
@@ -157,7 +160,7 @@ export function ProductCard({ product }: ProductCardProps) {
                 }}
               />
             </Link>
-            <Link href={`/visualize/${product.id}/upload`} style={{ flex: "1 1 105px" }}>
+            <Link href={`/visualize/${product.id}/upload`} className="w-full sm:flex-1">
               <Button
                 leftIcon={null}
                 rightIcon={
@@ -170,7 +173,7 @@ export function ProductCard({ product }: ProductCardProps) {
                 }
                 variant="blackBtnWhiteText"
                 value="Visualize"
-                className="whitespace-nowrap text-sm! "
+                className="min-h-11 sm:min-h-0 whitespace-nowrap text-sm! w-full justify-center"
                 style={{
                   gap: "8px",
                   borderRadius: "10px",

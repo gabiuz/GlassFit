@@ -5,7 +5,7 @@
 **Version:** 1.0 (Capstone Production Release)  
 **Owner:** Reynard John B. Rabanal (Lead Product / Systems Architect) & GlassFit Capstone Team (PUP CCIS)  
 **Status:** Locked  
-**Last reconciled:** September 9, 2026 (Reconciled with 16-table Supabase schema, Next.js 16 frontend, and FastAPI CV backend)  
+**Last reconciled:** September 30, 2026 (Added IMP-MS36 admin product type and status filter requirements)
 **BRD:** N/A (Capstone Specification & PUP CCIS Manuscript Chapters 1-3)
 
 ---
@@ -40,7 +40,7 @@ GlassFit bridges this gap through an accessible, asynchronous **"Photo-Based Sim
 |---|---|---|---|
 | **PRD-F1** | Public Product Catalog & 2D Inspection | Responsive, public catalog to browse glass and aluminum products with category filters, detailed specs, and variation options without mandatory login. | Must-Have |
 | **PRD-F2** | Interactive 3D Product Inspector | WebGL-based viewer on product detail pages enabling 360° orbit, rotation, and zoom of 3D preview assets on-demand from Cloudflare R2 without heavy catalog preloading. | Must-Have |
-| **PRD-F3** | Space Photo Upload & Client Pre-Flight | Upload room photos from mobile camera or storage with client-side aspect-ratio, format, and dimension validation, providing an immediate preview canvas. | Must-Have |
+| **PRD-F3** | Space Photo Upload & Client Pre-Flight | Upload static JPG, PNG, WebP, HEIC, and HEIF room photos from mobile camera or storage with client-side format and size validation, browser-safe preview behavior, and server-delegated decoding when the browser cannot decode HEIC or HEIF. | Must-Have |
 | **PRD-F4** | Backend Computer Vision Image Analysis | FastAPI service analyzing uploaded space image for ambient luminance, color temperature, contrast, sharpness, and running YOLOv8 segmentation for foreground objects. | Must-Have |
 | **PRD-F5** | Parametric 3D Assembly & Structural Guardrails | Data-driven structural generation where products (e.g., multi-pane windows) dynamically add, remove, or reposition components based on width thresholds, dead-load limits, and Behavior B hybrid confirmation modals. | Must-Have |
 | **PRD-F6** | Photo-Based Visualization Workspace | Interactive canvas allowing movement, scaling, rotation, yaw/pitch perspective adjustments, and layer ordering with a single active Three.js overlay and cached layer composition. | Must-Have |
@@ -85,8 +85,9 @@ GlassFit bridges this gap through an accessible, asynchronous **"Photo-Based Sim
 > As a customer starting a visualization, I want to upload an image of my room opening so that I can use it as the canvas for fitting my chosen product.
 
 **Acceptance Criteria:**
-- Given the upload screen (`/visualize/[productId]/upload`), when a user selects or captures a photo, then the client validates that the file is an image (JPEG/PNG/WebP) and under 15MB.
-- Given a valid image file, when uploaded, then the client immediately displays a local object URL preview and transmits the payload asynchronously to the FastAPI backend service.
+- Given the upload screen (`/visualize/[productId]/upload`) or direct visualization screen (`/visualization`), when a user selects or captures a static photo, then the client accepts JPG, JPEG, PNG, WebP, HEIC, and HEIF files up to 12 MB.
+- Given a valid JPG, PNG, or WebP file, when uploaded, then the client validates browser decode integrity, displays a local object URL preview, and transmits the payload asynchronously to the FastAPI backend service.
+- Given a valid HEIC or HEIF file that the browser cannot decode, when uploaded, then the client displays an accessible file preview card and delegates authoritative decode validation to the FastAPI backend service.
 
 ### US-04: Automated Lighting & Scene Analysis (traces to PRD-F4)
 > As a customer configuring a fixture in my room photo, I want the system to automatically analyze the image lighting so that the 3D model looks naturally integrated rather than pasted on.
@@ -172,6 +173,8 @@ The customer quotation document presents configuration details, quantity, one fi
 **Acceptance Criteria:**
 - Given navigation to `/admin/login`, when an authenticated user with `account_type = 'Admin'` and an active `admin_role_id` (Owner, Manager, Staff) logs in, then access is granted to `/admin/(protected)`. Customers attempting to access this route are redirected to `/login` with an unauthorized alert.
 - Given an admin on `/admin/products`, when creating or updating a product, then the admin can upload 2D images and GLB models directly to Cloudflare R2 and update template parameters and component pricing.
+- Given an admin on `/admin/products`, when selecting a product type from the "All categories" control, then the table displays only products whose `product_type` matches the selection.
+- Given an admin on `/admin/products`, when selecting Published or Draft from the "All Status" control, then the table displays only products whose normalized lifecycle status matches the selection, and this predicate combines with product type and search filters.
 
 ---
 
@@ -188,7 +191,7 @@ The customer quotation document presents configuration details, quantity, one fi
 | **Landing Page (`/`)** | Introduce value proposition, showcase interactive before/after teaser, and guide entry into catalog or visualization. | Direct URL, Root navigation | **Empty:** N/A (static content)<br>**Loading:** Skeleton hero and product teaser<br>**Error:** Error boundary with reload prompt<br>**Success:** Fully interactive hero, feature highlights, CTA buttons |
 | **Product Catalog (`/product`)** | Search, filter, and browse glass and aluminum products with category badges and variation previews. | Main navigation, Hero CTA | **Empty:** "No products found for this category"<br>**Loading:** 8-card grid skeleton with pulse animation<br>**Error:** "Unable to load catalog. Please check connection."<br>**Success:** Responsive product grid with category pills |
 | **Product Details (`/product-details/[id]`)** | Detailed product specifications, dimensions, available finishes, and 2D/3D inspection viewer. | Clicking a product card in `/product` | **Empty:** "Product not found"<br>**Loading:** Layout skeleton with spinner on 3D container<br>**Error:** Toast error if GLB fails to fetch<br>**Success:** Switchable 2D image / WebGL 3D orbit viewer with variation selector |
-| **Photo Upload (`/visualize/[productId]/upload`)** | Pre-flight guidelines and upload drop-zone for customer space image. | "Visualize" button from Catalog or Product Details | **Empty:** Empty drag-and-drop zone with camera capture button<br>**Loading:** Progress indicator with image compression status<br>**Error:** "File exceeds 15MB" or "Invalid format" banner<br>**Success:** Instant thumbnail preview with "Proceed to Fitting" CTA |
+| **Photo Upload (`/visualize/[productId]/upload`)** | Pre-flight guidelines and upload drop-zone for customer space image. | "Visualize" button from Catalog or Product Details | **Empty:** Empty drag-and-drop zone with camera capture button<br>**Loading:** Progress indicator with image validation status<br>**Error:** "File exceeds 12 MB" or format-specific validation banner<br>**Success:** Native thumbnail preview or HEIC/HEIF metadata card with analysis flow |
 | **Visualization Workspace (`/visualize/[productId]/workspace`)** | Core canvas to place, transform, layer, and adjust realism of product overlays over room photo. | Completion of photo upload | **Empty:** Blank photo background with overlay picker modal<br>**Loading:** Shimmer overlay while FastAPI analyzes lighting & segmentation<br>**Error:** Fallback notice: *"Automated lighting unavailable; manual controls active"*<br>**Success:** Full interactive canvas with transform gizmo, layer panel, and realism controls |
 | **Dimension Confirmation Modal** | Verify visual dimensions versus tape measurements for quotation input. | Clicking "Finish & Quote" in workspace | **Empty:** Pre-populated with default visual dimensions<br>**Loading:** Calculating preliminary estimate spinner<br>**Error:** Inline validation: *"Please enter a valid positive number"*<br>**Success:** Two choice cards: "Keep Estimated" vs "Enter Exact Measurements" |
 | **Quotation & Summary (`/quotation`)** | Display itemized cost breakdown, final composite snapshot, and PDF download action. | Workspace confirmation flow | **Empty:** "No active quote in session"<br>**Loading:** Itemized table skeleton with animated loader<br>**Error:** "Failed to calculate quotation. Try again."<br>**Success:** Card with composite image, price breakdown table, disclaimer, and CTA buttons |
@@ -304,7 +307,7 @@ flowchart TD
     
     ClickViz --> Upload[Upload Room Photo]
     Upload --> ValidateImg{Image Valid?}
-    ValidateImg -->|No: >15MB or invalid| UploadErr[Show Error Toast] --> Upload
+    ValidateImg -->|No: >12 MB or invalid| UploadErr[Show Error Toast] --> Upload
     ValidateImg -->|Yes| FastAPICall[Send to FastAPI Backend]
     
     FastAPICall --> FastAPISuccess{Analysis OK?}
@@ -419,7 +422,7 @@ The following features were discussed during product research and are explicitly
 3. **Object Segmentation & Masking:** Detects foreground occluding objects (e.g., tables, chairs, sofas, potted plants, architectural columns) and outputs binary transparency masks.
 
 ### Input $\rightarrow$ Output Contract:
-- **Input:** Multipart form upload of the original space image (JPEG/PNG/WebP, max 15MB, resolution downscaled to max 1920px on the longest edge).
+- **Input:** Multipart form upload of one static JPEG, PNG, WebP, HEIC, or HEIF space image, maximum 12 MB and maximum 40,000,000 decoded pixels, with the generated workspace image downscaled to a maximum 1920px on the longest edge.
 - **Output:** JSON response schema:
 ```json
 {

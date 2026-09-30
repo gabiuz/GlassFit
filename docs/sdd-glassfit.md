@@ -5,7 +5,7 @@
 **Version:** 1.0 (Capstone Production Release)  
 **Owner:** Reynard John B. Rabanal (Lead Product / Systems Architect) & GlassFit Capstone Team (PUP CCIS)  
 **Status:** Locked  
-**Last reconciled:** September 9, 2026 (Reconciled with 16-table Supabase schema, Next.js 16 App Router, and FastAPI CV backend)  
+**Last reconciled:** September 30, 2026 (Added IMP-MS36 admin product filter component contract)
 **PRD:** docs/prd-glassfit.md
 
 ---
@@ -42,14 +42,14 @@ Asynchronous hybrid multi-tier web architecture decoupling interactive client-si
 | Component ID | Component Name | Runtime Layer | Architectural Responsibility | Traces to PRD | Dependencies |
 |---|---|---|---|---|---|
 | SDD-C1 | Public Catalog & 3D Inspector | Next.js Client / SSR | Renders public product browsing catalog, filter grids, and interactive 360-degree Three.js WebGL model inspector on product detail pages. | PRD-F1, PRD-F2 | Supabase `products`, `product_assets`, Cloudflare R2 CDN, Three.js GLTFLoader |
-| SDD-C2 | Space Image Pre-Flight Validator | Next.js Client | Performs client-side image validation (MIME type, file size <= 12MB, image decode integrity, aspect ratio sanity) prior to network transit. | PRD-F3 | HTML5 File API, Image Decode API, `src/lib/imageApi.ts` |
-| SDD-C3 | Computer Vision Scene Analyzer | FastAPI Python Backend | Ingests uploaded room photo, extracts average brightness, color temperature (warm/cool), contrast, sharpness, runs YOLOv8s-seg foreground masks, and caches session WebP images. | PRD-F4, PRD-F7, PRD-F8 | FastAPI, OpenCV, NumPy, Ultralytics YOLOv8, PyTorch |
+| SDD-C2 | Space Image Pre-Flight Validator | Next.js Client | Accepts static JPEG, PNG, WebP, HEIC, and HEIF files up to 12 MB; reconciles MIME and filename extension; validates browser-decodable formats; and delegates HEIC or HEIF decode validation to the server when the active browser lacks native support. | PRD-F3 | HTML5 File API, Image Decode API, `src/lib/imageApi.ts` |
+| SDD-C3 | Computer Vision Scene Analyzer | FastAPI Python Backend | Validates uploaded image bytes and decoded format, rejects animated or oversized decoded images, decodes HEIC and HEIF through a pinned `pillow-heif` adapter, normalizes those formats to JPEG for OpenCV, extracts scene measurements, runs YOLOv8s-seg foreground masks, and caches session WebP images. | PRD-F4, PRD-F7, PRD-F8 | FastAPI, Pillow, pillow-heif, OpenCV, NumPy, Ultralytics YOLOv8, PyTorch |
 | SDD-C4 | Parametric 3D Assembly & Guardrail Engine | Three.js Client Runtime | Evaluates structural rules, leaf dead loads (2.5 rule), and width thresholds (W >= 2400mm) to dynamically assemble modular components or trigger Behavior B hybrid confirmation modals. | PRD-F5 | Three.js, `src/lib/visualization/guardrailEngine.ts`, Supabase `structural_rules` |
 | SDD-C5 | Photo-Based Visualization Canvas | Next.js Client / HTML5 | Manages interactive placement, drag translation, uniform scaling, yaw/pitch rotation, layer reordering, environmental lighting filters, glass modes, and foreground occlusion. | PRD-F6, PRD-F7, PRD-F8, PRD-F16 | HTML Canvas 2D, Three.js WebGLRenderer, FastAPI Mask endpoints |
 | SDD-C6 | Canvas Compositor & Snapshot Pipeline | Next.js Client / Edge | Blends background space photo, active/cached 3D product layers, contact shadows, and foreground occlusion masks into a flattened PNG snapshot; uploads to Cloudflare R2. | PRD-F9, PRD-F15 | HTML5 Canvas `toBlob()`, S3 Presigned URL client, Cloudflare R2, Supabase `visualization_snapshots` |
 | SDD-C7 | Parametric BOM Pricing Engine & PDF Generator | Next.js Domain Service / Action | Computes and freezes the internal BOM, then renders a simplified customer document with configuration details, one effective final line price per product item, grand total, and structural waiver disclaimers. Server-owned per-item overrides are stored separately and never mutate the calculated snapshot. | PRD-F10, PRD-F11 | Supabase `raw_materials`, `quotation_estimates`, `quotation_items`, `src/lib/pricing/pricingEngine.ts`, Cloudflare R2 |
 | SDD-C8 | Signed Booking Link & Messaging Handoff | Next.js Server Action | Generates SHA-256 token-hashed consultation reference URLs (`signed_booking_links`), logs booking requests, and formats deep-links to Facebook Messenger and Viber. | PRD-F12, PRD-F13 | Supabase Auth, Crypto API, URL scheme builders (`m.me`, `viber://chat`) |
-| SDD-C9 | Role-Based Admin Portal & Part Inspector | Next.js Protected Routes | Administrative console (`/admin`) with split-screen Three.js Part Inspector, raw materials master catalog (`/admin/materials`), and live test-drive calculation sandbox. | PRD-F14, PRD-F19 | Supabase RLS, `src/lib/admin/materials/materialActions.ts`, `src/lib/admin/products/autoDetection.ts`, S3 Presigned Upload API |
+| SDD-C9 | Role-Based Admin Portal & Part Inspector | Next.js Protected Routes | Administrative console (`/admin`) with a searchable product workbench, client-side product type and lifecycle status filters, split-screen Three.js Part Inspector, raw materials master catalog (`/admin/materials`), and live test-drive calculation sandbox. | PRD-F14, PRD-F19 | Supabase RLS, `src/features/admin/products/ProductsContent.tsx`, `src/lib/admin/materials/materialActions.ts`, `src/lib/admin/products/autoDetection.ts`, S3 Presigned Upload API |
 
 ---
 
@@ -73,7 +73,7 @@ Asynchronous hybrid multi-tier web architecture decoupling interactive client-si
 ### 3.2 Detailed Data Transfer Contracts
 
 **Contract 1: Backend Space Image Analysis (`POST /analyze-image`)**
-- Request: Multipart form data with single field `image`. Allowed MIME types: `image/jpeg`, `image/png`. Max file size: 12,582,912 bytes (12 MB).
+- Request: Multipart form data with single field `image`. Specific MIME types: `image/jpeg`, `image/png`, `image/webp`, `image/heic`, and `image/heif`. Empty or `application/octet-stream` MIME is accepted only with an approved `.jpg`, `.jpeg`, `.png`, `.webp`, `.heic`, or `.heif` extension. Recognized MIME and extension values must agree. Maximum file size: 12,582,912 bytes (12 MB); maximum decoded image size: 40,000,000 pixels; exactly one static frame.
 - Success Response (HTTP 200 OK):
   - `session_id`: UUIDv4 string identifying the temporary workspace session.
   - `image_url`: Relative path string to the normalized workspace WebP image.
@@ -83,7 +83,7 @@ Asynchronous hybrid multi-tier web architecture decoupling interactive client-si
   - `lighting`: Object containing `condition` (string: Daylight, Indoor, Low Light), `color_temperature` (string: Warm, Neutral, Cool), `tint_rgb` (array of 3 floats), and `recommended_shadow_opacity` (float: 0.1 to 0.7).
   - `detected_objects`: Array of objects containing `object_id` (string), `label` (string: chair, couch, potted plant, dining table), `confidence` (float: 0.0 to 1.0), `bounding_box` (array of 4 floats: x, y, width, height), and `mask_url` (string path to binary cutout mask).
 - Error Response (HTTP 400 Bad Request):
-  - `detail`: String error description (e.g., "Upload a JPG, JPEG, or PNG image." or "Upload an image smaller than 12 MB.").
+  - `detail`: String error description for unsupported format, MIME and extension conflict, decoded-content conflict, corrupt image, animation, decoded-pixel limit, or the 12 MB compressed-size limit.
 
 **Contract 2: Signed Booking Reference Generation (`POST /api/booking/generate-link`)**
 - Request Parameters:

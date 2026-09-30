@@ -45,8 +45,8 @@ def extract_exif_camera_info(image_path: Path | str) -> ExifCameraInfo:
         from PIL import Image as PILImage
         from PIL.ExifTags import Base as ExifBase
 
-        img = PILImage.open(str(image_path))
-        exif_data = img.getexif()
+        with PILImage.open(str(image_path)) as img:
+            exif_data = img.getexif()
         if not exif_data:
             return empty
 

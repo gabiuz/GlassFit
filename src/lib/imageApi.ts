@@ -1,7 +1,40 @@
 const FALLBACK_API_URL = "http://localhost:8000";
 
-export const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/png"];
+export const ACCEPTED_IMAGE_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/heic",
+  "image/heif",
+] as const;
+export const ACCEPTED_IMAGE_EXTENSIONS = [
+  ".jpg",
+  ".jpeg",
+  ".png",
+  ".webp",
+  ".heic",
+  ".heif",
+] as const;
 export const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
+
+export type ImagePreviewMode = "image" | "file-card";
+
+const GENERIC_IMAGE_TYPES = new Set(["", "application/octet-stream"]);
+const MIME_EXTENSIONS: Readonly<Partial<Record<string, readonly string[]>>> = {
+  "image/jpeg": [".jpg", ".jpeg"],
+  "image/png": [".png"],
+  "image/webp": [".webp"],
+  "image/heic": [".heic", ".heif"],
+  "image/heif": [".heic", ".heif"],
+};
+
+export function isHeicFile(file: File): boolean {
+  const mime = file.type.toLowerCase();
+  if (mime === "image/heic" || mime === "image/heif") return true;
+
+  const name = file.name.toLowerCase();
+  return name.endsWith(".heic") || name.endsWith(".heif");
+}
 
 export type BrightnessCategory = "dim" | "normal" | "bright";
 
@@ -113,9 +146,22 @@ export function getImageApiBaseUrl() {
   return (process.env.NEXT_PUBLIC_IMAGE_API_URL || FALLBACK_API_URL).replace(/\/$/, "");
 }
 
-export function validateImageFile(file: File) {
-  if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
-    return "Upload a JPG, JPEG, or PNG image.";
+export function validateImageFile(file: File): string | null {
+  const fileType = file.type.toLowerCase();
+  const fileName = file.name.toLowerCase();
+  const extension = ACCEPTED_IMAGE_EXTENSIONS.find((candidate) =>
+    fileName.endsWith(candidate),
+  );
+  const allowedExtensions = MIME_EXTENSIONS[fileType];
+
+  if (GENERIC_IMAGE_TYPES.has(fileType)) {
+    if (!extension) return "Upload a JPG, PNG, WebP, or HEIC/HEIF image.";
+  } else if (!allowedExtensions || !extension || !allowedExtensions.includes(extension)) {
+    return "The file type and filename extension do not match.";
+  }
+
+  if (!ACCEPTED_IMAGE_TYPES.some((accepted) => accepted === fileType) && !GENERIC_IMAGE_TYPES.has(fileType)) {
+    return "Upload a JPG, PNG, WebP, or HEIC/HEIF image.";
   }
 
   if (file.size > MAX_UPLOAD_BYTES) {
@@ -125,7 +171,7 @@ export function validateImageFile(file: File) {
   return null;
 }
 
-export async function validateImageDecode(file: File) {
+export async function validateImageDecode(file: File): Promise<ImagePreviewMode> {
   const objectUrl = URL.createObjectURL(file);
 
   try {
@@ -142,6 +188,10 @@ export async function validateImageDecode(file: File) {
       image.onerror = () => reject(new Error("Uploaded image could not be decoded."));
       image.src = objectUrl;
     });
+    return "image";
+  } catch (error) {
+    if (isHeicFile(file)) return "file-card";
+    throw error;
   } finally {
     URL.revokeObjectURL(objectUrl);
   }
