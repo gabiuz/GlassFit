@@ -34,6 +34,7 @@ import {
     formatTime12h,
     formatScheduleSummary,
 } from "@/lib/settings/formatters";
+import { DataManagementCard } from "./components/DataManagementCard";
 
 // ---------------------------------------------------------------------------
 // Toast
@@ -514,104 +515,7 @@ function SecurityCard({
     );
 }
 
-// ---------------------------------------------------------------------------
-// Data Management Card
-// ---------------------------------------------------------------------------
 
-function DataManagementCard({
-    onToast,
-}: {
-    onToast: (msg: string, variant: "success" | "error") => void;
-}) {
-    const lastBackupDate = "Sep 12, 2026 · 10:30 AM";
-
-    const handleExportBookings = () => {
-        // Wire to route handler /api/admin/export/bookings when implemented
-        onToast("Booking CSV export coming soon.", "success");
-    };
-
-    const handleExportProducts = () => {
-        // Wire to route handler /api/admin/export/products when implemented
-        onToast("Product CSV export coming soon.", "success");
-    };
-
-    const handleDownloadBackup = () => {
-        // Wire to route handler /api/admin/export/backup when implemented
-        onToast("System backup download coming soon.", "success");
-    };
-
-    return (
-        <div className="bg-white rounded-[20px] p-6 sm:p-[30px] flex flex-col gap-5 w-full">
-            <SectionHeading
-                title="Data Management"
-                subtitle="Export records and maintain a system backup."
-            />
-
-            <div className="flex flex-col gap-4 w-full">
-                {/* Booking Records */}
-                <div className="flex items-center justify-between gap-4">
-                    <div className="flex flex-col gap-1 min-w-0">
-                        <span className="text-[#0f1422] text-sm sm:text-base font-medium leading-snug tracking-[-0.304px]">
-                            Booking Records
-                        </span>
-                        <p className="text-[#c3c3c3] text-xs font-normal leading-snug tracking-[-0.228px]">
-                            All booking request data
-                        </p>
-                    </div>
-                    <button
-                        type="button"
-                        onClick={handleExportBookings}
-                        className="bg-white border border-[#07b6d3] text-[#07b6d3] text-sm font-normal px-4 py-1.5 rounded-[10px] cursor-pointer hover:bg-[#07b6d3]/5 transition-colors whitespace-nowrap shrink-0"
-                    >
-                        Export CSV
-                    </button>
-                </div>
-
-                <div className="w-full border-t border-[#f0f0f0]" />
-
-                {/* Product Records */}
-                <div className="flex items-center justify-between gap-4">
-                    <div className="flex flex-col gap-1 min-w-0">
-                        <span className="text-[#0f1422] text-sm sm:text-base font-medium leading-snug tracking-[-0.304px]">
-                            Product Records
-                        </span>
-                        <p className="text-[#c3c3c3] text-xs font-normal leading-snug tracking-[-0.228px]">
-                            Products and availability
-                        </p>
-                    </div>
-                    <button
-                        type="button"
-                        onClick={handleExportProducts}
-                        className="bg-white border border-[#07b6d3] text-[#07b6d3] text-sm font-normal px-4 py-1.5 rounded-[10px] cursor-pointer hover:bg-[#07b6d3]/5 transition-colors whitespace-nowrap shrink-0"
-                    >
-                        Export CSV
-                    </button>
-                </div>
-
-                <div className="w-full border-t border-[#f0f0f0]" />
-
-                {/* System Backup */}
-                <div className="flex items-center justify-between gap-4">
-                    <div className="flex flex-col gap-1 min-w-0">
-                        <span className="text-[#0f1422] text-sm sm:text-base font-medium leading-snug tracking-[-0.304px]">
-                            System Backup
-                        </span>
-                        <p className="text-[#c3c3c3] text-xs font-normal leading-snug tracking-[-0.228px]">
-                            Last backup: {lastBackupDate}
-                        </p>
-                    </div>
-                    <button
-                        type="button"
-                        onClick={handleDownloadBackup}
-                        className="bg-[#07b6d3] text-white text-sm font-normal px-4 py-1.5 rounded-[10px] cursor-pointer hover:bg-cyan-600 transition-colors whitespace-nowrap shrink-0"
-                    >
-                        Download Backup
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-}
 
 // ---------------------------------------------------------------------------
 // Operating Schedule Range Helpers
@@ -1044,7 +948,10 @@ export function SettingsContent() {
                         role={role.roleName}
                         onToast={showToast}
                     />
-                    <DataManagementCard onToast={showToast} />
+                    <DataManagementCard
+                        isOwner={role.roleName.toLowerCase() === "owner"}
+                        onToast={showToast}
+                    />
                 </div>
 
                 {/* Right column */}

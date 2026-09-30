@@ -370,10 +370,21 @@ Eliminate state desynchronization, parameter loss, and rule-blocking traps in th
 | MS-9 | Governance | Governance | Governance | Governance | Governance |
 | MS-10 | `PRD-F14` | `SDD-C9` | `ERD-E4`, `ERD-E6` | `DSD-UI10` | `QAD-TC19` |
 | MS-30 | `PRD-F12`, `PRD-F14` | `SDD-C8`, `SDD-C9` | `ERD-E2`, `ERD-E20` | `DSD-UI10` | `QAD-TC12`, `QAD-TC14`, `QAD-TC45` |
+| MS-31 | `PRD-F10`, `PRD-F12`, `PRD-F13`, `PRD-F14` | `SDD-C8`, `SDD-C9` | `ERD-E13`, `ERD-E14`, `ERD-E15`, `ERD-E16` | `DSD-UI11` | `QAD-TC46` |
+| MS-32 | `PRD-F14`, `PRD-F10`, `PRD-F12`, `PRD-F13` | `SDD-C9`, `SDD-C10` | `ERD-E3`, `ERD-E13`, `ERD-E16`, `ERD-E18` | `DSD-UI11`, `DSD-UI12` | `QAD-TC47` |
 
 ### MS-30: Inclusive Identity and Administrator Email Change
 
 MS-30 centralizes Unicode person-name validation, permits mononyms, secures administrator self-profile mutation, and adds role-aware administrator email changes. Staff changes require an active Owner or Manager decision through a protected review page. Owner and Manager self-changes complete immediately. Migration 012 retains an immutable workflow audit and synchronizes completed Auth email changes to profiles.
+
+### MS-31: Admin Booking Discard-to-Hard-Delete Workflow and Bidirectional Quotation Purge
+
+MS-31 introduces the hard-delete workflow for discarded bookings, executing atomic multi-table purge via `public.hard_delete_booking_quotation`, client-side selection advance, Next.js cache revalidation, and Cloudflare R2 binary asset cleanup.
+
+### MS-32: Admin Data Management, GlassFit Business Intelligence Exports, Native Visual Analytics, and System Backup Engine
+
+MS-32 converts placeholder Data Management controls into authenticated Next.js streaming export routes (`/api/admin/export/bookings`, `/api/admin/export/products`, `/api/admin/export/backup`), GlassFit-connected CSVs with executive KPI summaries and UTF-8 BOM, an interactive Business Intelligence Modal with pure SVG charts (`StatusDonutChart`, `TrendAreaChart`, `ChannelBarChart`, `ProductDistributionChart`), and a secure JSON system backup engine that updates `public.system_preferences` with live backup audit tracking via `public.record_system_backup`.
+
 
 ---
 

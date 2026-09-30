@@ -425,6 +425,27 @@ Migration 013 introduces `public.hard_delete_booking_quotation(p_booking_request
 
 ---
 
+## 7. System Preferences Backup Tracking & Aggregated Analytics (`IMP-MS32`)
+
+Migration 014 extends `public.system_preferences` (`ERD-E18`) with durable backup audit tracking columns and introduces atomic stored procedures for backup registration and business telemetry aggregation:
+
+1. **Schema Extension (`public.system_preferences`):**
+   - `last_backup_at` (`TIMESTAMPTZ`, Nullable): Timestamp of the most recent successful system backup generation.
+   - `last_backup_by` (`UUID`, Nullable, Foreign Key referencing `public.profiles(profile_id)` on delete SET NULL): Profile ID of the Owner administrator who initiated the backup.
+
+2. **Atomic Backup Registration Function (`public.record_system_backup`):**
+   - Parameters: `p_admin_id UUID`
+   - Returns: `TIMESTAMPTZ`
+   - Security: Security Definer, verifies caller holds active `Owner` role in `public.profiles` joined with `public.admin_roles`.
+   - Behavior: Atomically updates `last_backup_at = now()`, `last_backup_by = p_admin_id`, and `updated_at = now()` on the singleton record where `singleton_key = 'GLOBAL_PREFERENCES'`.
+
+3. **High-Performance Aggregated Analytics Function (`public.get_admin_business_analytics`):**
+   - Parameters: `p_start_date TIMESTAMPTZ DEFAULT NULL`, `p_end_date TIMESTAMPTZ DEFAULT NULL`
+   - Returns: `JSONB` containing structured objects for `overview`, `platforms`, `catalog`, `product_distribution`, and `monthly_trends`.
+   - Security: Security Definer, asserts authenticated caller is an active administrator (`is_admin()` or `has_admin_permission('manage_settings')`).
+
+---
+
 ## Self-Check
 
 - [x] Storage engines and tenancy partitioning strategy are clearly defined
@@ -435,3 +456,4 @@ Migration 013 introduces `public.hard_delete_booking_quotation(p_booking_request
 - [x] Soft deletion, lifecycle retention, and PII protection controls are established
 - [x] No ASCII entity relationship diagrams inside code blocks; normalized tables used
 - [x] AGENTS hard bans applied; VOICE polish pass completed without em-dashes
+
