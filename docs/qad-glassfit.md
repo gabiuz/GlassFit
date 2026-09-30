@@ -5,7 +5,7 @@
 **Version:** 1.3 (Capstone Production Release)
 **Owner:** Jedia Nicole I. Sagun (Quality Assurance Lead) & GlassFit Capstone Team (PUP CCIS)  
 **Status:** Locked  
-**Last reconciled:** September 30, 2026 (Added QAD-TC50 for static WebP and HEIC/HEIF ingestion)
+**Last reconciled:** September 30, 2026 (Added QAD-TC51 for admin product type and status filters)
 **PRD:** docs/prd-glassfit.md
 
 ---
@@ -54,6 +54,7 @@
 | QAD-TC47 | PRD-F14, PRD-F10, PRD-F12, PRD-F13 | Admin Data Management Export, GlassFit Business Intelligence CSV, Native Analytics Charts, and System Backup | User authenticated as Admin with Owner role and active booking/catalog records | 1. Trigger Booking Records CSV export<br>2. Inspect Business Intelligence Modal and native visual charts<br>3. Trigger Product Records CSV export<br>4. Download System Backup JSON snapshot<br>5. Verify non-Owner 403 Forbidden enforcement | Booking export produces GlassFit branded CSV with executive KPI summary; Product export produces catalog specifications CSV; Business Intelligence Modal displays responsive SVG charts; Backup compiles complete JSON snapshot, updates last_backup_at in system_preferences, and enforces Owner-only authorization | P0 |
 | QAD-TC48 | PRD-F1, PRD-F6, PRD-F14 | Unified Cross-Browser Brand Theme Scrollbar System & Contrast Verification | Chrome/Edge, Firefox, Safari desktop/mobile viewports with scrollable content | 1. Verify root and nested scrollbar geometry and colors<br>2. Test light and dark mode transitions<br>3. Inspect hover and active drag tactile states<br>4. Confirm transparent corner intersections<br>5. Verify hidden scrollbar on GuideLine | Unified 8px/6px floating cyan pill renders across all browsers; track is transparent; light/dark themes adapt instantly; hover/active states provide tactile feedback; WCAG 2.1 AA contrast >= 3.0:1 is satisfied; gesture scrollbars remain hidden | P1 |
 | QAD-TC50 | PRD-F3, PRD-F4, PRD-F7 | Multi-Format Space Image Ingestion for WebP and HEIC/HEIF | Approved static fixtures for JPG, PNG, WebP, HEIC, and HEIF; corrupt, animated, MIME-conflict, over-12-MB, and over-40-MP fixtures; Chrome, Firefox, and Safari 17 or later | 1. Run client validator unit tests<br>2. Run FastAPI resolver and decoder tests<br>3. Upload each valid format end to end<br>4. Verify native or fallback preview behavior<br>5. Verify orientation, EXIF extraction, workspace output, rejection cases, and container readiness | Valid static WebP and HEIC/HEIF inputs reach the existing CV pipeline and produce an upright `workspace.webp`; JPG and PNG remain unchanged; invalid, animated, conflicting, oversized, or unsupported inputs return deterministic actionable errors without a 500 response; missing HEIF decoder fails service readiness | P0 |
+| QAD-TC51 | PRD-F14 | Admin Product Type and Status Filters | Authenticated administrator on `/admin/products` with Published and Draft products across at least two product types | 1. Select each available product type<br>2. Select Published and Draft<br>3. Combine both filters with search<br>4. Verify the result counter and no-match reset<br>5. Verify keyboard operation<br>6. Run filtered-row Edit, Duplicate, and Delete smoke checks | The first control filters only by `product_type`; the second filters only by normalized lifecycle status; all active criteria combine with logical AND; count, empty state, keyboard behavior, and row actions remain correct | P1 |
 
 ---
 
@@ -105,6 +106,12 @@ MS33 coverage validates the global and nested scrollbar implementation across Ch
 ## QAD-TC50: Multi-Format Space Image Ingestion for WebP and HEIC/HEIF
 
 MS35 automated coverage must validate MIME and extension reconciliation, browser-decodable image integrity, HEIC/HEIF server delegation, decoder readiness, decoded-format verification, early decoded-pixel limits, static single-frame enforcement, corrupt-image exception mapping, EXIF extraction, orientation correctness, and OpenCV-compatible normalization. Browser verification covers Chrome and Firefox fallback cards plus native HEIC rendering in Safari 17 or later. Test fixtures must be repository-owned or redistributable, contain no private client photos, and include deterministic expected dimensions and orientation.
+
+---
+
+## QAD-TC51: Admin Product Type and Status Filters
+
+MS36 automated coverage validates unique product type derivation, canonical ordering of present types, unknown-value fallback ordering, empty input, search-only filtering, type-only filtering, status-only filtering, combined filtering, query normalization, and input immutability. Manual browser coverage validates default and selected labels, accurate row counts, separate empty-catalog and no-match states, Reset filters, keyboard operation, responsive wrapping, and correct Edit, Duplicate, and Delete targets while filters are active.
 
 ---
 
