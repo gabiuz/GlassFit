@@ -95,7 +95,7 @@ export function GuideLine() {
                 onMouseMove={onMouseMove}
                 onMouseUp={stopDrag}
                 onMouseLeave={stopDrag}
-                className="flex gap-4 sm:gap-8 overflow-x-auto scroll-smooth snap-x snap-mandatory pb-2"
+                className="flex gap-4 sm:gap-8 overflow-x-auto scroll-smooth snap-x snap-mandatory pb-2 no-scrollbar"
                 style={{ scrollbarWidth: "none", cursor: "grab" }}
             >
                 {guidelines.map((card) => (

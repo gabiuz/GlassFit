@@ -372,6 +372,7 @@ Eliminate state desynchronization, parameter loss, and rule-blocking traps in th
 | MS-30 | `PRD-F12`, `PRD-F14` | `SDD-C8`, `SDD-C9` | `ERD-E2`, `ERD-E20` | `DSD-UI10` | `QAD-TC12`, `QAD-TC14`, `QAD-TC45` |
 | MS-31 | `PRD-F10`, `PRD-F12`, `PRD-F13`, `PRD-F14` | `SDD-C8`, `SDD-C9` | `ERD-E13`, `ERD-E14`, `ERD-E15`, `ERD-E16` | `DSD-UI11` | `QAD-TC46` |
 | MS-32 | `PRD-F14`, `PRD-F10`, `PRD-F12`, `PRD-F13` | `SDD-C9`, `SDD-C10` | `ERD-E3`, `ERD-E13`, `ERD-E16`, `ERD-E18` | `DSD-UI11`, `DSD-UI12` | `QAD-TC47` |
+| MS-33 | `PRD-F1`, `PRD-F6`, `PRD-F14` | `SDD-C1`, `SDD-C5`, `SDD-C9` | N/A (Presentation) | `DSD-UI13` | `QAD-TC48` |
 
 ### MS-30: Inclusive Identity and Administrator Email Change
 
@@ -385,6 +386,9 @@ MS-31 introduces the hard-delete workflow for discarded bookings, executing atom
 
 MS-32 converts placeholder Data Management controls into authenticated Next.js streaming export routes (`/api/admin/export/bookings`, `/api/admin/export/products`, `/api/admin/export/backup`), GlassFit-connected CSVs with executive KPI summaries and UTF-8 BOM, an interactive Business Intelligence Modal with pure SVG charts (`StatusDonutChart`, `TrendAreaChart`, `ChannelBarChart`, `ProductDistributionChart`), and a secure JSON system backup engine that updates `public.system_preferences` with live backup audit tracking via `public.record_system_backup`.
 
+### MS-33: Unified Cross-Browser GlassFit Brand Theme Scrollbar System
+
+MS-33 implements a unified, brand-consistent scrollbar system in `src/app/globals.css` covering root viewports and nested containers across Chromium, Blink, Gecko, and WebKit rendering engines. The design applies dual-standard W3C properties (`scrollbar-width`, `scrollbar-color`) and WebKit pseudo-elements (`::-webkit-scrollbar`), featuring an 8px slim floating cyan pill with rounded ends (`border-radius: 9999px`), 2px transparent inset margins, dynamic light/dark mode color transitions, transparent corner intersections, and dedicated `.scrollbar-none` and `.no-scrollbar` utilities.
 
 ---
 
