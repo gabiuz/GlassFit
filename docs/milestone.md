@@ -369,6 +369,11 @@ Eliminate state desynchronization, parameter loss, and rule-blocking traps in th
 | MS-8 | All Features | All Components | All Entities | All UI Components | `QAD-TC1` to `QAD-TC18` |
 | MS-9 | Governance | Governance | Governance | Governance | Governance |
 | MS-10 | `PRD-F14` | `SDD-C9` | `ERD-E4`, `ERD-E6` | `DSD-UI10` | `QAD-TC19` |
+| MS-30 | `PRD-F12`, `PRD-F14` | `SDD-C8`, `SDD-C9` | `ERD-E2`, `ERD-E20` | `DSD-UI10` | `QAD-TC12`, `QAD-TC14`, `QAD-TC45` |
+
+### MS-30: Inclusive Identity and Administrator Email Change
+
+MS-30 centralizes Unicode person-name validation, permits mononyms, secures administrator self-profile mutation, and adds role-aware administrator email changes. Staff changes require an active Owner or Manager decision through a protected review page. Owner and Manager self-changes complete immediately. Migration 012 retains an immutable workflow audit and synchronizes completed Auth email changes to profiles.
 
 ---
 

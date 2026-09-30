@@ -3098,7 +3098,7 @@ export function ProductModelWorkspace({
                       >
                         <div className="px-6 pb-6 flex flex-col gap-5">
                           <div className="flex flex-col gap-2">
-                            <span className="text-[#c3c3c3] text-base font-normal">3d Yaw</span>
+                            <span className="text-[#c3c3c3] text-base font-normal">Turn Left / Right</span>
                             <div className="flex items-center gap-3">
                               <input
                                 type="range"
@@ -3115,7 +3115,7 @@ export function ProductModelWorkspace({
                           </div>
 
                           <div className="flex flex-col gap-2">
-                            <span className="text-[#c3c3c3] text-base font-normal">3d Pitch</span>
+                            <span className="text-[#c3c3c3] text-base font-normal">Tilt Up / Down</span>
                             <div className="flex items-center gap-3">
                               <input
                                 type="range"

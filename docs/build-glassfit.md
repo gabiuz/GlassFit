@@ -43,6 +43,11 @@
 | BLD-ENV10 | `NEXT_PUBLIC_R2_PUBLIC_URL` | Yes | `https://cdn.glassfit.ph` | No | Public CDN distribution domain for catalog 3D models and images |
 | BLD-ENV11 | `TEMP_SESSION_TTL_MINUTES` | No | `120` | No | Retention time for temporary room photos and YOLOv8 masks |
 | BLD-ENV12 | `PORT` | No | `8000` | No | Microservice binding port for FastAPI Uvicorn server |
+| BLD-ENV13 | `NEXT_PUBLIC_SITE_URL` | Yes | `https://glassfit.example` | No | Canonical application origin for protected Staff approval links |
+| BLD-ENV14 | `RESEND_API_KEY` | Production | `re_...` | Yes | Resend credential for Staff approval-request delivery |
+| BLD-ENV15 | `RESEND_FROM_EMAIL` | Production | `GlassFit <admin@example.com>` | No | Verified sender for administrative email delivery |
+
+MS30 deployment applies migration `012_identity_name_and_admin_email_workflow.sql` before the application. Production requires HTTPS and configured Resend values. Application rollback retains migration 012 and all audit events.
 
 ---
 

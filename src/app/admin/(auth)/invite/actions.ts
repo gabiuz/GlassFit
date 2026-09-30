@@ -6,6 +6,7 @@ import {
     checkPasswordRequirements,
     validatePhoneNumber,
 } from "@/features/auth/utils/auth-utils";
+import { normalizePersonName } from "@/lib/identity/personName";
 
 export type VerifyInviteTokenResult =
     | { success: true; email: string; roleName: string }
@@ -22,7 +23,7 @@ export type CompleteStaffRegistrationInput = {
 
 export type CompleteStaffRegistrationResult =
     | { success: true; message: string; email: string }
-    | { success: false; error: string };
+    | { success: false; error: string; field?: "firstName" | "lastName" };
 
 /**
  * Validates the staff invitation token upon landing on /admin/invite.
@@ -95,6 +96,14 @@ export async function completeStaffRegistration(
 ): Promise<CompleteStaffRegistrationResult> {
     const { token, verificationCode, phone, password, firstName, lastName } = input;
 
+    let suppliedName: ReturnType<typeof normalizePersonName> | null = null;
+    if ((firstName ?? "").trim() || (lastName ?? "").trim()) {
+        suppliedName = normalizePersonName({ firstName: firstName ?? "", lastName });
+        if (!suppliedName.ok) {
+            return { success: false, field: suppliedName.field, error: suppliedName.error };
+        }
+    }
+
     if (!token || !token.trim()) {
         return { success: false, error: "Invalid invitation token." };
     }
@@ -164,8 +173,8 @@ export async function completeStaffRegistration(
 
         if (existingProfile) {
             const profileUserId = existingProfile.profile_id;
-            const updatedFirst = firstName?.trim() || existingProfile.first_name || "Staff";
-            const updatedLast = lastName?.trim() || existingProfile.last_name || "Member";
+            const updatedFirst = suppliedName?.ok ? suppliedName.value.firstName : existingProfile.first_name || "Staff";
+            const updatedLast = suppliedName?.ok ? suppliedName.value.lastName : existingProfile.last_name || "";
 
             // Update Auth user credentials (password & metadata)
             const { error: authErr } = await service.auth.admin.updateUserById(profileUserId, {
@@ -201,8 +210,8 @@ export async function completeStaffRegistration(
             }
         } else {
             // Brand new user: create in Supabase Auth
-            const effectiveFirst = firstName?.trim() || "Staff";
-            const effectiveLast = lastName?.trim() || "Member";
+            const effectiveFirst = suppliedName?.ok ? suppliedName.value.firstName : "Staff";
+            const effectiveLast = suppliedName?.ok ? suppliedName.value.lastName : "";
 
             let newUserId: string;
 

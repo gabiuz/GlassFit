@@ -139,6 +139,10 @@ Two-tier role-based access control (RBAC) enforced through PostgreSQL Row-Level 
 
 ---
 
+## MS30 Identity and Email Workflow (SDD-C8, SDD-C9)
+
+The shared identity module normalizes names before Auth or profile mutation. Settings Server Actions verify the active administrator context and derive the target identity and role. Staff email changes persist a hashed-token approval event before delivery; Owner and Manager self-changes use the server-only Auth administrative API. Migration 012 synchronizes completed Auth email updates to profiles.
+
 ## Self-Check
 
 - [x] Core architectural pattern, runtime platform, and execution flow are documented
