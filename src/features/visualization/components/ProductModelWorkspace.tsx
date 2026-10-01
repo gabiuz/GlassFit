@@ -591,7 +591,7 @@ export function ProductModelWorkspace({
   const [dismissedObstructionKeys, setDismissedObstructionKeys] = useState<Set<string>>(new Set());
 
   const currentOverlayCanvasBox = useMemo<CanvasBox | null>(() => {
-    if (canvasDisplaySize.width <= 0 || canvasDisplaySize.height <= 0) return null;
+    if (!selectedProduct || canvasDisplaySize.width <= 0 || canvasDisplaySize.height <= 0) return null;
 
     if (perspectiveCorners) {
       const pxCorners = denormalizeCorners(
@@ -616,6 +616,7 @@ export function ProductModelWorkspace({
       y2: cy + overlaySize.height / 2,
     };
   }, [
+    selectedProduct,
     perspectiveCorners,
     canvasDisplaySize.width,
     canvasDisplaySize.height,
@@ -3189,7 +3190,7 @@ export function ProductModelWorkspace({
                 </div>
               )}
 
-              {primaryObstructionWarning && isEditingProduct && (
+              {selectedProduct && isEditingProduct && primaryObstructionWarning && (
                 <ObstructionWarningTooltip
                   warning={primaryObstructionWarning}
                   canvasWidth={canvasDisplaySize.width}
