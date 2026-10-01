@@ -19,16 +19,21 @@ export type UpsertParameterInput = {
     display_order: number;
 };
 
+export type RuleType = "when_then" | "loop";
+
 export type RuleConditionData = {
+    rule_type?: RuleType;
     parameter_key: string;
-    operator: string;
-    value: number | string;
+    operator?: string;
+    value?: number | string;
+    step_value?: number;
+    start_value?: number;
 };
 
 export type RuleActionData = {
-    target_type: string;
+    target_type: "component" | "parameter" | string;
     target_key: string;
-    action_type: string;
+    action_type: "set_quantity" | "add_quantity" | "set_visibility" | "set_value" | string;
     value: number | string;
 };
 
