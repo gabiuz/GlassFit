@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
 import {
   X,
   Check,
@@ -73,11 +73,39 @@ export function PerspectivePlanePicker({
   const [activeDragIndex, setActiveDragIndex] = useState<number | null>(null);
   const [selectionDraft, setSelectionDraft] = useState<SelectionDraft | null>(null);
   const [activeCornerDrag, setActiveCornerDrag] = useState<ActiveCornerDrag | null>(null);
+  const [availableCanvasSize, setAvailableCanvasSize] = useState({ width: 0, height: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const dragOffsetRef = useRef<{ x: number; y: number } | null>(null);
   const selectionSessionRef = useRef<SelectionSession | null>(null);
   useDocumentScrollLock(true);
+
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const updateSize = () => {
+      const bounds = container.getBoundingClientRect();
+      setAvailableCanvasSize({ width: bounds.width, height: bounds.height });
+    };
+    updateSize();
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, []);
+
+  const fittedCanvasSize = (() => {
+    if (availableCanvasSize.width <= 0 || availableCanvasSize.height <= 0) {
+      return { width: 0, height: 0 };
+    }
+    const scale = Math.min(
+      availableCanvasSize.width / canvasWidth,
+      availableCanvasSize.height / canvasHeight,
+    );
+    return {
+      width: Math.max(1, canvasWidth * scale),
+      height: Math.max(1, canvasHeight * scale),
+    };
+  })();
 
   // Close on Escape key
   useEffect(() => {
@@ -307,10 +335,10 @@ export function PerspectivePlanePicker({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col items-center justify-between select-none animate-in fade-in duration-200 [padding-top:max(1rem,env(safe-area-inset-top))] [padding-right:max(1rem,env(safe-area-inset-right))] [padding-bottom:max(1rem,env(safe-area-inset-bottom))] [padding-left:max(1rem,env(safe-area-inset-left))] sm:p-6">
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col items-center justify-between select-none animate-in fade-in duration-200 [padding-top:max(.5rem,env(safe-area-inset-top))] [padding-right:max(.5rem,env(safe-area-inset-right))] [padding-bottom:max(.5rem,env(safe-area-inset-bottom))] [padding-left:max(.5rem,env(safe-area-inset-left))] portrait:[padding-top:max(1rem,env(safe-area-inset-top))] portrait:[padding-right:max(1rem,env(safe-area-inset-right))] portrait:[padding-bottom:max(1rem,env(safe-area-inset-bottom))] portrait:[padding-left:max(1rem,env(safe-area-inset-left))] sm:p-6">
       {/* Top Header Card */}
       <div className="w-full max-w-5xl flex flex-col gap-3 z-10">
-        <div className="flex items-center justify-between gap-3 bg-white rounded-[20px] px-4 sm:px-6 py-3 shadow-xl">
+        <div className="flex items-center justify-between gap-3 bg-white rounded-[20px] px-4 sm:px-6 py-2 portrait:py-3 shadow-xl">
           <div className="flex min-w-0 items-center gap-3">
             <div className="size-9 rounded-[12px] bg-[#07b6d3]/15 flex items-center justify-center text-[#07b6d3]">
               <Maximize className="size-5" />
@@ -319,7 +347,7 @@ export function PerspectivePlanePicker({
               <h2 className="text-base sm:text-lg font-bold text-[#0f1422] leading-tight">
                 Fit to Opening (Perspective Plane)
               </h2>
-              <p className="text-xs sm:text-sm text-neutral-500">
+              <p className="text-xs sm:text-sm text-neutral-500 landscape:hidden">
                 Drag over the {openingLabel} opening, then refine its corners
               </p>
             </div>
@@ -337,7 +365,7 @@ export function PerspectivePlanePicker({
 
         {/* Guidance Alert Banner */}
         <div
-          className={`rounded-[16px] px-4 py-2.5 flex items-center gap-3 text-xs sm:text-sm shadow-md border transition-colors ${
+          className={`rounded-[16px] px-4 py-2 portrait:py-2.5 flex items-center gap-3 text-xs sm:text-sm shadow-md border transition-colors ${
             isComplete && !isValidQuad
               ? "bg-amber-950/80 text-amber-200 border-amber-500/40"
               : "bg-[#0f1422] text-white border-neutral-700/50"
@@ -355,12 +383,13 @@ export function PerspectivePlanePicker({
       {/* Center Canvas Viewport */}
       <div
         ref={containerRef}
-        className="relative flex-1 w-full max-w-5xl flex items-center justify-center my-2 min-h-0 overflow-hidden"
+        className="relative flex-1 w-full max-w-5xl flex items-center justify-center my-1 portrait:my-2 min-h-0 overflow-hidden"
       >
         <div
-          className="relative max-h-full max-w-full rounded-[16px] overflow-hidden shadow-2xl border border-white/20 bg-neutral-900"
+          className="relative shrink-0 rounded-[16px] overflow-hidden shadow-2xl border border-white/20 bg-neutral-900"
           style={{
-            aspectRatio: `${canvasWidth} / ${canvasHeight}`,
+            width: fittedCanvasSize.width,
+            height: fittedCanvasSize.height,
           }}
         >
           {/* Room Background Image */}
@@ -499,7 +528,7 @@ export function PerspectivePlanePicker({
       </div>
 
       {/* Bottom Floating Control Toolbar */}
-      <div className="w-full max-w-3xl bg-[#0f1422] border border-white/15 rounded-[25px] p-3 sm:p-4 shadow-2xl flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 sm:gap-4 z-10">
+      <div className="w-full max-w-3xl bg-[#0f1422] border border-white/15 rounded-[25px] p-2 portrait:p-3 sm:p-4 shadow-2xl flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 sm:gap-4 z-10">
         {/* Reset Action */}
         <button
           type="button"
