@@ -5,7 +5,7 @@
 **Version:** 1.0 (Capstone Production Release)  
 **Owner:** Gianne Crizzle A. Dasco (Design & Frontend Lead) & GlassFit Capstone Team (PUP CCIS)  
 **Status:** Locked  
-**Last reconciled:** September 30, 2026 (Added DSD-UI14 admin product catalog filters)
+**Last reconciled:** October 1, 2026 (Added DSD-UI15 mobile configurator shell)
 **PRD:** docs/prd-glassfit.md
 
 ---
@@ -57,7 +57,8 @@ Modern architectural precision engineered for clarity, spatial focus, and techni
 | Large Display | 1440px and above | 12 | Auto | 32px | 1400px (Centered ergonomic workspace) |
 
 **Visualization Workspace Constraints:**
-- On mobile viewports (under 640px), the simulation canvas occupies the upper 55% of vertical viewport height, while configuration controls reside in an anchored, swipeable bottom sheet with minimum touch targets of 44px by 44px.
+- On compact touch viewports, the active simulation editor occupies `100dvh`, reserves content-sized rows for its header and HUD, and gives the aspect-ratio-preserving canvas the remaining flexible stage. Portrait remains supported, while an advisory prompt recommends landscape.
+- The compact editor respects device safe-area insets, prevents document scrolling while active, and restores the prior page position on exit. Canvas surfaces suppress browser pan gestures while any internally scrollable controls retain vertical scrolling.
 - On desktop viewports (1024px and above), the simulation canvas occupies a fixed 70% left pane, accompanied by a 30% right-side parametric inspector and environmental realism toolbar.
 
 ---
@@ -80,6 +81,7 @@ Modern architectural precision engineered for clarity, spatial focus, and techni
 | DSD-UI10 | AdminPartInspectorAndSimulator | PRD-F14, PRD-F19 | Split-screen Three.js viewport and Part Inspector Drawer with live BOM test-drive simulator | Tabbed multi-step management workbench with 60/40 viewport-to-drawer split |
 | DSD-UI13 | GlobalThemedScrollbarSystem | PRD-F1, PRD-F6, PRD-F14 | Provides unified brand-consistent scrollbars across root viewports and nested containers | Dual W3C standard and WebKit floating cyan pill with 8px/6px width |
 | DSD-UI14 | AdminProductCatalogFilters | PRD-F14 | Filters the admin products workbench by loaded product type and normalized Published or Draft status while composing with search | Two accessible single-select pill controls with synchronized result count and no-match reset |
+| DSD-UI15 | MobileConfiguratorShell | PRD-F6 | Provides a compact full-viewport visualization editor with orientation guidance, scroll isolation, responsive actions and inspector drawer, safe-area support, and thumb-safe transform feedback | Fixed three-row editor shell with flexible canvas stage, compact HUD, and internal controls drawer |
 
 ### 3.2 State Behaviors & Visual Treatment
 
@@ -106,6 +108,10 @@ Modern architectural precision engineered for clarity, spatial focus, and techni
 | DSD-UI14 | Default | Existing muted pill treatment with labels "All categories" and "All Status" | Initial workbench render or filter reset | Each control exposes a distinct accessible name and its current selection |
 | DSD-UI14 | Filtered | Selected value replaces the default label; result count and table rows update without navigation | Administrator selects a product type or status | Keyboard selection is supported and visible focus is retained |
 | DSD-UI14 | No Match | Product table shows a concise no-match message and Reset filters action | Combined search and filters produce zero rows while products exist | No-match feedback is readable as text and reset is keyboard operable |
+| DSD-UI15 | Portrait Guidance | Compact editor remains usable while a concise prompt recommends landscape | Editor opens on a portrait viewport | Prompt can be dismissed, does not trap focus, and never forces orientation |
+| DSD-UI15 | Editing | Canvas fills the flexible dynamic-viewport stage; compact HUD remains within the safe area; existing inspector opens in an internal bottom or right drawer | Compact editor is active | Document scroll is isolated; dialog semantics hide the covered page; every action has a 44px minimum target and visible focus |
+| DSD-UI15 | Touch Drag | High-contrast proxy reticle and leader line appear 48px above finger contact | Touch pointer drags a four-point handle | Proxy is visual only for workspace resize semantics; invalid perspective geometry cannot be confirmed |
+| DSD-UI15 | Exited | Standard workspace flow returns with current in-memory edits intact | User taps Done or viewport becomes non-compact | Prior page position is restored and focus returns to the full-screen editor entry control |
 
 ---
 

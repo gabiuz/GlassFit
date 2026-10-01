@@ -16,6 +16,10 @@ import { AddProductModal } from "./AddProductModal";
 import { ManualOcclusionPointPicker } from "./ManualOcclusionPointPicker";
 import { PerspectivePlanePicker } from "./PerspectivePlanePicker";
 import { useNavbarVisibility } from "@/components/shared/NavbarVisibilityContext";
+import { useCompactViewport } from "../hooks/useCompactViewport";
+import { useDocumentScrollLock } from "../hooks/useDocumentScrollLock";
+import { TOUCH_PROXY_OFFSET_CSS_PX } from "../mobileConfiguratorGeometry";
+import { TouchDragProxy } from "./TouchDragProxy";
 import type { CatalogProduct } from "@/lib/products/types";
 import type { SpaceImageSession, LightingAnalysis } from "@/lib/imageApi";
 import { ProductModelRenderer } from "@/lib/visualization/modelRenderer";
@@ -144,6 +148,7 @@ interface OcclusionItem {
 type ResizeMode = "scale" | "width" | "height";
 
 type ResizeSession = {
+  pointerId: number;
   mode: ResizeMode;
   startX: number;
   startY: number;
@@ -162,6 +167,12 @@ type RotationSession = {
   centerY: number;
   startPointerAngle: number;
   startRotation: number;
+};
+
+type WorkspaceTouchProxy = {
+  pointerId: number;
+  contactX: number;
+  contactY: number;
 };
 
 const MIN_OVERLAY_WIDTH = 120;
@@ -205,6 +216,8 @@ export function ProductModelWorkspace({
   const canvasRef = useRef<HTMLDivElement>(null);
   const overlayBoxRef = useRef<HTMLDivElement>(null);
   const outlineControlsRef = useRef<HTMLDivElement>(null);
+  const mobileDialogRef = useRef<HTMLDivElement>(null);
+  const mobileReentryRef = useRef<HTMLButtonElement>(null);
   const resizeSessionRef = useRef<ResizeSession | null>(null);
   const rotationSessionRef = useRef<RotationSession | null>(null);
   const appliedTemplateDefaultsRef = useRef<string | null>(
@@ -320,8 +333,41 @@ export function ProductModelWorkspace({
   const [showPerspectivePicker, setShowPerspectivePicker] = useState(false);
   const { setNavbarHidden } = useNavbarVisibility();
 
+  const [selectedProduct, setSelectedProduct] = useState(
+    Boolean(currentProductId || structuralDefinition),
+  );
+  const { isCompactViewport, orientation: compactOrientation } = useCompactViewport();
+  const [isMobileEditorOpen, setIsMobileEditorOpen] = useState(false);
+  const [isMobileControlsOpen, setIsMobileControlsOpen] = useState(false);
+  const [hasAutoOpenedMobileEditor, setHasAutoOpenedMobileEditor] = useState(false);
+  const [isOrientationPromptDismissed, setIsOrientationPromptDismissed] = useState(false);
+  const [workspaceTouchProxy, setWorkspaceTouchProxy] = useState<WorkspaceTouchProxy | null>(null);
+  const shouldLockMobileEditor = isCompactViewport && isMobileEditorOpen && selectedProduct;
+  useDocumentScrollLock(shouldLockMobileEditor);
+
+  useEffect(() => {
+    const updateTimer = window.setTimeout(() => {
+      if (isCompactViewport && selectedProduct && !hasAutoOpenedMobileEditor) {
+        setIsMobileEditorOpen(true);
+        setHasAutoOpenedMobileEditor(true);
+      }
+      if ((!isCompactViewport || !selectedProduct) && isMobileEditorOpen) {
+        setIsMobileEditorOpen(false);
+        setIsMobileControlsOpen(false);
+      }
+    }, 0);
+    return () => window.clearTimeout(updateTimer);
+  }, [hasAutoOpenedMobileEditor, isCompactViewport, isMobileEditorOpen, selectedProduct]);
+
+  useEffect(() => {
+    if (compactOrientation !== "landscape") return;
+    const dismissTimer = window.setTimeout(() => setIsOrientationPromptDismissed(true), 0);
+    return () => window.clearTimeout(dismissTimer);
+  }, [compactOrientation]);
+
   useEffect(() => {
     setNavbarHidden(
+      shouldLockMobileEditor ||
       showPerspectivePicker ||
       showOcclusionPointPicker ||
       isMeasurementModalOpen ||
@@ -329,6 +375,7 @@ export function ProductModelWorkspace({
     );
     return () => setNavbarHidden(false);
   }, [
+    shouldLockMobileEditor,
     showPerspectivePicker,
     showOcclusionPointPicker,
     isMeasurementModalOpen,
@@ -336,9 +383,40 @@ export function ProductModelWorkspace({
     setNavbarHidden,
   ]);
 
-  const [selectedProduct, setSelectedProduct] = useState(
-    Boolean(currentProductId || structuralDefinition),
-  );
+  const closeMobileEditor = useCallback(() => {
+    setIsMobileEditorOpen(false);
+    setIsMobileControlsOpen(false);
+    requestAnimationFrame(() => mobileReentryRef.current?.focus());
+  }, []);
+
+  useEffect(() => {
+    if (!shouldLockMobileEditor) return;
+    mobileDialogRef.current?.focus();
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !showPerspectivePicker && !showOcclusionPointPicker && !isMeasurementModalOpen && !isGuardrailModalOpen) {
+        closeMobileEditor();
+      }
+      if (event.key === "Tab" && !showPerspectivePicker && !showOcclusionPointPicker && !isMeasurementModalOpen && !isGuardrailModalOpen) {
+        const dialog = mobileDialogRef.current;
+        if (!dialog) return;
+        const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+        )).filter((element) => element.getClientRects().length > 0);
+        if (focusable.length === 0) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [closeMobileEditor, isGuardrailModalOpen, isMeasurementModalOpen, shouldLockMobileEditor, showOcclusionPointPicker, showPerspectivePicker]);
   const [productInstanceRevision, setProductInstanceRevision] = useState(0);
   const [activeOverlayId, setActiveOverlayId] = useState(
     `active-${currentProductId ?? "product"}`,
@@ -1877,6 +1955,7 @@ export function ProductModelWorkspace({
       event.stopPropagation();
 
       const resizeSession: ResizeSession = {
+        pointerId: event.pointerId,
         mode,
         startX: event.clientX,
         startY: event.clientY,
@@ -1892,8 +1971,15 @@ export function ProductModelWorkspace({
       resizeSessionRef.current = resizeSession;
       setIsUsingTransformHandle(true);
       setIsOutlineMeasurementPaused(mode !== "scale");
+      if (event.pointerType === "touch" && mode === "scale") {
+        setWorkspaceTouchProxy({ pointerId: event.pointerId, contactX: event.clientX, contactY: event.clientY });
+      }
 
       const handleMove = (moveEvent: PointerEvent) => {
+        if (moveEvent.pointerId !== resizeSession.pointerId) return;
+        if (moveEvent.pointerType === "touch" && resizeSession.mode === "scale") {
+          setWorkspaceTouchProxy({ pointerId: moveEvent.pointerId, contactX: moveEvent.clientX, contactY: moveEvent.clientY });
+        }
         const dx = (moveEvent.clientX - resizeSession.startX) * resizeSession.signX;
         const dy = (moveEvent.clientY - resizeSession.startY) * resizeSession.signY;
 
@@ -1939,8 +2025,10 @@ export function ProductModelWorkspace({
         );
       };
 
-      const handleEnd = () => {
+      const handleEnd = (endEvent: PointerEvent) => {
+        if (endEvent.pointerId !== resizeSession.pointerId) return;
         resizeSessionRef.current = null;
+        setWorkspaceTouchProxy(null);
         setIsUsingTransformHandle(false);
         setIsOutlineMeasurementPaused(false);
         window.removeEventListener("pointermove", handleMove);
@@ -2033,6 +2121,7 @@ export function ProductModelWorkspace({
       if (!perspectiveCorners) return;
 
       const session = {
+        pointerId: event.pointerId,
         mode,
         startX: event.clientX,
         startY: event.clientY,
@@ -2043,11 +2132,18 @@ export function ProductModelWorkspace({
         signY,
       };
       setIsUsingTransformHandle(true);
+      if (event.pointerType === "touch" && mode === "scale") {
+        setWorkspaceTouchProxy({ pointerId: event.pointerId, contactX: event.clientX, contactY: event.clientY });
+      }
 
       const currentW = canvasRef.current?.clientWidth || canvasDisplaySize.width || 800;
       const currentH = canvasRef.current?.clientHeight || canvasDisplaySize.height || 600;
 
       const handleMove = (moveEvent: PointerEvent) => {
+        if (moveEvent.pointerId !== session.pointerId) return;
+        if (moveEvent.pointerType === "touch" && session.mode === "scale") {
+          setWorkspaceTouchProxy({ pointerId: moveEvent.pointerId, contactX: moveEvent.clientX, contactY: moveEvent.clientY });
+        }
         const dx = (moveEvent.clientX - session.startX) * session.signX;
         const dy = (moveEvent.clientY - session.startY) * session.signY;
 
@@ -2088,8 +2184,10 @@ export function ProductModelWorkspace({
         }
       };
 
-      const handleEnd = () => {
+      const handleEnd = (endEvent: PointerEvent) => {
+        if (endEvent.pointerId !== session.pointerId) return;
         setIsUsingTransformHandle(false);
+        setWorkspaceTouchProxy(null);
         window.removeEventListener("pointermove", handleMove);
         window.removeEventListener("pointerup", handleEnd);
         window.removeEventListener("pointercancel", handleEnd);
@@ -2145,9 +2243,29 @@ export function ProductModelWorkspace({
   );
 
   return (
-    <div className="w-full max-w-367 mx-auto px-4 sm:px-6">
+    <div
+      ref={mobileDialogRef}
+      role={shouldLockMobileEditor ? "dialog" : undefined}
+      aria-modal={shouldLockMobileEditor ? true : undefined}
+      aria-label={shouldLockMobileEditor ? "Full-screen product editor" : undefined}
+      tabIndex={shouldLockMobileEditor ? -1 : undefined}
+      className={shouldLockMobileEditor
+        ? "fixed inset-0 z-40 grid h-[100dvh] w-full grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden bg-white [padding-top:env(safe-area-inset-top)] [padding-right:env(safe-area-inset-right)] [padding-bottom:env(safe-area-inset-bottom)] [padding-left:env(safe-area-inset-left)]"
+        : "w-full max-w-367 mx-auto px-4 sm:px-6"}
+    >
+      {shouldLockMobileEditor && (
+        <header className="flex min-w-0 items-center justify-between gap-3 border-b border-neutral-200 bg-white px-3 py-2">
+          <div className="min-w-0">
+            <h2 className="truncate text-sm font-semibold text-[#0f1422]">Edit {overlayName}</h2>
+            <p className="text-xs text-neutral-500 capitalize">{compactOrientation} workspace</p>
+          </div>
+          <button type="button" onClick={closeMobileEditor} className="min-h-11 shrink-0 rounded-[20px] bg-[#0f1422] px-5 text-sm font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]">
+            Done
+          </button>
+        </header>
+      )}
       {/* ── Section Header ── */}
-      <div className="flex flex-col gap-4 items-center justify-center text-center mb-10">
+      <div className={shouldLockMobileEditor ? "hidden" : "flex flex-col gap-4 items-center justify-center text-center mb-10"}>
         <h1 className="text-3xl sm:text-4xl lg:text-5xl font-medium tracking-tight text-black leading-tight">
           View <span className="text-green">Product Model</span>
         </h1>
@@ -2157,7 +2275,7 @@ export function ProductModelWorkspace({
       </div>
 
       {/* ── Top Toolbar Controls ── */}
-      <div className="w-full flex flex-col md:flex-row items-center justify-between gap-6 mb-10">
+      <div className={shouldLockMobileEditor ? "hidden" : "w-full flex flex-col md:flex-row items-center justify-between gap-6 mb-10"}>
         {/* Left: Undo, Redo, Zoom */}
         <div className="flex flex-wrap items-center gap-4 sm:gap-6 justify-center md:justify-start">
           {/* Undo / Redo */}
@@ -2245,7 +2363,7 @@ export function ProductModelWorkspace({
         </div>
       </div>
 
-      {placedOverlays.length > 0 && (
+      {!shouldLockMobileEditor && placedOverlays.length > 0 && (
         <motion.section
           layout={!prefersReducedMotion}
           transition={{
@@ -2372,20 +2490,44 @@ export function ProductModelWorkspace({
         </motion.section>
       )}
 
+      {!shouldLockMobileEditor && isCompactViewport && selectedProduct && hasAutoOpenedMobileEditor && (
+        <button
+          ref={mobileReentryRef}
+          type="button"
+          onClick={() => setIsMobileEditorOpen(true)}
+          className="mb-4 min-h-11 w-full rounded-[20px] bg-[#0f1422] px-5 py-2.5 text-sm font-medium text-white shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]"
+        >
+          Open full-screen editor
+        </button>
+      )}
+
       {/* ── Main Interactive Layout (Canvas + Sidebar) ── */}
-      <div className="w-full flex flex-col lg:flex-row gap-8 lg:gap-10 items-start">
+      <div className={shouldLockMobileEditor ? "relative flex min-h-0 w-full overflow-hidden bg-[#0f1422]" : "w-full flex flex-col lg:flex-row gap-8 lg:gap-10 items-start"}>
+        {shouldLockMobileEditor && compactOrientation === "portrait" && !isOrientationPromptDismissed && (
+          <div className="absolute inset-x-3 top-3 z-[60] rounded-[20px] border border-white/20 bg-[#0f1422] p-4 text-white shadow-xl" role="status">
+            <p className="font-semibold">Rotate for more room</p>
+            <p className="mt-1 text-sm text-white/75">Landscape gives the canvas more space. You can continue in portrait.</p>
+            <button type="button" onClick={() => setIsOrientationPromptDismissed(true)} className="mt-3 min-h-11 rounded-[20px] bg-[#07b6d3] px-4 text-sm font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">
+              Continue in portrait
+            </button>
+          </div>
+        )}
         {/* Left Side: Space Canvas + Instructions */}
-        <div className="flex-1 min-w-0 flex flex-col gap-6 w-full lg:sticky lg:top-35 lg:self-start">
+        <div className={shouldLockMobileEditor ? "flex h-full min-w-0 flex-1 items-center justify-center overflow-hidden" : "flex-1 min-w-0 flex flex-col gap-6 w-full lg:sticky lg:top-35 lg:self-start"}>
           {/* Main Space Canvas Card */}
-          <div className="bg-white/10 border border-[#f5f5f5] p-3 sm:p-5 rounded-[20px] shadow-[0px_0px_5px_0px_rgba(0,0,0,0.25)] relative w-full flex items-center justify-center overflow-hidden">
+          <div className={shouldLockMobileEditor ? "relative flex h-full w-full items-center justify-center overflow-hidden bg-[#0f1422] touch-none" : "bg-white/10 border border-[#f5f5f5] p-3 sm:p-5 rounded-[20px] shadow-[0px_0px_5px_0px_rgba(0,0,0,0.25)] relative w-full flex items-center justify-center overflow-hidden"}>
             <div
               ref={canvasRef}
               className="relative mx-auto rounded-[15px] overflow-hidden bg-neutral-100"
               style={{
                 aspectRatio: workspaceAspectRatio,
-                width: `min(100%, calc(55vh * ${aspectWidth} / ${aspectHeight}))`,
+                width: shouldLockMobileEditor
+                  ? `min(100%, calc(100% * ${aspectWidth} / ${aspectHeight}))`
+                  : `min(100%, calc(55vh * ${aspectWidth} / ${aspectHeight}))`,
                 maxWidth: "100%",
-                maxHeight: "55vh",
+                maxHeight: shouldLockMobileEditor ? "100%" : "55vh",
+                height: shouldLockMobileEditor ? "auto" : undefined,
+                touchAction: shouldLockMobileEditor ? "none" : undefined,
               }}
             >
               {/* Background Space Image */}
@@ -2773,17 +2915,21 @@ export function ProductModelWorkspace({
                         <>
                           {/* 4 Corner Scale Handles */}
                           {perspectiveHandlePoints.corners.map((c) => (
-                            <div
+                            <button
+                              type="button"
                               key={c.id}
                               onPointerDown={(e) => startPerspectiveResize(e, "scale", c.signX, c.signY)}
-                              className={`absolute size-4 rounded-[2px] bg-white border border-[#06e5ff] shadow-md z-40 ${c.cursor} pointer-events-auto`}
+                              aria-label="Resize fitted product"
+                              className={`absolute flex size-11 items-center justify-center z-40 ${c.cursor} pointer-events-auto touch-none`}
                               style={{
                                 left: c.x,
                                 top: c.y,
                                 transform: "translate(-50%, -50%)",
                               }}
                               title="Drag corner to scale"
-                            />
+                            >
+                              <span className="size-4 rounded-[2px] border border-[#06e5ff] bg-white shadow-md" />
+                            </button>
                           ))}
 
                           {/* 4 Edge Midpoint Handles */}
@@ -2895,10 +3041,10 @@ export function ProductModelWorkspace({
                             <button type="button" aria-label="Rotate from bottom left" onPointerDown={startRotation} className="absolute -bottom-10 -left-10 z-30 flex size-7 items-center justify-center rounded-full border border-[#07b6d3] bg-white text-[#0f1422] shadow-md hover:bg-[#e9f9fb] cursor-grab active:cursor-grabbing pointer-events-auto"><RotateCw className="size-4" /></button>
                             <button type="button" aria-label="Rotate from bottom right" onPointerDown={startRotation} className="absolute -bottom-10 -right-10 z-30 flex size-7 items-center justify-center rounded-full border border-[#07b6d3] bg-white text-[#0f1422] shadow-md hover:bg-[#e9f9fb] cursor-grab active:cursor-grabbing pointer-events-auto"><RotateCw className="size-4" /></button>
 
-                            <div onPointerDown={(event) => startResize(event, "scale", -1, -1)} className="absolute top-0 left-0 -translate-x-1/2 -translate-y-1/2 size-4 rounded-[2px] bg-white border border-[#06e5ff] shadow-md z-40 cursor-nwse-resize pointer-events-auto" />
-                            <div onPointerDown={(event) => startResize(event, "scale", 1, -1)} className="absolute top-0 right-0 translate-x-1/2 -translate-y-1/2 size-4 rounded-[2px] bg-white border border-[#06e5ff] shadow-md z-40 cursor-nesw-resize pointer-events-auto" />
-                            <div onPointerDown={(event) => startResize(event, "scale", -1, 1)} className="absolute bottom-0 left-0 -translate-x-1/2 translate-y-1/2 size-4 rounded-[2px] bg-white border border-[#06e5ff] shadow-md z-40 cursor-nesw-resize pointer-events-auto" />
-                            <div onPointerDown={(event) => startResize(event, "scale", 1, 1)} className="absolute bottom-0 right-0 translate-x-1/2 translate-y-1/2 size-4 rounded-[2px] bg-white border border-[#06e5ff] shadow-md z-40 cursor-nwse-resize pointer-events-auto" />
+                            <button type="button" aria-label="Resize from top left" onPointerDown={(event) => startResize(event, "scale", -1, -1)} className="absolute top-0 left-0 -translate-x-1/2 -translate-y-1/2 flex size-11 items-center justify-center z-40 cursor-nwse-resize pointer-events-auto touch-none"><span className="size-4 rounded-[2px] bg-white border border-[#06e5ff] shadow-md" /></button>
+                            <button type="button" aria-label="Resize from top right" onPointerDown={(event) => startResize(event, "scale", 1, -1)} className="absolute top-0 right-0 translate-x-1/2 -translate-y-1/2 flex size-11 items-center justify-center z-40 cursor-nesw-resize pointer-events-auto touch-none"><span className="size-4 rounded-[2px] bg-white border border-[#06e5ff] shadow-md" /></button>
+                            <button type="button" aria-label="Resize from bottom left" onPointerDown={(event) => startResize(event, "scale", -1, 1)} className="absolute bottom-0 left-0 -translate-x-1/2 translate-y-1/2 flex size-11 items-center justify-center z-40 cursor-nesw-resize pointer-events-auto touch-none"><span className="size-4 rounded-[2px] bg-white border border-[#06e5ff] shadow-md" /></button>
+                            <button type="button" aria-label="Resize from bottom right" onPointerDown={(event) => startResize(event, "scale", 1, 1)} className="absolute bottom-0 right-0 translate-x-1/2 translate-y-1/2 flex size-11 items-center justify-center z-40 cursor-nwse-resize pointer-events-auto touch-none"><span className="size-4 rounded-[2px] bg-white border border-[#06e5ff] shadow-md" /></button>
 
                             <div onPointerDown={(event) => startResize(event, "height", 0, -1)} className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 size-3 bg-[#07b6d3] rounded-full shadow-md z-20 cursor-ns-resize pointer-events-auto" />
                             <div onPointerDown={(event) => startResize(event, "height", 0, 1)} className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 size-3 bg-[#07b6d3] rounded-full shadow-md z-20 cursor-ns-resize pointer-events-auto" />
@@ -2919,7 +3065,7 @@ export function ProductModelWorkspace({
           </div>
 
           {/* Action Instructions Bar */}
-          <div className="bg-[#f5f5f5] rounded-[20px] px-5 py-3 flex flex-wrap justify-center items-center gap-2 sm:gap-3 text-sm sm:text-base md:text-lg text-[#0f1422] font-normal tracking-[-0.38px] text-center select-none">
+          <div className={shouldLockMobileEditor ? "hidden" : "bg-[#f5f5f5] rounded-[20px] px-5 py-3 flex flex-wrap justify-center items-center gap-2 sm:gap-3 text-sm sm:text-base md:text-lg text-[#0f1422] font-normal tracking-[-0.38px] text-center select-none"}>
             {selectedProduct ? (
               <>
                 <span>Click the Product</span>
@@ -2936,13 +3082,18 @@ export function ProductModelWorkspace({
           </div>
 
           {/* Footnote text */}
-          <p className="text-center text-sm sm:text-base text-black/80 font-normal leading-relaxed max-w-3xl mx-auto">
+          <p className={shouldLockMobileEditor ? "hidden" : "text-center text-sm sm:text-base text-black/80 font-normal leading-relaxed max-w-3xl mx-auto"}>
             Use the product viewer to see the selected glass or aluminum design from different angles. This helps you better understand the product’s structure, form, and overall appearance before creating a photo-based preview.
           </p>
         </div>
 
         {/* Right Side: Product Details & Customization Sidebar */}
-        <div className="w-full lg:w-[422px] shrink-0 flex flex-col gap-6 items-end">
+        <div
+          id="mobile-configuration-controls"
+          className={shouldLockMobileEditor
+            ? `${isMobileControlsOpen ? "flex" : "hidden"} absolute z-50 flex-col gap-4 overflow-x-hidden overflow-y-auto overscroll-contain bg-white p-4 shadow-2xl [touch-action:pan-y] ${compactOrientation === "portrait" ? "inset-x-0 bottom-0 max-h-[45dvh] rounded-t-[20px]" : "inset-y-0 right-0 w-[min(320px,88vw)] rounded-l-[20px]"}`
+            : "w-full lg:w-[422px] shrink-0 flex flex-col gap-6 items-end"}
+        >
           {/* Status Badge */}
           <div className="bg-white rounded-[20px] px-4 py-2 text-black text-sm font-normal tracking-[-0.266px] shadow-xs border border-neutral-100">
             {selectedProduct
@@ -3465,8 +3616,29 @@ export function ProductModelWorkspace({
         </div>
       </div>
 
+      {shouldLockMobileEditor && (
+        <div className="flex min-w-0 flex-wrap items-center justify-center gap-1.5 border-t border-white/10 bg-[#0f1422] px-2 py-2">
+          {supportsPerspectivePlane && (
+            <button type="button" onClick={() => setShowPerspectivePicker(true)} className="min-h-11 rounded-[14px] bg-white/10 px-3 text-xs text-white focus-visible:outline-2 focus-visible:outline-[#07b6d3]">Fit</button>
+          )}
+          <button type="button" onClick={handleRotate} className="min-h-11 rounded-[14px] bg-white/10 px-3 text-xs text-white focus-visible:outline-2 focus-visible:outline-[#07b6d3]">Rotate</button>
+          <button type="button" onClick={handleFlip} className="min-h-11 rounded-[14px] bg-white/10 px-3 text-xs text-white focus-visible:outline-2 focus-visible:outline-[#07b6d3]">Flip</button>
+          <button type="button" onClick={handleReset} className="min-h-11 rounded-[14px] bg-white/10 px-3 text-xs text-white focus-visible:outline-2 focus-visible:outline-[#07b6d3]">Reset</button>
+          <button type="button" onClick={handleRemove} className="min-h-11 rounded-[14px] bg-[#c50000] px-3 text-xs text-white focus-visible:outline-2 focus-visible:outline-white">Remove</button>
+          <button
+            type="button"
+            onClick={() => setIsMobileControlsOpen((open) => !open)}
+            aria-expanded={isMobileControlsOpen}
+            aria-controls="mobile-configuration-controls"
+            className="min-h-11 rounded-[14px] bg-[#07b6d3] px-3 text-xs font-medium text-white focus-visible:outline-2 focus-visible:outline-white"
+          >
+            Controls
+          </button>
+        </div>
+      )}
+
       {/* ── Bottom Step Navigation Bar ── */}
-      <div className="bg-[#f5f5f5] w-full rounded-[20px] p-5 flex flex-col sm:flex-row items-center justify-between gap-4 select-none shadow-sm mt-4">
+      <div className={shouldLockMobileEditor ? "hidden" : "bg-[#f5f5f5] w-full rounded-[20px] p-5 flex flex-col sm:flex-row items-center justify-between gap-4 select-none shadow-sm mt-4"}>
         {/* Back Button */}
         <button
           type="button"
@@ -3619,6 +3791,14 @@ export function ProductModelWorkspace({
             setShowPerspectivePicker(false);
           }}
           onCancel={() => setShowPerspectivePicker(false)}
+        />
+      )}
+      {workspaceTouchProxy && (
+        <TouchDragProxy
+          contactX={workspaceTouchProxy.contactX}
+          contactY={workspaceTouchProxy.contactY}
+          proxyX={workspaceTouchProxy.contactX}
+          proxyY={workspaceTouchProxy.contactY - TOUCH_PROXY_OFFSET_CSS_PX}
         />
       )}
     </div>

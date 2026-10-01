@@ -3,7 +3,7 @@
 **Project:** GlassFit (Web-Based Client-Space Visualization System for Customized Glass & Aluminum)  
 **Document Function:** Master Implementation Roadmap and Milestone Verification Specification  
 **Version:** 1.0.0 (Capstone Production Roadmap)  
-**Date:** September 30, 2026
+**Date:** October 1, 2026
 **Owner:** Reynard John B. Rabanal (Lead Product / Systems Architect) & GlassFit Capstone Team (PUP CCIS)  
 **Status:** Active  
 **Upstream Specifications:** `docs/pricing.md`, `docs/prd-glassfit.md`, `docs/sdd-glassfit.md`, `docs/erd-glassfit.md`, `docs/dsd-glassfit.md`, `docs/qad-glassfit.md`, `docs/build-glassfit.md`, `docs/index.md`  
@@ -43,6 +43,7 @@ When implementing or modifying any user interface within these milestones (such 
 | MS-10 | Admin Product Setup Wizard State & Component Persistence | Admin UI & State Layer | Bidirectional state synchronization, tab transition auto-refresh from DB, zero component loss between steps, seamless UX | Sprint 5 (Days 19-20) | `PRD-F14`, `SDD-C9`, `DSD-UI10`, `ERD-E4`, `ERD-E6`, `QAD-TC19` |
 | MS-35 | Multi-Format Space Image Ingestion | Visualization Client / FastAPI CV | Static WebP and HEIC/HEIF upload acceptance, browser-safe preview fallback, deterministic format resolution, server-side HEIF decoding, OpenCV normalization, and automated regression coverage | Maintenance Release | `PRD-F3`, `PRD-F4`, `PRD-F7`, `SDD-C2`, `SDD-C3`, `DSD-UI3`, `QAD-TC3`, `QAD-TC4`, `QAD-TC50` |
 | MS-36 | Admin Product Type and Status Filters | Admin Products UI | Interactive product type and lifecycle status filters composed with existing search, synchronized result count, no-match reset, and keyboard-operable controls | Maintenance Release | `PRD-F14`, `SDD-C9`, `DSD-UI14`, `ERD-E3`, `QAD-TC51` |
+| MS-37 | Mobile Visualization Workspace Optimization | Visualization Client | Compact full-viewport editor, nested-safe scroll isolation, portrait guidance, responsive HUD, and thumb-safe four-point controls | Maintenance Release | `BRD-M4`, `PRD-F6`, `SDD-C5`, `DSD-UI4`, `DSD-UI15`, `QAD-TC52` |
 
 ---
 
@@ -377,6 +378,7 @@ Eliminate state desynchronization, parameter loss, and rule-blocking traps in th
 | MS-33 | `PRD-F1`, `PRD-F6`, `PRD-F14` | `SDD-C1`, `SDD-C5`, `SDD-C9` | N/A (Presentation) | `DSD-UI13` | `QAD-TC48` |
 | MS-35 | `PRD-F3`, `PRD-F4`, `PRD-F7` | `SDD-C2`, `SDD-C3` | N/A (Temporary Files) | `DSD-UI3` | `QAD-TC3`, `QAD-TC4`, `QAD-TC50` |
 | MS-36 | `PRD-F14` | `SDD-C9` | `ERD-E3` | `DSD-UI14` | `QAD-TC51` |
+| MS-37 | `PRD-F6` | `SDD-C5` | N/A (Transient Presentation State) | `DSD-UI4`, `DSD-UI15` | `QAD-TC52` |
 
 ### MS-30: Inclusive Identity and Administrator Email Change
 
@@ -401,6 +403,10 @@ MS-35 extends the existing client-space upload workflow to accept static WebP an
 ### MS-36: Admin Product Type and Status Filters
 
 MS-36 turns the two placeholder controls on `/admin/products` into accessible single-selection filters. The first control derives its options from loaded `products.product_type` values. The second filters the normalized Published or Draft client status originating from database values Active and Inactive. Both predicates compose with the existing search, update the visible result count, distinguish an empty catalog from a no-match result, and preserve all row actions.
+
+### MS-37: Mobile Visualization Workspace Optimization
+
+MS-37 gives compact touch viewports a `100dvh` photo-based workspace editor with a flexible canvas stage, compact HUD, safe-area support, advisory landscape guidance, nested-safe document scroll isolation, exact exit restoration, and 44px four-point controls with elevated touch proxies. `Done` exits only the compact shell and retains the existing in-memory configuration. Product application, snapshot persistence, pricing, CV, and desktop behavior remain unchanged.
 
 ---
 
