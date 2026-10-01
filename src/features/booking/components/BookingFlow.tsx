@@ -238,7 +238,7 @@ export function BookingFlow() {
     const configured = process.env.NEXT_PUBLIC_R2_ASSET_BASE_URL;
     if (configured) try { allowedImageOrigins.push(new URL(configured).origin); } catch { /* Ignore invalid configuration. */ }
     return createQuotationDocumentViewModel(documentSnapshot, {
-      brandLogoUrl: new URL("/Logo.svg", browserOrigin).href,
+      brandLogoUrl: new URL("/quotation-logo.png", browserOrigin).href,
       shareableUrl: shareableUrl || new URL(documentSnapshot.shareablePath, browserOrigin).href,
       snapshotImageUrl: finalSnapshotDataUrl || getR2AssetUrl(documentSnapshot.snapshotObjectKey),
       allowedImageOrigins,

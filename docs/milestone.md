@@ -44,6 +44,7 @@ When implementing or modifying any user interface within these milestones (such 
 | MS-35 | Multi-Format Space Image Ingestion | Visualization Client / FastAPI CV | Static WebP and HEIC/HEIF upload acceptance, browser-safe preview fallback, deterministic format resolution, server-side HEIF decoding, OpenCV normalization, and automated regression coverage | Maintenance Release | `PRD-F3`, `PRD-F4`, `PRD-F7`, `SDD-C2`, `SDD-C3`, `DSD-UI3`, `QAD-TC3`, `QAD-TC4`, `QAD-TC50` |
 | MS-36 | Admin Product Type and Status Filters | Admin Products UI | Interactive product type and lifecycle status filters composed with existing search, synchronized result count, no-match reset, and keyboard-operable controls | Maintenance Release | `PRD-F14`, `SDD-C9`, `DSD-UI14`, `ERD-E3`, `QAD-TC51` |
 | MS-37 | Mobile Visualization Workspace Optimization | Visualization Client | Compact full-viewport editor, nested-safe scroll isolation, portrait guidance, responsive HUD, and thumb-safe four-point controls | Maintenance Release | `BRD-M4`, `PRD-F6`, `SDD-C5`, `DSD-UI4`, `DSD-UI15`, `QAD-TC52` |
+| MS-38 | Quotation Preview and Browser-Saved PDF Reliability | Quotation Domain / Print Presentation | Evidence-gated Page 1 repair, canonical specification isolation, bounded print fragmentation, numeric wrapping protection, and cross-browser PDF verification | Maintenance Release | `BRD-M3`, `BRD-M5`, `PRD-F10`, `PRD-F11`, `SDD-C7`, `DSD-UI16`, `ERD-E13`, `ERD-E14`, `QAD-TC53` |
 
 ---
 
@@ -379,6 +380,7 @@ Eliminate state desynchronization, parameter loss, and rule-blocking traps in th
 | MS-35 | `PRD-F3`, `PRD-F4`, `PRD-F7` | `SDD-C2`, `SDD-C3` | N/A (Temporary Files) | `DSD-UI3` | `QAD-TC3`, `QAD-TC4`, `QAD-TC50` |
 | MS-36 | `PRD-F14` | `SDD-C9` | `ERD-E3` | `DSD-UI14` | `QAD-TC51` |
 | MS-37 | `PRD-F6` | `SDD-C5` | N/A (Transient Presentation State) | `DSD-UI4`, `DSD-UI15` | `QAD-TC52` |
+| MS-38 | `PRD-F10`, `PRD-F11` | `SDD-C7` | `ERD-E13`, `ERD-E14` | `DSD-UI16` | `QAD-TC53` |
 
 ### MS-30: Inclusive Identity and Administrator Email Change
 
@@ -407,6 +409,10 @@ MS-36 turns the two placeholder controls on `/admin/products` into accessible si
 ### MS-37: Mobile Visualization Workspace Optimization
 
 MS-37 gives compact touch viewports a `100dvh` photo-based workspace editor with a flexible canvas stage, compact HUD, safe-area support, advisory landscape guidance, nested-safe document scroll isolation, exact exit restoration, and 44px four-point controls with elevated touch proxies. `Done` exits only the compact shell and retains the existing in-memory configuration. Product application, snapshot persistence, pricing, CV, and desktop behavior remain unchanged.
+
+### MS-38: Quotation Preview and Browser-Saved PDF Reliability
+
+MS-38 repairs the shared quotation document without changing pricing or persistence. It first isolates the Page 1 failure against the current pattern-based logo, then applies a dedicated print-safe asset only when supported by reproduction evidence. Canonical rendering derives multi-fixture behavior directly from the quotation view model, compact fixture cards keep their identity and final price together, numeric values do not split, and customer, administrator, and download-route surfaces retain equivalent content. Automated HTML tests are supplemented by mandatory native Save as PDF verification because browser PDF output cannot be proven by source assertions alone.
 
 ---
 

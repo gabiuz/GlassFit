@@ -119,7 +119,7 @@ export async function GET(request: NextRequest): Promise<Response> {
 
   if (parsedDoc.success) {
     const view = createQuotationDocumentViewModel(parsedDoc.data, {
-      brandLogoUrl: `${origin}/Logo.svg`,
+      brandLogoUrl: `${origin}/quotation-logo.png`,
       shareableUrl: `${origin}/q/${quoteRecord.quotation_number.replace("Q-", "CF-")}`,
       snapshotImageUrl,
       allowedImageOrigins: origins,
@@ -157,7 +157,7 @@ export async function GET(request: NextRequest): Promise<Response> {
 
     if (legacyDoc) {
       const view = createQuotationDocumentViewModel(legacyDoc, {
-        brandLogoUrl: `${origin}/Logo.svg`,
+        brandLogoUrl: `${origin}/quotation-logo.png`,
         shareableUrl: `${origin}/q/${quoteRecord.quotation_number.replace("Q-", "CF-")}`,
         snapshotImageUrl,
         allowedImageOrigins: origins,

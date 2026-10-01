@@ -24,6 +24,38 @@ describe("IMP-MS16 canonical quotation document", () => {
     assert.ok(!html.includes(bom.framingItems[0].description));
   });
 
+  it("renders canonical multi-fixture specifications only inside each compact fixture card", () => {
+    const first = { ...snapshot.items[0], itemId: "fixture-one", productName: "Alpha Sliding Window", dimensionsFormatted: "120cm × 120cm" };
+    const second = { ...snapshot.items[0], itemId: "fixture-two", productName: "Beta Awning Window", dimensionsFormatted: "90cm × 80cm", widthMm: 900, heightMm: 800 };
+    const multiSnapshot = QuotationDocumentSnapshotV1Schema.parse({
+      ...snapshot,
+      projectName: "Two Fixture Project",
+      items: [first, second],
+      pricing: {
+        ...snapshot.pricing,
+        directMaterialsSubtotal: snapshot.pricing.directMaterialsSubtotal * 2,
+        laborSubtotal: snapshot.pricing.laborSubtotal * 2,
+        contractorMargin: snapshot.pricing.contractorMargin * 2,
+        calculatedFinalPrice: snapshot.pricing.calculatedFinalPrice * 2,
+      },
+    });
+    const view = createQuotationDocumentViewModel(multiSnapshot, { brandLogoUrl: "https://glassfit.test/quotation-logo.png", shareableUrl: "https://glassfit.test/q/CF-2026-1000", snapshotImageUrl: null, allowedImageOrigins: ["https://glassfit.test"], negotiatedAmount: null });
+    const html = generateQuotationPdfHtml(view);
+    assert.doesNotMatch(html, /class="fixture-specs project-specifications"/);
+    assert.strictEqual(html.match(/item-card item-card--compact/g)?.length, 2);
+    assert.strictEqual(html.match(/Alpha Sliding Window/g)?.length, 1);
+    assert.strictEqual(html.match(/Beta Awning Window/g)?.length, 1);
+    assert.strictEqual(html.match(/120cm × 120cm/g)?.length, 1);
+    assert.strictEqual(html.match(/90cm × 80cm/g)?.length, 1);
+  });
+
+  it("retains project-level specifications for a canonical single fixture", () => {
+    const view = createQuotationDocumentViewModel(snapshot, { brandLogoUrl: "https://glassfit.test/quotation-logo.png", shareableUrl: "https://glassfit.test/q/CF-2026-1000", snapshotImageUrl: null, allowedImageOrigins: ["https://glassfit.test"], negotiatedAmount: null });
+    const html = generateQuotationPdfHtml(view);
+    assert.match(html, /class="fixture-specs project-specifications"/);
+    assert.strictEqual(html.match(/item-card item-card--compact/g)?.length, 1);
+  });
+
   it("parses createdAt with timezone offsets and normalizes PostgreSQL timestamps", () => {
     const snapshotWithOffset = QuotationDocumentSnapshotV1Schema.parse({
       ...snapshot,
@@ -75,4 +107,3 @@ describe("IMP-MS16 canonical quotation document", () => {
     assert.equal(invalid, null);
   });
 });
-

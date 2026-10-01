@@ -1,6 +1,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert";
+import { readFileSync } from "node:fs";
 import { calculateStandardSeries798 } from "../../src/lib/pricing/pricingEngine.js";
+import { SNAPSHOT_FALLBACK_DATA_URL } from "../../src/lib/pricing/pdfAssets.js";
 import { escapeHtml, generateQuotationPdfHtml, sanitizeImageSource, type QuotationPdfMetadata } from "../../src/lib/pricing/quotationPdfGenerator.js";
 import { openQuotationPreview, type QuotationPreviewWindowPort } from "../../src/lib/pricing/quotationPreviewWindow.js";
 
@@ -68,6 +70,31 @@ describe("IMP-MS14 quotation preview", () => {
       "p,li { orphans:3; widows:3; }",
     ]) assert.ok(html.includes(text), text);
     assert.ok(!html.includes(".item-card { break-inside:avoid"));
+  });
+
+  it("applies MS38 compact pagination, numeric, wrapping, and print guidance contracts", () => {
+    const html = generateQuotationPdfHtml({ ...base, customerEmail: "long.customer.address@example.test", shareableUrl: "https://glassfit.test/q/DRAFT" });
+    for (const text of [
+      ".item-card--compact,.total-table,.signature-block { break-inside:avoid; page-break-inside:avoid; }",
+      ".currency,.numeric-value,.quantity-price,.dimension-value,.total-table td:last-child { white-space:nowrap; font-variant-numeric:tabular-nums; }",
+      ".long-string { overflow-wrap:anywhere; word-break:break-word; }",
+      'class="long-string"',
+      "disable Headers and footers in the browser print dialog",
+      "font:400 13px/1.5 Arial,Helvetica,sans-serif",
+    ]) assert.ok(html.includes(text), text);
+    assert.ok(!html.includes("font:13px/1.5 Arial,sans-serif; overflow-wrap:anywhere"));
+  });
+
+  it("uses a print-safe raster quotation logo and direct-geometry fallback asset", () => {
+    const logo = readFileSync(new URL("../../public/quotation-logo.png", import.meta.url));
+    assert.deepStrictEqual([...logo.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+    assert.strictEqual(logo.readUInt32BE(16), 232);
+    assert.strictEqual(logo.readUInt32BE(20), 99);
+    const fallback = decodeURIComponent(SNAPSHOT_FALLBACK_DATA_URL.slice(SNAPSHOT_FALLBACK_DATA_URL.indexOf(",") + 1));
+    for (const prohibited of ["<pattern", "<use", "<image", "transform="]) assert.ok(!fallback.includes(prohibited), prohibited);
+    assert.match(fallback, /<rect/);
+    assert.match(fallback, /<path/);
+    assert.match(fallback, /<circle/);
   });
 
   it("renders a preliminary terms and accessory warranty appendix without payment content", () => {

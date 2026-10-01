@@ -184,7 +184,7 @@ export function BookingsContent({ initialBookings, loadError = null }: BookingsC
     const base = process.env.NEXT_PUBLIC_R2_ASSET_BASE_URL;
     const origins = [window.location.origin];
     if (base) try { origins.push(new URL(base).origin); } catch { /* Ignore invalid asset origin. */ }
-    const view = createQuotationDocumentViewModel(selectedBooking.quotation.document, { brandLogoUrl: new URL("/Logo.svg", window.location.origin).href, shareableUrl: new URL(selectedBooking.quotation.document.shareablePath, window.location.origin).href, snapshotImageUrl: getR2AssetUrl(selectedBooking.quotation.document.snapshotObjectKey), allowedImageOrigins: origins, negotiatedAmount: selectedBooking.quotation.negotiatedFinalPrice ?? null, itemPriceOverrides: selectedBooking.quotation.itemPriceOverrides, estimatorName });
+    const view = createQuotationDocumentViewModel(selectedBooking.quotation.document, { brandLogoUrl: new URL("/quotation-logo.png", window.location.origin).href, shareableUrl: new URL(selectedBooking.quotation.document.shareablePath, window.location.origin).href, snapshotImageUrl: getR2AssetUrl(selectedBooking.quotation.document.snapshotObjectKey), allowedImageOrigins: origins, negotiatedAmount: selectedBooking.quotation.negotiatedFinalPrice ?? null, adminLaborCharge: selectedBooking.quotation.adminLaborCharge, itemPriceOverrides: selectedBooking.quotation.itemPriceOverrides, estimatorName });
     return generateQuotationPdfHtml(view);
   };
 
