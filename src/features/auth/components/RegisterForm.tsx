@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Eye, EyeOff } from "lucide-react";
 import {
   validateEmail,
@@ -13,9 +13,12 @@ import {
 } from "../utils/auth-utils";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { normalizePersonName } from "@/lib/identity/personName";
+import { resolveSafeRedirectPath } from "@/lib/auth/redirectPath";
 
 export function RegisterForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const targetRedirect = resolveSafeRedirectPath(searchParams, "/");
 
   // Form states
   const [firstName, setFirstName] = useState("");
@@ -109,12 +112,14 @@ export function RegisterForm() {
     try {
       const supabase = createSupabaseBrowserClient();
 
+      const emailConfirmUrl = new URL("/auth/confirm", window.location.origin);
+      emailConfirmUrl.searchParams.set("next", targetRedirect);
+
       const { data, error } = await supabase.auth.signUp({
         email: normalizedEmail,
         password,
         options: {
-          // ?next=/ tells /auth/confirm where to redirect after email verification
-          emailRedirectTo: `${window.location.origin}/auth/confirm?next=/`,
+          emailRedirectTo: emailConfirmUrl.toString(),
           data: {
             first_name: normalizedFirstName,
             last_name: normalizedLastName,
@@ -171,15 +176,18 @@ export function RegisterForm() {
       // If email confirmation is required (no immediate session), send to login
       // with a "check your inbox" message embedded in the URL.
       if (!data.session) {
-        router.push(
-          `/login?registered=1&email=${encodeURIComponent(normalizedEmail)}`
-        );
+        const loginUrl = new URL("/login", window.location.origin);
+        loginUrl.searchParams.set("registered", "1");
+        loginUrl.searchParams.set("email", normalizedEmail);
+        if (targetRedirect !== "/") {
+          loginUrl.searchParams.set("next", targetRedirect);
+        }
+        router.push(`${loginUrl.pathname}${loginUrl.search}`);
         return;
       }
 
       // Auto-confirmed (e.g. email confirmation disabled in Supabase settings)
-      router.push("/");
-      router.refresh();
+      router.push(targetRedirect);
     } catch (error) {
       console.error("Registration failed:", error);
 
@@ -200,10 +208,14 @@ export function RegisterForm() {
     try {
       const supabase = createSupabaseBrowserClient();
 
+      const callbackUrl = new URL("/auth/confirm", window.location.origin);
+      callbackUrl.searchParams.set("next", targetRedirect);
+      callbackUrl.searchParams.set("type", "oauth");
+
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: `${window.location.origin}/auth/confirm?next=/&type=oauth`,
+          redirectTo: callbackUrl.toString(),
         },
       });
 
@@ -546,7 +558,7 @@ export function RegisterForm() {
             <div className="flex gap-2 items-center text-base tracking-[-0.304px] leading-[1.4]">
               <span className="text-[#c3c3c3]">Already have an account?</span>
               <Link
-                href="/login"
+                href={targetRedirect !== "/" ? `/login?next=${encodeURIComponent(targetRedirect)}` : "/login"}
                 className="text-green hover:underline font-medium transition-all"
               >
                 Log In
