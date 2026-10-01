@@ -5,7 +5,7 @@
 **Version:** 1.0 (Capstone Production Release)  
 **Owner:** Reynard John B. Rabanal (Lead Product / Systems Architect) & GlassFit Capstone Team (PUP CCIS)  
 **Status:** Locked  
-**Last reconciled:** October 1, 2026 (Added IMP-MS37 mobile visualization workspace requirements)
+**Last reconciled:** October 1, 2026 (Added IMP-MS37 mobile visualization workspace requirements and IMP-MS40 neutral perspective-fit orientation)
 **BRD:** N/A (Capstone Specification & PUP CCIS Manuscript Chapters 1-3)
 
 ---
@@ -108,6 +108,8 @@ GlassFit bridges this gap through an accessible, asynchronous **"Photo-Based Sim
 
 **Acceptance Criteria:**
 - Given an active product overlay in `/visualize/[productId]/workspace`, when the user drags on-screen handles or touches the overlay, then the model translates along the X/Y plane, scales proportionally, and rotates with smooth 60 FPS performance.
+- Given an active product overlay with non-zero yaw or pitch, when the user confirms a perspective fit, then the workspace sets yaw and pitch to 0 degrees before rendering the fitted state and reflects those values in the visible controls and current configuration snapshot.
+- Given a perspective fit has been confirmed, when the user subsequently changes yaw or pitch using an available orientation control, then the selected value is rendered and retained in the current configuration until another perspective fit or placement reset occurs.
 - Given a placed overlay, when the user clicks "Place", then the overlay is rendered to an off-screen canvas and cached as a transparent 2D bitmap layer, releasing active Three.js GPU overhead.
 - Given an editable product on a compact touch viewport, when the mobile editor opens, then the workspace uses the available dynamic viewport, isolates canvas gestures from document scrolling, keeps all actions reachable, and provides thumb-safe four-point controls.
 - Given the compact mobile editor is active, when the user taps `Done` or leaves the view, then document scrolling and the prior scroll position are restored without applying, saving, or discarding the current in-memory configuration.

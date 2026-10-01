@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import {
   computeHomographyMatrix,
@@ -285,62 +286,24 @@ describe("MS-02: 4-Point Perspective Plane Fitting for Window Products", () => {
     });
   });
 
-  describe("Initial 3D Orientation Estimation from Quadrilateral Foreshortening (fix-MS-04)", () => {
-    it("estimates positive yaw when left edge is taller than right edge", () => {
-      // Left edge height: 240, Right edge height: 200
-      const pxCorners: QuadrilateralCorners = [
-        { x: 50, y: 30 },
-        { x: 250, y: 50 },
-        { x: 250, y: 250 },
-        { x: 50, y: 270 },
-      ];
-      const [p0, p1, p2, p3] = pxCorners;
-      const leftH = Math.hypot(p3.x - p0.x, p3.y - p0.y);
-      const rightH = Math.hypot(p2.x - p1.x, p2.y - p1.y);
-      const maxH = Math.max(leftH, rightH, 1);
-      const deltaH = (leftH - rightH) / maxH;
-      const initialYaw = Math.round(Math.min(Math.max(deltaH * 35, -25), 25));
+  describe("IMP-MS40: Neutral Orientation After Perspective Fit (QAD-TC55)", () => {
+    it("resets yaw and pitch after any confirmed fit while preserving manual controls", () => {
+      const workspace = readFileSync(
+        "src/features/visualization/components/ProductModelWorkspace.tsx",
+        "utf8",
+      );
+      const confirmationStart = workspace.indexOf("<PerspectivePlanePicker");
+      const confirmationEnd = workspace.indexOf("onCancel={() => setShowPerspectivePicker(false)}", confirmationStart);
+      const confirmationHandler = workspace.slice(confirmationStart, confirmationEnd);
 
-      assert.ok(initialYaw > 0, "Yaw should be positive when left height exceeds right height");
-      assert.equal(initialYaw, 6);
-    });
-
-    it("estimates positive pitch when bottom edge is wider than top edge", () => {
-      // Top width: 160, Bottom width: 220
-      const pxCorners: QuadrilateralCorners = [
-        { x: 70, y: 50 },
-        { x: 230, y: 50 },
-        { x: 260, y: 250 },
-        { x: 40, y: 250 },
-      ];
-      const [p0, p1, p2, p3] = pxCorners;
-      const topW = Math.hypot(p1.x - p0.x, p1.y - p0.y);
-      const bottomW = Math.hypot(p2.x - p3.x, p2.y - p3.y);
-      const maxW = Math.max(topW, bottomW, 1);
-      const deltaW = (bottomW - topW) / maxW;
-      const initialPitch = Math.round(Math.min(Math.max(deltaW * 25, -20), 20));
-
-      assert.ok(initialPitch > 0, "Pitch should be positive when viewed from below/angled");
-      assert.equal(initialPitch, 7);
-    });
-
-    it("returns zero yaw and pitch for symmetrical rectangle", () => {
-      const [p0, p1, p2, p3] = unitSquare;
-      const leftH = Math.hypot(p3.x - p0.x, p3.y - p0.y);
-      const rightH = Math.hypot(p2.x - p1.x, p2.y - p1.y);
-      const topW = Math.hypot(p1.x - p0.x, p1.y - p0.y);
-      const bottomW = Math.hypot(p2.x - p3.x, p2.y - p3.y);
-
-      const maxH = Math.max(leftH, rightH, 1);
-      const maxW = Math.max(topW, bottomW, 1);
-      const deltaH = (leftH - rightH) / maxH;
-      const deltaW = (bottomW - topW) / maxW;
-
-      const initialYaw = Math.round(Math.min(Math.max(deltaH * 35, -25), 25));
-      const initialPitch = Math.round(Math.min(Math.max(deltaW * 25, -20), 20));
-
-      assert.equal(initialYaw, 0);
-      assert.equal(initialPitch, 0);
+      assert.ok(confirmationStart >= 0, "Perspective picker should remain part of the workspace");
+      assert.match(confirmationHandler, /setPerspectiveCorners\(corners\);\s*setYaw\(0\);\s*setPitch\(0\);/);
+      assert.doesNotMatch(confirmationHandler, /initialYaw|initialPitch|deltaH|deltaW|leftH|rightH|topW|bottomW/);
+      assert.match(confirmationHandler, /const \{ widthRatio, heightRatio \} = estimateDimensionsFromCorners\(photoCorners\)/);
+      assert.match(workspace, /value=\{yaw\}[\s\S]*?onChange=\{\(e\) => setYaw\(Number\(e\.target\.value\)\)\}/);
+      assert.match(workspace, /value=\{pitch\}[\s\S]*?onChange=\{\(e\) => setPitch\(Number\(e\.target\.value\)\)\}/);
+      assert.match(workspace, /mvpRendererRef\.current\.render\(yaw, pitch, isPlanar\)/);
+      assert.match(workspace, /yaw,\s*pitch,/);
     });
   });
 
@@ -401,4 +364,3 @@ describe("MS-02: 4-Point Perspective Plane Fitting for Window Products", () => {
     });
   });
 });
-
