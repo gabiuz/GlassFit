@@ -335,9 +335,9 @@ export function PerspectivePlanePicker({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col items-center justify-between select-none animate-in fade-in duration-200 [padding-top:max(.5rem,env(safe-area-inset-top))] [padding-right:max(.5rem,env(safe-area-inset-right))] [padding-bottom:max(.5rem,env(safe-area-inset-bottom))] [padding-left:max(.5rem,env(safe-area-inset-left))] portrait:[padding-top:max(1rem,env(safe-area-inset-top))] portrait:[padding-right:max(1rem,env(safe-area-inset-right))] portrait:[padding-bottom:max(1rem,env(safe-area-inset-bottom))] portrait:[padding-left:max(1rem,env(safe-area-inset-left))] sm:p-6">
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col items-center justify-between select-none animate-in fade-in duration-200 [padding-top:max(.5rem,env(safe-area-inset-top))] [padding-right:max(.5rem,env(safe-area-inset-right))] [padding-bottom:max(.5rem,env(safe-area-inset-bottom))] [padding-left:max(.5rem,env(safe-area-inset-left))] portrait:[padding-top:max(1rem,env(safe-area-inset-top))] portrait:[padding-right:max(1rem,env(safe-area-inset-right))] portrait:[padding-bottom:max(1rem,env(safe-area-inset-bottom))] portrait:[padding-left:max(1rem,env(safe-area-inset-left))] sm:portrait:p-6">
       {/* Top Header Card */}
-      <div className="w-full max-w-5xl flex flex-col gap-3 z-10">
+      <div className="z-10 flex w-full max-w-5xl flex-col gap-3 landscape:absolute landscape:inset-x-2 landscape:top-2 landscape:mx-auto landscape:w-auto">
         <div className="flex items-center justify-between gap-3 bg-white rounded-[20px] px-4 sm:px-6 py-2 portrait:py-3 shadow-xl">
           <div className="flex min-w-0 items-center gap-3">
             <div className="size-9 rounded-[12px] bg-[#07b6d3]/15 flex items-center justify-center text-[#07b6d3]">
@@ -365,7 +365,7 @@ export function PerspectivePlanePicker({
 
         {/* Guidance Alert Banner */}
         <div
-          className={`rounded-[16px] px-4 py-2 portrait:py-2.5 flex items-center gap-3 text-xs sm:text-sm shadow-md border transition-colors ${
+          className={`rounded-[16px] px-4 py-2 portrait:py-2.5 flex items-center gap-3 text-xs sm:text-sm shadow-md border transition-colors landscape:hidden ${
             isComplete && !isValidQuad
               ? "bg-amber-950/80 text-amber-200 border-amber-500/40"
               : "bg-[#0f1422] text-white border-neutral-700/50"
@@ -383,7 +383,7 @@ export function PerspectivePlanePicker({
       {/* Center Canvas Viewport */}
       <div
         ref={containerRef}
-        className="relative flex-1 w-full max-w-5xl flex items-center justify-center my-1 portrait:my-2 min-h-0 overflow-hidden"
+        className="relative flex-1 w-full max-w-5xl flex items-center justify-center my-1 portrait:my-2 min-h-0 overflow-hidden landscape:absolute landscape:inset-x-2 landscape:top-[3.75rem] landscape:bottom-16 landscape:mx-auto landscape:my-0 landscape:w-auto"
       >
         <div
           className="relative shrink-0 rounded-[16px] overflow-hidden shadow-2xl border border-white/20 bg-neutral-900"
@@ -528,7 +528,7 @@ export function PerspectivePlanePicker({
       </div>
 
       {/* Bottom Floating Control Toolbar */}
-      <div className="w-full max-w-3xl bg-[#0f1422] border border-white/15 rounded-[25px] p-2 portrait:p-3 sm:p-4 shadow-2xl flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 sm:gap-4 z-10">
+      <div className="w-full max-w-3xl bg-[#0f1422] border border-white/15 rounded-[25px] p-2 portrait:p-3 sm:portrait:p-4 shadow-2xl flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 sm:gap-4 z-10 landscape:absolute landscape:inset-x-2 landscape:bottom-2 landscape:mx-auto landscape:w-auto landscape:flex-nowrap">
         {/* Reset Action */}
         <button
           type="button"

@@ -3408,7 +3408,7 @@ export function ProductModelWorkspace({
                             <span className="text-[#0f1422] text-base font-medium">Dimension</span>
                             <div className="grid grid-cols-3 gap-3">
                               <div className="flex flex-col gap-1">
-                                <span className="text-[#c3c3c3] text-sm">Width (cm)</span>
+                                <span className="flex min-h-10 items-end text-[#c3c3c3] text-sm leading-tight">Width (cm)</span>
                                 <input
                                   type="text"
                                   value={widthCm}
@@ -3417,7 +3417,7 @@ export function ProductModelWorkspace({
                                 />
                               </div>
                               <div className="flex flex-col gap-1">
-                                <span className="text-[#c3c3c3] text-sm">Height (cm)</span>
+                                <span className="flex min-h-10 items-end text-[#c3c3c3] text-sm leading-tight">Height (cm)</span>
                                 <input
                                   type="text"
                                   value={heightCm}
@@ -3426,7 +3426,7 @@ export function ProductModelWorkspace({
                                 />
                               </div>
                               <div className="flex flex-col gap-1">
-                                <span className="text-[#c3c3c3] text-sm">Thickness (mm)</span>
+                                <span className="flex min-h-10 items-end text-[#c3c3c3] text-sm leading-tight">Thickness (mm)</span>
                                 <input
                                   type="text"
                                   value={thicknessMm}
