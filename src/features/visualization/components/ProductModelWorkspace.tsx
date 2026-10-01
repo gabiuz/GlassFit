@@ -2334,32 +2334,49 @@ export function ProductModelWorkspace({
             Want to make changes?
           </span>
           <div className="flex items-center gap-2.5">
-            <button
-              type="button"
-              onClick={() => handleOpenAddModal("Add Product")}
-              className="bg-[#0f1422] hover:bg-black text-white px-4 py-2 rounded-[10px] text-sm font-normal transition-colors cursor-pointer whitespace-nowrap"
-            >
-              Add Product
-            </button>
-            <button
-              type="button"
-              onClick={() => handleOpenAddModal("Change Product")}
-              className="bg-green hover:bg-[#06a3bd] text-white px-4 py-2 rounded-[10px] text-sm font-normal transition-colors cursor-pointer whitespace-nowrap"
-            >
-              Change Product
-            </button>
-          </div>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => handleOpenAddModal("Add Product")}
+                className="bg-[#0f1422] hover:bg-black text-white px-4 py-2 rounded-[10px] text-sm font-normal transition-colors cursor-pointer whitespace-nowrap"
+              >
+                Add Product
+              </button>
 
-          {/* Add / Change Product Anchored Popover */}
-          <AddProductModal
-            isOpen={isAddModalOpen}
-            onClose={() => setIsAddModalOpen(false)}
-            onSelectProduct={handleSelectProduct}
-            products={catalogProducts}
-            currentProductId={selectedProduct ? currentProductId : undefined}
-            allowCurrentProduct={modalTitle === "Add Product"}
-            title={modalTitle}
-          />
+              {modalTitle === "Add Product" && (
+                <AddProductModal
+                  isOpen={isAddModalOpen}
+                  onClose={() => setIsAddModalOpen(false)}
+                  onSelectProduct={handleSelectProduct}
+                  products={catalogProducts}
+                  currentProductId={selectedProduct ? currentProductId : undefined}
+                  allowCurrentProduct
+                  title={modalTitle}
+                />
+              )}
+            </div>
+
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => handleOpenAddModal("Change Product")}
+                className="bg-green hover:bg-[#06a3bd] text-white px-4 py-2 rounded-[10px] text-sm font-normal transition-colors cursor-pointer whitespace-nowrap"
+              >
+                Change Product
+              </button>
+
+              {modalTitle === "Change Product" && (
+                <AddProductModal
+                  isOpen={isAddModalOpen}
+                  onClose={() => setIsAddModalOpen(false)}
+                  onSelectProduct={handleSelectProduct}
+                  products={catalogProducts}
+                  currentProductId={selectedProduct ? currentProductId : undefined}
+                  title={modalTitle}
+                />
+              )}
+            </div>
+          </div>
         </div>
       </div>
 

@@ -77,10 +77,20 @@ export function AddProductModal({
         aria-hidden="true"
       />
 
-      <div className="absolute top-full right-0 mt-3 z-40 bg-white rounded-[20px] p-6 sm:p-8 w-[340px] sm:w-[500px] flex flex-col gap-6 shadow-[0px_10px_35px_rgba(0,0,0,0.2)] border border-[#c3c3c3]/40 max-h-[80vh] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
-        <div className="flex justify-between items-center w-full">
-          <div>
-            <h2 className="text-2xl font-medium text-[#0f1422] tracking-tight">{title}</h2>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="product-picker-title"
+        className="fixed inset-x-4 top-4 bottom-4 z-40 mx-auto flex w-auto max-w-[500px] flex-col gap-4 overflow-hidden rounded-[20px] border border-[#c3c3c3]/40 bg-white p-5 shadow-[0px_10px_35px_rgba(0,0,0,0.2)] animate-in fade-in slide-in-from-top-2 duration-200 sm:absolute sm:inset-x-auto sm:top-full sm:right-0 sm:bottom-auto sm:mt-3 sm:max-h-[calc(100dvh-12rem)] sm:w-[500px] sm:gap-6 sm:p-8"
+      >
+        <div className="flex w-full shrink-0 items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2
+              id="product-picker-title"
+              className="text-2xl font-medium text-[#0f1422] tracking-tight"
+            >
+              {title}
+            </h2>
             <p className="mt-1 text-sm text-neutral-500">
               Choose from the active GlassFit product catalog.
             </p>
@@ -158,7 +168,8 @@ export function AddProductModal({
           </p>
         )}
 
-        <div className="overflow-y-auto pr-1 flex-1 grid grid-cols-2 gap-4 max-h-[460px]">
+        {/* PRD-F6, SDD-C5, DSD-UI4: preserve each complete card and scroll the catalog. */}
+        <div className="custom-scrollbar grid min-h-0 flex-1 auto-rows-max grid-cols-1 content-start gap-4 overflow-y-auto pr-1 min-[420px]:grid-cols-2">
           {filteredProducts.map((product) => {
             const isCurrent = product.id === currentProductId;
             const isSelecting = selectingProductId === product.id;
@@ -225,7 +236,7 @@ export function AddProductModal({
           })}
 
           {filteredProducts.length === 0 && (
-            <div className="col-span-2 rounded-[16px] bg-neutral-50 px-5 py-10 text-center text-sm text-neutral-500">
+            <div className="rounded-[16px] bg-neutral-50 px-5 py-10 text-center text-sm text-neutral-500 min-[420px]:col-span-2">
               {products.length === 0
                 ? "No active products are available in the catalog yet."
                 : "No products match your search and category."}
