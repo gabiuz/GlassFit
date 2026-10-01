@@ -215,8 +215,6 @@ export function ProductModelWorkspace({
   );
   const router = useRouter();
   const canvasRef = useRef<HTMLDivElement>(null);
-  const placementControlsRef = useRef<HTMLDivElement>(null);
-  const [placementControlsWidth, setPlacementControlsWidth] = useState(0);
   const overlayBoxRef = useRef<HTMLDivElement>(null);
   const outlineControlsRef = useRef<HTMLDivElement>(null);
   const mobileDialogRef = useRef<HTMLDivElement>(null);
@@ -522,25 +520,6 @@ export function ProductModelWorkspace({
     width: aspectWidth,
     height: aspectHeight,
   });
-
-  useEffect(() => {
-    const element = placementControlsRef.current;
-    if (!element) return;
-
-    const updateWidth = (entry?: ResizeObserverEntry) => {
-      const contentWidth = entry?.contentBoxSize;
-      const observedWidth = contentWidth
-        ? contentWidth[0]?.inlineSize
-        : undefined;
-      setPlacementControlsWidth(observedWidth ?? element.clientWidth - 48);
-    };
-    updateWidth();
-    const observer = new ResizeObserver((entries) => updateWidth(entries[0]));
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
-
-  const shouldStackPlacementControls = placementControlsWidth < 320;
 
   useEffect(() => {
     const el = canvasRef.current;
@@ -3286,10 +3265,13 @@ export function ProductModelWorkspace({
                         transition={{ duration: 0.3, ease: [0.04, 0.62, 0.23, 0.98] }}
                         className="overflow-hidden"
                       >
-                        <div ref={placementControlsRef} className="px-6 pb-6 flex flex-col gap-5">
+                        <div className="px-6 pb-6 flex flex-col gap-5">
                           <div className="flex flex-col gap-2">
                             <span className="text-[#c3c3c3] text-base font-normal">Turn Left / Right</span>
-                            <div className={`flex gap-3 ${shouldStackPlacementControls ? "flex-col items-stretch" : "items-center"}`}>
+                            <div className="flex items-center gap-2">
+                              <button type="button" aria-label="Decrease yaw by 1 degree" disabled={yaw <= -180} onClick={() => setYaw((current) => stepYaw(current, -1))} className="min-h-11 min-w-11 shrink-0 inline-flex items-center justify-center rounded-md outline-none focus-visible:ring-2 focus-visible:ring-[#07b6d3] disabled:opacity-30 disabled:cursor-not-allowed enabled:hover:opacity-75 enabled:active:scale-95 transition-all enabled:cursor-pointer">
+                                <Minus size={18} aria-hidden="true" />
+                              </button>
                               <input
                                 type="range"
                                 min="-180"
@@ -3297,23 +3279,21 @@ export function ProductModelWorkspace({
                                 value={yaw}
                                 aria-label="Turn Left / Right"
                                 onChange={(e) => setYaw(Number(e.target.value))}
-                                className="w-full flex-1 min-w-0 accent-[#07b6d3] h-2 bg-[#c3c3c3] rounded-lg cursor-pointer"
+                                className="w-full min-w-0 flex-1 accent-[#07b6d3] h-2 bg-[#c3c3c3] rounded-lg cursor-pointer"
                               />
-                              <div className="min-w-[164px] shrink-0 flex items-center justify-between gap-1 border border-[#c3c3c3] rounded-[10px] bg-white px-1 shadow-[0px_0px_7px_rgba(0,0,0,0.1)] self-end">
-                                <button type="button" aria-label="Decrease yaw by 1 degree" disabled={yaw <= -180} onClick={() => setYaw((current) => stepYaw(current, -1))} className="min-h-11 min-w-11 shrink-0 inline-flex items-center justify-center rounded-md outline-none focus-visible:ring-2 focus-visible:ring-[#07b6d3] disabled:opacity-30 disabled:cursor-not-allowed enabled:hover:opacity-75 enabled:active:scale-95 transition-all enabled:cursor-pointer">
-                                  <Minus size={18} aria-hidden="true" />
-                                </button>
-                                <span className="text-[#0f1422] text-xs font-normal tabular-nums whitespace-nowrap min-w-12 text-center">{yaw} Deg</span>
-                                <button type="button" aria-label="Increase yaw by 1 degree" disabled={yaw >= 180} onClick={() => setYaw((current) => stepYaw(current, 1))} className="min-h-11 min-w-11 shrink-0 inline-flex items-center justify-center rounded-md outline-none focus-visible:ring-2 focus-visible:ring-[#07b6d3] disabled:opacity-30 disabled:cursor-not-allowed enabled:hover:opacity-75 enabled:active:scale-95 transition-all enabled:cursor-pointer">
-                                  <Plus size={18} aria-hidden="true" />
-                                </button>
-                              </div>
+                              <button type="button" aria-label="Increase yaw by 1 degree" disabled={yaw >= 180} onClick={() => setYaw((current) => stepYaw(current, 1))} className="min-h-11 min-w-11 shrink-0 inline-flex items-center justify-center rounded-md outline-none focus-visible:ring-2 focus-visible:ring-[#07b6d3] disabled:opacity-30 disabled:cursor-not-allowed enabled:hover:opacity-75 enabled:active:scale-95 transition-all enabled:cursor-pointer">
+                                <Plus size={18} aria-hidden="true" />
+                              </button>
+                              <span className="text-[#0f1422] text-xs font-normal whitespace-nowrap min-w-12 text-right">{yaw} Deg</span>
                             </div>
                           </div>
 
                           <div className="flex flex-col gap-2">
                             <span className="text-[#c3c3c3] text-base font-normal">Tilt Up / Down</span>
-                            <div className={`flex gap-3 ${shouldStackPlacementControls ? "flex-col items-stretch" : "items-center"}`}>
+                            <div className="flex items-center gap-2">
+                              <button type="button" aria-label="Decrease pitch by 1 degree" disabled={pitch <= -90} onClick={() => setPitch((current) => stepPitch(current, -1))} className="min-h-11 min-w-11 shrink-0 inline-flex items-center justify-center rounded-md outline-none focus-visible:ring-2 focus-visible:ring-[#07b6d3] disabled:opacity-30 disabled:cursor-not-allowed enabled:hover:opacity-75 enabled:active:scale-95 transition-all enabled:cursor-pointer">
+                                <Minus size={18} aria-hidden="true" />
+                              </button>
                               <input
                                 type="range"
                                 min="-90"
@@ -3321,17 +3301,12 @@ export function ProductModelWorkspace({
                                 value={pitch}
                                 aria-label="Tilt Up / Down"
                                 onChange={(e) => setPitch(Number(e.target.value))}
-                                className="w-full flex-1 min-w-0 accent-[#07b6d3] h-2 bg-[#c3c3c3] rounded-lg cursor-pointer"
+                                className="w-full min-w-0 flex-1 accent-[#07b6d3] h-2 bg-[#c3c3c3] rounded-lg cursor-pointer"
                               />
-                              <div className="min-w-[164px] shrink-0 flex items-center justify-between gap-1 border border-[#c3c3c3] rounded-[10px] bg-white px-1 shadow-[0px_0px_7px_rgba(0,0,0,0.1)] self-end">
-                                <button type="button" aria-label="Decrease pitch by 1 degree" disabled={pitch <= -90} onClick={() => setPitch((current) => stepPitch(current, -1))} className="min-h-11 min-w-11 shrink-0 inline-flex items-center justify-center rounded-md outline-none focus-visible:ring-2 focus-visible:ring-[#07b6d3] disabled:opacity-30 disabled:cursor-not-allowed enabled:hover:opacity-75 enabled:active:scale-95 transition-all enabled:cursor-pointer">
-                                  <Minus size={18} aria-hidden="true" />
-                                </button>
-                                <span className="text-[#0f1422] text-xs font-normal tabular-nums whitespace-nowrap min-w-12 text-center">{pitch} Deg</span>
-                                <button type="button" aria-label="Increase pitch by 1 degree" disabled={pitch >= 90} onClick={() => setPitch((current) => stepPitch(current, 1))} className="min-h-11 min-w-11 shrink-0 inline-flex items-center justify-center rounded-md outline-none focus-visible:ring-2 focus-visible:ring-[#07b6d3] disabled:opacity-30 disabled:cursor-not-allowed enabled:hover:opacity-75 enabled:active:scale-95 transition-all enabled:cursor-pointer">
-                                  <Plus size={18} aria-hidden="true" />
-                                </button>
-                              </div>
+                              <button type="button" aria-label="Increase pitch by 1 degree" disabled={pitch >= 90} onClick={() => setPitch((current) => stepPitch(current, 1))} className="min-h-11 min-w-11 shrink-0 inline-flex items-center justify-center rounded-md outline-none focus-visible:ring-2 focus-visible:ring-[#07b6d3] disabled:opacity-30 disabled:cursor-not-allowed enabled:hover:opacity-75 enabled:active:scale-95 transition-all enabled:cursor-pointer">
+                                <Plus size={18} aria-hidden="true" />
+                              </button>
+                              <span className="text-[#0f1422] text-xs font-normal whitespace-nowrap min-w-12 text-right">{pitch} Deg</span>
                             </div>
                           </div>
                         </div>

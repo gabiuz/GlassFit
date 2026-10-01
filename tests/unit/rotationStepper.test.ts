@@ -62,7 +62,8 @@ describe("QAD-TC54: discrete yaw and pitch steppers", () => {
     assert.match(workspaceSource, /disabled=\{pitch <= -90\}/);
     assert.match(workspaceSource, /disabled=\{pitch >= 90\}/);
     assert.ok(workspaceSource.includes("min-h-11 min-w-11"));
-    assert.ok(workspaceSource.includes("tabular-nums"));
+    assert.ok(workspaceSource.includes("{yaw} Deg"));
+    assert.ok(workspaceSource.includes("{pitch} Deg"));
     assert.ok(workspaceSource.includes('aria-label="Turn Left / Right"'));
     assert.ok(workspaceSource.includes('aria-label="Tilt Up / Down"'));
   });
