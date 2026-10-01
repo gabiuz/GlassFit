@@ -15,6 +15,7 @@ import Button from "@/components/shared/Button";
 import { AddProductModal } from "./AddProductModal";
 import { ManualOcclusionPointPicker } from "./ManualOcclusionPointPicker";
 import { PerspectivePlanePicker } from "./PerspectivePlanePicker";
+import { ObstructionWarningTooltip } from "./ObstructionWarningTooltip";
 import { useNavbarVisibility } from "@/components/shared/NavbarVisibilityContext";
 import { useCompactViewport } from "../hooks/useCompactViewport";
 import { useDocumentScrollLock } from "../hooks/useDocumentScrollLock";
@@ -43,6 +44,10 @@ import {
   estimateDimensionsFromCorners,
   scaleCornersAlongAxis,
 } from "@/lib/visualization/perspectiveTransform";
+import {
+  findObstructionWarnings,
+  type CanvasBox,
+} from "@/lib/visualization/obstructionWarnings";
 import {
   applyNoiseToCanvas,
   GRAIN_FILTER_SVG_ID,
@@ -582,6 +587,110 @@ export function ProductModelWorkspace({
       },
     };
   }, [perspectiveCorners, canvasDisplaySize.width, canvasDisplaySize.height]);
+
+  const [dismissedObstructionKeys, setDismissedObstructionKeys] = useState<Set<string>>(new Set());
+
+  const currentOverlayCanvasBox = useMemo<CanvasBox | null>(() => {
+    if (canvasDisplaySize.width <= 0 || canvasDisplaySize.height <= 0) return null;
+
+    if (perspectiveCorners) {
+      const pxCorners = denormalizeCorners(
+        perspectiveCorners,
+        canvasDisplaySize.width,
+        canvasDisplaySize.height,
+      );
+      return {
+        x1: Math.min(...pxCorners.map((p) => p.x)),
+        y1: Math.min(...pxCorners.map((p) => p.y)),
+        x2: Math.max(...pxCorners.map((p) => p.x)),
+        y2: Math.max(...pxCorners.map((p) => p.y)),
+      };
+    }
+
+    const cx = canvasDisplaySize.width / 2 + overlayPosition.x;
+    const cy = canvasDisplaySize.height / 2 + overlayPosition.y;
+    return {
+      x1: cx - overlaySize.width / 2,
+      y1: cy - overlaySize.height / 2,
+      x2: cx + overlaySize.width / 2,
+      y2: cy + overlaySize.height / 2,
+    };
+  }, [
+    perspectiveCorners,
+    canvasDisplaySize.width,
+    canvasDisplaySize.height,
+    overlayPosition.x,
+    overlayPosition.y,
+    overlaySize.width,
+    overlaySize.height,
+  ]);
+
+  const activeObstructionWarnings = useMemo(() => {
+    if (!currentOverlayCanvasBox || !spaceImageSession?.objects || !spaceImageSession.workspaceImage) {
+      return [];
+    }
+
+    return findObstructionWarnings({
+      overlayBox: currentOverlayCanvasBox,
+      detectedObjects: spaceImageSession.objects,
+      workspaceImage: spaceImageSession.workspaceImage,
+      canvasDisplayWidth: canvasDisplaySize.width,
+      canvasDisplayHeight: canvasDisplaySize.height,
+      dismissedKeys: dismissedObstructionKeys,
+    });
+  }, [
+    currentOverlayCanvasBox,
+    spaceImageSession,
+    canvasDisplaySize.width,
+    canvasDisplaySize.height,
+    dismissedObstructionKeys,
+  ]);
+
+  const primaryObstructionWarning = activeObstructionWarnings[0] ?? null;
+
+  const handleDismissObstruction = useCallback((warningId: string) => {
+    setDismissedObstructionKeys((prev) => new Set([...prev, warningId]));
+  }, []);
+
+  // When overlay moves completely away from an object, un-dismiss it
+  useEffect(() => {
+    if (!currentOverlayCanvasBox || dismissedObstructionKeys.size === 0) return;
+    if (!spaceImageSession?.objects || !spaceImageSession.workspaceImage) return;
+
+    const allCurrentOverlaps = findObstructionWarnings({
+      overlayBox: currentOverlayCanvasBox,
+      detectedObjects: spaceImageSession.objects,
+      workspaceImage: spaceImageSession.workspaceImage,
+      canvasDisplayWidth: canvasDisplaySize.width,
+      canvasDisplayHeight: canvasDisplaySize.height,
+      dismissedKeys: new Set(), // pass empty to see raw overlaps
+    });
+
+    const currentOverlappingObjectIds = new Set(allCurrentOverlaps.map((w) => w.id));
+
+    const syncTimer = window.setTimeout(() => {
+      setDismissedObstructionKeys((prev) => {
+        let changed = false;
+        const next = new Set<string>();
+        for (const key of prev) {
+          if (currentOverlappingObjectIds.has(key)) {
+            next.add(key);
+          } else {
+            changed = true; // Object is no longer overlapping; forget dismissal
+          }
+        }
+        return changed ? next : prev;
+      });
+    }, 0);
+
+    return () => window.clearTimeout(syncTimer);
+  }, [
+    currentOverlayCanvasBox,
+    spaceImageSession,
+    canvasDisplaySize.width,
+    canvasDisplaySize.height,
+    dismissedObstructionKeys.size,
+  ]);
 
   const effectiveLighting = (autoRealism && ambientLight) ? spaceImageSession?.lighting : null;
   const isWindowProduct =
@@ -3078,6 +3187,15 @@ export function ProductModelWorkspace({
                     </div>
                   )}
                 </div>
+              )}
+
+              {primaryObstructionWarning && isEditingProduct && (
+                <ObstructionWarningTooltip
+                  warning={primaryObstructionWarning}
+                  canvasWidth={canvasDisplaySize.width}
+                  canvasHeight={canvasDisplaySize.height}
+                  onDismiss={handleDismissObstruction}
+                />
               )}
             </div>
           </div>
