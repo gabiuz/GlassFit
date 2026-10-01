@@ -2254,10 +2254,10 @@ export function ProductModelWorkspace({
         : "w-full max-w-367 mx-auto px-4 sm:px-6"}
     >
       {shouldLockMobileEditor && (
-        <header className="flex min-w-0 items-center justify-between gap-3 border-b border-neutral-200 bg-white px-3 py-2">
+        <header className={`flex min-w-0 items-center justify-between gap-3 border-b border-neutral-200 bg-white ${compactOrientation === "landscape" ? "px-3 py-1" : "px-3 py-2"}`}>
           <div className="min-w-0">
             <h2 className="truncate text-sm font-semibold text-[#0f1422]">Edit {overlayName}</h2>
-            <p className="text-xs text-neutral-500 capitalize">{compactOrientation} workspace</p>
+            {compactOrientation === "portrait" && <p className="text-xs text-neutral-500">Portrait workspace</p>}
           </div>
           <button type="button" onClick={closeMobileEditor} className="min-h-11 shrink-0 rounded-[20px] bg-[#0f1422] px-5 text-sm font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]">
             Done
@@ -2522,11 +2522,11 @@ export function ProductModelWorkspace({
               style={{
                 aspectRatio: workspaceAspectRatio,
                 width: shouldLockMobileEditor
-                  ? `min(100%, calc(100% * ${aspectWidth} / ${aspectHeight}))`
+                  ? "auto"
                   : `min(100%, calc(55vh * ${aspectWidth} / ${aspectHeight}))`,
                 maxWidth: "100%",
                 maxHeight: shouldLockMobileEditor ? "100%" : "55vh",
-                height: shouldLockMobileEditor ? "auto" : undefined,
+                height: shouldLockMobileEditor ? "100%" : undefined,
                 touchAction: shouldLockMobileEditor ? "none" : undefined,
               }}
             >
@@ -2855,7 +2855,7 @@ export function ProductModelWorkspace({
                 >
                   {perspectiveCorners ? (
                     <>
-                      {perspectiveToolbarPosition && (
+                      {perspectiveToolbarPosition && !shouldLockMobileEditor && (
                         <div
                           className="absolute flex items-center gap-2.5 select-none animate-in fade-in slide-in-from-bottom-2 duration-200 pointer-events-auto"
                           style={{
@@ -2974,7 +2974,7 @@ export function ProductModelWorkspace({
                         }}
                         className="relative pointer-events-none"
                       >
-                        <div
+                        {!shouldLockMobileEditor && <div
                           className="absolute flex items-center gap-2.5 select-none animate-in fade-in slide-in-from-bottom-2 duration-200 pointer-events-auto"
                           style={toolbarControlsStyle}
                         >
@@ -3020,7 +3020,7 @@ export function ProductModelWorkspace({
                             <Trash2 className="w-4 h-4 text-white" />
                             <span className="text-[13px] font-normal tracking-[-0.266px]">Remove</span>
                           </button>
-                        </div>
+                        </div>}
 
                         <div
                           className="relative pointer-events-none"
@@ -3617,7 +3617,7 @@ export function ProductModelWorkspace({
       </div>
 
       {shouldLockMobileEditor && (
-        <div className="flex min-w-0 flex-wrap items-center justify-center gap-1.5 border-t border-white/10 bg-[#0f1422] px-2 py-2">
+        <div className={`flex min-w-0 items-center justify-center gap-1.5 overflow-x-auto border-t border-white/10 bg-[#0f1422] px-2 scrollbar-none ${compactOrientation === "landscape" ? "py-1" : "flex-wrap py-2"}`}>
           {supportsPerspectivePlane && (
             <button type="button" onClick={() => setShowPerspectivePicker(true)} className="min-h-11 rounded-[14px] bg-white/10 px-3 text-xs text-white focus-visible:outline-2 focus-visible:outline-[#07b6d3]">Fit</button>
           )}
