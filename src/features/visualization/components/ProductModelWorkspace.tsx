@@ -3741,16 +3741,12 @@ export function ProductModelWorkspace({
           initialCorners={perspectiveCorners}
           openingType={isDoorProduct ? "door" : "window"}
           onConfirm={async (corners) => {
-            const currentDisplayWidth = canvasRef.current?.clientWidth || canvasDisplaySize.width;
-            const currentDisplayHeight = canvasRef.current?.clientHeight || canvasDisplaySize.height;
-            const pxCorners = denormalizeCorners(corners, currentDisplayWidth, currentDisplayHeight);
-
             const photoWidth =
               spaceImageSession?.workspaceImage.width ||
-              currentDisplayWidth;
+              canvasRef.current?.clientWidth || canvasDisplaySize.width;
             const photoHeight =
               spaceImageSession?.workspaceImage.height ||
-              currentDisplayHeight;
+              canvasRef.current?.clientHeight || canvasDisplaySize.height;
             const photoCorners = denormalizeCorners(corners, photoWidth, photoHeight);
             const { widthRatio, heightRatio } = estimateDimensionsFromCorners(photoCorners);
             if (heightRatio > 0 && widthRatio > 0) {
@@ -3786,23 +3782,9 @@ export function ProductModelWorkspace({
               setOverlaySize(getOverlaySizeFromDimensions(String(estimate.widthCm), String(estimate.heightCm)));
             }
 
-            const [p0, p1, p2, p3] = pxCorners;
-            const leftH = Math.hypot(p3.x - p0.x, p3.y - p0.y);
-            const rightH = Math.hypot(p2.x - p1.x, p2.y - p1.y);
-            const topW = Math.hypot(p1.x - p0.x, p1.y - p0.y);
-            const bottomW = Math.hypot(p2.x - p3.x, p2.y - p3.y);
-
-            const maxH = Math.max(leftH, rightH, 1);
-            const maxW = Math.max(topW, bottomW, 1);
-            const deltaH = (leftH - rightH) / maxH;
-            const deltaW = (bottomW - topW) / maxW;
-
-            const initialYaw = Math.round(clampNumber(deltaH * 35, -25, 25));
-            const initialPitch = Math.round(clampNumber(deltaW * 25, -20, 20));
-
             setPerspectiveCorners(corners);
-            setYaw(initialYaw);
-            setPitch(initialPitch);
+            setYaw(0);
+            setPitch(0);
             setRotateAngle(0);
             setModelRevision((prev) => prev + 1);
             setShowPerspectivePicker(false);
