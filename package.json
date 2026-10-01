@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test:ms41": "npx tsx --test tests/unit/redirectPath.test.ts",
     "test:ms16": "npx tsx --test tests/unit/unifiedQuotationDocument.test.ts",
     "test:integration:ms16": "npx tsx --test tests/integration/ms16NegotiatedPriceRls.test.ts",
     "test:integration:ms17": "npx tsx --test tests/integration/ms17ItemNegotiationRls.test.ts",

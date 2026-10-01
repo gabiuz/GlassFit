@@ -1,12 +1,13 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Eye, EyeOff } from "lucide-react";
 import { validateEmail, checkPasswordRequirements } from "../utils/auth-utils";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { resolveSafeRedirectPath } from "@/lib/auth/redirectPath";
 
 /** Rich error content keyed by the `?error=` URL param. */
 const ERROR_NODES: Record<string, React.ReactNode> = {
@@ -30,6 +31,7 @@ const ERROR_NODES: Record<string, React.ReactNode> = {
 export function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const targetRedirect = resolveSafeRedirectPath(searchParams, "/");
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -37,44 +39,30 @@ export function LoginForm() {
 
   const [emailError, setEmailError] = useState("");
   const [generalError, setGeneralError] = useState("");
-  const [successMessage, setSuccessMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isGoogleSubmitting, setIsGoogleSubmitting] = useState(false);
-  const [errorNode, setErrorNode] = useState<React.ReactNode>(null);
 
-  // Read status messages forwarded from auth/confirm or the register form
-  useEffect(() => {
-    const errorCode = searchParams.get("error");
-    const confirmed = searchParams.get("confirmed");
-    const registered = searchParams.get("registered");
-    const registeredEmail = searchParams.get("email");
+  // Read status messages derived from URL search parameters
+  const errorCode = searchParams.get("error");
+  const confirmed = searchParams.get("confirmed");
+  const registered = searchParams.get("registered");
+  const registeredEmail = searchParams.get("email");
 
-    if (errorCode && ERROR_NODES[errorCode]) {
-      setErrorNode(ERROR_NODES[errorCode]);
-    }
-
-    if (confirmed === "1") {
-      setSuccessMessage("Your email has been confirmed! You can now log in.");
-    }
-
-    if (registered === "1") {
-      const emailHint = registeredEmail ? ` to ${registeredEmail}` : "";
-      setSuccessMessage(
-        `We sent a confirmation link${emailHint}. Please check your inbox and click the link to activate your account.`
-      );
-    }
-  }, [searchParams]);
+  const errorNode = errorCode && ERROR_NODES[errorCode] ? ERROR_NODES[errorCode] : null;
+  const successMessage =
+    confirmed === "1"
+      ? "Your email has been confirmed! You can now log in."
+      : registered === "1"
+        ? `We sent a confirmation link${registeredEmail ? ` to ${registeredEmail}` : ""}. Please check your inbox and click the link to activate your account.`
+        : "";
 
   const passwordReqs = checkPasswordRequirements(password);
-  const isPasswordValid =
-    passwordReqs.minLength && passwordReqs.hasNumber && passwordReqs.hasLetter;
   const isEmailValid = email !== "" && validateEmail(email);
   const isFormValid = isEmailValid && password !== "";
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setGeneralError("");
-    setSuccessMessage("");
 
     if (!validateEmail(email)) {
       setEmailError("Please enter a valid email address.");
@@ -117,10 +105,8 @@ export function LoginForm() {
         return;
       }
 
-      // Redirect to the page they came from, or home
-      const next = searchParams.get("next") ?? "/";
-      router.push(next);
-      router.refresh();
+      // Redirect to target destination safely
+      router.push(targetRedirect);
     } catch {
       setGeneralError(
         navigator.onLine
@@ -134,16 +120,19 @@ export function LoginForm() {
 
   const handleGoogleLogin = async () => {
     setGeneralError("");
-    setErrorNode(null);
     setIsGoogleSubmitting(true);
 
     try {
       const supabase = createSupabaseBrowserClient();
 
+      const callbackUrl = new URL("/auth/confirm", window.location.origin);
+      callbackUrl.searchParams.set("next", targetRedirect);
+      callbackUrl.searchParams.set("type", "oauth");
+
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: `${window.location.origin}/auth/confirm?next=/&type=oauth`,
+          redirectTo: callbackUrl.toString(),
         },
       });
 
@@ -160,7 +149,7 @@ export function LoginForm() {
 
         setIsGoogleSubmitting(false);
       }
-      // On success Supabase redirects the browser — no further action needed here.
+      // On success Supabase redirects the browser - no further action needed here.
     } catch {
       setGeneralError(
         navigator.onLine
@@ -221,7 +210,7 @@ export function LoginForm() {
             </div>
           )}
 
-          {/* Error banner — generalError for runtime errors, errorNode for URL-param errors */}
+          {/* Error banner - generalError for runtime errors, errorNode for URL-param errors */}
           {(generalError || errorNode) && (
             <div
               role="alert"
@@ -371,7 +360,10 @@ export function LoginForm() {
 
             <div className="flex gap-2 items-center text-base tracking-[-0.304px] leading-[1.4]">
               <span className="text-[#c3c3c3]">Don&apos;t have an account?</span>
-              <Link href="/register" className="text-green hover:underline font-medium transition-all">
+              <Link
+                href={targetRedirect !== "/" ? `/register?next=${encodeURIComponent(targetRedirect)}` : "/register"}
+                className="text-green hover:underline font-medium transition-all"
+              >
                 Register here
               </Link>
             </div>

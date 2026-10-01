@@ -395,13 +395,13 @@ export function BookingFlow() {
           {errorMessage.toLowerCase().includes("authentication") || errorMessage.toLowerCase().includes("account") || errorMessage.toLowerCase().includes("log in") ? (
             <div className="flex items-center gap-3 shrink-0">
               <button
-                onClick={() => router.push("/login?redirect=/send-booking")}
+                onClick={() => router.push("/login?next=/send-booking")}
                 className="bg-[#0f1422] text-white text-xs px-4 py-2 rounded-full hover:bg-black transition-colors"
               >
                 Log In
               </button>
               <button
-                onClick={() => router.push("/register?redirect=/send-booking")}
+                onClick={() => router.push("/register?next=/send-booking")}
                 className="bg-white border border-[#0f1422] text-[#0f1422] text-xs px-4 py-2 rounded-full hover:bg-neutral-50 transition-colors"
               >
                 Register

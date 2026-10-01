@@ -20,22 +20,18 @@ function LayoutContent({
   const { isNavbarHidden } = useNavbarVisibility();
 
   if (isAuthPage) {
-    return (
-      <VisualizationSessionProvider>{children}</VisualizationSessionProvider>
-    );
+    return <>{children}</>;
   }
 
   return (
     <div>
-      <VisualizationSessionProvider>
-        {!isNavbarHidden && (
-          <div className="flex justify-center">
-            <Navbar />
-          </div>
-        )}
-        {children}
-        <Footer />
-      </VisualizationSessionProvider>
+      {!isNavbarHidden && (
+        <div className="flex justify-center">
+          <Navbar />
+        </div>
+      )}
+      {children}
+      <Footer />
     </div>
   );
 }
@@ -60,9 +56,10 @@ export default function LayoutWrapper({
   return (
     <AuthProvider>
       <NavbarVisibilityProvider>
-        <LayoutContent isAuthPage={isAuthPage}>{children}</LayoutContent>
+        <VisualizationSessionProvider>
+          <LayoutContent isAuthPage={isAuthPage}>{children}</LayoutContent>
+        </VisualizationSessionProvider>
       </NavbarVisibilityProvider>
     </AuthProvider>
   );
 }
-
