@@ -5,7 +5,7 @@
 **Version:** 1.0 (Capstone Production Release)  
 **Owner:** Gianne Crizzle A. Dasco (Design & Frontend Lead) & GlassFit Capstone Team (PUP CCIS)  
 **Status:** Locked  
-**Last reconciled:** October 1, 2026 (Added DSD-UI15 mobile configurator shell)
+**Last reconciled:** October 1, 2026 (Added DSD-UI16 quotation document preview and print surface)
 **PRD:** docs/prd-glassfit.md
 
 ---
@@ -82,6 +82,7 @@ Modern architectural precision engineered for clarity, spatial focus, and techni
 | DSD-UI13 | GlobalThemedScrollbarSystem | PRD-F1, PRD-F6, PRD-F14 | Provides unified brand-consistent scrollbars across root viewports and nested containers | Dual W3C standard and WebKit floating cyan pill with 8px/6px width |
 | DSD-UI14 | AdminProductCatalogFilters | PRD-F14 | Filters the admin products workbench by loaded product type and normalized Published or Draft status while composing with search | Two accessible single-select pill controls with synchronized result count and no-match reset |
 | DSD-UI15 | MobileConfiguratorShell | PRD-F6 | Provides a compact full-viewport visualization editor with orientation guidance, scroll isolation, responsive actions and inspector drawer, safe-area support, and thumb-safe transform feedback | Fixed three-row editor shell with flexible canvas stage, compact HUD, and internal controls drawer |
+| DSD-UI16 | QuotationDocumentPreview | PRD-F10, PRD-F11 | Presents canonical quotation content for review and native browser printing while preserving item-price disclosure, page-break integrity, and cross-surface parity | A4-oriented document sheet with GlassFit header, project data, snapshot, fixture cards, reconciliation table, ocular checklist, signatures, consumer notice, and terms appendix |
 
 ### 3.2 State Behaviors & Visual Treatment
 
@@ -112,6 +113,8 @@ Modern architectural precision engineered for clarity, spatial focus, and techni
 | DSD-UI15 | Editing | Canvas fills the flexible dynamic-viewport stage; compact HUD remains within the safe area; existing inspector opens in an internal bottom or right drawer | Compact editor is active | Document scroll is isolated; dialog semantics hide the covered page; every action has a 44px minimum target and visible focus |
 | DSD-UI15 | Touch Drag | High-contrast proxy reticle and leader line appear 48px above finger contact | Touch pointer drags a four-point handle | Proxy is visual only for workspace resize semantics; invalid perspective geometry cannot be confirmed |
 | DSD-UI15 | Exited | Standard workspace flow returns with current in-memory edits intact | User taps Done or viewport becomes non-compact | Prior page position is restored and focus returns to the full-screen editor entry control |
+| DSD-UI16 | Preview | A4-oriented responsive sheet uses the existing slate, cyan, and teal document palette; compact fixture cards keep identity and final price together | Customer or administrator opens quotation preview | Document landmarks, fixture headings, pricing labels, terms, and controls remain keyboard-readable and printable |
+| DSD-UI16 | Print Guidance | Preview controls explain Save as PDF and native header and footer settings without claiming browser chrome can be disabled by the application | User prepares to print or save the quotation | Guidance is visible on screen, excluded from print, and does not trap focus |
 
 ---
 
@@ -145,6 +148,10 @@ The existing admin booking quotation card lists canonical snapshot items with pr
 ## DSD-UI13: Global Themed Scrollbar System
 
 The GlassFit themed scrollbar system unifies desktop and nested container scrolling across Chromium, Blink, Gecko, and WebKit browser engines. Configured globally in `src/app/globals.css`, it applies an 8px width (6px in nested `.custom-scrollbar` containers) with fully rounded ends (`border-radius: 9999px`) and a 2px transparent inset border (`background-clip: content-box`). Thumb colors dynamically adapt between light and dark themes using GlassFit brand cyan and architectural teal tokens, while track and corner intersections remain transparent. Dedicated `.scrollbar-none` and `.no-scrollbar` utilities preserve gesture-only touch carousels without visual scrollbar tracks.
+
+## DSD-UI16: Quotation Document Preview and Print Surface
+
+The quotation document preview is shared by customer booking, administrator booking management, and the quotation download route. A canonical multi-fixture document suppresses project-level Fixture 1 specifications and renders each fixture exactly once with its own configuration, quantity, and effective final item price. Compact canonical fixture cards, total reconciliation, and signature blocks avoid internal page breaks, while oversized legacy content remains fragmentable. Currency remains non-breaking, long customer values wrap through targeted utilities, and the screen-only toolbar explains that native browser headers and footers must be disabled in the print dialog when present.
 
 ## Self-Check
 
