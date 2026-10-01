@@ -45,6 +45,7 @@ describe("MS37 source contracts", () => {
     assert.match(workspace, /Open full-screen editor/);
     assert.match(workspace, /shouldLockMobileEditor/);
     assert.match(workspace, /touch-none/);
+    assert.match(workspace, /min-h-10 items-end text-\[#c3c3c3\]/);
   });
 
   it("uses nested lock ownership and 48px picker targets", () => {
@@ -54,5 +55,8 @@ describe("MS37 source contracts", () => {
     assert.match(picker, /useDocumentScrollLock\(true\)/);
     assert.match(picker, /<circle r=\{24\}/);
     assert.match(picker, /TOUCH_PROXY_OFFSET_CSS_PX/);
+    assert.match(picker, /landscape:top-\[3\.75rem\]/);
+    assert.match(picker, /landscape:bottom-16/);
+    assert.match(picker, /landscape:hidden/);
   });
 });
