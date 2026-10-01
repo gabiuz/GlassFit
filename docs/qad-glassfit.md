@@ -5,7 +5,7 @@
 **Version:** 1.3 (Capstone Production Release)
 **Owner:** Jedia Nicole I. Sagun (Quality Assurance Lead) & GlassFit Capstone Team (PUP CCIS)  
 **Status:** Locked  
-**Last reconciled:** September 30, 2026 (Added QAD-TC51 for admin product type and status filters)
+**Last reconciled:** October 1, 2026 (Added QAD-TC52 for mobile visualization workspace optimization)
 **PRD:** docs/prd-glassfit.md
 
 ---
@@ -55,6 +55,7 @@
 | QAD-TC48 | PRD-F1, PRD-F6, PRD-F14 | Unified Cross-Browser Brand Theme Scrollbar System & Contrast Verification | Chrome/Edge, Firefox, Safari desktop/mobile viewports with scrollable content | 1. Verify root and nested scrollbar geometry and colors<br>2. Test light and dark mode transitions<br>3. Inspect hover and active drag tactile states<br>4. Confirm transparent corner intersections<br>5. Verify hidden scrollbar on GuideLine | Unified 8px/6px floating cyan pill renders across all browsers; track is transparent; light/dark themes adapt instantly; hover/active states provide tactile feedback; WCAG 2.1 AA contrast >= 3.0:1 is satisfied; gesture scrollbars remain hidden | P1 |
 | QAD-TC50 | PRD-F3, PRD-F4, PRD-F7 | Multi-Format Space Image Ingestion for WebP and HEIC/HEIF | Approved static fixtures for JPG, PNG, WebP, HEIC, and HEIF; corrupt, animated, MIME-conflict, over-12-MB, and over-40-MP fixtures; Chrome, Firefox, and Safari 17 or later | 1. Run client validator unit tests<br>2. Run FastAPI resolver and decoder tests<br>3. Upload each valid format end to end<br>4. Verify native or fallback preview behavior<br>5. Verify orientation, EXIF extraction, workspace output, rejection cases, and container readiness | Valid static WebP and HEIC/HEIF inputs reach the existing CV pipeline and produce an upright `workspace.webp`; JPG and PNG remain unchanged; invalid, animated, conflicting, oversized, or unsupported inputs return deterministic actionable errors without a 500 response; missing HEIF decoder fails service readiness | P0 |
 | QAD-TC51 | PRD-F14 | Admin Product Type and Status Filters | Authenticated administrator on `/admin/products` with Published and Draft products across at least two product types | 1. Select each available product type<br>2. Select Published and Draft<br>3. Combine both filters with search<br>4. Verify the result counter and no-match reset<br>5. Verify keyboard operation<br>6. Run filtered-row Edit, Duplicate, and Delete smoke checks | The first control filters only by `product_type`; the second filters only by normalized lifecycle status; all active criteria combine with logical AND; count, empty state, keyboard behavior, and row actions remain correct | P1 |
+| QAD-TC52 | PRD-F6 | Mobile Visualization Workspace Viewport, Scroll Isolation, and Touch Ergonomics | Editable product in `/visualize/[productId]/workspace`; compact portrait and landscape viewports; iOS Safari and Android Chrome | 1. Enter compact editor from a pre-scrolled page<br>2. Drag the canvas and open the nested perspective picker<br>3. Close only the picker and verify the page remains locked<br>4. Open the reused configuration drawer and operate its inputs<br>5. Drag all four handles at center and boundaries<br>6. Rotate portrait and landscape<br>7. Tap Done and re-enter<br>8. Verify 320px through 430px layouts, keyboard focus, reduced motion, and desktop regression | Editor uses the available `100dvh` stage without clipping; document scroll and pull-to-refresh remain isolated until the final lock owner exits; exact page position returns; portrait remains usable; inspector controls remain internally scrollable; actions meet 44px targets; touch proxy appears 48px above contact; invalid quadrilaterals cannot commit; desktop behavior remains unchanged | P1 |
 
 ---
 
@@ -112,6 +113,12 @@ MS35 automated coverage must validate MIME and extension reconciliation, browser
 ## QAD-TC51: Admin Product Type and Status Filters
 
 MS36 automated coverage validates unique product type derivation, canonical ordering of present types, unknown-value fallback ordering, empty input, search-only filtering, type-only filtering, status-only filtering, combined filtering, query normalization, and input immutability. Manual browser coverage validates default and selected labels, accurate row counts, separate empty-catalog and no-match states, Reset filters, keyboard operation, responsive wrapping, and correct Edit, Duplicate, and Delete targets while filters are active.
+
+---
+
+## QAD-TC52: Mobile Visualization Workspace Optimization
+
+MS37 coverage validates compact viewport classification, dynamic viewport and safe-area layout, nested document scroll ownership, exact exit restoration, advisory orientation behavior, responsive HUD reachability, 44px minimum targets, touch-only proxy geometry, quadrilateral validity, and desktop regression safety. Automated coverage is limited to pure geometry, classification, and source contracts because the repository has no DOM test environment dependency. iOS Safari and Android Chrome checks are mandatory for fixed-body scroll behavior, pull-to-refresh suppression, pointer capture, focus restoration, and mobile browser toolbar changes.
 
 ---
 

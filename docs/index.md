@@ -5,7 +5,7 @@
 **Version:** 1.0 (Capstone Production Release)  
 **Owner:** Reynard John B. Rabanal (Lead Product / Systems Architect) & GlassFit Capstone Team (PUP CCIS)  
 **Status:** Locked  
-**Last reconciled:** September 30, 2026 (Added IMP-MS36 admin product filter traceability)
+**Last reconciled:** October 1, 2026 (Added IMP-MS37 mobile visualization workspace traceability)
 
 ---
 
@@ -39,6 +39,7 @@ GlassFit is a responsive, web-based photo-simulation and consultation-support pl
 | IMP-MS33 | Unified Cross-Browser GlassFit Brand Theme Scrollbar System | `docs/implementation/ms33.md` | Implemented | September 30, 2026 | GlassFit Capstone Team |
 | IMP-MS35 | Multi-Format Space Image Ingestion for WebP and HEIC/HEIF | `docs/implementation/ms35.md` | Ready for Implementation | September 30, 2026 | GlassFit Capstone Team |
 | IMP-MS36 | Admin Product Type and Status Filters | `docs/implementation/ms36.md` | Ready for Implementation | September 30, 2026 | GlassFit Capstone Team |
+| IMP-MS37 | Mobile Visualization Workspace Viewport, Scroll Isolation, and Touch Ergonomics | `docs/implementation/ms37.md` | Ready for Implementation | October 1, 2026 | GlassFit Capstone Team |
 
 ---
 
@@ -58,6 +59,7 @@ GlassFit is a responsive, web-based photo-simulation and consultation-support pl
 | BRD-M4 (Achieve High Usability) | PRD-F1, PRD-F6, PRD-F14 (Brand UI Consistency & Themed Viewports) | SDD-C1, SDD-C5, SDD-C9 | N/A (Presentation Layer) | QAD-TC48 | Implemented |
 | BRD-M4, BRD-M6 (Usability and Space Intake Reliability) | PRD-F3, PRD-F4, PRD-F7 | SDD-C2, SDD-C3 | N/A (Temporary Files) | QAD-TC3, QAD-TC4, QAD-TC50 | Ready for Implementation |
 | BRD-M4 (Achieve High Usability) | PRD-F14 (Admin Product Catalog) | SDD-C9 (Admin Portal) | ERD-E3 (products) | QAD-TC51 | Ready for Implementation |
+| BRD-M4 (Achieve High Usability) | PRD-F6 (Photo-Based Visualization Workspace) | SDD-C5 (Visualization Canvas) | N/A (Transient Presentation State) | QAD-TC52 | Ready for Implementation |
 
 ---
 
@@ -98,6 +100,7 @@ GlassFit is a responsive, web-based photo-simulation and consultation-support pl
 | September 30, 2026 | `docs/implementation/ms33.md`, `src/app/globals.css`, `docs/dsd-glassfit.md`, `docs/qad-glassfit.md`, `docs/milestone.md`, `docs/index.md` | GlassFit Capstone Team | Reconciled unified cross-browser GlassFit brand theme scrollbar system, W3C standard properties, WebKit pseudo-elements, DSD-UI13 tokens, and QAD-TC48 | Pending |
 | September 30, 2026 | `docs/implementation/ms35.md`, `docs/prd-glassfit.md`, `docs/sdd-glassfit.md`, `docs/dsd-glassfit.md`, `docs/qad-glassfit.md`, `docs/build-glassfit.md`, `docs/milestone.md`, `docs/index.md` | GlassFit Capstone Team | Reconciled static WebP and HEIC/HEIF upload requirements, browser-safe previews, server decoding and normalization, dependency readiness, and QAD-TC50 | Pending |
 | September 30, 2026 | `docs/implementation/ms36.md`, `docs/prd-glassfit.md`, `docs/sdd-glassfit.md`, `docs/dsd-glassfit.md`, `docs/qad-glassfit.md`, `docs/milestone.md`, `docs/index.md` | GlassFit Capstone Team | Reconciled admin product type and lifecycle status filter requirements, ERD-E3 field mapping, DSD-UI14 behavior, and QAD-TC51 | Pending |
+| October 1, 2026 | `docs/implementation/ms37.md`, `docs/prd-glassfit.md`, `docs/sdd-glassfit.md`, `docs/dsd-glassfit.md`, `docs/qad-glassfit.md`, `docs/milestone.md`, `docs/index.md` | GlassFit Capstone Team | Reconciled compact mobile visualization workspace layout, nested-safe scroll isolation, advisory orientation guidance, DSD-UI15 touch ergonomics, and QAD-TC52 | Pending |
 
 
 

@@ -5,7 +5,7 @@
 **Version:** 1.0 (Capstone Production Release)  
 **Owner:** Reynard John B. Rabanal (Lead Product / Systems Architect) & GlassFit Capstone Team (PUP CCIS)  
 **Status:** Locked  
-**Last reconciled:** September 30, 2026 (Added IMP-MS36 admin product type and status filter requirements)
+**Last reconciled:** October 1, 2026 (Added IMP-MS37 mobile visualization workspace requirements)
 **BRD:** N/A (Capstone Specification & PUP CCIS Manuscript Chapters 1-3)
 
 ---
@@ -109,6 +109,8 @@ GlassFit bridges this gap through an accessible, asynchronous **"Photo-Based Sim
 **Acceptance Criteria:**
 - Given an active product overlay in `/visualize/[productId]/workspace`, when the user drags on-screen handles or touches the overlay, then the model translates along the X/Y plane, scales proportionally, and rotates with smooth 60 FPS performance.
 - Given a placed overlay, when the user clicks "Place", then the overlay is rendered to an off-screen canvas and cached as a transparent 2D bitmap layer, releasing active Three.js GPU overhead.
+- Given an editable product on a compact touch viewport, when the mobile editor opens, then the workspace uses the available dynamic viewport, isolates canvas gestures from document scrolling, keeps all actions reachable, and provides thumb-safe four-point controls.
+- Given the compact mobile editor is active, when the user taps `Done` or leaves the view, then document scrolling and the prior scroll position are restored without applying, saving, or discarding the current in-memory configuration.
 
 ### US-07: Realism Adjustments & Glass View Simulation (traces to PRD-F7)
 > As a customer visualizing a window or shower enclosure, I want to adjust shadow intensity and toggle different glass finishes so that I can see how clear versus frosted glass affects privacy.

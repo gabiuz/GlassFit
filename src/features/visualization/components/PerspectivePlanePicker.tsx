@@ -15,6 +15,9 @@ import {
   isValidQuadrilateral,
 } from "@/lib/visualization/perspectiveTransform";
 import { rectangleToQuadrilateral } from "@/lib/visualization/perspectiveSelection";
+import { useDocumentScrollLock } from "../hooks/useDocumentScrollLock";
+import { mapPointerToCanvas, TOUCH_PROXY_OFFSET_CSS_PX } from "../mobileConfiguratorGeometry";
+import { TouchDragProxy } from "./TouchDragProxy";
 
 interface PerspectivePlanePickerProps {
   canvasWidth: number;
@@ -42,6 +45,13 @@ type SelectionSession = {
   startClientY: number;
   startCanvasPoint: Point2D;
 };
+type ActiveCornerDrag = {
+  pointerId: number;
+  pointerType: string;
+  index: number;
+  contactX: number;
+  contactY: number;
+};
 
 export function PerspectivePlanePicker({
   canvasWidth,
@@ -62,10 +72,12 @@ export function PerspectivePlanePicker({
 
   const [activeDragIndex, setActiveDragIndex] = useState<number | null>(null);
   const [selectionDraft, setSelectionDraft] = useState<SelectionDraft | null>(null);
+  const [activeCornerDrag, setActiveCornerDrag] = useState<ActiveCornerDrag | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const dragOffsetRef = useRef<{ x: number; y: number } | null>(null);
   const selectionSessionRef = useRef<SelectionSession | null>(null);
+  useDocumentScrollLock(true);
 
   // Close on Escape key
   useEffect(() => {
@@ -84,15 +96,18 @@ export function PerspectivePlanePicker({
       const svg = svgRef.current;
       if (!svg) return null;
       const rect = svg.getBoundingClientRect();
-      const scaleX = canvasWidth / rect.width;
-      const scaleY = canvasHeight / rect.height;
-
-      const x = Math.max(0, Math.min(canvasWidth, (clientX - rect.left) * scaleX));
-      const y = Math.max(0, Math.min(canvasHeight, (clientY - rect.top) * scaleY));
-
-      return { x, y };
+      return mapPointerToCanvas({
+        clientX,
+        clientY,
+        bounds: rect,
+        canvasWidth,
+        canvasHeight,
+        offsetCssPx: activeCornerDrag?.pointerType === "touch"
+          ? TOUCH_PROXY_OFFSET_CSS_PX
+          : 0,
+      });
     },
-    [canvasWidth, canvasHeight],
+    [activeCornerDrag?.pointerType, canvasWidth, canvasHeight],
   );
 
   const releaseSelectionCapture = useCallback((pointerId: number) => {
@@ -146,6 +161,7 @@ export function PerspectivePlanePicker({
     index: number,
     e: React.PointerEvent<SVGCircleElement | SVGTextElement | SVGGElement>,
   ) => {
+    if (activeCornerDrag !== null || !e.isPrimary || e.button !== 0) return;
     e.stopPropagation();
     e.preventDefault();
     const coord = getCanvasCoordinates(e.clientX, e.clientY);
@@ -156,6 +172,13 @@ export function PerspectivePlanePicker({
       };
     }
     setActiveDragIndex(index);
+    setActiveCornerDrag({
+      pointerId: e.pointerId,
+      pointerType: e.pointerType,
+      index,
+      contactX: e.clientX,
+      contactY: e.clientY,
+    });
   };
 
   const handleSvgPointerMove = (
@@ -171,7 +194,7 @@ export function PerspectivePlanePicker({
       );
       return;
     }
-    if (activeDragIndex === null) return;
+    if (activeDragIndex === null || !activeCornerDrag || e.pointerId !== activeCornerDrag.pointerId) return;
     const coord = getCanvasCoordinates(e.clientX, e.clientY);
     if (!coord) return;
 
@@ -184,6 +207,9 @@ export function PerspectivePlanePicker({
       next[activeDragIndex] = { x, y };
       return next;
     });
+    setActiveCornerDrag((current) => current && current.pointerId === e.pointerId
+      ? { ...current, contactX: e.clientX, contactY: e.clientY }
+      : current);
   };
 
   const handleSvgPointerUp = (
@@ -210,7 +236,7 @@ export function PerspectivePlanePicker({
       }
       return;
     }
-    if (activeDragIndex !== null) {
+    if (activeDragIndex !== null && activeCornerDrag?.pointerId === e.pointerId) {
       try {
         if (e.currentTarget.hasPointerCapture(e.pointerId)) {
           e.currentTarget.releasePointerCapture(e.pointerId);
@@ -220,6 +246,7 @@ export function PerspectivePlanePicker({
       }
       dragOffsetRef.current = null;
       setActiveDragIndex(null);
+      setActiveCornerDrag(null);
     }
   };
 
@@ -240,6 +267,7 @@ export function PerspectivePlanePicker({
     setPoints([]);
     dragOffsetRef.current = null;
     setActiveDragIndex(null);
+    setActiveCornerDrag(null);
   };
 
   const isComplete = points.length === 4;
@@ -279,7 +307,7 @@ export function PerspectivePlanePicker({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col items-center justify-between p-4 sm:p-6 select-none animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col items-center justify-between select-none animate-in fade-in duration-200 [padding-top:max(1rem,env(safe-area-inset-top))] [padding-right:max(1rem,env(safe-area-inset-right))] [padding-bottom:max(1rem,env(safe-area-inset-bottom))] [padding-left:max(1rem,env(safe-area-inset-left))] sm:p-6">
       {/* Top Header Card */}
       <div className="w-full max-w-5xl flex flex-col gap-3 z-10">
         <div className="flex items-center justify-between gap-3 bg-white rounded-[20px] px-4 sm:px-6 py-3 shadow-xl">
@@ -414,7 +442,7 @@ export function PerspectivePlanePicker({
                   aria-label={`Corner ${index + 1}: ${CORNER_NAMES[index]}`}
                 >
                   {/* Invisible generous hit target */}
-                  <circle r={18} fill="transparent" />
+                  <circle r={24} fill="transparent" />
 
                   {/* Outer pulse circle on active point */}
                   <circle
@@ -459,6 +487,14 @@ export function PerspectivePlanePicker({
               );
             })}
           </svg>
+          {activeCornerDrag?.pointerType === "touch" && (
+            <TouchDragProxy
+              contactX={activeCornerDrag.contactX}
+              contactY={activeCornerDrag.contactY}
+              proxyX={activeCornerDrag.contactX}
+              proxyY={activeCornerDrag.contactY - TOUCH_PROXY_OFFSET_CSS_PX}
+            />
+          )}
         </div>
       </div>
 
