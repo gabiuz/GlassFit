@@ -45,6 +45,8 @@ When implementing or modifying any user interface within these milestones (such 
 | MS-36 | Admin Product Type and Status Filters | Admin Products UI | Interactive product type and lifecycle status filters composed with existing search, synchronized result count, no-match reset, and keyboard-operable controls | Maintenance Release | `PRD-F14`, `SDD-C9`, `DSD-UI14`, `ERD-E3`, `QAD-TC51` |
 | MS-37 | Mobile Visualization Workspace Optimization | Visualization Client | Compact full-viewport editor, nested-safe scroll isolation, portrait guidance, responsive HUD, and thumb-safe four-point controls | Maintenance Release | `BRD-M4`, `PRD-F6`, `SDD-C5`, `DSD-UI4`, `DSD-UI15`, `QAD-TC52` |
 | MS-38 | Quotation Preview and Browser-Saved PDF Reliability | Quotation Domain / Print Presentation | Evidence-gated Page 1 repair, canonical specification isolation, bounded print fragmentation, numeric wrapping protection, and cross-browser PDF verification | Maintenance Release | `BRD-M3`, `BRD-M5`, `PRD-F10`, `PRD-F11`, `SDD-C7`, `DSD-UI16`, `ERD-E13`, `ERD-E14`, `QAD-TC53` |
+| MS-39 | Discrete Yaw and Pitch Degree Stepper Controls | Visualization Client | Accessible single-degree yaw and pitch controls with boundary clamping and slider synchronization | Maintenance Release | `BRD-M4`, `PRD-F6`, `SDD-C5`, `DSD-UI4`, `DSD-UI15`, `QAD-TC54` |
+| MS-40 | Neutral Orientation After Perspective Fit | Visualization Client | Reset yaw and pitch to zero on fit confirmation while preserving corner-based dimension estimation and later manual adjustments | Maintenance Release, after MS-39 | `BRD-M4`, `PRD-F6`, `SDD-C5`, `DSD-UI4`, `QAD-TC55` |
 
 ---
 
@@ -381,6 +383,8 @@ Eliminate state desynchronization, parameter loss, and rule-blocking traps in th
 | MS-36 | `PRD-F14` | `SDD-C9` | `ERD-E3` | `DSD-UI14` | `QAD-TC51` |
 | MS-37 | `PRD-F6` | `SDD-C5` | N/A (Transient Presentation State) | `DSD-UI4`, `DSD-UI15` | `QAD-TC52` |
 | MS-38 | `PRD-F10`, `PRD-F11` | `SDD-C7` | `ERD-E13`, `ERD-E14` | `DSD-UI16` | `QAD-TC53` |
+| MS-39 | `PRD-F6` | `SDD-C5` | N/A (Transient Presentation State) | `DSD-UI4`, `DSD-UI15` | `QAD-TC54` |
+| MS-40 | `PRD-F6` | `SDD-C5` | N/A (Transient Presentation State) | `DSD-UI4` | `QAD-TC55` |
 
 ### MS-30: Inclusive Identity and Administrator Email Change
 
@@ -413,6 +417,14 @@ MS-37 gives compact touch viewports a `100dvh` photo-based workspace editor with
 ### MS-38: Quotation Preview and Browser-Saved PDF Reliability
 
 MS-38 repairs the shared quotation document without changing pricing or persistence. It first isolates the Page 1 failure against the current pattern-based logo, then applies a dedicated print-safe asset only when supported by reproduction evidence. Canonical rendering derives multi-fixture behavior directly from the quotation view model, compact fixture cards keep their identity and final price together, numeric values do not split, and customer, administrator, and download-route surfaces retain equivalent content. Automated HTML tests are supplemented by mandatory native Save as PDF verification because browser PDF output cannot be proven by source assertions alone.
+
+### MS-39: Discrete Yaw and Pitch Degree Stepper Controls
+
+MS-39 adds keyboard-operable single-degree stepper controls for yaw and pitch, bounded by their existing angle domains. The controls stay synchronized with the sliders and numerical readouts and are covered by QAD-TC54.
+
+### MS-40: Neutral Orientation After Perspective Fit
+
+MS-40 follows MS-39. Confirming a perspective fit sets yaw and pitch to zero while preserving corner geometry used for dimension estimation. The overlay warp, renderer pipeline, and later manual orientation adjustments remain available. Automated and manual verification is specified by QAD-TC55.
 
 ---
 
