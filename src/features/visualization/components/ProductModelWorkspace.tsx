@@ -1375,6 +1375,7 @@ export function ProductModelWorkspace({
   };
 
   const handleOpenAddModal = (title: string) => {
+    if (title === "Change Product" && !selectedProduct) return;
     setModalTitle(title);
     setIsAddModalOpen(true);
   };
@@ -1480,6 +1481,7 @@ export function ProductModelWorkspace({
 
   const handleSelectProduct = async (product: CatalogProduct) => {
     const mode = modalTitle === "Add Product" ? "add" : "change";
+    if (mode === "change" && !selectedProduct) return;
     if (pendingSwitchRef.current?.startsWith(`${mode}:${product.id}:`)) return;
     const requestId = ++switchRequestRef.current;
 
@@ -1494,6 +1496,13 @@ export function ProductModelWorkspace({
       !onProductSelect ||
       (product.id === currentProductId && mode === "change")
     ) {
+      return;
+    }
+
+    // PRD-F6 / QAD-TC59: The direct /visualization entry has no active product
+    // or asset session yet. Its owner creates the session and opens the product route.
+    if (!currentProductId && !structuralDefinition) {
+      onProductSelect(product.id, mode);
       return;
     }
 
@@ -2611,7 +2620,8 @@ export function ProductModelWorkspace({
               <button
                 type="button"
                 onClick={() => handleOpenAddModal("Change Product")}
-                className="bg-green hover:bg-[#06a3bd] text-white px-4 py-2 rounded-[10px] text-sm font-normal transition-colors cursor-pointer whitespace-nowrap"
+                disabled={!selectedProduct}
+                className="bg-green hover:bg-[#06a3bd] text-white px-4 py-2 rounded-[10px] text-sm font-normal transition-colors cursor-pointer whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Change Product
               </button>
@@ -3354,7 +3364,7 @@ export function ProductModelWorkspace({
                 <span>Tap Circle Rotate</span>
               </>
             ) : (
-              <span>Choose Add Product or Change Product to place a model.</span>
+              <span>Choose Add Product to place your first model.</span>
             )}
           </div>
 
@@ -3896,7 +3906,7 @@ export function ProductModelWorkspace({
             <div className="w-full rounded-[20px] border border-[#c3c3c3]/60 bg-white p-6 text-center shadow-xs">
               <p className="text-lg font-medium text-[#0f1422]">Your space is ready</p>
               <p className="mt-2 text-sm leading-6 text-black/65">
-                Select Add Product or Change Product above to choose from the GlassFit catalog.
+                Select Add Product above to choose your first model from the GlassFit catalog.
               </p>
             </div>
           )}
