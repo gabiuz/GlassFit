@@ -385,6 +385,7 @@ Eliminate state desynchronization, parameter loss, and rule-blocking traps in th
 | MS-38 | `PRD-F10`, `PRD-F11` | `SDD-C7` | `ERD-E13`, `ERD-E14` | `DSD-UI16` | `QAD-TC53` |
 | MS-39 | `PRD-F6` | `SDD-C5` | N/A (Transient Presentation State) | `DSD-UI4`, `DSD-UI15` | `QAD-TC54` |
 | MS-40 | `PRD-F6` | `SDD-C5` | N/A (Transient Presentation State) | `DSD-UI4` | `QAD-TC55` |
+| MS-43 | `PRD-F5`, `PRD-F14` | `SDD-C4`, `SDD-C9` | `ERD-E4`, `ERD-E5`, `ERD-E6`, `ERD-E7` | `DSD-UI10` | `QAD-TC58` |
 
 ### MS-30: Inclusive Identity and Administrator Email Change
 
@@ -425,6 +426,10 @@ MS-39 adds keyboard-operable single-degree stepper controls for yaw and pitch, b
 ### MS-40: Neutral Orientation After Perspective Fit
 
 MS-40 follows MS-39. Confirming a perspective fit sets yaw and pitch to zero while preserving corner geometry used for dimension estimation. The overlay warp, renderer pipeline, and later manual orientation adjustments remain available. Automated and manual verification is specified by QAD-TC55.
+
+### MS-43: Unconstrained Dimension Parameters and Incremental Step-Loop Structural Rules
+
+MS-43 removes artificial upper limits on width and height parameters in the admin product setup wizard (`maximum_value = null`) while preserving minimum and default dimension constraints. It introduces first-class incremental step-loop structural rules ("FOR EVERY [step] mm ADD [quantity] parts") in both the admin rule authoring interface and the Three.js parametric structural resolver (`structuralResolver.ts`), preventing repetitive conditional threshold creation. Testing sandbox supports dimensions up to 10,000mm and is covered by QAD-TC58.
 
 ---
 

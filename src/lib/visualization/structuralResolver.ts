@@ -42,12 +42,21 @@ export function resolveProductStructure({
 
   const appliedRuleIds: string[] = [];
   for (const rule of [...definition.rules].sort((a, b) => a.priority - b.priority)) {
-    if (!matchesCondition(rule.conditionData, resolvedValues)) {
-      continue;
-    }
+    const condition = rule.conditionData;
+    const ruleType = condition.rule_type ?? (condition.step_value ? "loop" : "when_then");
 
-    applyRuleAction(rule.actionData, resolvedValues, componentQuantities);
-    appliedRuleIds.push(rule.ruleId);
+    if (ruleType === "loop") {
+      const isApplied = applyStepLoopRule(condition, rule.actionData, resolvedValues, componentQuantities);
+      if (isApplied) {
+        appliedRuleIds.push(rule.ruleId);
+      }
+    } else {
+      if (!matchesCondition(condition, resolvedValues)) {
+        continue;
+      }
+      applyRuleAction(rule.actionData, resolvedValues, componentQuantities);
+      appliedRuleIds.push(rule.ruleId);
+    }
   }
 
   return {
@@ -131,6 +140,59 @@ function matchesCondition(
   }
 }
 
+function applyStepLoopRule(
+  condition: Record<string, unknown>,
+  action: Record<string, unknown>,
+  resolvedValues: Record<string, unknown>,
+  componentQuantities: Record<string, number>,
+): boolean {
+  const paramKey = typeof condition.parameter_key === "string" 
+    ? condition.parameter_key 
+    : (typeof condition.parameter === "string" ? condition.parameter : null);
+
+  if (!paramKey) return false;
+
+  const actualValue = toNumber(resolvedValues[paramKey], Number.NaN);
+  if (Number.isNaN(actualValue)) return false;
+
+  const stepValue = toNumber(condition.step_value, 0);
+  if (stepValue <= 0) return false; // Prevent division by zero or infinite loop
+
+  const startValue = toNumber(condition.start_value, 0);
+  const delta = actualValue - startValue;
+
+  if (delta <= 0) return false;
+
+  const steps = Math.floor(delta / stepValue);
+  if (steps <= 0) return false;
+
+  const quantityPerStep = toNumber(action.value, 1);
+  const totalAdded = steps * quantityPerStep;
+
+  const targetType = action.target_type;
+  const targetKey = action.target_key;
+  const actionType = action.action_type;
+
+  if (typeof targetKey === "string" && targetType === "component") {
+    const normalizedKey = normalizeComponentKey(targetKey);
+    const currentQty = componentQuantities[normalizedKey] ?? 0;
+
+    if (actionType === "set_quantity") {
+      componentQuantities[normalizedKey] = Math.max(0, totalAdded);
+    } else {
+      // Default: "add_quantity"
+      componentQuantities[normalizedKey] = Math.max(0, currentQty + totalAdded);
+    }
+    return true;
+  } else if (typeof targetKey === "string" && targetType === "parameter") {
+    const currentVal = toNumber(resolvedValues[targetKey], 0);
+    resolvedValues[targetKey] = currentVal + totalAdded;
+    return true;
+  }
+
+  return false;
+}
+
 function applyRuleAction(
   action: Record<string, unknown>,
   resolvedValues: Record<string, unknown>,
@@ -150,10 +212,16 @@ function applyRuleAction(
   }
 
   // Support new flat structure from admin UI builder
-  if (action.target_type === "component" && action.action_type === "set_quantity" && typeof action.target_key === "string") {
-      componentQuantities[normalizeComponentKey(action.target_key)] = Math.max(0, toNumber(action.value, 0));
+  if (action.target_type === "component" && typeof action.target_key === "string") {
+    const normalizedKey = normalizeComponentKey(action.target_key);
+    const currentQty = componentQuantities[normalizedKey] ?? 0;
+    if (action.action_type === "set_quantity") {
+      componentQuantities[normalizedKey] = Math.max(0, toNumber(action.value, 0));
+    } else if (action.action_type === "add_quantity") {
+      componentQuantities[normalizedKey] = Math.max(0, currentQty + toNumber(action.value, 0));
+    }
   } else if (action.target_type === "parameter" && action.action_type === "set_value" && typeof action.target_key === "string") {
-      resolvedValues[action.target_key] = action.value;
+    resolvedValues[action.target_key] = action.value;
   }
 }
 
