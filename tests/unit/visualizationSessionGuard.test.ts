@@ -12,6 +12,7 @@ import type {
   PlacedOverlay,
   ProductConfigurationSnapshot,
   VisualizationSessionState,
+  ProductStructuralDefinition,
 } from "../../src/lib/visualization/types";
 import type { SpaceImageSession } from "../../src/lib/imageApi";
 
@@ -232,6 +233,31 @@ describe("PRD-F5/QAD-TC25: Change Product Transition (mode: change)", () => {
     assert.equal(nextState.selectedProductId, "prod-screen-door");
     assert.equal(nextState.placedOverlays.length, 0);
     assert.equal(nextState.productConfiguration, null);
+  });
+});
+
+describe("IMP-MS44/QAD-TC59: atomic product activation", () => {
+  const definition = { product: { productId: "prod-screen-door" } } as ProductStructuralDefinition;
+
+  it("commits a matching definition and configuration with the new ID", () => {
+    const next = transitionSessionState({ ...initialState, selectedProductId: "prod-fixed-window", productConfiguration: windowConfig }, {
+      nextProductId: "prod-screen-door",
+      mode: "change",
+      nextDefinition: definition,
+      nextConfiguration: doorConfig,
+    });
+    assert.equal(next.selectedProductId, definition.product.productId);
+    assert.equal(next.structuralDefinition, definition);
+    assert.equal(next.productConfiguration, doorConfig);
+  });
+
+  it("rejects a mismatched definition before changing state", () => {
+    assert.throws(() => transitionSessionState(initialState, {
+      nextProductId: "prod-fixed-window",
+      mode: "change",
+      nextDefinition: definition,
+      nextConfiguration: windowConfig,
+    }), /mismatch/);
   });
 });
 

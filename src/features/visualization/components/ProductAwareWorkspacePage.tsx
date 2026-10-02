@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { HeroSection, ProductModelWorkspace } from "@/features/visualization";
 import { useVisualizationSession } from "@/lib/visualization/visualizationSession";
 import type { ProductStructuralDefinition } from "@/lib/visualization/types";
 import type { CatalogProduct } from "@/lib/products/types";
 import { getMatchingProductConfigurationSeed } from "@/lib/visualization/configurationPropagation";
+import { seedWorkspaceDefinition, clearWorkspaceDefinitions } from "@/lib/visualization/workspaceDefinitionCache";
 
 export function ProductAwareWorkspacePage({
   productId,
@@ -23,6 +24,7 @@ export function ProductAwareWorkspacePage({
     spaceImageSession,
     workspaceBackgroundDataUrl,
     productConfiguration,
+    selectedProductId,
     pendingProductConfiguration,
     placedOverlays,
     finalSnapshotDataUrl,
@@ -37,6 +39,8 @@ export function ProductAwareWorkspacePage({
     resetVisualizationSession,
   } = useVisualizationSession();
 
+  const [active, setActive] = useState(() => ({ productId, definition: structuralDefinition }));
+  const initializedRouteRef = useRef<string | null>(null);
   const hasValidSession = Boolean(spaceImageSession);
   const matchingProductConfiguration = getMatchingProductConfigurationSeed(
     pendingProductConfiguration,
@@ -49,14 +53,28 @@ export function ProductAwareWorkspacePage({
       return;
     }
 
+    if (structuralDefinition.product.productId !== productId) return;
+    if (assetSessionId) seedWorkspaceDefinition(assetSessionId, structuralDefinition);
+    const routeKey = `${assetSessionId}:${productId}`;
+    if (initializedRouteRef.current === routeKey) return;
+    initializedRouteRef.current = routeKey;
+    setActive({ productId, definition: structuralDefinition });
+    if (selectedProductId !== productId) {
+      setProductConfiguration(null);
+    }
     setStructuralDefinition(structuralDefinition);
   }, [
+    assetSessionId,
     hasValidSession,
     productId,
     router,
     setStructuralDefinition,
+    setProductConfiguration,
+    selectedProductId,
     structuralDefinition,
   ]);
+
+  useEffect(() => () => clearWorkspaceDefinitions(), []);
 
   useEffect(() => {
     if (matchingProductConfiguration && productConfiguration) {
@@ -85,15 +103,14 @@ export function ProductAwareWorkspacePage({
       <div className="px-6 py-8 md:px-12 md:py-12 lg:px-24.25 lg:py-17.75">
         <ProductModelWorkspace
           assetSessionId={assetSessionId}
-          key={productId}
           uploadedImage={workspaceBackgroundDataUrl ?? spaceImageSession.workspaceImage.url}
           spaceImageSession={spaceImageSession}
-          structuralDefinition={structuralDefinition}
+          structuralDefinition={active.definition}
           catalogProducts={catalogProducts}
-          currentProductId={productId}
-          selectedProductName={structuralDefinition.product.productName}
+          currentProductId={active.productId}
+          selectedProductName={active.definition.product.productName}
           initialSnapshotDataUrl={finalSnapshotDataUrl}
-          initialConfiguration={productConfiguration}
+          initialConfiguration={selectedProductId === productId ? productConfiguration : null}
           initialProductConfiguration={productConfiguration ? null : matchingProductConfiguration}
           placedOverlays={placedOverlays}
           onConfigurationChange={setProductConfiguration}
@@ -107,6 +124,7 @@ export function ProductAwareWorkspacePage({
             newPlacedOverlay,
             configuration,
             targetOverlayId,
+            nextDefinition,
           ) => {
             transitionWorkspaceProduct({
               nextProductId,
@@ -114,9 +132,11 @@ export function ProductAwareWorkspacePage({
               newPlacedOverlay,
               targetOverlayId,
               nextConfiguration: configuration,
+              nextDefinition,
             });
-            if (nextProductId !== productId) {
-              router.push(`/visualize/${nextProductId}/workspace`);
+            if (nextDefinition) {
+              setActive({ productId: nextProductId, definition: nextDefinition });
+              window.history.replaceState(null, "", `/visualize/${encodeURIComponent(nextProductId)}/workspace`);
             }
           }}
           onBack={() => {
