@@ -47,6 +47,7 @@ When implementing or modifying any user interface within these milestones (such 
 | MS-38 | Quotation Preview and Browser-Saved PDF Reliability | Quotation Domain / Print Presentation | Evidence-gated Page 1 repair, canonical specification isolation, bounded print fragmentation, numeric wrapping protection, and cross-browser PDF verification | Maintenance Release | `BRD-M3`, `BRD-M5`, `PRD-F10`, `PRD-F11`, `SDD-C7`, `DSD-UI16`, `ERD-E13`, `ERD-E14`, `QAD-TC53` |
 | MS-39 | Discrete Yaw and Pitch Degree Stepper Controls | Visualization Client | Accessible single-degree yaw and pitch controls with boundary clamping and slider synchronization | Maintenance Release | `BRD-M4`, `PRD-F6`, `SDD-C5`, `DSD-UI4`, `DSD-UI15`, `QAD-TC54` |
 | MS-40 | Neutral Orientation After Perspective Fit | Visualization Client | Reset yaw and pitch to zero on fit confirmation while preserving corner-based dimension estimation and later manual adjustments | Maintenance Release, after MS-39 | `BRD-M4`, `PRD-F6`, `SDD-C5`, `DSD-UI4`, `QAD-TC55` |
+| MS-44 | Seamless Cross-Product Workspace Switching | Visualization Client | Stage target definitions and models before committing an in-place product switch | Maintenance Release | `BRD-M2`, `BRD-M4`, `PRD-F6`, `SDD-C5`, `DSD-UI4`, `QAD-TC59` |
 
 ---
 
@@ -386,6 +387,7 @@ Eliminate state desynchronization, parameter loss, and rule-blocking traps in th
 | MS-39 | `PRD-F6` | `SDD-C5` | N/A (Transient Presentation State) | `DSD-UI4`, `DSD-UI15` | `QAD-TC54` |
 | MS-40 | `PRD-F6` | `SDD-C5` | N/A (Transient Presentation State) | `DSD-UI4` | `QAD-TC55` |
 | MS-43 | `PRD-F5`, `PRD-F14` | `SDD-C4`, `SDD-C9` | `ERD-E4`, `ERD-E5`, `ERD-E6`, `ERD-E7` | `DSD-UI10` | `QAD-TC58` |
+| MS-44 | `PRD-F6` | `SDD-C4`, `SDD-C5`, `SDD-C6` | `ERD-E4`, `ERD-E5`, `ERD-E6`, `ERD-E7` | `DSD-UI4` | `QAD-TC59` |
 
 ### MS-30: Inclusive Identity and Administrator Email Change
 

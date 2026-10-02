@@ -30,6 +30,7 @@ import {
 import { variationAssetRegistry } from "./variationAssetRegistry";
 import { variationRenderQueue } from "./variationRenderQueue";
 import { normalizeAluminumFinish } from "./colorVariations";
+import { clearWorkspaceDefinitions } from "./workspaceDefinitionCache";
 
 export interface TransitionWorkspaceProductOptions {
   nextProductId: string;
@@ -37,6 +38,7 @@ export interface TransitionWorkspaceProductOptions {
   newPlacedOverlay?: PlacedOverlay;
   targetOverlayId?: string;
   nextConfiguration?: ProductConfigurationSnapshot;
+  nextDefinition?: ProductStructuralDefinition;
   placedOverlays?: PlacedOverlay[];
 }
 
@@ -90,6 +92,7 @@ export function transitionSessionState(
     newPlacedOverlay,
     targetOverlayId,
     nextConfiguration,
+    nextDefinition,
     placedOverlays: explicitPlacedOverlays,
   } = options;
 
@@ -138,12 +141,15 @@ export function transitionSessionState(
   }
 
   const isSameProduct = current.selectedProductId === nextProductId;
+  if (nextDefinition && nextDefinition.product.productId !== nextProductId) {
+    throw new Error("Workspace product definition mismatch.");
+  }
   return {
     ...current,
     selectedProductId: nextProductId,
     pendingProductConfiguration: null,
     placedOverlays: updatedPlacedOverlays,
-    structuralDefinition: isSameProduct ? current.structuralDefinition : null,
+    structuralDefinition: nextDefinition ?? (isSameProduct ? current.structuralDefinition : null),
     productConfiguration: nextConfiguration ?? null,
     variationSnapshots: [],
     activeOverlay: null,
@@ -221,6 +227,7 @@ export function VisualizationSessionProvider({
 
   const setPreparedSpaceImage = useCallback(
     (productId: string, session: SpaceImageSession) => {
+      clearWorkspaceDefinitions();
       setState((current) => {
         const nextState = createPreparedSpaceImageState(current, productId, session);
         writeStoredVisualizationSession(nextState);
@@ -377,6 +384,7 @@ export function VisualizationSessionProvider({
   }, []);
 
   const resetVisualizationSession = useCallback(() => {
+    clearWorkspaceDefinitions();
     if (state.assetSessionId) {
       variationRenderQueue.cancelNamespacePrefix(state.assetSessionId);
       void variationAssetStore.removeSession(state.assetSessionId);

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import {
@@ -24,6 +25,7 @@ import { TouchDragProxy } from "./TouchDragProxy";
 import type { CatalogProduct } from "@/lib/products/types";
 import type { SpaceImageSession, LightingAnalysis } from "@/lib/imageApi";
 import { ProductModelRenderer } from "@/lib/visualization/modelRenderer";
+import { getWorkspaceDefinition } from "@/lib/visualization/workspaceDefinitionCache";
 import {
   GlassAppearanceMode,
   GlassColorKey,
@@ -140,6 +142,7 @@ interface ProductModelWorkspaceProps {
     newPlacedOverlay?: PlacedOverlay,
     configuration?: ProductConfigurationSnapshot,
     targetOverlayId?: string,
+    nextDefinition?: ProductStructuralDefinition,
   ) => void;
   onBack: () => void;
 }
@@ -228,9 +231,17 @@ export function ProductModelWorkspace({
   const rotationSessionRef = useRef<RotationSession | null>(null);
   const appliedTemplateDefaultsRef = useRef<string | null>(
     initialConfiguration || (seedConfiguration?.widthCm && seedConfiguration.heightCm)
-      ? structuralDefinition?.template.templateId ?? null
+      ? structuralDefinition?.product.productId ?? null
       : null,
   );
+  const switchRequestRef = useRef(0);
+  const pendingSwitchRef = useRef<string | null>(null);
+  const skipPreparedBuildRef = useRef<string | null>(null);
+  const suppressNextConfigurationPublicationRef = useRef(false);
+  const assetSessionRef = useRef(assetSessionId);
+  useEffect(() => { assetSessionRef.current = assetSessionId; }, [assetSessionId]);
+  useEffect(() => () => { switchRequestRef.current += 1; }, []);
+  useEffect(() => { switchRequestRef.current += 1; pendingSwitchRef.current = null; }, [assetSessionId]);
   const dragControls = useDragControls();
   const prefersReducedMotion = useReducedMotion();
   const [zoomLevel, setZoomLevel] = useState(
@@ -991,6 +1002,12 @@ export function ProductModelWorkspace({
 
   useEffect(() => {
     if (!mvpRendererRef.current || !structuralDefinition) return;
+    const buildKey = `${structuralDefinition.product.productId}:${widthCm}:${heightCm}:${panelCount}:${includeSill}:${alumFinish}:${glassAppearance}:${glassColor}:${glassThicknessMm}`;
+    if (skipPreparedBuildRef.current === buildKey) {
+      skipPreparedBuildRef.current = null;
+      return;
+    }
+    let cancelled = false;
     setMaterialCapabilities(null);
     mvpRendererRef.current.setSize(
       renderFrameSizeRef.current.width,
@@ -1014,13 +1031,16 @@ export function ProductModelWorkspace({
         includeSill,
       },
     ).then((result) => {
-      if (!result) return;
+      if (!result || cancelled) return;
       setMaterialCapabilities(result.capabilities);
       // Preserve the last measured outline while resize interactions pause measurement.
       // The revision redraw measures the rebuilt model as soon as measurement resumes.
       setModelRevision((prev) => prev + 1);
       setProductBuildError(null);
+    }).catch((error: unknown) => {
+      if (!cancelled) setProductBuildError(error instanceof Error ? error.message : "Could not build the product model.");
     });
+    return () => { cancelled = true; };
   }, [structuralDefinition, widthCm, heightCm, panelCount, includeSill, glassAppearance, glassColor, glassThicknessMm, alumFinish]);
 
   useEffect(() => {
@@ -1152,8 +1172,8 @@ export function ProductModelWorkspace({
       return;
     }
 
-    const templateId = structuralDefinition.template.templateId;
-    if (appliedTemplateDefaultsRef.current === templateId) {
+    const productId = structuralDefinition.product.productId;
+    if (appliedTemplateDefaultsRef.current === productId) {
       return;
     }
 
@@ -1169,7 +1189,7 @@ export function ProductModelWorkspace({
     setWidthCm(nextWidthCm);
     setHeightCm(nextHeightCm);
     setOverlaySize(getOverlaySizeFromDimensions(nextWidthCm, nextHeightCm));
-    appliedTemplateDefaultsRef.current = templateId;
+    appliedTemplateDefaultsRef.current = productId;
   }, [structuralDefinition, isDoorProduct]);
 
   const currentConfiguration = useMemo<ProductConfigurationSnapshot>(() => {
@@ -1244,6 +1264,11 @@ export function ProductModelWorkspace({
 
   useEffect(() => {
     if (!structuralDefinition || !onConfigurationChange) {
+      return;
+    }
+
+    if (suppressNextConfigurationPublicationRef.current) {
+      suppressNextConfigurationPublicationRef.current = false;
       return;
     }
 
@@ -1354,8 +1379,109 @@ export function ProductModelWorkspace({
     setIsAddModalOpen(true);
   };
 
+  const activateDifferentProduct = async (intent: {
+    requestId: number;
+    productId: string;
+    mode: "add" | "change" | "edit";
+    placedOverlay?: PlacedOverlay;
+    targetOverlay?: PlacedOverlay;
+    targetLayerNumber: number;
+    targetOverlayId: string;
+  }) => {
+    if (!assetSessionId || !onProductSelect) return;
+    const requestId = intent.requestId;
+    if (requestId !== switchRequestRef.current) return;
+    const roomId = assetSessionId;
+    pendingSwitchRef.current = `${intent.mode}:${intent.productId}:${intent.targetOverlayId}`;
+    try {
+      const definition = await getWorkspaceDefinition(roomId, intent.productId);
+      const fallbackWidth = definition.product.productType.toLowerCase().includes("door") ? 900 : 2100;
+      const fallbackHeight = definition.product.productType.toLowerCase().includes("door") ? 2100 : 1500;
+      const targetConfiguration: ProductConfigurationSnapshot = intent.mode === "edit" && intent.targetOverlay
+        ? intent.targetOverlay.configuration
+        : {
+            ...currentConfiguration,
+            widthCm: Math.round(getStructuralDefaultMm(definition, "width", fallbackWidth) / 10),
+            heightCm: Math.round(getStructuralDefaultMm(definition, "height", fallbackHeight) / 10),
+            thicknessMm: Number(definition.parameters.find((parameter) => parameter.parameterKey === "thickness")?.defaultValue) || 3,
+            panelCount: Number(definition.parameters.find((parameter) => parameter.parameterKey === "pane_count")?.defaultValue) || 2,
+            includeSill: Boolean(definition.template.baseConfiguration.includeSill ?? true),
+            structuralWaiver: false,
+            aluminumFinish: "white",
+            glassAppearance: "clear",
+            glassColor: "clear",
+            glassThicknessMm: 6,
+            glassType: "regular",
+            quantity: 1,
+            yaw: 0,
+            pitch: 0,
+            rotateAngle: intent.mode === "change" ? currentConfiguration.rotateAngle : 0,
+            isFlipped: intent.mode === "change" ? currentConfiguration.isFlipped : false,
+            zoomLevel: intent.mode === "change" ? currentConfiguration.zoomLevel : DEFAULT_SCENE_ZOOM,
+            positionX: intent.mode === "change" ? currentConfiguration.positionX : 0,
+            positionY: intent.mode === "change" ? currentConfiguration.positionY : 0,
+            perspectiveFitCorners: intent.mode === "change" ? currentConfiguration.perspectiveFitCorners : null,
+            activeOcclusionIds: [],
+            manualOcclusionMaskDataUrl: null,
+            manualOcclusionPolygons: [],
+            visualParameterValues: {
+              width: Math.round(getStructuralDefaultMm(definition, "width", fallbackWidth)),
+              height: Math.round(getStructuralDefaultMm(definition, "height", fallbackHeight)),
+              thickness: Number(definition.parameters.find((parameter) => parameter.parameterKey === "thickness")?.defaultValue) || 3,
+              pane_count: Number(definition.parameters.find((parameter) => parameter.parameterKey === "pane_count")?.defaultValue) || 2,
+              includeSill: Boolean(definition.template.baseConfiguration.includeSill ?? true),
+              include_sill: Boolean(definition.template.baseConfiguration.includeSill ?? true),
+            },
+          };
+      const renderer = mvpRendererRef.current;
+      if (!renderer) throw new Error("The product renderer is unavailable.");
+      const prepared = await renderer.prepareModel(definition, {
+        width: targetConfiguration.widthCm * 10,
+        height: targetConfiguration.heightCm * 10,
+        pane_count: targetConfiguration.panelCount,
+        includeSill: targetConfiguration.includeSill,
+        include_sill: targetConfiguration.includeSill,
+      }, {
+        aluminumFinish: normalizeAluminumFinish(targetConfiguration.aluminumFinish),
+        glassAppearance: targetConfiguration.glassAppearance,
+        glassColor: targetConfiguration.glassColor ?? "clear",
+        glassThicknessMm: targetConfiguration.glassThicknessMm ?? 6,
+        includeSill: targetConfiguration.includeSill,
+      });
+      if (requestId !== switchRequestRef.current || roomId !== assetSessionRef.current) {
+        renderer.releasePreparedModel(prepared);
+        return;
+      }
+      skipPreparedBuildRef.current = `${intent.productId}:${targetConfiguration.widthCm}:${targetConfiguration.heightCm}:${targetConfiguration.panelCount}:${targetConfiguration.includeSill}:${normalizeAluminumFinish(targetConfiguration.aluminumFinish)}:${targetConfiguration.glassAppearance}:${targetConfiguration.glassColor}:${targetConfiguration.glassThicknessMm}`;
+      suppressNextConfigurationPublicationRef.current = true;
+      appliedTemplateDefaultsRef.current = intent.productId;
+      renderer.commitPreparedModel(prepared);
+      flushSync(() => {
+        applyProductConfiguration(targetConfiguration);
+        setActiveOverlayId(intent.targetOverlayId);
+        setActiveLayerNumber(intent.targetLayerNumber);
+        setMaterialCapabilities(prepared.capabilities);
+        setModelRevision((previous) => previous + 1);
+        setProductBuildError(null);
+        setIsAddModalOpen(false);
+        setIsGuardrailModalOpen(false);
+        setIsMeasurementModalOpen(false);
+        onProductSelect(intent.productId, intent.mode, intent.placedOverlay, targetConfiguration,
+          intent.mode === "edit" ? intent.targetOverlay?.overlayId : undefined, definition);
+      });
+    } catch (error) {
+      if (requestId === switchRequestRef.current && roomId === assetSessionRef.current) {
+        setProductBuildError(error instanceof Error ? error.message : "Could not switch products. Please try again.");
+      }
+    } finally {
+      if (requestId === switchRequestRef.current) pendingSwitchRef.current = null;
+    }
+  };
+
   const handleSelectProduct = async (product: CatalogProduct) => {
     const mode = modalTitle === "Add Product" ? "add" : "change";
+    if (pendingSwitchRef.current?.startsWith(`${mode}:${product.id}:`)) return;
+    const requestId = ++switchRequestRef.current;
 
     if (product.id === currentProductId && !selectedProduct) {
       resetProductPlacement();
@@ -1375,13 +1501,20 @@ export function ProductModelWorkspace({
     if (mode === "add" && selectedProduct) {
       try {
         newlyPlacedOverlay = await createPlacedOverlay(activeLayerNumber);
-        onPlacedOverlaysChange?.([...placedOverlays, newlyPlacedOverlay]);
       } catch (err) {
-        console.error("Failed to place active product before adding:", err);
+        setProductBuildError("Could not capture the current product. Please try again.");
+        return;
       }
     }
 
     const nextActiveOverlayId = `active-${product.id}-${crypto.randomUUID()}`;
+    if (product.id !== currentProductId) {
+      let maxNum = activeLayerNumber;
+      for (const overlay of placedOverlays) maxNum = Math.max(maxNum, overlay.layerNumber ?? 0);
+      await activateDifferentProduct({ requestId, productId: product.id, mode, placedOverlay: newlyPlacedOverlay,
+        targetLayerNumber: mode === "add" ? maxNum + 1 : activeLayerNumber, targetOverlayId: nextActiveOverlayId });
+      return;
+    }
     setActiveOverlayId(nextActiveOverlayId);
 
     if (mode === "add") {
@@ -1620,6 +1753,8 @@ export function ProductModelWorkspace({
 
   const handleEditPlacedOverlay = useCallback(
     async (overlay: PlacedOverlay) => {
+      if (pendingSwitchRef.current === `edit:${overlay.productId}:${overlay.overlayId}`) return;
+      const requestId = ++switchRequestRef.current;
       const targetIndex = placedOverlays.findIndex(
         (placedOverlay) => placedOverlay.overlayId === overlay.overlayId,
       );
@@ -1635,8 +1770,22 @@ export function ProductModelWorkspace({
         try {
           newlyPlaced = await createPlacedOverlay(currentActiveNum);
         } catch (err) {
-          console.error("Failed to place active product before editing layer:", err);
+          setProductBuildError("Could not capture the current product. Please try again.");
+          return;
         }
+      }
+
+      if (overlay.productId !== currentProductId) {
+        await activateDifferentProduct({
+          requestId,
+          productId: overlay.productId,
+          mode: "edit",
+          placedOverlay: newlyPlaced,
+          targetOverlay: overlay,
+          targetLayerNumber,
+          targetOverlayId: overlay.overlayId,
+        });
+        return;
       }
 
       if (newlyPlaced) {
@@ -1659,15 +1808,6 @@ export function ProductModelWorkspace({
       setIsSnapshotApplied(false);
       applyProductConfiguration(overlay.configuration);
 
-      if (overlay.productId !== currentProductId) {
-        onProductSelect?.(
-          overlay.productId,
-          "edit",
-          newlyPlaced,
-          overlay.configuration,
-          overlay.overlayId,
-        );
-      }
     },
     [
       activeLayerNumber,
