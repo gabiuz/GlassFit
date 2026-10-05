@@ -266,7 +266,7 @@ export default function Navbar({ className = "" }: ClassNameProps) {
 
   return (
     <nav
-      className={`z-100 w-full lg:w-11/12 fixed left-0 right-0 mx-auto bg-white/75 border-b lg:border border-green rounded-none lg:rounded-[30px] px-4 py-3 lg:px-6 xl:px-12 2xl:px-18.75 lg:py-5 flex justify-between items-center gap-2 lg:gap-4 xl:gap-6 shadow-[-5px_4px_30px_0px_rgba(4,94,109,0.30)] transition-all duration-300 ${isScrolled ? "top-0 lg:top-2 shadow-md bg-white/90" : "top-0 lg:top-21.5"
+      className={`z-100 w-full lg:w-11/12 lg:max-w-[3000px] fixed left-0 right-0 mx-auto bg-white/75 border-b lg:border border-green rounded-none lg:rounded-[30px] px-4 py-3 lg:px-6 xl:px-12 2xl:px-18.75 lg:py-5 flex justify-between items-center gap-2 lg:gap-4 xl:gap-6 shadow-[-5px_4px_30px_0px_rgba(4,94,109,0.30)] transition-all duration-300 ${isScrolled ? "top-0 lg:top-2 shadow-md bg-white/90" : "top-0 lg:top-21.5"
         } ${className}`}
     >
       {/* Logo */}
