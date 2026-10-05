@@ -46,6 +46,7 @@ GlassFit is a responsive, web-based photo-simulation and consultation-support pl
 | IMP-MS42 | Context-Aware Obstruction Soft-Warning Tooltips | `docs/implementation/ms42.md` | Implemented | October 1, 2026 | GlassFit Capstone Team |
 | IMP-MS43 | Unconstrained Dimension Parameters and Incremental Step-Loop Structural Rules | `docs/implementation/ms43.md` | Implemented | October 1, 2026 | GlassFit Capstone Team |
 | IMP-MS44 | Seamless Cross-Product Switching in the Visualization Workspace | `docs/implementation/ms44.md` | Implemented, pending manual QA | October 2, 2026 | GlassFit Capstone Team |
+| IMP-MS45 | Preview-Preserving Material Mapping | `docs/plans/ms45-material-link-ux.md` | Implemented, pending manual QA | October 6, 2026 | GlassFit Capstone Team |
 
 ---
 
@@ -71,6 +72,7 @@ GlassFit is a responsive, web-based photo-simulation and consultation-support pl
 | BRD-M4 (Achieve High Usability) | PRD-F6 (Photo-Based Visualization Workspace) | SDD-C5 (Visualization Canvas) | N/A (Transient Presentation State) | QAD-TC55 | Ready for Implementation |
 | BRD-M2, BRD-M4 (Parametric Scalability & Catalog Flexibility) | PRD-F5, PRD-F14 | SDD-C4, SDD-C9 | ERD-E4, ERD-E5, ERD-E6, ERD-E7 | QAD-TC58 | Implemented |
 | BRD-M2, BRD-M4 (Cross-Product Workspace Continuity) | PRD-F6 | SDD-C4, SDD-C5, SDD-C6 | ERD-E4, ERD-E5, ERD-E6, ERD-E7 | QAD-TC59 | Implemented, pending manual QA |
+| BRD-M4, BRD-M5 (Admin Mapping Usability) | PRD-F14 | SDD-C9, DSD-UI10 | ERD-E6, ERD-E17 | QAD-TC60 | Implemented, pending manual QA |
 
 ---
 
@@ -117,6 +119,7 @@ GlassFit is a responsive, web-based photo-simulation and consultation-support pl
 | October 1, 2026 | `docs/implementation/ms40.md`, `docs/prd-glassfit.md`, `docs/sdd-glassfit.md`, `docs/qad-glassfit.md`, `docs/milestone.md`, `docs/index.md` | GlassFit Capstone Team | Added the PRD-F6 neutral orientation requirement for perspective-fit confirmation, SDD-C5 state behavior, QAD-TC55, and sequential MS39/MS40 traceability | Pending |
 | October 1, 2026 | `docs/implementation/ms43.md`, `docs/index.md`, `src/lib/visualization/structuralResolver.ts`, `src/features/admin/products/setup/ParametersAndRulesSection.tsx`, `src/features/admin/products/setup/ValidationWorkspaceSection.tsx` | GlassFit Capstone Team | Implemented unconstrained width/height dimension parameters, incremental step-loop structural rules ("FOR EVERY ... ADD ..."), and QAD-TC58 verification | Pending |
 | October 2, 2026 | `docs/implementation/ms44.md`, `docs/qad-glassfit.md`, `docs/milestone.md`, `docs/index.md` | GlassFit Capstone Team | Implemented staged cross-product workspace switching and registered QAD-TC59; browser acceptance remains pending | Pending |
+| October 6, 2026 | `docs/plans/ms45-material-link-ux.md`, `docs/dsd-glassfit.md`, `docs/qad-glassfit.md`, `docs/milestone.md`, `docs/index.md` | GlassFit Capstone Team | Implemented preview-preserving material mapping, explicit pricing-driver editing, and QAD-TC60 traceability; authenticated browser acceptance remains pending | Pending |
 
 
 

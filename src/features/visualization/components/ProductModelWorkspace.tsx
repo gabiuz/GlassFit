@@ -3740,8 +3740,9 @@ export function ProductModelWorkspace({
                                 <span className="text-[#0f1422] text-base font-medium">{quantity}</span>
                                 <button
                                   type="button"
-                                  onClick={() => setQuantity((q) => q + 1)}
-                                  className="p-1 hover:opacity-75 transition-opacity cursor-pointer"
+                                  onClick={() => setQuantity((q) => Math.min(3, q + 1))}
+                                  disabled={quantity >= 3}
+                                  className={`p-1 transition-opacity ${quantity >= 3 ? "opacity-30 cursor-not-allowed" : "hover:opacity-75 cursor-pointer"}`}
                                 >
                                   <Image
                                     src="/visualization/plus-solid-full 1.svg"
