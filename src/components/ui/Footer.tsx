@@ -31,14 +31,6 @@ const socialMediaIcons = [
     alt: "LinkedIn",
     href: "#",
   },
-  {
-    key: "youtube",
-    src: "/social_media_icons/YouTube.svg",
-    width: 25,
-    height: 18.06,
-    alt: "YouTube",
-    href: "#",
-  },
 ];
 
 export default function Footer({ className = "" }: FooterProps) {
@@ -46,7 +38,7 @@ export default function Footer({ className = "" }: FooterProps) {
     <footer
       className={`w-full bg-white shadow-[inset_0_14px_18px_-12px_rgba(0,0,0,0.25)] ${className}`}
     >
-      <div className="mx-auto px-6 py-10 md:px-10 md:py-12 lg:px-30 lg:py-15">
+      <div className="mx-auto w-full max-w-[3267px] px-6 py-10 md:px-10 md:py-12 lg:px-30 lg:py-15">
         <div className="flex flex-col items-center gap-10 md:flex-row md:flex-wrap md:items-start md:justify-between lg:flex-nowrap lg:justify-between text-center md:text-left">
           <div className="flex flex-col items-center md:items-start gap-7.75">
             <Link href="/">
@@ -113,11 +105,13 @@ export default function Footer({ className = "" }: FooterProps) {
           </div>
         </div>
       </div>
-      <div className="bg-grad-dark text-white flex flex-col md:flex-row gap-4 justify-between items-center px-6 md:px-10 lg:px-27.5 py-4 md:py-2.5 text-center text-sm lg:text-base">
-        <p>© 2026 R.R.D Glass and Aluminum. All rights reserved.</p>
-        <div className="flex gap-6 md:gap-8 lg:gap-14">
-          <Link href="/privacy" className="hover:underline cursor-pointer">Privacy Policy</Link>
-          <Link href="/terms" className="hover:underline cursor-pointer">Terms &amp; Conditions</Link>
+      <div className="bg-grad-dark text-white">
+        <div className="mx-auto flex w-full max-w-[3267px] flex-col items-center justify-between gap-4 px-6 py-4 text-center text-sm md:flex-row md:px-10 md:py-2.5 lg:px-27.5 lg:text-base">
+          <p>© 2026 R.R.D Glass and Aluminum. All rights reserved.</p>
+          <div className="flex gap-6 md:gap-8 lg:gap-14">
+            <Link href="/privacy" className="hover:underline cursor-pointer">Privacy Policy</Link>
+            <Link href="/terms" className="hover:underline cursor-pointer">Terms &amp; Conditions</Link>
+          </div>
         </div>
       </div>
     </footer>
