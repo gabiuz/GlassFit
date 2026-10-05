@@ -32,6 +32,8 @@ interface PartInspectorDrawerProps {
   rawMaterials: RawMaterial[];
   onUpdateParts: (updates: Partial<PartInspectorConfig>) => void;
   onDeselect: () => void;
+  onOpenMaterialMapping: () => void;
+  onOpenPricingDrivers: () => void;
 }
 
 export function PartInspectorDrawer({
@@ -39,6 +41,8 @@ export function PartInspectorDrawer({
   rawMaterials,
   onUpdateParts,
   onDeselect,
+  onOpenMaterialMapping,
+  onOpenPricingDrivers,
 }: PartInspectorDrawerProps) {
   if (selectedParts.length === 0) {
     return (
@@ -59,7 +63,10 @@ export function PartInspectorDrawer({
 
   const isMulti = selectedParts.length > 1;
   const primary = selectedParts[0];
-  const currentRawMaterial = rawMaterials.find((m) => m.id === primary.rawMaterialId);
+  const sameMaterial = selectedParts.every((part) => part.rawMaterialId === primary.rawMaterialId);
+  const sameDriver = selectedParts.every((part) => part.dimensionBinding === primary.dimensionBinding);
+  const sameSpan = selectedParts.every((part) => part.spanRatio === primary.spanRatio);
+  const currentRawMaterial = sameMaterial ? rawMaterials.find((m) => m.id === primary.rawMaterialId) : undefined;
 
   return (
     <div className="flex flex-col h-full bg-white divide-y divide-neutral-100">
@@ -87,99 +94,36 @@ export function PartInspectorDrawer({
       </div>
 
       <div className="p-4 overflow-y-auto space-y-4 flex-1">
-        <div className="space-y-1.5">
-          <label className="text-xs font-medium text-neutral-700 block">
-            Material Link (Catalog)
-          </label>
-          <select
-            value={primary.rawMaterialId || ''}
-            onChange={(e) => onUpdateParts({ rawMaterialId: e.target.value || null })}
-            className="w-full border border-neutral-200 rounded-[8px] px-3 py-2 text-xs focus:border-[#07b6d3] outline-none bg-white"
-          >
-            <option value="">Unassigned (Free component)</option>
-            {rawMaterials.map((m) => (
-              <option key={m.id} value={m.id}>
-                [{m.category}] {m.description} - PHP {Math.round(m.unit_price * 100) / 100}/{m.billing_unit}
-              </option>
-            ))}
-          </select>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-medium text-neutral-700">Material Link (Catalog)</span>
+            <button type="button" onClick={onOpenMaterialMapping} className="text-xs font-semibold text-[#078ca5] hover:underline focus-visible:outline-2 focus-visible:outline-[#07b6d3]">
+              Map materials
+            </button>
+          </div>
+          <p className="rounded-[8px] border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
+            {sameMaterial ? currentRawMaterial?.material_code ?? (primary.rawMaterialId ? 'Unavailable material' : 'Unassigned (Free component)') : 'Mixed materials'}
+          </p>
           {currentRawMaterial && (
-            <div className="text-[11px] text-neutral-600 bg-sky-50/50 p-2.5 rounded-[8px] border border-sky-100/80 space-y-1">
-              <div className="flex justify-between items-center">
-                <span>Base Unit Rate:</span>
-                <span className="font-medium text-[#0f1422]">PHP {currentRawMaterial.unit_price.toFixed(2)} / {currentRawMaterial.billing_unit}</span>
-              </div>
-              <div className="flex justify-between items-center text-neutral-500">
-                <span>Cutting Scrap Allowance:</span>
-                <span className="font-medium text-amber-600">+{(currentRawMaterial.waste_allowance * 100).toFixed(1)}%</span>
-              </div>
-              <div className="flex justify-between items-center pt-1 border-t border-sky-100 text-[#07b6d3] font-medium">
-                <span>Effective Rate:</span>
-                <span>PHP {(currentRawMaterial.unit_price * (1 + currentRawMaterial.waste_allowance)).toFixed(2)} / {currentRawMaterial.billing_unit}</span>
-              </div>
+            <div className="space-y-1 rounded-[8px] border border-sky-100/80 bg-sky-50/50 p-2.5 text-[11px] text-neutral-600">
+              <div className="flex items-center justify-between"><span>Base Unit Rate:</span><span>PHP {currentRawMaterial.unit_price.toFixed(2)} / {currentRawMaterial.billing_unit}</span></div>
+              <div className="flex items-center justify-between"><span>Cutting Scrap Allowance:</span><span>+{(currentRawMaterial.waste_allowance * 100).toFixed(1)}%</span></div>
+              <div className="flex items-center justify-between border-t border-sky-100 pt-1 font-medium text-[#078ca5]"><span>Effective Rate:</span><span>PHP {(currentRawMaterial.unit_price * (1 + currentRawMaterial.waste_allowance)).toFixed(2)} / {currentRawMaterial.billing_unit}</span></div>
             </div>
           )}
         </div>
 
-        <div className="space-y-1.5">
-          <label className="text-xs font-medium text-neutral-700 block">
-            Dimension Driver
-          </label>
-          <div className="grid grid-cols-2 gap-2">
-            {(['WIDTH', 'HEIGHT', 'AREA', 'FIXED'] as DimensionBinding[]).map((driver) => (
-              <button
-                key={driver}
-                type="button"
-                onClick={() => onUpdateParts({ dimensionBinding: driver })}
-                className={primary.dimensionBinding === driver ? 'px-3 py-2 rounded-[8px] text-xs font-medium border text-center transition-all border-[#07b6d3] bg-[#07b6d3]/10 text-[#07b6d3]' : 'px-3 py-2 rounded-[8px] text-xs font-medium border text-center transition-all border-neutral-200 text-neutral-600 hover:bg-neutral-50'}
-              >
-                {driver === 'WIDTH' && 'Width (1D)'}
-                {driver === 'HEIGHT' && 'Height (1D)'}
-                {driver === 'AREA' && 'Area (2D)'}
-                {driver === 'FIXED' && 'Static / Fixed'}
-              </button>
-            ))}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-medium text-neutral-700">Pricing Driver</span>
+            <button type="button" onClick={onOpenPricingDrivers} className="text-xs font-semibold text-[#078ca5] hover:underline focus-visible:outline-2 focus-visible:outline-[#07b6d3]">
+              Review drivers
+            </button>
           </div>
+          <p className="rounded-[8px] border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
+            {sameDriver ? primary.dimensionBinding : 'Mixed drivers'} · {sameSpan ? `${primary.spanRatio.toFixed(2)}x` : 'Mixed ratios'}
+          </p>
         </div>
-
-
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <label className="text-xs font-medium text-neutral-700">
-              Span Ratio / Multiplier
-            </label>
-            <span className="text-xs font-mono text-neutral-500">
-              {primary.spanRatio.toFixed(4)}x
-            </span>
-          </div>
-          <div className="flex gap-1.5">
-            {[
-              { label: '1.0x (Full)', val: 1.0 },
-              { label: '0.5x (Half)', val: 0.5 },
-              { label: '0.33x (Third)', val: 0.3333 },
-            ].map((preset) => (
-              <button
-                key={preset.val}
-                type="button"
-                onClick={() => onUpdateParts({ spanRatio: preset.val })}
-                className={Math.abs(primary.spanRatio - preset.val) < 0.01 ? 'flex-1 py-1.5 rounded-[6px] text-xs font-medium border text-center transition-all border-[#07b6d3] bg-[#07b6d3]/10 text-[#07b6d3]' : 'flex-1 py-1.5 rounded-[6px] text-xs font-medium border text-center transition-all border-neutral-200 text-neutral-600 hover:bg-neutral-50'}
-              >
-                {preset.label}
-              </button>
-            ))}
-          </div>
-          <input
-            type="number"
-            step="0.01"
-            min="0"
-            max="10"
-            value={primary.spanRatio}
-            onChange={(e) => onUpdateParts({ spanRatio: parseFloat(e.target.value) || 0 })}
-            className="w-full border border-neutral-200 rounded-[8px] px-3 py-1.5 text-xs focus:border-[#07b6d3] outline-none mt-1"
-            placeholder="Custom Ratio"
-          />
-        </div>
-
 
         <div className="bg-neutral-50 p-3 rounded-[10px] border border-neutral-200 space-y-2.5">
           <div className="flex items-center justify-between">

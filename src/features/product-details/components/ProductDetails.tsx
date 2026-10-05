@@ -49,6 +49,12 @@ const segmentClass = (selected: boolean) =>
     selected ? "border-black bg-black text-white" : "border-[#c3c3c3] text-black hover:border-black"
   }`;
 
+const MAX_PRODUCT_DETAILS_QUANTITY = 3;
+
+function limitProductDetailsQuantity(value: string | number): number {
+  return Math.min(MAX_PRODUCT_DETAILS_QUANTITY, normalizeProductQuantity(value));
+}
+
 export function ProductDetails({ product }: { product: ProductDetail }) {
   const router = useRouter();
   const {
@@ -107,7 +113,7 @@ export function ProductDetails({ product }: { product: ProductDetail }) {
   const has3d = Boolean(product.preview_glb_url);
   const supportedProductType = isRrdSupportedProductType(product.product_type) ? product.product_type : null;
   const supportsConfiguration = supportedProductType !== null;
-  const normalizedQuantity = normalizeProductQuantity(quantityInput);
+  const normalizedQuantity = limitProductDetailsQuantity(quantityInput);
   const glassAppearance = mapGlassTypeToAppearanceMode(selectedGlassType);
   const priceLabel = product.base_price > 0
     ? `Starting at ₱${product.base_price.toLocaleString("en-PH")}`
@@ -123,7 +129,7 @@ export function ProductDetails({ product }: { product: ProductDetail }) {
   }, [product.preview_glb_url]);
 
   const commitQuantity = (value: string | number) => {
-    setQuantityInput(String(normalizeProductQuantity(value)));
+    setQuantityInput(String(limitProductDetailsQuantity(value)));
   };
 
   const handleVisualize = () => {
@@ -144,7 +150,7 @@ export function ProductDetails({ product }: { product: ProductDetail }) {
         ...(dimensions.status === "valid"
           ? { widthCm: dimensions.widthCm, heightCm: dimensions.heightCm }
           : {}),
-        quantity: normalizeProductQuantity(quantityInput),
+        quantity: limitProductDetailsQuantity(quantityInput),
       });
     } else {
       clearPendingProductConfiguration();
@@ -373,11 +379,11 @@ export function ProductDetails({ product }: { product: ProductDetail }) {
 
                 <div className="flex w-fit shrink-0 flex-col gap-5">
                   <p className="text-base leading-6 font-medium text-black">Quantity</p>
-                  <label htmlFor="product-quantity" className="text-base leading-6 font-normal text-[#c3c3c3]">Qty</label>
+                  <label htmlFor="product-quantity" className="text-base leading-6 font-normal text-[#c3c3c3]">Qty (max 3)</label>
                   <div className="flex items-center gap-2.5 rounded-[10px] border border-[#c3c3c3] bg-white px-2 py-1.5 shadow-sm transition-colors focus-within:border-black">
-                    <button type="button" aria-label="Decrease quantity" aria-pressed="false" onClick={() => commitQuantity(normalizedQuantity - 1)} className="shrink-0 text-black"><Minus className="h-3.5 w-3.5" /></button>
-                    <input id="product-quantity" type="number" min="1" max="999" step="1" value={quantityInput} onChange={(event) => setQuantityInput(event.target.value)} onBlur={() => commitQuantity(quantityInput)} className="w-16 bg-transparent text-center text-base font-normal text-black outline-none" />
-                    <button type="button" aria-label="Increase quantity" aria-pressed="false" onClick={() => commitQuantity(normalizedQuantity + 1)} className="shrink-0 text-black"><Plus className="h-3.5 w-3.5" /></button>
+                    <button type="button" aria-label="Decrease quantity" onClick={() => commitQuantity(normalizedQuantity - 1)} disabled={normalizedQuantity <= 1} className="shrink-0 text-black disabled:cursor-not-allowed disabled:opacity-30"><Minus className="h-3.5 w-3.5" /></button>
+                    <input id="product-quantity" type="number" min="1" max="3" step="1" value={quantityInput} onChange={(event) => setQuantityInput(event.target.value === "" ? "" : String(limitProductDetailsQuantity(event.target.value)))} onBlur={() => commitQuantity(quantityInput)} className="w-16 bg-transparent text-center text-base font-normal text-black outline-none" />
+                    <button type="button" aria-label="Increase quantity" title={normalizedQuantity >= MAX_PRODUCT_DETAILS_QUANTITY ? "Maximum quantity is 3" : "Increase quantity"} onClick={() => commitQuantity(normalizedQuantity + 1)} disabled={normalizedQuantity >= MAX_PRODUCT_DETAILS_QUANTITY} className="shrink-0 text-black disabled:cursor-not-allowed disabled:opacity-30"><Plus className="h-3.5 w-3.5" /></button>
                   </div>
                 </div>
               </div>

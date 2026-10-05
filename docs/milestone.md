@@ -48,6 +48,7 @@ When implementing or modifying any user interface within these milestones (such 
 | MS-39 | Discrete Yaw and Pitch Degree Stepper Controls | Visualization Client | Accessible single-degree yaw and pitch controls with boundary clamping and slider synchronization | Maintenance Release | `BRD-M4`, `PRD-F6`, `SDD-C5`, `DSD-UI4`, `DSD-UI15`, `QAD-TC54` |
 | MS-40 | Neutral Orientation After Perspective Fit | Visualization Client | Reset yaw and pitch to zero on fit confirmation while preserving corner-based dimension estimation and later manual adjustments | Maintenance Release, after MS-39 | `BRD-M4`, `PRD-F6`, `SDD-C5`, `DSD-UI4`, `QAD-TC55` |
 | MS-44 | Seamless Cross-Product Workspace Switching | Visualization Client | Stage target definitions and models before committing an in-place product switch | Maintenance Release | `BRD-M2`, `BRD-M4`, `PRD-F6`, `SDD-C5`, `DSD-UI4`, `QAD-TC59` |
+| MS-45 | Preview-Preserving Material Mapping | Admin Components UI | Keep the 3D preview visible while batch linking selected parts, reviewing pricing drivers separately, and identifying incomplete material links | Maintenance Release | `PRD-F14`, `SDD-C9`, `DSD-UI10`, `ERD-E6`, `ERD-E17`, `QAD-TC60` |
 
 ---
 
@@ -388,6 +389,7 @@ Eliminate state desynchronization, parameter loss, and rule-blocking traps in th
 | MS-40 | `PRD-F6` | `SDD-C5` | N/A (Transient Presentation State) | `DSD-UI4` | `QAD-TC55` |
 | MS-43 | `PRD-F5`, `PRD-F14` | `SDD-C4`, `SDD-C9` | `ERD-E4`, `ERD-E5`, `ERD-E6`, `ERD-E7` | `DSD-UI10` | `QAD-TC58` |
 | MS-44 | `PRD-F6` | `SDD-C4`, `SDD-C5`, `SDD-C6` | `ERD-E4`, `ERD-E5`, `ERD-E6`, `ERD-E7` | `DSD-UI4` | `QAD-TC59` |
+| MS-45 | `PRD-F14` | `SDD-C9` | `ERD-E6`, `ERD-E17` | `DSD-UI10` | `QAD-TC60` |
 
 ### MS-30: Inclusive Identity and Administrator Email Change
 
