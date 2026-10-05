@@ -37,7 +37,7 @@ function ProductSectionContent({ fetchError }: { fetchError: string | null }) {
   }
 
   return (
-    <section className="px-0 py-4 sm:p-4 md:p-6 lg:p-10 flex flex-col xl:flex-row gap-8 items-start w-full">
+    <section className="px-0 py-4 sm:p-4 md:p-6 lg:p-10 flex flex-col xl:flex-row gap-8 items-start w-full 2xl:-mx-14 2xl:w-[calc(100%+7rem)]">
       {/* Desktop Sidebar filter (hidden below xl breakpoint) */}
       <div className="hidden xl:block w-full xl:w-102 shrink-0">
         <ProductFilter />
