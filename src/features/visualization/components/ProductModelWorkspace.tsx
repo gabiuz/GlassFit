@@ -2536,23 +2536,8 @@ export function ProductModelWorkspace({
 
       {/* ── Top Toolbar Controls ── */}
       <div className={shouldLockMobileEditor ? "hidden" : "w-full flex flex-col md:flex-row items-center justify-between gap-6 mb-10"}>
-        {/* Left: Undo, Redo, Zoom */}
+        {/* Left: Zoom */}
         <div className="flex flex-wrap items-center gap-4 sm:gap-6 justify-center md:justify-start">
-          {/* Undo / Redo */}
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              className="bg-[#0f1422] hover:bg-black text-white px-4 py-2 rounded-[10px] text-sm font-normal transition-colors cursor-pointer"
-            >
-              Undo
-            </button>
-            <button
-              type="button"
-              className="bg-white border border-[#c3c3c3] hover:bg-neutral-50 text-[#0f1422] px-4 py-2 rounded-[10px] text-sm font-normal transition-colors cursor-pointer"
-            >
-              Redo
-            </button>
-          </div>
 
           {/* Zoom Controls */}
           <div className="bg-white border border-[#c3c3c3] flex items-center justify-center gap-3 px-4 py-2 rounded-[10px] select-none">
