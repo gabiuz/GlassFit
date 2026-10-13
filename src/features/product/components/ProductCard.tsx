@@ -5,6 +5,7 @@ import Button from "@/components/shared/Button";
 import Image from "next/image";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { CatalogProduct } from "@/lib/products/types";
+import { formatPeso } from "@/lib/format";
 
 interface ProductCardProps {
   product: CatalogProduct;
@@ -19,7 +20,7 @@ function formatPrice(basePrice: number): { label: string; value: string } | { me
   if (basePrice > 0) {
     return {
       label: "Starting at",
-      value: `₱ ${basePrice.toLocaleString("en-PH")}`,
+      value: formatPeso(basePrice),
     };
   }
   return { message: "Price available after configuration" };
