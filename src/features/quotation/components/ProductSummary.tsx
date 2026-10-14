@@ -14,6 +14,7 @@ import {
 } from "@/lib/pricing/pricingEngine";
 import type { ItemizedProductQuotation } from "@/lib/pricing/types";
 import { PriceCard, ProductDetailsData } from "./PriceCard";
+import { formatPeso } from "@/lib/format";
 
 interface ProductItem {
   itemId: string;
@@ -77,13 +78,7 @@ export function ProductSummary() {
     structuralDefinition,
   ]);
 
-  const formattedTotal = new Intl.NumberFormat("en-PH", {
-    style: "currency",
-    currency: "PHP",
-    maximumFractionDigits: 0,
-  })
-    .format(consolidatedSummary.finalGrandTotal)
-    .replace("PHP", "Php");
+  const formattedTotal = formatPeso(consolidatedSummary.finalGrandTotal);
 
   return (
     <div className="bg-[#F5F5F5] flex flex-col gap-9 items-start p-6 md:p-12.5 relative rounded-[20px] w-full">
@@ -143,7 +138,7 @@ export function ProductSummary() {
             <div>
               <span className="text-white/70 block">Fabrication Labor</span>
               <span className="font-semibold text-white text-base">
-                ₱{consolidatedSummary.totalLaborCost.toLocaleString("en-PH")}
+                {formatPeso(consolidatedSummary.totalLaborCost)}
               </span>
             </div>
           </div>

@@ -26,6 +26,7 @@ import type { CatalogProduct } from "@/lib/products/types";
 import type { SpaceImageSession, LightingAnalysis } from "@/lib/imageApi";
 import { ProductModelRenderer } from "@/lib/visualization/modelRenderer";
 import { getWorkspaceDefinition } from "@/lib/visualization/workspaceDefinitionCache";
+import { formatPeso } from "@/lib/format";
 import {
   GlassAppearanceMode,
   GlassColorKey,
@@ -842,25 +843,15 @@ export function ProductModelWorkspace({
     structuralWaiver,
   ]);
 
-  const formattedPrice = useMemo(() => {
-    return new Intl.NumberFormat("en-PH", {
-      style: "currency",
-      currency: "PHP",
-      maximumFractionDigits: 0,
-    })
-      .format(realtimePricing.totalPrice)
-      .replace("PHP", "Php");
-  }, [realtimePricing.totalPrice]);
+  const formattedPrice = useMemo(
+    () => formatPeso(realtimePricing.totalPrice),
+    [realtimePricing.totalPrice],
+  );
 
-  const formattedUnitPrice = useMemo(() => {
-    return new Intl.NumberFormat("en-PH", {
-      style: "currency",
-      currency: "PHP",
-      maximumFractionDigits: 0,
-    })
-      .format(realtimePricing.unitPrice)
-      .replace("PHP", "Php");
-  }, [realtimePricing.unitPrice]);
+  const formattedUnitPrice = useMemo(
+    () => formatPeso(realtimePricing.unitPrice),
+    [realtimePricing.unitPrice],
+  );
 
   // Filter out any overlay that matches the activeOverlayId to avoid double-counting active product
   const nonActivePlacedOverlays = useMemo(() => {
@@ -946,13 +937,7 @@ export function ProductModelWorkspace({
     const isMultiProduct = totalSceneProductCount > 1;
 
     if (isApplied) {
-      const formattedTotal = new Intl.NumberFormat("en-PH", {
-        style: "currency",
-        currency: "PHP",
-        maximumFractionDigits: 0,
-      })
-        .format(totalScenePrice)
-        .replace("PHP", "Php");
+      const formattedTotal = formatPeso(totalScenePrice);
 
       return {
         title: isMultiProduct

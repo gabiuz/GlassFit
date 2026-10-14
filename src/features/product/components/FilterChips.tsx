@@ -3,6 +3,7 @@
 import React from "react";
 import { X, RotateCcw } from "lucide-react";
 import { useProductFilter, MIN_PRICE, MAX_PRICE } from "./ProductFilterContext";
+import { formatPeso } from "@/lib/format";
 
 export function FilterChips() {
   const { filters, removeChipFilter, resetFilters, activeFiltersCount } = useProductFilter();
@@ -16,7 +17,7 @@ export function FilterChips() {
   if (filters.range[0] !== MIN_PRICE || filters.range[1] !== MAX_PRICE) {
     chips.push({
       type: "range",
-      label: `₱${filters.range[0].toLocaleString()} - ₱${filters.range[1].toLocaleString()}`,
+      label: `${formatPeso(filters.range[0])} - ${formatPeso(filters.range[1])}`,
     });
   }
 

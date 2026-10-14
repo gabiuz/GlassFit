@@ -26,6 +26,7 @@ import type { RrdAluminumFinishKey } from "@/lib/visualization/colorVariations";
 import type { GlassColorKey, GlassThicknessMm } from "@/lib/visualization/types";
 import type { ProductMaterialCapabilities } from "@/lib/visualization/materialClassifier";
 import { useVisualizationSession } from "@/lib/visualization/visualizationSession";
+import { formatPeso } from "@/lib/format";
 
 const ProductModel3D = dynamic(
   () => import("./ProductModel3D").then((module) => module.ProductModel3D),
@@ -116,7 +117,7 @@ export function ProductDetails({ product }: { product: ProductDetail }) {
   const normalizedQuantity = limitProductDetailsQuantity(quantityInput);
   const glassAppearance = mapGlassTypeToAppearanceMode(selectedGlassType);
   const priceLabel = product.base_price > 0
-    ? `Starting at ₱${product.base_price.toLocaleString("en-PH")}`
+    ? `Starting at ${formatPeso(product.base_price)}`
     : null;
   const finishOptions = supportedProductType ? getAvailableFinishOptions(supportedProductType) : [];
   const glassTypeOptions = supportedProductType ? getAvailableGlassTypeOptions(supportedProductType) : [];
