@@ -62,7 +62,7 @@ export function CalibrationModeSelector({
       onModeChange(targetMode);
     } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
       event.preventDefault();
-      onModeChange("standard");
+      onModeChange("auto_detect");
     } else if (event.key === "ArrowRight" || event.key === "ArrowDown") {
       event.preventDefault();
       onModeChange("paper_fiducial");
@@ -107,7 +107,7 @@ export function CalibrationModeSelector({
           </p>
         </div>
         <div className="self-start rounded-full bg-neutral-100 px-3 py-1 text-xs font-medium text-neutral-600 sm:self-auto">
-          {mode === "paper_fiducial" ? "Precision Active" : "Quick Mode"}
+          {mode === "paper_fiducial" ? "Paper Reference" : "Automatic Detection"}
         </div>
       </div>
 
@@ -117,16 +117,16 @@ export function CalibrationModeSelector({
         aria-label="Calibration mode options"
         className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2"
       >
-        {/* Quick Preview Card */}
+        {/* Automatic Detection Card */}
         <div
           role="radio"
-          aria-checked={mode === "standard"}
+          aria-checked={mode === "auto_detect"}
           tabIndex={0}
-          onClick={() => onModeChange("standard")}
-          onKeyDown={(e) => handleModeKeyDown(e, "standard")}
+          onClick={() => onModeChange("auto_detect")}
+          onKeyDown={(e) => handleModeKeyDown(e, "auto_detect")}
           className={[
             "group relative flex min-h-[148px] cursor-pointer flex-col justify-between rounded-[16px] border p-4 sm:p-5 transition-all outline-none",
-            mode === "standard"
+            mode === "auto_detect"
               ? "border-cyan-500 bg-cyan-50/40 shadow-sm ring-2 ring-cyan-500/20"
               : "border-neutral-200 bg-white hover:border-neutral-300 hover:bg-neutral-50/50",
           ].join(" ")}
@@ -136,17 +136,17 @@ export function CalibrationModeSelector({
               <div
                 className={[
                   "flex size-5 shrink-0 items-center justify-center rounded-full border transition-colors",
-                  mode === "standard"
+                  mode === "auto_detect"
                     ? "border-cyan-500 bg-cyan-500 text-white"
                     : "border-neutral-300 bg-white group-hover:border-neutral-400",
                 ].join(" ")}
               >
-                {mode === "standard" && <Check className="size-3.5 stroke-[3]" />}
+                {mode === "auto_detect" && <Check className="size-3.5 stroke-[3]" />}
               </div>
               <div className="flex items-center gap-1.5">
                 <Zap className="size-4 text-neutral-500" />
                 <h3 className="text-base font-semibold text-black sm:text-lg">
-                  Quick Preview
+                  Automatic Detection
                 </h3>
               </div>
             </div>
@@ -156,18 +156,18 @@ export function CalibrationModeSelector({
           </div>
 
           <p className="mt-3 text-xs leading-relaxed text-neutral-600 sm:text-sm">
-            Upload any space photo immediately. Visual dimensions will be estimated using automated room heuristics.
+            Upload a space photo. Review a detected paper outline or continue with an approximate preview.
           </p>
 
           <div className="mt-4 flex items-center justify-between border-t border-neutral-100 pt-3">
             <span className="text-xs text-neutral-500">Requires no markers</span>
             <span className="rounded-md border border-neutral-200 bg-neutral-50 px-2 py-0.5 text-xs font-medium text-neutral-700">
-              Ballpark Sizing (~75% - 85%)
+              Approximate Preview Available
             </span>
           </div>
         </div>
 
-        {/* Precision Calibration Card */}
+        {/* Paper Reference Calibration Card */}
         <div
           role="radio"
           aria-checked={mode === "paper_fiducial"}
@@ -196,7 +196,7 @@ export function CalibrationModeSelector({
               <div className="flex items-center gap-1.5">
                 <Ruler className="size-4 text-cyan-600" />
                 <h3 className="text-base font-semibold text-black sm:text-lg">
-                  Precision Calibration
+                  Paper Reference Calibration
                 </h3>
               </div>
             </div>
@@ -206,13 +206,13 @@ export function CalibrationModeSelector({
           </div>
 
           <p className="mt-3 text-xs leading-relaxed text-neutral-600 sm:text-sm">
-            Tape a standard piece of bond paper to your wall before taking the photo. Eliminates measurement guesswork.
+            Tape a standard piece of bond paper to your wall before taking the photo. Confirm its format and placement after detection.
           </p>
 
           <div className="mt-4 flex items-center justify-between border-t border-neutral-100 pt-3">
             <span className="text-xs text-neutral-500">Requires 1 sheet of paper</span>
             <span className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-800">
-              High Precision (±2% - 5%)
+              Requires Reference Review
             </span>
           </div>
         </div>

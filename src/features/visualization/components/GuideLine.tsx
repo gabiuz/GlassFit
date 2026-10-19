@@ -55,7 +55,7 @@ const fiducialGuidelines: GuidelineCard[] = [
         id: "paper-same-wall",
         type: "good",
         title: "Tape Flat on Target Wall",
-        description: "Affix the paper to the exact same wall as the window or door opening. Both must share the same surface plane.",
+        description: "Affix a known sheet flat on the intended installation plane near the opening. A recessed jamb or back wall is a different plane. Do not hold the sheet in front.",
         logoSrc: "/guideline_assets/wall_icon.svg",
         imageSrc: "/guideline_assets/paper_same_wall.png",
     },
@@ -63,7 +63,7 @@ const fiducialGuidelines: GuidelineCard[] = [
         id: "paper-corners-visible",
         type: "good",
         title: "All 4 Corners Clear",
-        description: "Ensure the entire paper rectangle is in frame with no tape or objects covering the outer edges.",
+        description: "Frame the entire opening and sheet with all four corners visible. Keep fingers, folds, and objects away from the paper boundary. Prefer a less oblique view.",
         logoSrc: "/guideline_assets/light_icon.svg",
         imageSrc: "/guideline_assets/paper_corners_visible.png",
     },
@@ -71,7 +71,7 @@ const fiducialGuidelines: GuidelineCard[] = [
         id: "paper-wrong-wall",
         type: "bad",
         title: "Do Not Place on Side Walls or Floor",
-        description: "Placing paper on floors, tables, or adjacent side walls distorts depth calibration and produces false measurements.",
+        description: "Paper on a floor, table, or adjacent wall cannot measure the opening plane. Use both tape-measured dimensions if the installation surface cannot hold paper.",
         logoSrc: "/guideline_assets/avoid_icon.svg",
         imageSrc: "/guideline_assets/paper_wrong_wall.png",
     },
@@ -140,7 +140,7 @@ export function GuideLine({ mode = "standard" }: GuideLineProps = {}) {
                 </div>
                 {isFiducial && (
                     <p className="text-base text-neutral-600">
-                        Follow these paper placement steps to achieve quote-ready dimensional accuracy (error within 2% to 5%).
+                        Use these placement steps for a planar photo estimate. If paper cannot lie flat on the installation plane, enter both tape-measured dimensions or continue an approximate preview.
                     </p>
                 )}
             </div>

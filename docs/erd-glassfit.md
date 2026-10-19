@@ -457,3 +457,5 @@ Migration 014 extends `public.system_preferences` (`ERD-E18`) with durable backu
 - [x] No ASCII entity relationship diagrams inside code blocks; normalized tables used
 - [x] AGENTS hard bans applied; VOICE polish pass completed without em-dashes
 
+
+ERD-E11, ERD-E13, ERD-E14 (IMP-MS56 / QAD-TC71): versioned measurement evidence uses existing configuration and quotation JSON. `pricing_details.dimension_source` supports new `planar_paper_estimate` writes and existing `manual_tape`/`heuristic` values; `pricing_details.calibration_provenance` stores image/plane/revision identity, normalized opening corners, physical dimensions, reviewed paper correspondence, user-declared placement, and sensitivity context. Frozen quotation items retain the equivalent `calibrationProvenance` object. Existing legacy source values remain readable. No new relation or column is introduced.

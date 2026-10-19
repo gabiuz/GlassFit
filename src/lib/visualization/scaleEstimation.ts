@@ -13,48 +13,87 @@ import type {
   FiducialPaperStandard,
   Point2D,
   ScaleEstimationSignal,
+  ProductConfigurationSnapshot,
 } from "./types";
 import { PAPER_STANDARD_METRICS } from "./types";
+// IMP-MS54 / IMP-MS60: calibrated opening dimension API for workspace corners.
+export { evaluateMetricOpening, evaluateMetricOpening as evaluateMetricOpeningCorners } from "./metricGeometry";
+import { evaluateMetricOpening, type MetricReference, type MetricFrame } from "./metricGeometry";
+import { createMeasurementRecord, readMeasurementRecord } from "./measurementRecord";
+import { evaluatePlaneEligibility } from "./planeEligibility";
+import { denormalizeCorners } from "./perspectiveTransform";
+import { calculateOverlayPricing } from "../pricing/pricingEngine";
+import type { PlacedOverlay, CalibrationMetadata } from "./types";
+
+/** IMP-MS56: atomically update only the explicitly assigned photo plane. */
+export function recalculateMetricConfiguration(configuration: ProductConfigurationSnapshot,
+  reference: MetricReference | null | undefined, frame: MetricFrame,
+  meta?: import("./types").CalibrationMetadata | null): ProductConfigurationSnapshot {
+  const values = configuration.visualParameterValues;
+  const target = configuration.targetPlaneId ?? (typeof values.measurement_plane_id === "string" ? values.measurement_plane_id : null);
+  const eligibility = evaluatePlaneEligibility(meta, target, configuration.perspectiveFitCorners
+    ? denormalizeCorners(configuration.perspectiveFitCorners, frame.width, frame.height) : null, frame);
+  // Tape measurements always win, even if valid photo corners remain attached.
+  if (values.dimension_source === "manual_tape") {
+    const photo = configuration.perspectiveFitCorners && meta
+      ? createMeasurementRecord(meta, configuration.perspectiveFitCorners, frame, target) : null;
+    return { ...configuration, visualParameterValues: { ...values, calibration_provenance: null,
+      metric_measurement: null, photo_disagreement_mm: photo ? {
+        width: photo.width_mm - configuration.widthCm * 10,
+        height: photo.height_mm - configuration.heightCm * 10,
+      } : null } };
+  }
+  const previous = readMeasurementRecord(values.calibration_provenance, configuration.widthCm, configuration.heightCm);
+  // Another plane's accepted draft is independent of this reference update.
+  if (previous && reference && previous.plane_id !== reference.planeId && previous.image_identity === frame.imageId && previous.image_width_px === frame.width && previous.image_height_px === frame.height &&
+    target === previous.plane_id && JSON.stringify(configuration.perspectiveFitCorners) === JSON.stringify(previous.opening_corners)) return configuration;
+  const corners = configuration.perspectiveFitCorners;
+  const record = corners && meta ? createMeasurementRecord(meta, corners, frame, target) : null;
+  if (!record) return { ...configuration, visualParameterValues: { ...values,
+    dimension_source: "heuristic", metric_measurement: null, calibration_provenance: null,
+    metric_eligibility: eligibility.status, placement_review: meta?.placementReview ?? null,
+    metric_rejection: "Review the opening, paper format, and assigned installation plane before using a photo estimate.",
+    calibration_scale_cm_per_px: null, user_verified: false,
+  } };
+  return { ...configuration, widthCm: record.width_mm / 10, heightCm: record.height_mm / 10,
+    visualParameterValues: { ...values, width: record.width_mm, height: record.height_mm,
+      metric_measurement: evaluateMetricOpening(reference, denormalizeCorners(corners!, frame.width, frame.height), frame),
+      calibration_provenance: record, metric_rejection: null, dimension_source: record.source,
+      metric_eligibility: eligibility.status, placement_review: meta?.placementReview ?? null,
+      paper_standard: record.paper_standard, calibration_scale_cm_per_px: null, user_verified: false,
+    } };
+}
+
+/** Keep cached render inputs and draft pricing aligned with the accepted model dimensions. */
+export function recalculateMetricOverlay(overlay: PlacedOverlay, reference: MetricReference | null | undefined,
+  frame: MetricFrame, meta?: CalibrationMetadata | null): PlacedOverlay {
+  const configuration = recalculateMetricConfiguration(overlay.configuration, reference, frame, meta);
+  if (configuration === overlay.configuration) return overlay;
+  const changed = configuration.widthCm !== overlay.configuration.widthCm || configuration.heightCm !== overlay.configuration.heightCm;
+  const next = { ...overlay, configuration, variationRenderRecipe: overlay.variationRenderRecipe
+    ? { ...overlay.variationRenderRecipe, configuration } : undefined };
+  if (!changed) return next;
+  const pricing = calculateOverlayPricing({ ...next, bomResult: undefined, unitPrice: undefined, totalPrice: undefined });
+  return { ...next, ...pricing, variationAssetRefs: undefined, variationImageDataUrls: undefined };
+}
 
 /**
  * Canonical corner ordering for 4 paper corner points:
  * [top_left, top_right, bottom_right, bottom_left]
  *
- * Algorithm:
- * - Top-left corner has the smallest sum (x + y).
- * - Bottom-right corner has the largest sum (x + y).
- * - Top-right corner has the smallest difference (y - x).
- * - Bottom-left corner has the largest difference (y - x).
- *
- * Traces to: IMP-MS47, PRD-F6, SDD-C4
+ * Sort cyclically around the centroid, then rotate to the smallest x+y.
  */
 export function orderPaperCorners(pts: Point2D[]): [Point2D, Point2D, Point2D, Point2D] {
   if (pts.length !== 4) {
     throw new Error("Exactly 4 corner points are required for paper calibration.");
   }
-  const sums = pts.map((p) => p.x + p.y);
-  let tlIdx = 0;
-  let brIdx = 0;
-  for (let i = 1; i < 4; i++) {
-    if (sums[i] < sums[tlIdx]) tlIdx = i;
-    if (sums[i] > sums[brIdx]) brIdx = i;
+  if (pts.some((p) => !Number.isFinite(p.x) || !Number.isFinite(p.y))) {
+    throw new Error("Paper corners must be finite.");
   }
-
-  const diffs = pts.map((p) => p.y - p.x);
-  const remaining = [0, 1, 2, 3].filter((i) => i !== tlIdx && i !== brIdx);
-  let trIdx = remaining[0];
-  let blIdx = remaining[1];
-  if (remaining.length === 2) {
-    if (diffs[remaining[0]] > diffs[remaining[1]]) {
-      trIdx = remaining[1];
-      blIdx = remaining[0];
-    }
-  } else {
-    trIdx = (tlIdx + 1) % 4;
-    blIdx = (brIdx + 1) % 4;
-  }
-
-  return [pts[tlIdx], pts[trIdx], pts[brIdx], pts[blIdx]];
+  const center = pts.reduce((c, p) => ({ x: c.x + p.x / 4, y: c.y + p.y / 4 }), { x: 0, y: 0 });
+  const cyclic = [...pts].sort((a, b) => Math.atan2(a.y-center.y, a.x-center.x) - Math.atan2(b.y-center.y, b.x-center.x));
+  const start = cyclic.reduce((best, p, i) => p.x+p.y < cyclic[best].x+cyclic[best].y ? i : best, 0);
+  return [...cyclic.slice(start), ...cyclic.slice(0,start)] as [Point2D, Point2D, Point2D, Point2D];
 }
 
 /**
@@ -99,13 +138,13 @@ export function computeScaleFromPaperCorners(
 
   return {
     scaleCmPerPx: Number(scaleCmPerPx.toFixed(6)),
-    confidence: 0.95,
+    confidence: 0, // IMP-MS53: geometry alone cannot quantify physical accuracy.
     orderedCorners: ordered,
   };
 }
 
 /**
- * Grounded physical dimension formulation for verified fiducial paper calibration (IMP-MS52).
+ * Legacy scalar preview helper. IMP-MS54 forbids using this as a calibrated measurement.
  * Converts opening or overlay pixel dimensions directly to real-world metric centimeters
  * using the verified coplanar scale factor, with zero heuristic blending or depth distortion.
  *
@@ -154,9 +193,8 @@ export function getVerifiedScaleInitialDimensions(
  * dimensions are multiplied by the physical scale factor. When no anchor
  * is available, falls back to the existing default-height heuristic.
  *
- * When paper fiducial calibration is present (method starts with paper_fiducial
- * or verified_calibrated and confidence >= 0.65), coplanar scale is applied with 100% weighting without
- * height heuristics or depth corrections.
+ * IMP-MS54: paper signals without corner positions use approximate defaults.
+ * Calibrated dimensions are available only through evaluateMetricOpening.
  */
 export function computeEstimatedDimensions(
   quadWidthPx: number,
@@ -166,28 +204,9 @@ export function computeEstimatedDimensions(
   templateDefaultHeightCm: number | null | undefined,
   depthAtQuadCenter: number | null | undefined,
 ): DimensionEstimate {
-  // Check if high-precision paper calibration is available
-  const isPaperCalibrated =
-    (Boolean(scaleSignal?.method?.startsWith("paper_fiducial")) ||
-      scaleSignal?.method === "verified_calibrated" ||
-      scaleSignal?.method === "verified_calibrated_visual") &&
-    scaleSignal?.best_scale_cm_per_px !== null &&
-    scaleSignal?.best_scale_cm_per_px !== undefined &&
-    scaleSignal.best_scale_cm_per_px > 0 &&
-    (scaleSignal.confidence ?? 0) >= 0.65;
-
-  if (isPaperCalibrated) {
-    const scale = scaleSignal!.best_scale_cm_per_px!;
-    // Ground directly on coplanar scale: zero depth correction needed
-    const exactWidthCm = Math.round(quadWidthPx * scale);
-    const exactHeightCm = Math.round(quadHeightPx * scale);
-
-    return {
-      widthCm: Math.max(30, Math.min(600, exactWidthCm)),
-      heightCm: Math.max(30, Math.min(400, exactHeightCm)),
-      confidence: scaleSignal!.confidence,
-      method: scaleSignal!.method,
-    };
+  // IMP-MS54: spans without corner positions cannot establish a metric plane result.
+  if (scaleSignal?.method?.startsWith("paper_fiducial") || scaleSignal?.method?.startsWith("verified_calibrated")) {
+    scaleSignal = null;
   }
 
   // Normalize template default height (convert mm to cm if in mm, e.g. 2100mm -> 210cm)
@@ -339,41 +358,9 @@ export function getScaleAwareInitialDimensions(
   photoWidthPx?: number,
   photoHeightPx?: number,
 ): { widthCm: number; heightCm: number; method: string } {
-  // Check if high-precision paper calibration is active (IMP-MS50, IMP-MS52)
-  const isPaperCalibrated =
-    (Boolean(scaleSignal?.method?.startsWith("paper_fiducial")) ||
-      scaleSignal?.method === "verified_calibrated" ||
-      scaleSignal?.method === "verified_calibrated_visual") &&
-    scaleSignal?.best_scale_cm_per_px !== null &&
-    scaleSignal?.best_scale_cm_per_px !== undefined &&
-    scaleSignal.best_scale_cm_per_px > 0 &&
-    (scaleSignal.confidence ?? 0) >= 0.65;
-
-  if (isPaperCalibrated) {
-    const scale = scaleSignal!.best_scale_cm_per_px!;
-    const canvasToPhotoRatioW =
-      photoWidthPx && photoWidthPx > 0 && canvasWidthPx > 0
-        ? photoWidthPx / canvasWidthPx
-        : 1;
-    const canvasToPhotoRatioH =
-      photoHeightPx && photoHeightPx > 0 && canvasHeightPx > 0
-        ? photoHeightPx / canvasHeightPx
-        : 1;
-
-    const basePxWidth = overlayWidthPx || Math.round((canvasWidthPx || 636) * 0.35);
-    const basePxHeight = overlayHeightPx || Math.round((canvasHeightPx || 579) * 0.35);
-
-    const targetPxWidth = basePxWidth * canvasToPhotoRatioW;
-    const targetPxHeight = basePxHeight * canvasToPhotoRatioH;
-
-    const calculatedWidthCm = Math.round(targetPxWidth * scale);
-    const calculatedHeightCm = Math.round(targetPxHeight * scale);
-
-    return {
-      widthCm: Math.max(30, Math.min(600, calculatedWidthCm)),
-      heightCm: Math.max(30, Math.min(400, calculatedHeightCm)),
-      method: scaleSignal!.method,
-    };
+  // IMP-MS54: an arbitrary preview footprint is not a measured installation perimeter.
+  if (scaleSignal?.method?.startsWith("paper_fiducial") || scaleSignal?.method?.startsWith("verified_calibrated")) {
+    return { widthCm: defaultWidthCm, heightCm: defaultHeightCm, method: "default_fallback" };
   }
 
   if (

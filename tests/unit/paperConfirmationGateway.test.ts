@@ -40,7 +40,7 @@ describe("IMP-MS51 / QAD-TC66: Pre-Workspace Fiducial Paper Detection Confirmati
       const scaleResult = computeScaleFromPaperCorners(ordered, "a4");
       // A4: 21.0cm / 420px = 0.05 cm/px, 29.7cm / 594px = 0.05 cm/px
       assert.equal(scaleResult.scaleCmPerPx, 0.05);
-      assert.equal(scaleResult.confidence, 0.95);
+      assert.equal(scaleResult.confidence, 0);
     });
 
     it("verifies convexity on initial auto-detected quadrilateral", () => {
@@ -71,6 +71,7 @@ describe("IMP-MS51 / QAD-TC66: Pre-Workspace Fiducial Paper Detection Confirmati
 
       // Verify scale signal formulation
       const scaleSignal: ScaleEstimationSignal = {
+        reference_confirmed: true,
         best_scale_cm_per_px: scaleResult.scaleCmPerPx,
         confidence: scaleResult.confidence,
         method: "paper_fiducial_a4",
@@ -93,7 +94,7 @@ describe("IMP-MS51 / QAD-TC66: Pre-Workspace Fiducial Paper Detection Confirmati
       const dimensions = computeEstimatedDimensions(2000, 2400, scaleSignal, false, 120, null);
       assert.equal(dimensions.widthCm, 100); // 2000 * 0.05
       assert.equal(dimensions.heightCm, 120); // 2400 * 0.05
-      assert.equal(dimensions.method, "paper_fiducial_a4");
+      assert.equal(dimensions.method, "default_heuristic");
     });
   });
 

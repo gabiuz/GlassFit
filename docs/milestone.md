@@ -486,3 +486,42 @@ Completing these milestones arms the capstone team with robust academic and empi
 - [x] All 4 numerical validation scenarios from docs/pricing.md integrated into verification requirements
 - [x] Structural guardrails (dead-load 2.5 rule, Series 798 limits, Behavior B prompt modal) fully addressed
 - [x] Admin wizard state persistence between component and parameter tabs explicitly specified in MS-10
+
+
+## MS-53: Reliable Automatic Paper Detection and Reference Selection
+
+**Status:** Implemented, pending MS57 real-photo validation. **Specification:** [IMP-MS53](implementation/ms53.md). **Traceability:** PRD-F3, PRD-F4, SDD-C2, SDD-C3, DSD-UI3, QAD-TC68.
+
+Automatic intake now returns ranked boundary evidence and abstains when weak or ambiguous. Customers review or choose an outline, explicitly declare the physical format and same-plane placement, and retain manual corners and approximate preview as recovery paths. Detection never infers Short/A4/Long from projected image shape or silently establishes metric calibration. MS54-MS57 complete the subsequent geometry, eligibility, propagation, and quantitative release gates.
+
+
+## Milestone 54: Perspective-Correct Metric Measurement and Coordinate Integrity
+
+Implemented IMP-MS54 / QAD-TC69 on October 19, 2026. Reviewed paper corners establish a versioned workspace-pixel-to-millimeter plane transform with explicit side correspondence. Opening fits, picker callouts, and marker-triggered session recalculation share geometry validation and sensitivity diagnostics. Default preview dimensions remain approximate; invalid results do not produce clamped metric readings. Quality thresholds and real-photo accuracy remain pending MS57 validation. MS55 eligibility and MS56 full model/quotation synchronization remain subsequent milestones.
+
+
+Implemented IMP-MS55 / QAD-TC70 on October 19, 2026. Versioned placement declarations and per-opening plane assignments gate paper-derived measurements independently of outline approval. Handheld, displaced, uncertain, warped, and obscured references retain retake, both manual tape dimensions, and approximate-preview recovery. Legacy hydration and quotation review cannot inherit calibrated status from badges. MS57 physical-photo release validation remains pending.
+
+## MS56: Consistent Model Dimensions and Quotation Provenance
+
+Implemented IMP-MS56 / QAD-TC71 on October 19, 2026. Versioned, plane-bound opening measurements synchronize unrounded model and quotation dimensions, preserve manual tape precedence, revalidate hydrated drafts, and persist auditable provenance in existing JSONB. New photo writes use `planar_paper_estimate`; historical quotation snapshots remain immutable. Physical benchmark and browser acceptance remain pending MS57. See [implementation specification](implementation/ms56.md).
+
+## MS57: Real-World Measurement Benchmark and Release Gates
+
+Benchmark tooling implemented October 19, 2026 (IMP-MS57 / QAD-TC72). The private manifest runner records detector evidence and production geometry/plane decisions, separates automatic and corrected measurements, computes per-axis errors and coverage, and enforces a development/source freeze before held-out evaluation. Missing photos or tape evidence cannot become passing scores. Physical collection, threshold calibration, original baseline, supplied-sample browser checks and release acceptance remain pending. See [specification](implementation/ms57.md) and [operator instructions](../scripts/ms57/README.md).
+
+## MS58: Click-Guided Interactive Paper Localization and Seed-Constrained Candidate Selection
+
+Implemented IMP-MS58 / QAD-TC73 on October 19, 2026. Single-click paper seed localization provides an interactive tap-to-snap workflow. The normalized click coordinate constrains candidate selection (Tier 1 fast spatial query with 1.5% diagonal proximity tolerance) or triggers localized CLAHE adaptive segmentation (Tier 2 local ROI extraction). Mapped corners populate PaperDetectionConfirmationModal and FiducialPaperPickerModal with animated ripples and instant feedback while retaining manual pin editing and approximate fallbacks. See [implementation specification](implementation/ms58.md).
+
+## MS59: Sub-Pixel Edge Snapping, Magnetic Loupe Alignment, and Corner Refinement
+
+Implemented IMP-MS59 / QAD-TC74 on October 19, 2026. Sub-pixel edge snapping and magnetic alignment with straight edge line intersection locate true paper corners with under 1.0px error, bypassing corner fillet curvature, tape occlusion, and shadow gradients. The interactive 2.5x mobile loupe crosshair magnetically snaps to edge gradient peaks within 6px and smoothly releases when dragged away. See [implementation specification](implementation/ms59.md).
+
+## MS60: Perspective Unwarping Aspect Ratio Matcher, Standard Auto-Suggestion, and Model Sizing Parity
+
+Implemented IMP-MS60 / QAD-TC75 on October 19, 2026. Computes frontal-rectified unwarped aspect ratios to auto-suggest canonical Philippine paper standards (Short, A4, Long) within +-3.5% tolerance with matching confidence scores. Provides explicit side correspondence, an interactive orientation toggle (Swap Width / Height), and end-to-end unrounded millimeter synchronization across 3D model meshes, guardrails, and quotation line items. See [implementation specification](implementation/ms60.md).
+
+## MS61: Empirical Real-World Accuracy Benchmark and Comparative Release Protocol
+
+Implemented IMP-MS61 / QAD-TC76 on October 19, 2026. Establishes the comparative fiducial accuracy benchmark suite contrasting Full-Automatic (MOD-AUTO), Click-Guided Snap (MOD-CLICK), and Manual Pinning (MOD-MANUAL). Implements centroid seed generation, 25%/50%/75% perturbation robustness simulations, corner RMSE calculation with cyclic and winding invariance, per-axis error tracking against physical tape ground truth, and statistical release gate evaluation in both TypeScript (`scripts/ms57/comparator.ts`) and Python (`scripts/ms57/comparator.py`, `scripts/ms57/run_benchmark.py`). Validated via `tests/unit/clickGuidedBenchmark.test.ts`. See [implementation specification](implementation/ms61.md).

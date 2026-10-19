@@ -367,6 +367,7 @@ export interface ItemizedProductQuotation {
   totalPrice: number;
   imageUrl: string;
   bomResult: CalculatedBOMResult;
+  calibrationProvenance?: import("../visualization/measurementRecord").MeasurementRecord | null;
   dimensionSource?: string;
   paperStandard?: string | null;
   calibrationScaleCmPerPx?: number | null;

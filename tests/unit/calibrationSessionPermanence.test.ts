@@ -463,11 +463,11 @@ describe("IMP-MS49: Session-Permanent Calibration State and Fallback Pinning Lif
       );
     });
 
-    it("verifies workspace HUD displays Calibrated Scale badge and Adjust Marker link", () => {
+    it("verifies workspace HUD displays paper-calibrated photo estimate badge and Adjust Marker link", () => {
       assert.match(
         workspaceSource,
-        /Calibrated Scale: ±2-5% Precision/,
-        "Workspace HUD must show Calibrated Scale indicator",
+        /Photo estimate: paper calibrated/,
+        "Workspace HUD must show the MS56 photo estimate source",
       );
       assert.match(
         workspaceSource,
@@ -497,7 +497,7 @@ describe("IMP-MS49: Session-Permanent Calibration State and Fallback Pinning Lif
     it("verifies visualizationSession exports updateSessionCalibration and CalibrationMetadata", () => {
       assert.match(
         sessionSource,
-        /export interface CalibrationMetadata/,
+        /export (interface CalibrationMetadata|type \{ CalibrationMetadata \} from "\.\/types")/,
         "visualizationSession must export CalibrationMetadata",
       );
       assert.match(

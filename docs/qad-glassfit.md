@@ -1,11 +1,11 @@
 # Quality Assurance Document (QAD)
 
-**Project:** GlassFit (Web-Based Client-Space Visualization System for Customized Glass & Aluminum)  
-**Date:** September 9, 2026  
+**Project:** GlassFit (Web-Based Client-Space Visualization System for Customized Glass & Aluminum)
+**Date:** September 9, 2026
 **Version:** 1.3 (Capstone Production Release)
-**Owner:** Jedia Nicole I. Sagun (Quality Assurance Lead) & GlassFit Capstone Team (PUP CCIS)  
-**Status:** Locked  
-**Last reconciled:** October 19, 2026 (Added QAD-TC65 for grounded real-world 3D model sizing and quotation parity)
+**Owner:** Jedia Nicole I. Sagun (Quality Assurance Lead) & GlassFit Capstone Team (PUP CCIS)
+**Status:** Locked
+**Last reconciled:** October 19, 2026 (Added QAD-TC75 and QAD-TC76 for comparative fiducial accuracy benchmark and empirical release gates)
 **PRD:** docs/prd-glassfit.md
 
 ---
@@ -68,6 +68,11 @@
 | QAD-TC65 | PRD-F5, PRD-F6, PRD-F10 | Grounded Real-World 3D Model Sizing and Quotation Parity | Calibrated room photo active in workspace stage; perspective fit and measurement modal open | 1. Place model into calibrated room photo<br>2. Confirm 4-point perspective fit on opening<br>3. Add second product to calibrated scene<br>4. Open Measurement Confirmation Modal<br>5. Confirm calibrated dimensions vs manual override<br>6. Verify quotation item pricing_details in Supabase | Initial dimensions ground directly to coplanar scale without template blending; perspective fit dimensions match opening pixel span multiplied by scale factor (±2% to 5% accuracy); newly added products inherit calibrated scale; modal renders emerald trust badge and Choice Cards; quotation items persist dimension_source='calibrated_visual' and calibration metadata | P0 |
 | QAD-TC66 | PRD-F3, PRD-F4, PRD-F6 | Pre-Workspace Fiducial Paper Detection Confirmation and Interactive Refinement Gateway | Image uploaded with detected paper or paper calibration mode | 1. Upload photo with paper fiducial<br>2. Inspect PaperDetectionConfirmationModal<br>3. Adjust corner pins with 2.5x loupe<br>4. Change paper standard<br>5. Confirm or skip to heuristic fallback | Detected corners highlight with glowing emerald quad; single-tap approval locks status='verified_calibrated' and user_verified=true; 2.5x magnifier aids corner refinement; non-blocking fallback allows continuing with heuristics | P0 |
 | QAD-TC67 | PRD-F5, PRD-F6, PRD-F10 | Grounded Model Dimensioning Accuracy, Aperture Fitting, and Workspace Dynamic Synchronization | Calibrated workspace with active 3D models and perspective quad controls | 1. Verify model initializes with verified scale dimensions<br>2. Inspect live floating bounding box badges and lock icon<br>3. Adjust perspective quad corners and check live mm edge readouts<br>4. Click Adjust Marker from HUD and confirm new scale<br>5. Add second fixture and check scale inheritance<br>6. Confirm quotation and inspect persisted source | Dimensions ground to verified scale without template blending; bounding box displays mm/cm badges with lock icon; quad edges show live millimeter readouts; marker re-adjustment hot-rescales active and placed fixtures with Three.js mesh re-extrusion; second product inherits verified scale; quotation items persist dimension_source='verified_calibrated_visual' | P0 |
+| QAD-TC68 | PRD-F3, PRD-F4 | Reliable Automatic Paper Detection and Reference Selection | Uploaded space photo with reference or distractors | 1. Test shadow and low contrast<br>2. Test multiple rectangles and foreshortening<br>3. Confirm actual format and same-plane placement<br>4. Select, reject, or edit outline<br>5. Skip to approximate preview | Bounded workspace candidates with explicit ambiguity or abstention; no inferred physical format or automatic metric success; corrections replace old source and transforms; both aliases cleared on skip | P0 |
+| QAD-TC73 | PRD-F3, PRD-F4, SDD-C2, SDD-C3 | Click-Guided Interactive Paper Localization and Seed Snap | Low-contrast or cluttered space photo | 1. Open confirmation modal<br>2. Tap inside paper sheet<br>3. Snapped corners enclose seed | System extracts paper boundary containing seed; 4 corner pins snap to sheet perimeter within 400ms; candidate_found outcome | P0 |
+| QAD-TC74 | PRD-F4, PRD-F5, PRD-F6, SDD-C3 | Sub-Pixel Edge Snapping and Magnetic Loupe Alignment | Interactive paper confirmation modal | 1. Drag corner pin near edge<br>2. Loupe crosshair snaps to gradient peak<br>3. Inspect snapped corner error | Sub-pixel line intersection locates true corners with < 1.0px error; crosshair magnetically snaps within 6px; smooth drag release | P0 |
+| QAD-TC75 | PRD-F4, PRD-F5, PRD-F6, PRD-F10 | Perspective Unwarping Aspect Ratio Matcher and Model Sizing | Angled space capture with physical fiducial | 1. Snap paper fiducial<br>2. Inspect recommended standard and ratio<br>3. Confirm standard and fit opening | System rectifies homography, computes unwarped ratio, auto-suggests canonical Philippine standard with >= 95% confidence; model dimensions match tape within +- 2.0% | P0 |
+| QAD-TC76 | PRD-F3, PRD-F4, PRD-F5, PRD-F6, PRD-F10 | Empirical Real-World Accuracy Benchmark and Comparative Release Protocol | Physical evaluation dataset with steel tape ground truth | 1. Run MOD-AUTO, MOD-CLICK, MOD-MANUAL<br>2. Measure corner RMSE, per-axis errors, MTTC<br>3. Evaluate statistical release gates | MOD-CLICK achieves >= 92% coverage, corner RMSE <= 2.2px, median error <= 1.8%, MTTC < 6.0s (80%+ time reduction vs manual), 0 false promotions | P0 |
 
 ---
 
@@ -182,6 +187,14 @@ MS52 automated coverage validates pure coplanar scale application in `getVerifie
 
 ---
 
+## QAD-TC68: Reliable Automatic Paper Detection and Reference Selection
+
+`npm run test:ms53` covers explicit automatic intake, malformed or legacy response rejection, format and placement declaration, candidate/manual source tracking, geometry replacement, transform invalidation, and clearing rejected references. From `fastapi-service`, run `python -m pytest tests/test_paper_calibration.py -q` for deterministic synthetic boundary evidence, ambiguity, foreshortening, crop abstention, nested-outline deduplication, unknown formats, and workspace-coordinate API checks. Prior QAD-TC61/QAD-TC63 expectations for image-aspect format inference and automatic metric success are superseded by MS53. Geometry confidence is unknown until independently evaluated, rather than a hardcoded manual-pin score.
+
+Original diagnostic attachment files were unavailable during implementation. Real-photo cases QAD-TC68.1 and QAD-TC68.2, manual mobile review, threshold tuning/freezing, and holdout accuracy require MS57 validation. Synthetic test success is not a release accuracy claim.
+
+---
+
 ## Self-Check
 
 - [x] Test distribution matrix defines tooling and coverage targets for all testing layers
@@ -189,3 +202,134 @@ MS52 automated coverage validates pure coplanar scale application in `getVerifie
 - [x] Non-functional verification gates define automated pass/fail criteria
 - [x] Defect severity definitions and release blocker policies are documented
 - [x] AGENTS hard bans applied; VOICE polish pass completed without em-dashes
+
+
+## QAD-TC69: Perspective-Correct Metric Measurement and Coordinate Integrity
+
+IMP-MS54 supersedes scalar-only accuracy expectations in QAD-TC61, QAD-TC62, QAD-TC65, and QAD-TC67. Existing intake, fallback, fabrication rules, and quotation regression coverage remain applicable.
+
+| Case | Acceptance | Automated evidence |
+|---|---|---|
+| QAD-TC69.1 | Perspective synthetic width/height relative error at most 0.000001 | metricGeometry.test.ts known-plane fixtures |
+| QAD-TC69.2 | Opening position has no scalar position bias | Multiple metric locations under one camera transform |
+| QAD-TC69.3 | Resize, crop, rotation, letterbox, pan, zoom, DPR preserve coordinates | Composed synthetic transforms and normalized storage round trip |
+| QAD-TC69.4 | Explicit landscape physical edge correspondence | Long-side mapping and orientation declaration rejection |
+| QAD-TC69.5 | Degenerate, horizon, inconsistent edges, and severe sensitivity abstain | Typed rejection fixtures; out-of-range physical readings remain unclamped |
+| QAD-TC69.6 | Automatic and manual review share geometry | Matrix parity, revision increment, session recalculation and invalidation |
+| QAD-TC69.7 | Real angled photo passes independent width/height release gates or abstains | Pending annotated images and MS57 evaluation |
+
+Provisional engineering gates: paper area at least 4 square workspace pixels, paper edges at least 1 pixel, normalized solver pivot tolerance 1e-10, denominator minimum relative magnitude 1e-8, opposite-edge disagreement at most 10%, angle absolute cosine at most 0.15, and independent maximum relative sensitivity at most 10% under signed one-coordinate 1-pixel perturbations of paper and opening corners. Sensitivity is a diagnostic, not a confidence interval. MS57 must derive localization uncertainty from annotations and freeze thresholds before holdout evaluation. No real-photo accuracy claim is established.
+
+
+## QAD-TC70: Reference Plane Eligibility and Recovery
+
+Traces to IMP-MS55, PRD-F3, PRD-F4, PRD-F6, PRD-F10, SDD-C3, SDD-C5, DSD-UI3, DSD-UI4, DSD-UI7. Automated suite: `npm run test:ms55`.
+
+| Case | Scenario | Required result | Severity |
+|---|---|---|---|
+| QAD-TC70.1 | Perfect paper corners with handheld declaration | Block metric opening estimate | P0 |
+| QAD-TC70.2 | Manually map handheld paper corners | Mismatch persists; no promotion | P0 |
+| QAD-TC70.3 | Known format, reviewed correspondence, valid geometry, same-plane declaration | Estimate eligible only for explicitly assigned opening plane | P0 |
+| QAD-TC70.4 | Person near wall-mounted sheet | Advisory evidence alone does not establish or reject placement | P1 |
+| QAD-TC70.5 | Secondary product on another wall | No automatic reference inheritance; approximate fit remains available | P0 |
+| QAD-TC70.6 | Manual tape recovery | Require both positive dimensions and acknowledgement; retain manual provenance | P0 |
+| QAD-TC70.7 | Unsure placement or skip | Approximate preview without calibrated labels; preserve recovery declaration | P0 |
+
+Additional automated cases cover unknown/malformed placement, curled and hidden boundaries, stale image identity, changed dimensions, and legacy session/comparison restoration. Manual browser/device transitions and real-photo mismatch validation remain MS57 release work.
+
+## QAD-TC71: Measurement Revision, Model Parity, and Quotation Provenance (IMP-MS56)
+
+Traceability: PRD-F5, PRD-F6, PRD-F10, PRD-F11; SDD-C4, SDD-C5, SDD-C7; ERD-E11, ERD-E13, ERD-E14. All cases are P0.
+
+| Case | Scenario | Expected outcome |
+|---|---|---|
+| QAD-TC71.1 | Accept an eligible fitted opening | Evaluator, controls, mesh inputs, confirmation, and quotation share unrounded dimensions; existing edge display rounding is at most 0.5 mm |
+| QAD-TC71.2 | Recalibrate multiple draft products | Matching photo planes update together; finishes, manual dimensions, and independently recorded unrelated planes persist |
+| QAD-TC71.3 | Invalid geometry, stale revision, or reassigned plane | Remove photo acceptance; server rejects mismatched provenance in a new draft |
+| QAD-TC71.4 | Add/change/edit product and hydrate session | Preserve image/reference contract and edited overlay identity; new product defaults do not inherit a measured opening |
+| QAD-TC71.5 | Legacy, corrupted, or quota-truncated evidence | Revalidate or downgrade to approximate; existing quotation sources remain readable |
+| QAD-TC71.6 | Fractional dimensions cross a structural threshold | Structural rules and quotation pricing consume the actual unrounded millimeter dimensions |
+| QAD-TC71.7 | Recalibrate after quotation submission | Historical accepted dimensions, prices, and negotiated amounts remain unchanged |
+
+Automated command: `npm run test:ms56`. Behavioral coverage is in `tests/unit/measurementProvenance.test.ts`; existing geometry, measurement confirmation, session, quotation document, PDF, and booking reflection regression suites also apply. Real-photo accuracy, browser interaction, and production acceptance remain pending MS57.
+
+## QAD-TC72: Physical Measurement Benchmark and Release Evidence (IMP-MS57)
+
+| Test ID | Acceptance boundary | Current evidence |
+|---|---|---|
+| QAD-TC72.1 | Supplied images have documented detection/recovery outcomes | Original private samples unavailable; skipped, physical metrics unscored |
+| QAD-TC72.2 | Frontal/oblique accepted estimates pass both tape-measured axes | Error/statistics evaluator tested synthetically; physical tape records pending |
+| QAD-TC72.3 | Held/unknown/adjacent-plane paper cannot promote a metric estimate | Automated production-eligibility coverage; real-photo/browser validation pending |
+| QAD-TC72.4 | Dataset, precision, coverage, per-axis accuracy and safety pass together | Offline gates implemented; complete development and held-out sets pending |
+| QAD-TC72.5 | Mobile/desktop/zoom/refresh/multiple-product mesh and quotation parity | Existing MS54-MS56 regressions apply; manual device and physical comparison pending |
+| QAD-TC72.6 | Missing photos/tape remain skipped/unscored | Automated empty/missing evidence, uncertainty, split leakage and independent-axis tests |
+| QAD-TC72.7 | Lint/types/build/service/regression evidence exists | Run commands below and reconcile blockers before release |
+
+Commands: `npm run test:ms57`; `python -m unittest discover -s fastapi-service/tests -p test_ms57_probe.py`; private evaluation via `npm run benchmark:ms57 -- <mode> <manifest> <new-output> [evidence]`. See [operator instructions](../scripts/ms57/README.md) for all required fields, privacy handling, exit codes, development freezing and the single-use holdout cycle. Linear interpolation defines p50/p95. Matching uses independent per-capture localization uncertainty and allows cyclic/winding differences; this tolerance cannot override production geometry thresholds.
+
+Release gates require at least 60 distinct photos, 10 openings, 3 devices, 15 unsafe captures, all paper standards, 20 held-out captures, and 5 held-out cases per principal stratum. Report overlapping strata separately. Missing eligible captures stay in coverage denominators; tape-free accepted measurements stay unscored. Automatic precision >=95%, localization coverage >=80%, metric coverage >=70%, every accepted axis <=5% relative error, median axis <=2%, and zero unsafe/no-paper metric promotions must pass together. External baseline, collection review, browser/model/quotation/PDF and service acceptance cannot be certified by the offline report.
+
+## QAD-TC73: Click-Guided Interactive Paper Localization (IMP-MS58)
+
+Traces to IMP-MS58, PRD-F3, PRD-F4, SDD-C2, SDD-C3, DSD-UI3, BRD-M1, BRD-M5, BRD-M6. Automated test commands: `pytest tests/test_paper_calibration.py` in `fastapi-service/` and `npm run test:ms58`.
+
+| Test ID | Scenario | Preconditions | Execution Steps | Expected Outcome | Severity |
+|---|---|---|---|---|---|
+| QAD-TC73.1 | Seed point clicks inside paper in low-contrast image | Low-contrast room photo where full-auto detection abstained | 1. Open modal<br>2. Tap inside paper sheet<br>3. Inspect snapped pins | System extracts paper boundary containing seed point; 4 corner pins snap to sheet perimeter within 400ms | P0 |
+| QAD-TC73.2 | Seed point clicks on background distractor | Image with bright window frame and dark paper | 1. Tap on window frame<br>2. Verify system response | System does not snap paper corners to the window frame; reports abstention or keeps existing reference | P0 |
+| QAD-TC73.3 | Seed point inside candidate from Tier 1 proposal | Image has multiple candidate proposals | 1. Tap inside candidate B<br>2. Verify selected candidate | Candidate B is instantly selected without re-running full segmentation; latency < 100ms | P0 |
+| QAD-TC73.4 | Snapped pins micro-adjustment | Click-guided snap placed pins with 2px offset | 1. Drag pin 2 with loupe<br>2. Confirm reference | Pin 2 updates smoothly; modified state transitions to candidate_selected_with_manual_refinement | P1 |
+| QAD-TC73.5 | Boundary clamping and non-finite coordinate safety | Malformed client request | 1. Send seed_x = -0.5 or NaN<br>2. Inspect API response | Service safely clamps or returns 422 Unprocessable Entity without crashing | P0 |
+| QAD-TC73.6 | Coordinate space parity across display zooms | Image displayed with letterboxing or mobile viewport zoom | 1. Click paper while zoomed<br>2. Inspect mapped workspace pixels | Display coordinate transforms accurately to canonical workspace image pixel; no letterbox offset drift | P0 |
+
+## QAD-TC74: Sub-Pixel Edge Snapping, Magnetic Loupe Alignment, and Corner Refinement (IMP-MS59)
+
+Traces to IMP-MS59, PRD-F4, PRD-F5, PRD-F6, SDD-C3, SDD-C5, DSD-UI3, DSD-UI4, BRD-M5, BRD-M6. Automated test commands: `pytest` in `fastapi-service/` and `npm run test:ms59`.
+
+| Test ID | Scenario | Preconditions | Execution Steps | Expected Outcome | Severity |
+|---|---|---|---|---|---|
+| QAD-TC74.1 | Synthetic rounded corner paper image | Synthetic test image with 20px rounded corners on paper | 1. Run line intersection algorithm<br>2. Compare intersection vertices with ground truth polygon | Line intersection locates true sharp corners with < 1.0px error, ignoring corner fillet curvature | P0 |
+| QAD-TC74.2 | Shadow gradient obscuring one corner | Paper corner in deep shadow with blurred boundary | 1. Trigger edge line fitting<br>2. Inspect computed intersection | Adjacent straight edges guide the intersection; corner is accurately located despite local shadow blur | P0 |
+| QAD-TC74.3 | Mobile loupe magnetic edge snapping | User dragging corner pin on mobile screen | 1. Drag pin within 6px of paper edge<br>2. Observe loupe crosshair | Crosshair magnetically snaps to edge gradient peak; crosshair turns emerald; subtle haptic triggers | P1 |
+| QAD-TC74.4 | Smooth magnetic snap release | User deliberately drags pin away from edge | 1. Drag pin 15px away from edge<br>2. Observe crosshair tracking | Snapping releases smoothly without jerky jumps or stuck coordinates; pin tracks finger freely | P1 |
+| QAD-TC74.5 | Non-convex quad rejection | Severely distorted edge lines intersecting into bowtie polygon | 1. Process crossed line intersections<br>2. Verify validation check | System detects non-convex geometry, rejects refinement, and falls back to safe convex proposal | P0 |
+| QAD-TC74.6 | Performance budget on mobile canvas | Snapping executed on low-power mobile device | 1. Drag pin continuously for 10 seconds<br>2. Measure frame rate | Canvas renders smoothly at >= 55 FPS; Sobel computation takes < 2ms per drag event | P1 |
+
+## QAD-TC75: Perspective Unwarping Aspect Ratio Matcher, Standard Auto-Suggestion, and Model Sizing Parity (IMP-MS60)
+
+Traces to IMP-MS60, PRD-F4, PRD-F5, PRD-F6, PRD-F10, SDD-C3, SDD-C4, SDD-C5, SDD-C7, DSD-UI4, DSD-UI7, BRD-M1, BRD-M5, BRD-M6.
+
+| Test ID | Scenario | Preconditions | Execution Steps | Expected Outcome | Severity |
+|---|---|---|---|---|---|
+| QAD-TC75.1 | Angled capture with A4 paper | Capture taken at 30-degree yaw with physical A4 sheet | 1. Click paper to snap<br>2. Inspect recommended standard | System rectifies homography, computes unwarped ratio ~ 1.41, and auto-suggests A4 Standard with >= 95% confidence | P0 |
+| QAD-TC75.2 | Landscape-placed Short Bond paper | Physical Short Bond sheet affixed horizontally | 1. Snap paper corners<br>2. Check orientation mapping | System detects landscape placement; assigns 279.4mm to horizontal axis and 215.9mm to vertical axis | P0 |
+| QAD-TC75.3 | User swaps orientation manually | Ambiguous diagonal paper placement | 1. Click 'Swap Orientation'<br>2. Inspect dimension callout | Width and height callouts swap values cleanly; model mesh updates synchronously | P1 |
+| QAD-TC75.4 | Real opening width and height accuracy | Opening measured with physical tape at 1500mm x 1200mm | 1. Snap paper fiducial<br>2. Fit opening corners<br>3. Inspect model dimensions | Model dimensions match tape measurement within +- 2.0% relative error (1470mm to 1530mm width) | P0 |
+| QAD-TC75.5 | Standard change invalidation and update | User switches confirmed standard from Short to Long | 1. Change radio from Short to Long<br>2. Confirm | Model height updates proportionally by +18.2% (330.2 / 279.4); quotation recalculates atomically | P0 |
+| QAD-TC75.6 | Quotation provenance persistence | Confirming quotation with click-guided planar measurement | 1. Proceed to quotation modal<br>2. Inspect saved snapshot | dimension_source is planar_paper_estimate; metadata records reference_source = "click_guided" and paper_standard | P0 |
+
+## QAD-TC76: Empirical Real-World Accuracy Benchmark and Comparative Release Protocol (IMP-MS61)
+
+Traces to IMP-MS61, PRD-F3, PRD-F4, PRD-F5, PRD-F6, PRD-F10, SDD-C2, SDD-C3, SDD-C4, SDD-C5, SDD-C7, BRD-M1, BRD-M5, BRD-M6. Automated test commands: `npm run test:ms61` and comparative benchmark runner via `npm run benchmark:ms61` or `python scripts/ms57/run_benchmark.py`.
+
+| Test ID | Scenario | Preconditions | Execution Steps | Expected Outcome | Severity |
+|---|---|---|---|---|---|
+| QAD-TC76.1 | Full-Auto vs Click-Guided in Cluttered Room | Space photo with multiple rectangular wall fixtures | 1. Run MOD-AUTO<br>2. Run MOD-CLICK with seed inside paper | MOD-AUTO marks ambiguous or picks wrong panel; MOD-CLICK snaps sheet correctly with E_corner <= 2.0px | P0 |
+| QAD-TC76.2 | Corner Localization RMSE Benchmark | 20 held-out development captures with annotated ground truth | 1. Run MOD-CLICK on all captures<br>2. Compute corner RMSE | Mean corner RMSE is <= 2.2 pixels at 1080p resolution | P0 |
+| QAD-TC76.3 | Physical Opening Width and Height Error | 10 physical openings measured with steel tape | 1. Snap paper via click<br>2. Fit opening corners<br>3. Compute per-axis error | Median relative error across all openings is <= 1.8%; no axis exceeds 5.0% error | P0 |
+| QAD-TC76.4 | Interaction Time Comparison | Simulated user study on 5 test participants | 1. Measure MTTC for manual 4-pin mapping<br>2. Measure MTTC for click-guided snap | Manual mapping averages 38 seconds; click-guided snap averages 4.5 seconds (88% time savings) | P1 |
+| QAD-TC76.5 | Seed Point Jitter Invariance | Seed point tapped at center vs 30px off-center inside paper | 1. Dispatch seed at center<br>2. Dispatch seed near edge<br>3. Compare snapped corners | Snapped corners are mathematically identical (< 0.1px difference) due to edge line intersection | P0 |
+| QAD-TC76.6 | Safe Abstention on Seed Click Outside Paper | User taps on empty blank wall or floor tile | 1. Dispatch seed on tile<br>2. Inspect outcome | Service returns not_found with reason code; zero false metric promotions | P0 |
+
+### Comparative Empirical Release Gates (IMP-MS61)
+
+| Release Gate Metric | Full-Automatic Target | Click-Guided Target (MS58-MS60) | Manual Pinning Target | Pass Criteria / Rationale |
+|---|---|---|---|---|
+| Localization Coverage (C_loc) | >= 75.0% | >= 92.0% | 100.0% (user forced) | Click guidance must eliminate distractor abstentions in cluttered scenes. |
+| Corner Localization RMSE (E_corner) | <= 4.5 px | <= 2.2 px | <= 3.5 px (touch drift) | Sub-pixel edge intersection (MS59) must outperform human finger touch precision. |
+| Median Relative Error (E_rel, med) | <= 2.5% | <= 1.8% | <= 2.2% | Click-guided mode must achieve typical aperture sizing accuracy under 2.0%. |
+| 95th Percentile Relative Error (E_rel, p95) | <= 5.5% | <= 3.8% | <= 4.5% | Ensures extreme outlier errors remain bounded below 4.0%. |
+| Maximum Relative Error (E_rel, max) | <= 7.0% | <= 5.0% | <= 6.0% | No accepted planar measurement deviates by more than 5.0% on width or height. |
+| Mean Time to Confirmation (MTTC) | < 3.0 s | < 6.0 s | > 35.0 s | 1 tap delivers full manual accuracy with an 80%+ reduction in interaction time. |
+| Coplanar Safety (MS55 Invariant) | 0 false promotions | 0 false promotions | 0 false promotions | Non-coplanar or handheld paper must never be promoted to trusted metric status. |
+

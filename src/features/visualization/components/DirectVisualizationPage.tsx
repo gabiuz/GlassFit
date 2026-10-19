@@ -14,12 +14,13 @@ import { UploadImage } from "./UploadImage";
 import { analyzeImage, type SpaceImageSession } from "@/lib/imageApi";
 import type { CatalogProduct } from "@/lib/products/types";
 import {
-  PAPER_STANDARD_METRICS,
   type CalibrationMode,
   type FiducialPaperStandard,
   type Point2D,
 } from "@/lib/visualization/types";
 import { useVisualizationSession } from "@/lib/visualization/visualizationSession";
+
+import { confirmPaperReference, skipPaperReference, type PaperReviewResult } from "@/lib/visualization/paperReference";
 
 type UploadStatus = "idle" | "analyzing" | "ready" | "error";
 
@@ -37,7 +38,7 @@ export function DirectVisualizationPage({
   const [status, setStatus] = useState<UploadStatus>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const [calibrationMode, setCalibrationMode] = useState<CalibrationMode>("standard");
+  const [calibrationMode, setCalibrationMode] = useState<CalibrationMode>("auto_detect");
   const [paperStandard, setPaperStandard] = useState<FiducialPaperStandard>("short");
 
   const runAnalysis = async (file: File) => {
@@ -80,76 +81,11 @@ export function DirectVisualizationPage({
 
   const handlePaperConfirm = (
     corners: [Point2D, Point2D, Point2D, Point2D],
-    result: { scaleCmPerPx: number; confidence: number },
+    result: PaperReviewResult,
     paperStd: FiducialPaperStandard,
   ) => {
     if (!pendingSession) return;
-    const refHeightCm = (PAPER_STANDARD_METRICS[paperStd]?.heightMm ?? 297) / 10;
-    const bboxHeightPx = Math.round(
-      Math.hypot(corners[3].x - corners[0].x, corners[3].y - corners[0].y),
-    );
-
-    const updatedSession: SpaceImageSession = {
-      ...pendingSession,
-      scaleEstimation: {
-        best_scale_cm_per_px: result.scaleCmPerPx,
-        confidence: result.confidence,
-        method: `paper_fiducial_${paperStd}`,
-        anchors: [
-          {
-            label: `paper_${paperStd}`,
-            bbox_height_px: bboxHeightPx,
-            reference_height_cm: refHeightCm,
-            scale_cm_per_px: result.scaleCmPerPx,
-            confidence: result.confidence,
-            depth_correction: 1.0,
-          },
-        ],
-        exif_focal_length_mm: pendingSession.scaleEstimation?.exif_focal_length_mm ?? null,
-        exif_focal_length_35mm: pendingSession.scaleEstimation?.exif_focal_length_35mm ?? null,
-        exif_device_model: pendingSession.scaleEstimation?.exif_device_model ?? null,
-      },
-      scale_estimation: {
-        best_scale_cm_per_px: result.scaleCmPerPx,
-        confidence: result.confidence,
-        method: `paper_fiducial_${paperStd}`,
-        anchors: [
-          {
-            label: `paper_${paperStd}`,
-            bbox_height_px: bboxHeightPx,
-            reference_height_cm: refHeightCm,
-            scale_cm_per_px: result.scaleCmPerPx,
-            confidence: result.confidence,
-            depth_correction: 1.0,
-          },
-        ],
-        exif_focal_length_mm: pendingSession.scaleEstimation?.exif_focal_length_mm ?? null,
-        exif_focal_length_35mm: pendingSession.scaleEstimation?.exif_focal_length_35mm ?? null,
-        exif_device_model: pendingSession.scaleEstimation?.exif_device_model ?? null,
-      },
-      calibrationMeta: {
-        mode: "paper_fiducial",
-        paperStandard: paperStd,
-        status: "verified_calibrated",
-        confidence: result.confidence,
-        homographyMatrix: pendingSession.calibrationMeta?.homographyMatrix ?? null,
-        detectedCorners: corners.map((p) => [p.x, p.y]),
-        user_verified: true,
-        verified_corners: corners,
-        verified_scale_cm_per_px: result.scaleCmPerPx,
-      },
-      paperCalibration: {
-        status: "verified_calibrated",
-        paper_standard: paperStd,
-        detected_corners: corners.map((p) => [p.x, p.y]),
-        scale_cm_per_px: result.scaleCmPerPx,
-        confidence: result.confidence,
-        homography_matrix: pendingSession.calibrationMeta?.homographyMatrix ?? null,
-        user_verified: true,
-        verified_corners: corners,
-        verified_scale_cm_per_px: result.scaleCmPerPx,
-      },
-    };
+    const updatedSession = confirmPaperReference(pendingSession, corners, result, paperStd);
 
     setActiveSession(updatedSession);
     setPendingSession(null);
@@ -157,20 +93,10 @@ export function DirectVisualizationPage({
     setStatus("idle");
   };
 
-  const handlePaperSkip = () => {
+  const handlePaperSkip = (review?: PaperReviewResult) => {
     if (!pendingSession) return;
-    const fallbackSession: SpaceImageSession = {
-      ...pendingSession,
-      calibrationMeta: {
-        mode: "standard",
-        paperStandard: null,
-        status: "heuristic_fallback",
-        confidence: 0.75,
-        homographyMatrix: null,
-        detectedCorners: null,
-        user_verified: false,
-      },
-    };
+    const fallbackSession = skipPaperReference(pendingSession, review);
+
     setActiveSession(fallbackSession);
     setPendingSession(null);
     setPendingFile(null);
@@ -211,7 +137,7 @@ export function DirectVisualizationPage({
   };
 
   const isPaperFiducialSession =
-    calibrationMode === "paper_fiducial" ||
+    calibrationMode !== "standard" ||
     pendingSession?.calibrationMeta?.mode === "paper_fiducial" ||
     Boolean(pendingSession?.paperCalibration?.detected_corners) ||
     Boolean(pendingSession?.calibrationMeta?.detectedCorners) ||
@@ -267,6 +193,24 @@ export function DirectVisualizationPage({
               ? pendingSession.paperCalibration.detected_corners.map(([x, y]) => ({ x, y }))
               : null)
           }
+          candidates={pendingSession.paperCalibration?.candidates}
+          selectedCandidateId={pendingSession.paperCalibration?.selected_candidate_id}
+          paperStandardConfirmed={pendingSession.paperCalibration?.paper_standard_confirmed}
+          suggestedPaperStandard={
+            pendingSession.paperCalibration?.suggested_paper_standard ??
+            pendingSession.calibrationMeta?.suggested_paper_standard ??
+            null
+          }
+          aspectRatioMatchConfidence={
+            pendingSession.paperCalibration?.aspect_ratio_match_confidence ??
+            pendingSession.calibrationMeta?.aspect_ratio_match_confidence ??
+            0
+          }
+          unwarpedAspectRatio={
+            pendingSession.paperCalibration?.unwarped_aspect_ratio ??
+            pendingSession.calibrationMeta?.unwarped_aspect_ratio ??
+            null
+          }
           paperStandard={
             pendingSession.calibrationMeta?.paperStandard ??
             pendingSession.paperCalibration?.paper_standard ??
@@ -275,7 +219,7 @@ export function DirectVisualizationPage({
           confidence={
             pendingSession.calibrationMeta?.confidence ??
             pendingSession.paperCalibration?.confidence ??
-            0.95
+            0
           }
           status={pendingSession.calibrationMeta?.status ?? pendingSession.paperCalibration?.status}
           onConfirm={handlePaperConfirm}

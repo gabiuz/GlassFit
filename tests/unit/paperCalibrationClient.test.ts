@@ -67,7 +67,7 @@ describe("IMP-MS47: Interactive Fiducial Pin Fallback & Precision Dimension Grou
 
       const result = computeScaleFromPaperCorners(a4Corners, "a4");
       assert.equal(result.scaleCmPerPx, 0.05);
-      assert.equal(result.confidence, 0.95);
+      assert.equal(result.confidence, 0);
       assert.equal(result.orderedCorners.length, 4);
     });
 
@@ -84,7 +84,7 @@ describe("IMP-MS47: Interactive Fiducial Pin Fallback & Precision Dimension Grou
 
       const result = computeScaleFromPaperCorners(landscapeCorners, "a4");
       assert.equal(result.scaleCmPerPx, 0.05);
-      assert.equal(result.confidence, 0.95);
+      assert.equal(result.confidence, 0);
     });
 
     it("computes accurate scale for Short Bond / Letter (215.9 x 279.4 mm)", () => {
@@ -99,7 +99,7 @@ describe("IMP-MS47: Interactive Fiducial Pin Fallback & Precision Dimension Grou
 
       const result = computeScaleFromPaperCorners(shortCorners, "short");
       assert.equal(result.scaleCmPerPx, 0.1);
-      assert.equal(result.confidence, 0.95);
+      assert.equal(result.confidence, 0);
     });
 
     it("computes accurate scale for Long Bond / Folio (215.9 x 330.2 mm)", () => {
@@ -114,12 +114,13 @@ describe("IMP-MS47: Interactive Fiducial Pin Fallback & Precision Dimension Grou
 
       const result = computeScaleFromPaperCorners(longCorners, "long");
       assert.equal(result.scaleCmPerPx, 0.05);
-      assert.equal(result.confidence, 0.95);
+      assert.equal(result.confidence, 0);
     });
   });
 
+  // IMP-MS54: exact metric cases moved to metricGeometry.test.ts; scalar-only inputs are approximate.
   describe("3. Precision Dimension Grounding in computeEstimatedDimensions", () => {
-    it("returns pure calibrated scale values without default height blending when paper fiducial calibrated", () => {
+    it("MS54: paper scalar signals cannot claim metric status", () => {
       const calibratedSignal: ScaleEstimationSignal = {
         anchors: [],
         best_scale_cm_per_px: 0.2, // 5 pixels per cm
@@ -130,9 +131,8 @@ describe("IMP-MS47: Interactive Fiducial Pin Fallback & Precision Dimension Grou
         exif_device_model: null,
       };
 
-      // Quad dimensions: 1000 px width, 800 px height
-      // 1000 * 0.2 = 200 cm width
-      // 800 * 0.2 = 160 cm height
+
+
       const estimate = computeEstimatedDimensions(
         1000,
         800,
@@ -142,13 +142,13 @@ describe("IMP-MS47: Interactive Fiducial Pin Fallback & Precision Dimension Grou
         0.5, // depth value, should be ignored
       );
 
-      assert.equal(estimate.method, "paper_fiducial_a4");
-      assert.equal(estimate.confidence, 0.95);
-      assert.equal(estimate.widthCm, 200);
-      assert.equal(estimate.heightCm, 160);
+      assert.equal(estimate.method, "default_heuristic");
+      assert.equal(estimate.confidence, 0);
+      assert.equal(estimate.widthCm, 150);
+      assert.equal(estimate.heightCm, 120);
     });
 
-    it("falls back to heuristic blending when scaleSignal method is not paper fiducial", () => {
+    it("MS54: non-paper anchors retain their approximate blending behavior", () => {
       const yoloSignal: ScaleEstimationSignal = {
         anchors: [],
         best_scale_cm_per_px: 0.2,
@@ -168,15 +168,14 @@ describe("IMP-MS47: Interactive Fiducial Pin Fallback & Precision Dimension Grou
         null,
       );
 
-      // In YOLO method, blending with default heuristic occurs (capped at 0.85 weight)
       assert.equal(estimate.method, "yolo_anchor");
-      // Result is blended with default 120cm height
+
       assert.notEqual(estimate.heightCm, 160);
     });
   });
 
   describe("4. Precision Initial Dimension Grounding in getScaleAwareInitialDimensions", () => {
-    it("returns direct photo-grounded dimensions without default blending when paper calibrated", () => {
+    it("MS54: paper previews retain explicit template defaults", () => {
       const paperSignal: ScaleEstimationSignal = {
         anchors: [],
         best_scale_cm_per_px: 0.25, // 4 px per cm
@@ -187,10 +186,9 @@ describe("IMP-MS47: Interactive Fiducial Pin Fallback & Precision Dimension Grou
         exif_device_model: null,
       };
 
-      // Overlay is 600x400 on 1200x800 canvas displaying 1200x800 photo (ratio 1:1)
-      // Exact photo pixels = 600 x 400
-      // Width = 600 * 0.25 = 150 cm
-      // Height = 400 * 0.25 = 100 cm
+
+
+
       const initial = getScaleAwareInitialDimensions(
         paperSignal,
         210, // default width 210cm
@@ -203,14 +201,14 @@ describe("IMP-MS47: Interactive Fiducial Pin Fallback & Precision Dimension Grou
         800,
       );
 
-      assert.equal(initial.method, "paper_fiducial_short");
-      assert.equal(initial.widthCm, 150);
-      assert.equal(initial.heightCm, 100);
+      assert.equal(initial.method, "default_fallback");
+      assert.equal(initial.widthCm, 210);
+      assert.equal(initial.heightCm, 150);
     });
   });
 
   describe("5. Acceptance Scenarios (QAD-TC62)", () => {
-    it("QAD-TC62.1: Image uploaded with auto-detected A4 paper grounds initial dimensions", () => {
+    it("MS54: detected paper alone does not measure a preview", () => {
       const autoSignal: ScaleEstimationSignal = {
         anchors: [],
         best_scale_cm_per_px: 0.05,
@@ -221,9 +219,8 @@ describe("IMP-MS47: Interactive Fiducial Pin Fallback & Precision Dimension Grou
         exif_device_model: null,
       };
 
-      // Photo size: 2000x1500, Canvas size: 1000x750 (2x ratio)
-      // Overlay size: 500x400 canvas px -> 1000x800 photo px
-      // Expected: 1000 * 0.05 = 50cm width, 800 * 0.05 = 40cm height
+
+
       const dims = getScaleAwareInitialDimensions(
         autoSignal,
         210,
@@ -236,16 +233,15 @@ describe("IMP-MS47: Interactive Fiducial Pin Fallback & Precision Dimension Grou
         1500,
       );
 
-      assert.equal(dims.widthCm, 50);
-      assert.equal(dims.heightCm, 40);
-      assert.equal(dims.method, "paper_fiducial_a4");
+      assert.equal(dims.widthCm, 210);
+      assert.equal(dims.heightCm, 150);
+      assert.equal(dims.method, "default_fallback");
     });
 
-    it("QAD-TC62.2: User corner pins clamp inside canvas boundaries", () => {
+    it("MS54: corner clamping retains workspace boundaries", () => {
       const canvasW = 800;
       const canvasH = 600;
 
-      // Unclamped coordinates outside canvas
       const rawUserPins: Point2D[] = [
         { x: -50, y: -20 },
         { x: 900, y: 0 },
@@ -270,9 +266,9 @@ describe("IMP-MS47: Interactive Fiducial Pin Fallback & Precision Dimension Grou
       assert.equal(clamped[3].y, 600);
     });
 
-    it("QAD-TC62.3: User confirms 4 pins on Short Bond paper elevating session to precision scale", () => {
-      // Short Bond: 21.59 x 27.94 cm
-      // Taped pins at 431.8 px width x 558.8 px height -> scale = 0.05 cm/px
+    it("MS54: manual paper review retains unknown physical accuracy", () => {
+
+
       const pins: [Point2D, Point2D, Point2D, Point2D] = [
         { x: 100, y: 100 },
         { x: 531.8, y: 100 },
@@ -282,10 +278,10 @@ describe("IMP-MS47: Interactive Fiducial Pin Fallback & Precision Dimension Grou
 
       const { scaleCmPerPx, confidence } = computeScaleFromPaperCorners(pins, "short");
       assert.equal(scaleCmPerPx, 0.05);
-      assert.equal(confidence, 0.95);
+      assert.equal(confidence, 0);
     });
 
-    it("QAD-TC62.4: Perspective quad uses coplanar paper scale factor directly", () => {
+    it("MS54: quad spans require projective corner evaluation", () => {
       const paperSignal: ScaleEstimationSignal = {
         anchors: [],
         best_scale_cm_per_px: 0.1, // 10 px per cm
@@ -296,8 +292,7 @@ describe("IMP-MS47: Interactive Fiducial Pin Fallback & Precision Dimension Grou
         exif_device_model: null,
       };
 
-      // Quad width = 1420 px, quad height = 1210 px
-      // Direct coplanar calculation: 1420 * 0.1 = 142 cm, 1210 * 0.1 = 121 cm
+
       const estimate = computeEstimatedDimensions(
         1420,
         1210,
@@ -307,9 +302,9 @@ describe("IMP-MS47: Interactive Fiducial Pin Fallback & Precision Dimension Grou
         null,
       );
 
-      assert.equal(estimate.widthCm, 142);
-      assert.equal(estimate.heightCm, 121);
-      assert.equal(estimate.method, "paper_fiducial_a4");
+      assert.equal(estimate.widthCm, 141);
+      assert.equal(estimate.heightCm, 120);
+      assert.equal(estimate.method, "default_heuristic");
     });
 
     it("QAD-TC62.5: Measurement confirmation propagates calibrated_visual dimension source", async () => {

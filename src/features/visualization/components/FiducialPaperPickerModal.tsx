@@ -8,6 +8,8 @@ import {
   RotateCcw,
   Info,
   FileCheck2,
+  Sparkles,
+  Loader2,
 } from "lucide-react";
 import type {
   FiducialPaperStandard,
@@ -20,7 +22,13 @@ import {
 } from "@/lib/visualization/scaleEstimation";
 import { useDocumentScrollLock } from "../hooks/useDocumentScrollLock";
 import { mapPointerToCanvas, TOUCH_PROXY_OFFSET_CSS_PX } from "../mobileConfiguratorGeometry";
-import { TouchDragProxy } from "./TouchDragProxy";
+import {
+  computeMagneticSnap,
+  extractPatchImageData,
+  computeEdgeFitQuality,
+  calculateExtendedGuideLines,
+} from "@/lib/visualization/magneticSnapping";
+import { requestClickGuidedPaperDetection } from "@/lib/visualization/paperReference";
 
 export interface FiducialPaperPickerModalProps {
   isOpen?: boolean;
@@ -109,6 +117,39 @@ export function FiducialPaperPickerModal({
   const [activeDragIndex, setActiveDragIndex] = useState<number | null>(null);
   const [activeCornerDrag, setActiveCornerDrag] = useState<ActiveCornerDrag | null>(null);
   const [availableCanvasSize, setAvailableCanvasSize] = useState({ width: 0, height: 0 });
+
+  // Click-guided interactive state (IMP-MS58)
+  const [clickRipple, setClickRipple] = useState<{ x: number; y: number; id: number } | null>(null);
+  const [isSnapping, setIsSnapping] = useState<boolean>(false);
+  const [snapNotice, setSnapNotice] = useState<{ type: "success" | "error" | "info"; message: string } | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Client-side magnetic edge snapping state (IMP-MS59)
+  const [isSnapped, setIsSnapped] = useState<boolean>(false);
+  const [snapGradientStrength, setSnapGradientStrength] = useState<number>(0);
+  const lastSnappedRef = useRef<boolean>(false);
+  const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  useEffect(() => {
+    if (!backgroundImageUrl || canvasWidth <= 0 || canvasHeight <= 0) return;
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      try {
+        const offCanvas = document.createElement("canvas");
+        offCanvas.width = canvasWidth;
+        offCanvas.height = canvasHeight;
+        const ctx = offCanvas.getContext("2d", { willReadFrequently: true });
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, canvasWidth, canvasHeight);
+          offscreenCanvasRef.current = offCanvas;
+        }
+      } catch {
+        // Tainted canvas or draw failure handled gracefully
+      }
+    };
+    img.src = backgroundImageUrl;
+  }, [backgroundImageUrl, canvasWidth, canvasHeight]);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -205,8 +246,36 @@ export function FiducialPaperPickerModal({
     if (!coord) return;
 
     const offset = dragOffsetRef.current ?? { x: 0, y: 0 };
-    const x = Math.max(0, Math.min(canvasWidth, coord.x + offset.x));
-    const y = Math.max(0, Math.min(canvasHeight, coord.y + offset.y));
+    let x = Math.max(0, Math.min(canvasWidth, coord.x + offset.x));
+    let y = Math.max(0, Math.min(canvasHeight, coord.y + offset.y));
+
+    // Client-side magnetic edge snapping (IMP-MS59 / QAD-TC74)
+    let snappedNow = false;
+    let strengthNow = 0;
+    const offCanvas = offscreenCanvasRef.current;
+    if (offCanvas) {
+      const patch = extractPatchImageData(offCanvas, x, y, 24);
+      if (patch) {
+        const snap = computeMagneticSnap({ x, y }, patch, 10);
+        if (snap.snapped) {
+          x = Math.max(0, Math.min(canvasWidth, snap.snappedPoint.x));
+          y = Math.max(0, Math.min(canvasHeight, snap.snappedPoint.y));
+          snappedNow = true;
+          strengthNow = snap.gradientStrength;
+
+          if (!lastSnappedRef.current && typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
+            try {
+              navigator.vibrate(10);
+            } catch {
+              // Best effort
+            }
+          }
+        }
+      }
+    }
+    lastSnappedRef.current = snappedNow;
+    setIsSnapped(snappedNow);
+    setSnapGradientStrength(strengthNow);
 
     setPoints((prev) => {
       const next = [...prev] as [Point2D, Point2D, Point2D, Point2D];
@@ -233,6 +302,9 @@ export function FiducialPaperPickerModal({
       dragOffsetRef.current = null;
       setActiveDragIndex(null);
       setActiveCornerDrag(null);
+      lastSnappedRef.current = false;
+      setIsSnapped(false);
+      setSnapGradientStrength(0);
     }
   };
 
@@ -241,6 +313,74 @@ export function FiducialPaperPickerModal({
     dragOffsetRef.current = null;
     setActiveDragIndex(null);
     setActiveCornerDrag(null);
+    lastSnappedRef.current = false;
+    setIsSnapped(false);
+    setSnapGradientStrength(0);
+    setSnapNotice(null);
+  };
+
+  const handleTapToSnap = useCallback(
+    async (canvasX: number, canvasY: number) => {
+      const rippleId = Date.now();
+      setClickRipple({ x: canvasX, y: canvasY, id: rippleId });
+      setTimeout(() => {
+        setClickRipple((curr) => (curr?.id === rippleId ? null : curr));
+      }, 900);
+
+      setSnapNotice(null);
+
+      const normX = Math.max(0, Math.min(1, canvasX / canvasWidth));
+      const normY = Math.max(0, Math.min(1, canvasY / canvasHeight));
+      const seedPoint = { x: normX, y: normY };
+
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      const ac = new AbortController();
+      abortControllerRef.current = ac;
+      setIsSnapping(true);
+
+      try {
+        const res = await requestClickGuidedPaperDetection(
+          backgroundImageUrl,
+          seedPoint,
+          selectedStandard,
+          ac.signal,
+        );
+
+        if (res.outcome === "candidate_found" && res.candidate) {
+          const ordered = orderPaperCorners(res.candidate.corners.map(([x, y]) => ({ x, y })));
+          setPoints(ordered);
+          setSnapNotice({
+            type: "success",
+            message: "Snapped pins to detected paper boundary",
+          });
+        } else {
+          setSnapNotice({
+            type: "info",
+            message: "No paper boundary detected near tap. Tap directly on the sheet or drag pins manually.",
+          });
+        }
+      } catch (err: unknown) {
+        if (err instanceof DOMException && err.name === "AbortError") {
+          return;
+        }
+        setSnapNotice({
+          type: "error",
+          message: "Detection was interrupted. Adjust pins manually or tap again.",
+        });
+      } finally {
+        setIsSnapping(false);
+      }
+    },
+    [backgroundImageUrl, canvasHeight, canvasWidth, selectedStandard],
+  );
+
+  const handleSvgPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (activeCornerDrag !== null || !e.isPrimary || e.button !== 0) return;
+    const coord = getCanvasCoordinates(e.clientX, e.clientY);
+    if (!coord) return;
+    handleTapToSnap(coord.x, coord.y);
   };
 
   // Live scale preview
@@ -266,6 +406,51 @@ export function FiducialPaperPickerModal({
 
   const currentMetrics = PAPER_STANDARD_METRICS[selectedStandard];
   const polygonPointsAttr = points.map((p) => `${p.x},${p.y}`).join(" ");
+  const extendedGuides = calculateExtendedGuideLines(points, 20);
+
+  // Loupe position calculation (2.5x circular loupe with magnetic snap)
+  const loupeActive = activeCornerDrag !== null && activeDragIndex !== null;
+  const draggedPoint = loupeActive ? points[activeDragIndex] : null;
+
+  const loupeParams = (() => {
+    if (!loupeActive || !draggedPoint) return null;
+    const windowH = typeof window !== "undefined" ? window.innerHeight : 800;
+    const windowW = typeof window !== "undefined" ? window.innerWidth : 1200;
+
+    const isTopScreen = activeCornerDrag.contactY < windowH * 0.15;
+    const verticalOffset = isTopScreen ? 70 : -70;
+
+    const targetX = activeCornerDrag.contactX;
+    const targetY = activeCornerDrag.contactY + verticalOffset;
+
+    const loupeX = Math.max(60, Math.min(windowW - 60, targetX));
+    const loupeY = Math.max(60, Math.min(windowH - 60, targetY));
+
+    const zoom = 2.5;
+    const loupeDiameter = 112;
+    const halfD = loupeDiameter / 2;
+
+    const pointXInFitted = (draggedPoint.x / canvasWidth) * fittedCanvasSize.width;
+    const pointYInFitted = (draggedPoint.y / canvasHeight) * fittedCanvasSize.height;
+
+    const imgLeft = halfD - pointXInFitted * zoom;
+    const imgTop = halfD - pointYInFitted * zoom;
+    const imgWidth = fittedCanvasSize.width * zoom;
+    const imgHeight = fittedCanvasSize.height * zoom;
+
+    return {
+      loupeX,
+      loupeY,
+      imgLeft,
+      imgTop,
+      imgWidth,
+      imgHeight,
+      contactX: activeCornerDrag.contactX,
+      contactY: activeCornerDrag.contactY,
+      pointerType: activeCornerDrag.pointerType,
+      cornerIndex: activeDragIndex,
+    };
+  })();
 
   // Center coordinate of polygon for badge placement
   const centerX = Math.round((points[0].x + points[1].x + points[2].x + points[3].x) / 4);
@@ -325,9 +510,19 @@ export function FiducialPaperPickerModal({
         {/* Guidance Tip Pill */}
         <div className="flex items-center justify-between gap-2 rounded-[14px] bg-neutral-900/80 backdrop-blur-md px-4 py-2 text-xs text-white shadow-md">
           <div className="flex items-center gap-2 min-w-0">
-            <Info className="size-4 shrink-0 text-[#07b6d3]" />
+            {isSnapping ? (
+              <Loader2 className="size-4 shrink-0 text-[#07b6d3] animate-spin" />
+            ) : snapNotice ? (
+              <Sparkles className="size-4 shrink-0 text-[#07b6d3] animate-pulse" />
+            ) : (
+              <Info className="size-4 shrink-0 text-[#07b6d3]" />
+            )}
             <span className="truncate">
-              Drag the 4 corner handles onto the corners of your wall-mounted paper sheet.
+              {isSnapping
+                ? "Detecting paper sheet at tap location..."
+                : snapNotice
+                ? snapNotice.message
+                : "Tap the sheet to snap corners automatically, or drag the 4 corner handles manually."}
             </span>
           </div>
           {liveScale && (
@@ -363,10 +558,49 @@ export function FiducialPaperPickerModal({
               ref={svgRef}
               viewBox={`0 0 ${canvasWidth} ${canvasHeight}`}
               className="absolute inset-0 w-full h-full cursor-crosshair touch-none select-none"
+              onPointerDown={handleSvgPointerDown}
               onPointerMove={handleSvgPointerMove}
               onPointerUp={handleSvgPointerUp}
               onPointerCancel={handleSvgPointerUp}
             >
+              {/* Tap to Snap Ripple Animation (IMP-MS58) */}
+              {clickRipple && (
+                <g className="pointer-events-none">
+                  <circle
+                    cx={clickRipple.x}
+                    cy={clickRipple.y}
+                    r={28}
+                    fill="none"
+                    stroke="#10b981"
+                    strokeWidth={2.5}
+                    className="animate-ping"
+                    style={{ transformOrigin: `${clickRipple.x}px ${clickRipple.y}px` }}
+                  />
+                  <circle
+                    cx={clickRipple.x}
+                    cy={clickRipple.y}
+                    r={5}
+                    fill="#10b981"
+                  />
+                </g>
+              )}
+
+              {/* Collinearity straightness guide lines (IMP-MS59) */}
+              {extendedGuides.map((guide, idx) => (
+                <line
+                  key={`guide-ext-${idx}`}
+                  x1={guide.start.x}
+                  y1={guide.start.y}
+                  x2={guide.end.x}
+                  y2={guide.end.y}
+                  stroke={isSnapped ? "#10b981" : "#0284c7"}
+                  strokeWidth="1.5"
+                  strokeDasharray="4 3"
+                  strokeOpacity="0.65"
+                  className="pointer-events-none"
+                />
+              ))}
+
               {/* Shaded Calibrated Quadrilateral Polygon */}
               <polygon
                 points={polygonPointsAttr}
@@ -501,14 +735,98 @@ export function FiducialPaperPickerModal({
         </button>
       </div>
 
-      {/* Touch Proxy Magnifier for touch devices */}
-      {activeCornerDrag && activeCornerDrag.pointerType === "touch" && (
-        <TouchDragProxy
-          contactX={activeCornerDrag.contactX}
-          contactY={activeCornerDrag.contactY}
-          proxyX={activeCornerDrag.contactX}
-          proxyY={activeCornerDrag.contactY - TOUCH_PROXY_OFFSET_CSS_PX}
-        />
+      {/* 2.5x Circular Loupe Magnifier with Magnetic Snapping */}
+      {loupeParams && (
+        <div className="pointer-events-none fixed inset-0 z-[70]" aria-hidden="true">
+          {loupeParams.pointerType === "touch" && (
+            <span
+              className="absolute h-0.5 origin-left bg-white shadow-[0_0_3px_#0f1422]"
+              style={{
+                left: loupeParams.contactX,
+                top: loupeParams.contactY,
+                width: Math.hypot(
+                  loupeParams.loupeX - loupeParams.contactX,
+                  loupeParams.loupeY - loupeParams.contactY,
+                ),
+                transform: `rotate(${
+                  (Math.atan2(
+                    loupeParams.loupeY - loupeParams.contactY,
+                    loupeParams.loupeX - loupeParams.contactX,
+                  ) *
+                    180) /
+                  Math.PI
+                }deg)`,
+              }}
+            />
+          )}
+
+          <div
+            className={`absolute size-28 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-neutral-900 shadow-2xl overflow-hidden ring-2 transition-all ${
+              isSnapped
+                ? "ring-emerald-500 shadow-[0_0_16px_rgba(16,185,129,0.5)]"
+                : "ring-sky-500/80"
+            }`}
+            style={{ left: loupeParams.loupeX, top: loupeParams.loupeY }}
+          >
+            <img
+              src={backgroundImageUrl}
+              alt="Magnified corner view"
+              className="absolute max-w-none pointer-events-none select-none"
+              style={{
+                left: loupeParams.imgLeft,
+                top: loupeParams.imgTop,
+                width: loupeParams.imgWidth,
+                height: loupeParams.imgHeight,
+              }}
+            />
+
+            {/* Fine Center Crosshairs */}
+            <span
+              className={`absolute left-0 top-1/2 h-[1px] w-full -translate-y-1/2 transition-colors ${
+                isSnapped
+                  ? "bg-emerald-400 shadow-[0_0_4px_#10b981]"
+                  : "bg-sky-400/90 shadow-xs"
+              }`}
+            />
+            <span
+              className={`absolute left-1/2 top-0 h-full w-[1px] -translate-x-1/2 transition-colors ${
+                isSnapped
+                  ? "bg-emerald-400 shadow-[0_0_4px_#10b981]"
+                  : "bg-sky-400/90 shadow-xs"
+              }`}
+            />
+            <span
+              className={`absolute left-1/2 top-1/2 size-2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white transition-all ${
+                isSnapped
+                  ? "bg-emerald-500 ring-2 ring-emerald-300 scale-110"
+                  : "bg-sky-500"
+              }`}
+            />
+
+            {/* Edge Fit Quality percentage badge */}
+            {(() => {
+              const quality = computeEdgeFitQuality(snapGradientStrength, isSnapped);
+              const badgeBg =
+                quality.badgeVariant === "green"
+                  ? "bg-emerald-600/90 text-white border-emerald-400/60"
+                  : quality.badgeVariant === "yellow"
+                  ? "bg-amber-500/90 text-white border-amber-300/60"
+                  : "bg-black/75 text-neutral-300 border-white/20";
+
+              return (
+                <span
+                  className={`absolute top-1 left-1/2 -translate-x-1/2 rounded-full px-1.5 py-0.5 font-mono text-[8px] font-bold border shadow-xs whitespace-nowrap ${badgeBg}`}
+                >
+                  {isSnapped ? `Edge Fit ${quality.percentage}%` : "Manual"}
+                </span>
+              );
+            })()}
+
+            <span className="absolute bottom-1 left-1/2 -translate-x-1/2 rounded-full bg-black/75 px-1.5 py-0.5 font-mono text-[9px] font-bold text-white shadow-xs">
+              Pin {loupeParams.cornerIndex + 1}
+            </span>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -30,6 +30,7 @@ UPLOAD_DIR = GENERATED_DIR / "uploads"
 SESSION_DIR = GENERATED_DIR / "sessions"
 MIME_FORMATS: dict[str, tuple[str, set[str]]] = {
     "image/jpeg": ("jpeg", {".jpg", ".jpeg"}),
+    "image/jpg": ("jpeg", {".jpg", ".jpeg"}),
     "image/png": ("png", {".png"}),
     "image/webp": ("webp", {".webp"}),
     "image/heic": ("heif", {".heic", ".heif"}),
@@ -53,7 +54,8 @@ def _resolve_image_format(
     filename: str | None,
 ) -> tuple[str, str]:
     """Resolve the approved source suffix and declared image format family."""
-    normalized_content_type = (content_type or "").lower().strip()
+    raw_content_type = (content_type or "").split(";")[0]
+    normalized_content_type = raw_content_type.lower().strip()
     extension = Path(filename or "").suffix.lower()
     extension_format = EXTENSION_FORMATS.get(extension)
     if extension_format is None:
@@ -180,6 +182,8 @@ async def analyze_image(
     image: UploadFile = File(...),
     calibration_mode: str = Form("auto_detect"),
     paper_standard: str | None = Form(None),
+    seed_x: float | None = Form(None),
+    seed_y: float | None = Form(None),
 ) -> dict:
     suffix, declared_format = _resolve_image_format(image.content_type, image.filename)
     is_heif = declared_format == "heif"
@@ -341,90 +345,60 @@ async def analyze_image(
                 "exif_device_model": exif_info.device_model,
             }
 
-        paper_calibration_dict = {
-            "status": "not_requested",
-            "paper_standard": None,
-            "detected_corners": None,
-            "scale_cm_per_px": None,
-            "confidence": 0.0,
-            "homography_matrix": None,
+        # IMP-MS53 / IMP-MS58: localization does not establish a physical scale.
+        from paper_calibration import PaperCalibrationResult, detect_paper_fiducial
+        paper_result = PaperCalibrationResult(
+            status="not_requested", paper_standard=None, detected_corners=None,
+            scale_cm_per_px=None, confidence=0, homography_matrix=None,
+        )
+
+        seed_point = None
+        if seed_x is not None or seed_y is not None:
+            if seed_x is None or seed_y is None:
+                raise HTTPException(status_code=422, detail="Both seed_x and seed_y must be provided.")
+            import math
+            if not (math.isfinite(seed_x) and math.isfinite(seed_y)):
+                raise HTTPException(status_code=422, detail="Seed coordinates must be finite real numbers.")
+            clamped_x = max(0.0, min(1.0, float(seed_x)))
+            clamped_y = max(0.0, min(1.0, float(seed_y)))
+            seed_point = (clamped_x, clamped_y)
+
+        if calibration_mode in {"auto_detect", "paper_fiducial"}:
+            try:
+                paper_result = detect_paper_fiducial(image_bgr, paper_standard, seed_point=seed_point)
+            except Exception as exc:
+                warnings.append(f"Paper fiducial detection error: {exc}")
+                paper_result.status = "manual_pin_required"
+
+        orig_w = max(original_metadata["width"], 1)
+        orig_h = max(original_metadata["height"], 1)
+        work_w = workspace_metadata["width"]
+        work_h = workspace_metadata["height"]
+        scale_x, scale_y = work_w / orig_w, work_h / orig_h
+        def workspace_corners(corners: list[tuple[float, float]]) -> list[tuple[float, float]]:
+            return [(x * scale_x, y * scale_y) for x, y in corners]
+        if paper_result.detected_corners:
+            paper_result.detected_corners = workspace_corners(paper_result.detected_corners)
+        for candidate in paper_result.candidates:
+            candidate.corners = workspace_corners(candidate.corners)
+        paper_result.coordinate_space = "workspace"
+        paper_result.coordinate_image_id = session_id
+        paper_result.oriented_source_to_workspace = (
+            (scale_x, 0.0, 0.0), (0.0, scale_y, 0.0), (0.0, 0.0, 1.0),
+        )
+        paper_result.image_width, paper_result.image_height = work_w, work_h
+        paper_calibration_dict = paper_result.to_dict()
+        calibration_meta = {
+            "mode": calibration_mode,
+            "paper_standard": paper_result.paper_standard,
+            "status": (paper_result.status if calibration_mode != "standard" else "heuristic_fallback"),
+            "confidence": paper_result.confidence,
+            "reference_source": paper_result.reference_source,
+            "selected_candidate_id": paper_result.selected_candidate_id,
+            "suggested_paper_standard": paper_result.suggested_paper_standard,
+            "aspect_ratio_match_confidence": paper_result.aspect_ratio_match_confidence,
+            "unwarped_aspect_ratio": paper_result.unwarped_aspect_ratio,
         }
-
-        if calibration_mode in {"auto_detect", "paper_fiducial"}:
-            clean_standard = (paper_standard or "").lower().strip()
-            if clean_standard and clean_standard not in {"short", "a4", "long", "auto", "auto_detect", "none"}:
-                paper_calibration_dict = {
-                    "status": "manual_pin_required",
-                    "paper_standard": paper_standard,
-                    "detected_corners": None,
-                    "scale_cm_per_px": None,
-                    "confidence": 0.0,
-                    "homography_matrix": None,
-                }
-            else:
-                try:
-                    from paper_calibration import detect_paper_fiducial
-                    calib_result = detect_paper_fiducial(
-                        image_bgr=image_bgr,
-                        paper_standard=paper_standard,
-                    )
-                    paper_calibration_dict = calib_result.to_dict()
-                except Exception as exc:
-                    warnings.append(f"Paper fiducial detection error: {exc}")
-                    paper_calibration_dict = {
-                        "status": "manual_pin_required",
-                        "paper_standard": paper_standard,
-                        "detected_corners": None,
-                        "scale_cm_per_px": None,
-                        "confidence": 0.0,
-                        "homography_matrix": None,
-                    }
-
-        # Map corners and scale if workspace image was resized
-        orig_w = max(original_metadata.get("width", 1), 1)
-        orig_h = max(original_metadata.get("height", 1), 1)
-        work_w = workspace_metadata.get("width", orig_w)
-        work_h = workspace_metadata.get("height", orig_h)
-        scale_x = work_w / orig_w
-        scale_y = work_h / orig_h
-        if (scale_x != 1.0 or scale_y != 1.0) and paper_calibration_dict.get("detected_corners"):
-            paper_calibration_dict["detected_corners"] = [
-                [round(c[0] * scale_x, 2), round(c[1] * scale_y, 2)]
-                for c in paper_calibration_dict["detected_corners"]
-            ]
-            if paper_calibration_dict.get("scale_cm_per_px"):
-                avg_scale = (scale_x + scale_y) / 2.0
-                paper_calibration_dict["scale_cm_per_px"] = round(
-                    paper_calibration_dict["scale_cm_per_px"] / avg_scale, 6
-                )
-
-        # If paper calibration succeeded with confidence >= 0.65, override the scale estimation best scale
-        if paper_calibration_dict.get("status") == "detected" and (paper_calibration_dict.get("scale_cm_per_px") or 0) > 0:
-            scale_result.best_scale_cm_per_px = paper_calibration_dict["scale_cm_per_px"]
-            scale_result.confidence = paper_calibration_dict["confidence"]
-            resolved_standard = paper_calibration_dict.get("paper_standard") or paper_standard or "detected"
-            scale_result.method = f"paper_fiducial_{resolved_standard}"
-            scale_estimation_dict = scale_result.to_dict()
-
-        if calibration_mode in {"auto_detect", "paper_fiducial"}:
-            calib_status = (
-                "calibrated"
-                if paper_calibration_dict.get("status") == "detected"
-                else "manual_pin_required"
-            )
-            calibration_meta = {
-                "mode": calibration_mode,
-                "paper_standard": paper_calibration_dict.get("paper_standard") or paper_standard,
-                "status": calib_status,
-                "confidence": paper_calibration_dict.get("confidence", 0.0),
-            }
-        else:
-            calibration_meta = {
-                "mode": "standard",
-                "paper_standard": None,
-                "status": "heuristic_fallback",
-                "confidence": scale_result.confidence if scale_result.best_scale_cm_per_px else 0.75,
-            }
 
         _append_optional_warning(
             warnings,

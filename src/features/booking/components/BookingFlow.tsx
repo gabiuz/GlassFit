@@ -1,5 +1,6 @@
 "use client";
 
+import { quotationMeasurement } from "@/lib/visualization/measurementRecord";
 import React, { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
@@ -90,8 +91,8 @@ export function BookingFlow() {
     loadUserProfile();
   }, []);
 
-  const widthMm = Math.round((productConfiguration?.widthCm ?? 120) * 10);
-  const heightMm = Math.round((productConfiguration?.heightCm ?? 120) * 10);
+  const widthMm = ((productConfiguration?.widthCm ?? 120) * 10);
+  const heightMm = ((productConfiguration?.heightCm ?? 120) * 10);
   const hasSill = productConfiguration?.includeSill ?? true;
   const structuralWaiver = productConfiguration?.structuralWaiver ?? false;
   const panelCount = productConfiguration?.panelCount ?? (widthMm >= 2400 ? 3 : 2);
@@ -140,8 +141,8 @@ export function BookingFlow() {
       overlays.forEach((overlay) => {
         const pricing = calculateOverlayPricing(overlay);
         const config = overlay.configuration;
-        const wMm = Math.round((Number(config.widthCm) || 120) * 10);
-        const hMm = Math.round((Number(config.heightCm) || 120) * 10);
+        const wMm = ((Number(config.widthCm) || 120) * 10);
+        const hMm = ((Number(config.heightCm) || 120) * 10);
         const quantity = Math.max(1, config.quantity ?? 1);
         const sill = config.includeSill ?? true;
         const waiver = config.structuralWaiver ?? false;
@@ -172,8 +173,6 @@ export function BookingFlow() {
           totalPrice: pricing.totalPrice,
           imageUrl: overlay.flattenedImageDataUrl || finalSnapshotDataUrl || "",
           bomResult: pricing.bomResult,
-          dimensionSource:
-            (config.visualParameterValues as Record<string, unknown> | undefined)?.dimension_source as string | undefined,
           paperStandard:
             (config.visualParameterValues as Record<string, unknown> | undefined)?.paper_standard as string | undefined,
           calibrationScaleCmPerPx:
@@ -184,6 +183,7 @@ export function BookingFlow() {
             ((config.visualParameterValues as Record<string, unknown> | undefined)?.calibration_method as string | undefined) ?? null,
           calibrationConfidence:
             ((config.visualParameterValues as Record<string, unknown> | undefined)?.calibration_confidence as number | undefined) ?? null,
+          ...quotationMeasurement(config),
         });
       });
     } else if (structuralDefinition) {
@@ -209,8 +209,6 @@ export function BookingFlow() {
         totalPrice: bomCalc.finalQuotation * quantity,
         imageUrl: finalSnapshotDataUrl || structuralDefinition.product.catalogImageUrl || "",
         bomResult: bomCalc,
-        dimensionSource:
-          (productConfiguration?.visualParameterValues as Record<string, unknown> | undefined)?.dimension_source as string | undefined,
         paperStandard:
           (productConfiguration?.visualParameterValues as Record<string, unknown> | undefined)?.paper_standard as string | undefined,
         calibrationScaleCmPerPx:
@@ -221,6 +219,7 @@ export function BookingFlow() {
           ((productConfiguration?.visualParameterValues as Record<string, unknown> | undefined)?.calibration_method as string | undefined) ?? null,
         calibrationConfidence:
           ((productConfiguration?.visualParameterValues as Record<string, unknown> | undefined)?.calibration_confidence as number | undefined) ?? null,
+        ...quotationMeasurement(productConfiguration),
       });
     }
 

@@ -1,5 +1,10 @@
 "use client";
 
+import { evaluatePlaneEligibility } from "@/lib/visualization/planeEligibility";
+import { createMeasurementRecord, readMeasurementRecord } from "@/lib/visualization/measurementRecord";
+import { createMetricReference, evaluateMetricOpening } from "@/lib/visualization/metricGeometry";
+import type { PaperReviewResult } from "@/lib/visualization/paperReference";
+
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import Image from "next/image";
@@ -72,7 +77,7 @@ import {
   computeEstimatedDimensions,
   sampleDepthAtPoint,
   getScaleAwareInitialDimensions,
-  getVerifiedScaleInitialDimensions,
+  recalculateMetricOverlay,
   computePhotoGroundedCm,
 } from "@/lib/visualization/scaleEstimation";
 import {
@@ -350,53 +355,26 @@ export function ProductModelWorkspace({
     }
   }
 
-  const isPaperCalibrated =
-    Boolean(
-      activeCalibrationMeta?.status === "calibrated" ||
-      activeCalibrationMeta?.status === "verified_calibrated" ||
-      spaceImageSession?.calibrationMeta?.status === "calibrated" ||
-      spaceImageSession?.calibrationMeta?.status === "verified_calibrated" ||
-      sessionContext?.spaceImageSession?.calibrationMeta?.status === "calibrated" ||
-      sessionContext?.spaceImageSession?.calibrationMeta?.status === "verified_calibrated" ||
-      activeScaleSignal?.method?.startsWith("paper_fiducial")
-    ) &&
-    ((activeScaleSignal?.best_scale_cm_per_px ?? spaceImageSession?.scaleEstimation?.best_scale_cm_per_px ?? sessionContext?.spaceImageSession?.scaleEstimation?.best_scale_cm_per_px ?? 0) > 0) &&
-    ((activeScaleSignal?.confidence ?? spaceImageSession?.scaleEstimation?.confidence ?? sessionContext?.spaceImageSession?.scaleEstimation?.confidence ?? 0) >= 0.65);
-
-  const isVerifiedCalibrated =
-    Boolean(
-      activeCalibrationMeta?.status === "verified_calibrated" ||
-      spaceImageSession?.calibrationMeta?.status === "verified_calibrated" ||
-      sessionContext?.spaceImageSession?.calibrationMeta?.status === "verified_calibrated"
-    ) &&
-    Boolean(
-      activeCalibrationMeta?.user_verified ??
-      spaceImageSession?.calibrationMeta?.user_verified ??
-      sessionContext?.spaceImageSession?.calibrationMeta?.user_verified
-    );
-
+  const metricFrame = useMemo(() => ({ imageId: spaceImageSession?.sessionId ?? sessionContext?.spaceImageSession?.sessionId ?? "",
+    width: spaceImageSession?.workspaceImage?.width ?? sessionContext?.spaceImageSession?.workspaceImage?.width ?? 0,
+    height: spaceImageSession?.workspaceImage?.height ?? sessionContext?.spaceImageSession?.workspaceImage?.height ?? 0 }), [spaceImageSession, sessionContext?.spaceImageSession]);
+  const referenceEligibility = evaluatePlaneEligibility(activeCalibrationMeta, activeCalibrationMeta?.metricReference?.planeId, null, metricFrame);
+  const metricReference = referenceEligibility.status === "eligible_planar_estimate" ? activeCalibrationMeta?.metricReference ?? null : null;
+  const latestFitIdentityRef = useRef({ imageId: metricFrame.imageId, productId: structuralDefinition?.product.productId });
+  useLayoutEffect(() => {
+    latestFitIdentityRef.current = { imageId: metricFrame.imageId, productId: structuralDefinition?.product.productId };
+  }, [metricFrame.imageId, structuralDefinition?.product.productId]);
+  const isPaperCalibrated = Boolean(metricReference && activeCalibrationMeta?.samePlaneConfirmed && activeCalibrationMeta?.paperStandardConfirmed);
   const verifiedScaleCmPerPx =
     activeCalibrationMeta?.verified_scale_cm_per_px ??
     spaceImageSession?.calibrationMeta?.verified_scale_cm_per_px ??
     sessionContext?.spaceImageSession?.calibrationMeta?.verified_scale_cm_per_px ??
-    (isVerifiedCalibrated ? activeScaleSignal?.best_scale_cm_per_px : null) ??
+    activeScaleSignal?.best_scale_cm_per_px ??
     null;
 
   const [widthCm, setWidthCm] = useState(() => {
     const photoWidthPx = spaceImageSession?.workspaceImage?.width ?? 0;
     const photoHeightPx = spaceImageSession?.workspaceImage?.height ?? 0;
-    if (isVerifiedCalibrated && verifiedScaleCmPerPx && verifiedScaleCmPerPx > 0 && !hydratedVariation.widthCm) {
-      const verifiedDims = getVerifiedScaleInitialDimensions(
-        verifiedScaleCmPerPx,
-        photoWidthPx || 636,
-        photoHeightPx || 579,
-        DEFAULT_OVERLAY_WIDTH_PX,
-        DEFAULT_OVERLAY_HEIGHT_PX,
-        photoWidthPx,
-        photoHeightPx,
-      );
-      return String(verifiedDims.widthCm);
-    }
     const hydratedWidth = hydratedVariation.widthCm;
     if (hydratedWidth) {
       return String(hydratedWidth);
@@ -423,18 +401,6 @@ export function ProductModelWorkspace({
   const [heightCm, setHeightCm] = useState(() => {
     const photoWidthPx = spaceImageSession?.workspaceImage?.width ?? 0;
     const photoHeightPx = spaceImageSession?.workspaceImage?.height ?? 0;
-    if (isVerifiedCalibrated && verifiedScaleCmPerPx && verifiedScaleCmPerPx > 0 && !hydratedVariation.heightCm) {
-      const verifiedDims = getVerifiedScaleInitialDimensions(
-        verifiedScaleCmPerPx,
-        photoWidthPx || 636,
-        photoHeightPx || 579,
-        DEFAULT_OVERLAY_WIDTH_PX,
-        DEFAULT_OVERLAY_HEIGHT_PX,
-        photoWidthPx,
-        photoHeightPx,
-      );
-      return String(verifiedDims.heightCm);
-    }
     const hydratedHeight = hydratedVariation.heightCm;
     if (hydratedHeight) {
       return String(hydratedHeight);
@@ -477,6 +443,7 @@ export function ProductModelWorkspace({
   const [perspectiveCorners, setPerspectiveCorners] = useState<QuadrilateralCorners | null>(
     initialConfiguration?.perspectiveFitCorners ?? null,
   );
+  const [targetPlaneId, setTargetPlaneId] = useState<string | null>(initialConfiguration?.targetPlaneId ?? null);
   const [showPerspectivePicker, setShowPerspectivePicker] = useState(false);
   const { setNavbarHidden } = useNavbarVisibility();
 
@@ -923,8 +890,8 @@ export function ProductModelWorkspace({
     const widthValCm = Number(widthCm) || DEFAULT_PRODUCT_WIDTH_CM;
     const heightValCm = Number(heightCm) || DEFAULT_PRODUCT_HEIGHT_CM;
     const thicknessValMm = Number(thicknessMm) || 3;
-    const widthMm = Math.round(widthValCm * 10);
-    const heightMm = Math.round(heightValCm * 10);
+    const widthMm = (widthValCm * 10);
+    const heightMm = (heightValCm * 10);
     const finishType = alumFinish === "white" ? "PowderCoatedWhite" : "Analok";
     const glassType = thicknessValMm >= 6 && glassAppearance === "clear"
       ? "6mm_clear"
@@ -1322,6 +1289,24 @@ export function ProductModelWorkspace({
     appliedTemplateDefaultsRef.current = productId;
   }, [structuralDefinition, isDoorProduct]);
 
+  const [manualDimensions, setManualDimensions] = useState(initialConfiguration?.visualParameterValues.dimension_source === "manual_tape");
+  const [savedMeasurementEvidence, setSavedMeasurementEvidence] = useState<unknown>(initialConfiguration?.visualParameterValues.calibration_provenance);
+  const activeMeasurementRecord = useMemo(() => {
+    if (manualDimensions || !perspectiveCorners) return null;
+    const current = createMeasurementRecord(activeCalibrationMeta, perspectiveCorners, metricFrame, targetPlaneId);
+    if (current) return current;
+    const saved = readMeasurementRecord(savedMeasurementEvidence);
+    return saved && metricReference && saved.plane_id !== metricReference.planeId && targetPlaneId === saved.plane_id && saved.image_identity === metricFrame.imageId && saved.image_width_px === metricFrame.width && saved.image_height_px === metricFrame.height
+      && JSON.stringify(saved.opening_corners) === JSON.stringify(perspectiveCorners) ? saved : null;
+  }, [manualDimensions, perspectiveCorners, activeCalibrationMeta, metricFrame, targetPlaneId, savedMeasurementEvidence, metricReference]);
+  const manualPhotoComparison = useMemo(() => manualDimensions && perspectiveCorners
+    ? createMeasurementRecord(activeCalibrationMeta, perspectiveCorners, metricFrame, targetPlaneId) : null,
+    [manualDimensions, perspectiveCorners, activeCalibrationMeta, metricFrame, targetPlaneId]);
+  const activeMetricMeasurement = activeMeasurementRecord;
+  const isVerifiedCalibrated = Boolean(activeMeasurementRecord &&
+    Math.abs(Number(widthCm) * 10 - activeMeasurementRecord.width_mm) < 1e-6 &&
+    Math.abs(Number(heightCm) * 10 - activeMeasurementRecord.height_mm) < 1e-6);
+
   const currentConfiguration = useMemo<ProductConfigurationSnapshot>(() => {
     const width = Number(widthCm) || DEFAULT_PRODUCT_WIDTH_CM;
     const height = Number(heightCm) || DEFAULT_PRODUCT_HEIGHT_CM;
@@ -1348,6 +1333,7 @@ export function ProductModelWorkspace({
       activeOcclusionIds,
       manualOcclusionMaskDataUrl: manualMaskDataUrl,
       manualOcclusionPolygons,
+      targetPlaneId,
       perspectiveFitCorners: perspectiveCorners,
       ambientLight,
       autoShadow,
@@ -1361,9 +1347,26 @@ export function ProductModelWorkspace({
         pane_count: panelCount,
         includeSill,
         include_sill: includeSill,
+        dimension_source: manualDimensions ? "manual_tape" : isVerifiedCalibrated ? "planar_paper_estimate" : "heuristic",
+        calibration_provenance: isVerifiedCalibrated ? activeMeasurementRecord : null,
+        metric_measurement: isVerifiedCalibrated ? activeMetricMeasurement : null,
+        photo_disagreement_mm: manualPhotoComparison ? { width: manualPhotoComparison.width_mm - width * 10,
+          height: manualPhotoComparison.height_mm - height * 10 } : null,
+        metric_eligibility: isVerifiedCalibrated ? "eligible_planar_estimate" : referenceEligibility.status,
+        placement_review: activeCalibrationMeta?.placementReview ?? null,
+        measurement_source: manualDimensions ? "manual_tape" : isVerifiedCalibrated ? "planar_photo_estimate" : "heuristic_preview",
+        calibration_scale_cm_per_px: null,
       },
     };
   }, [
+    isVerifiedCalibrated,
+    manualDimensions,
+    activeMeasurementRecord,
+    manualPhotoComparison,
+    targetPlaneId,
+    activeCalibrationMeta?.placementReview,
+    referenceEligibility.status,
+    activeMetricMeasurement,
     activeOcclusionIds,
     manualMaskDataUrl,
     manualOcclusionPolygons,
@@ -1430,7 +1433,10 @@ export function ProductModelWorkspace({
     setOverlayPosition({ x: 0, y: 0 });
     overlayX.set(0);
     overlayY.set(0);
+    setTargetPlaneId(null);
     setPerspectiveCorners(null);
+    setManualDimensions(false);
+    setSavedMeasurementEvidence(null);
     setZoomLevel(DEFAULT_SCENE_ZOOM);
     setOverlaySize({
       width: Math.round(baseSize.width * defaultScale),
@@ -1438,7 +1444,7 @@ export function ProductModelWorkspace({
     });
     setProjectedModelBounds({ left: 0, top: 0, width: 1, height: 1 });
     setProductInstanceRevision((current) => current + 1);
-  }, [heightCm, overlayX, overlayY, widthCm]);
+  }, [heightCm, overlayX, overlayY, widthCm, setManualDimensions, setSavedMeasurementEvidence]);
 
   const applyProductConfiguration = useCallback(
     (configuration: ProductConfigurationSnapshot) => {
@@ -1473,7 +1479,10 @@ export function ProductModelWorkspace({
       setActiveOcclusionIds(configuration.activeOcclusionIds ?? []);
       setManualMaskDataUrl(configuration.manualOcclusionMaskDataUrl ?? null);
       setManualOcclusionPolygons(configuration.manualOcclusionPolygons ?? []);
+      setTargetPlaneId(configuration.targetPlaneId ?? null);
       setPerspectiveCorners(configuration.perspectiveFitCorners ?? null);
+      setManualDimensions(configuration.visualParameterValues.dimension_source === "manual_tape");
+      setSavedMeasurementEvidence(configuration.visualParameterValues.calibration_provenance);
       setAmbientLight(configuration.ambientLight ?? true);
       setAutoShadow(configuration.autoShadow ?? true);
       setAutoRealism(configuration.autoRealism ?? true);
@@ -1491,7 +1500,7 @@ export function ProductModelWorkspace({
       setIsSnapshotApplied(false);
       setProductInstanceRevision((current) => current + 1);
     },
-    [overlayX, overlayY],
+    [overlayX, overlayY, setManualDimensions, setSavedMeasurementEvidence],
   );
 
   const handleReset = (e: React.MouseEvent) => {
@@ -1530,44 +1539,13 @@ export function ProductModelWorkspace({
       const fallbackHeight = definition.product.productType.toLowerCase().includes("door") ? 2100 : 1500;
       const defaultW = Math.round(getStructuralDefaultMm(definition, "width", fallbackWidth) / 10);
       const defaultH = Math.round(getStructuralDefaultMm(definition, "height", fallbackHeight) / 10);
-      let stagedWidthCm = defaultW;
-      let stagedHeightCm = defaultH;
+      const stagedWidthCm = defaultW;
+      const stagedHeightCm = defaultH;
       const scaleSignal =
         activeScaleSignal ??
         spaceImageSession?.scaleEstimation ??
         spaceImageSession?.scale_estimation ??
         sessionContext?.spaceImageSession?.scaleEstimation;
-      if (intent.mode === "add" && isVerifiedCalibrated && verifiedScaleCmPerPx) {
-        const photoWidthPx = spaceImageSession?.workspaceImage?.width ?? 0;
-        const photoHeightPx = spaceImageSession?.workspaceImage?.height ?? 0;
-        const initialDims = getVerifiedScaleInitialDimensions(
-          verifiedScaleCmPerPx,
-          photoWidthPx || canvasDisplaySize.width || 636,
-          photoHeightPx || canvasDisplaySize.height || 579,
-          DEFAULT_OVERLAY_WIDTH_PX,
-          DEFAULT_OVERLAY_HEIGHT_PX,
-          photoWidthPx,
-          photoHeightPx,
-        );
-        stagedWidthCm = initialDims.widthCm;
-        stagedHeightCm = initialDims.heightCm;
-      } else if (intent.mode === "add" && isPaperCalibrated && scaleSignal) {
-        const photoWidthPx = spaceImageSession?.workspaceImage?.width ?? 0;
-        const photoHeightPx = spaceImageSession?.workspaceImage?.height ?? 0;
-        const initialDims = getScaleAwareInitialDimensions(
-          scaleSignal,
-          defaultW,
-          defaultH,
-          DEFAULT_OVERLAY_WIDTH_PX,
-          DEFAULT_OVERLAY_HEIGHT_PX,
-          photoWidthPx || canvasDisplaySize.width,
-          photoHeightPx || canvasDisplaySize.height,
-          photoWidthPx || 636,
-          photoHeightPx || 579,
-        );
-        stagedWidthCm = initialDims.widthCm;
-        stagedHeightCm = initialDims.heightCm;
-      }
       const targetConfiguration: ProductConfigurationSnapshot = intent.mode === "edit" && intent.targetOverlay
         ? intent.targetOverlay.configuration
         : {
@@ -1591,7 +1569,8 @@ export function ProductModelWorkspace({
             zoomLevel: intent.mode === "change" ? currentConfiguration.zoomLevel : DEFAULT_SCENE_ZOOM,
             positionX: intent.mode === "change" ? currentConfiguration.positionX : 0,
             positionY: intent.mode === "change" ? currentConfiguration.positionY : 0,
-            perspectiveFitCorners: intent.mode === "change" ? currentConfiguration.perspectiveFitCorners : null,
+            targetPlaneId: null,
+            perspectiveFitCorners: null,
             activeOcclusionIds: [],
             manualOcclusionMaskDataUrl: null,
             manualOcclusionPolygons: [],
@@ -1602,11 +1581,8 @@ export function ProductModelWorkspace({
               pane_count: Number(definition.parameters.find((parameter) => parameter.parameterKey === "pane_count")?.defaultValue) || 2,
               includeSill: Boolean(definition.template.baseConfiguration.includeSill ?? true),
               include_sill: Boolean(definition.template.baseConfiguration.includeSill ?? true),
-              dimension_source: isVerifiedCalibrated
-                ? "verified_calibrated_visual"
-                : isPaperCalibrated
-                ? "calibrated_visual"
-                : "default_heuristic",
+              dimension_source: "default_heuristic",
+              metric_measurement: null, calibration_provenance: null,
               paper_standard: activeCalibrationMeta?.paperStandard ?? null,
               calibration_scale_cm_per_px: verifiedScaleCmPerPx ?? scaleSignal?.best_scale_cm_per_px ?? null,
               user_verified: Boolean(activeCalibrationMeta?.user_verified),
@@ -2133,6 +2109,7 @@ export function ProductModelWorkspace({
       setIsMeasurementModalOpen(false);
 
       const activeEntry = confirmedEntries.find((e) => e.isActiveProduct);
+      if (activeEntry?.dimensionSource === "manual_tape") setManualDimensions(true);
       if (activeEntry?.override.widthOverridden) {
         setWidthCm(String(convertInToCm(activeEntry.override.widthIn)));
       }
@@ -2180,6 +2157,7 @@ export function ProductModelWorkspace({
       selectedProduct,
       setHeightCm,
       setWidthCm,
+      setManualDimensions,
     ],
   );
 
@@ -2192,11 +2170,19 @@ export function ProductModelWorkspace({
   const handlePaperPinConfirm = useCallback(
     (
       orderedCorners: [Point2D, Point2D, Point2D, Point2D],
-      scaleResult: { scaleCmPerPx: number; confidence: number },
+      scaleResult: PaperReviewResult,
       selectedStandard?: FiducialPaperStandard,
     ) => {
+      if (!scaleResult.paperStandardConfirmed || !scaleResult.samePlaneConfirmed ||
+        scaleResult.placementAssessment !== "user_confirmed_same_plane" ||
+        scaleResult.placementRiskReasons?.some(r => r !== "person_nearby")) return;
       const paperStd = selectedStandard ?? activeCalibrationMeta?.paperStandard ?? "a4";
+      if (!scaleResult.orientationConfirmed || !scaleResult.firstEdge) return;
+      const geometry = createMetricReference(metricFrame, orderedCorners, paperStd, scaleResult.firstEdge,
+        (metricReference?.revision ?? 0) + 1);
+      if (!geometry.valid) return;
       const updatedSignal: ScaleEstimationSignal = {
+        reference_confirmed: true,
         best_scale_cm_per_px: scaleResult.scaleCmPerPx,
         confidence: scaleResult.confidence,
         method: `paper_fiducial_${paperStd}`,
@@ -2218,10 +2204,41 @@ export function ProductModelWorkspace({
       const updatedMeta: CalibrationMetadata = {
         mode: "paper_fiducial",
         paperStandard: paperStd,
+        suggested_paper_standard:
+          activeCalibrationMeta?.suggested_paper_standard ??
+          spaceImageSession?.paperCalibration?.suggested_paper_standard ??
+          null,
+        suggestedPaperStandard:
+          activeCalibrationMeta?.suggested_paper_standard ??
+          spaceImageSession?.paperCalibration?.suggested_paper_standard ??
+          null,
+        aspect_ratio_match_confidence:
+          activeCalibrationMeta?.aspect_ratio_match_confidence ??
+          spaceImageSession?.paperCalibration?.aspect_ratio_match_confidence ??
+          0,
+        aspectRatioMatchConfidence:
+          activeCalibrationMeta?.aspect_ratio_match_confidence ??
+          spaceImageSession?.paperCalibration?.aspect_ratio_match_confidence ??
+          0,
+        unwarped_aspect_ratio:
+          activeCalibrationMeta?.unwarped_aspect_ratio ??
+          spaceImageSession?.paperCalibration?.unwarped_aspect_ratio ??
+          null,
+        unwarpedAspectRatio:
+          activeCalibrationMeta?.unwarped_aspect_ratio ??
+          spaceImageSession?.paperCalibration?.unwarped_aspect_ratio ??
+          null,
         status: "verified_calibrated",
         confidence: scaleResult.confidence,
         detectedCorners: orderedCorners.map((pt) => [pt.x, pt.y]),
-        homographyMatrix: activeCalibrationMeta?.homographyMatrix ?? null,
+        homographyMatrix: null,
+        metricReference: geometry.reference,
+        referenceSource: scaleResult.referenceSource,
+        selectedCandidateId: scaleResult.selectedCandidateId,
+        paperStandardConfirmed: true,
+        samePlaneConfirmed: true,
+        placementReview: { version: "plane-placement-v1", assessment: "user_confirmed_same_plane",
+          riskReasons: scaleResult.placementRiskReasons ?? [], targetPlaneId: geometry.reference.planeId },
         user_verified: true,
         verified_corners: orderedCorners,
         verified_scale_cm_per_px: scaleResult.scaleCmPerPx,
@@ -2235,141 +2252,68 @@ export function ProductModelWorkspace({
       const photoWidthPx = spaceImageSession?.workspaceImage?.width ?? 0;
       const photoHeightPx = spaceImageSession?.workspaceImage?.height ?? 0;
 
-      if (perspectiveCorners) {
-        const photoCorners = denormalizeCorners(perspectiveCorners, photoWidthPx || canvasDisplaySize.width, photoHeightPx || canvasDisplaySize.height);
-        const { widthRatio, heightRatio } = estimateDimensionsFromCorners(photoCorners);
-        if (heightRatio > 0 && widthRatio > 0) {
-          const estimate = computeEstimatedDimensions(
-            widthRatio,
-            heightRatio,
-            updatedSignal,
-            isDoorProduct,
-            null,
-            null,
-          );
-          setWidthCm(String(estimate.widthCm));
-          setHeightCm(String(estimate.heightCm));
-          setOverlaySize(getOverlaySizeFromDimensions(String(estimate.widthCm), String(estimate.heightCm)));
+      if (perspectiveCorners && !manualDimensions && targetPlaneId === geometry.reference.planeId) {
+        const measurement = evaluateMetricOpening(geometry.reference,
+          denormalizeCorners(perspectiveCorners, photoWidthPx, photoHeightPx), metricFrame);
+        if (measurement.valid) {
+          setWidthCm(String(measurement.widthMm / 10));
+          setHeightCm(String(measurement.heightMm / 10));
+          setOverlaySize(getOverlaySizeFromDimensions(String(measurement.widthMm / 10), String(measurement.heightMm / 10)));
         }
-      } else {
-        const initialDims = getVerifiedScaleInitialDimensions(
-          scaleResult.scaleCmPerPx,
-          photoWidthPx || 636,
-          photoHeightPx || 579,
-          DEFAULT_OVERLAY_WIDTH_PX,
-          DEFAULT_OVERLAY_HEIGHT_PX,
-          photoWidthPx,
-          photoHeightPx,
-        );
-        setWidthCm(String(initialDims.widthCm));
-        setHeightCm(String(initialDims.heightCm));
-        setOverlaySize(getOverlaySizeFromDimensions(String(initialDims.widthCm), String(initialDims.heightCm)));
       }
-
       setModelRevision((prev) => prev + 1);
-
-      // Hot Rescaling: dynamically rescale all placed fixtures in the scene (IMP-MS52)
-      if (placedOverlays && placedOverlays.length > 0 && onPlacedOverlaysChange) {
-        const rescaledOverlays = placedOverlays.map((overlay) => {
-          let nextWidth = overlay.configuration.widthCm;
-          let nextHeight = overlay.configuration.heightCm;
-
-          if (overlay.configuration.perspectiveFitCorners) {
-            const pCorners = denormalizeCorners(
-              overlay.configuration.perspectiveFitCorners,
-              photoWidthPx || canvasDisplaySize.width,
-              photoHeightPx || canvasDisplaySize.height,
-            );
-            const { widthRatio, heightRatio } = estimateDimensionsFromCorners(pCorners);
-            if (widthRatio > 0 && heightRatio > 0) {
-              nextWidth = Math.max(30, Math.min(600, Math.round(widthRatio * scaleResult.scaleCmPerPx)));
-              nextHeight = Math.max(30, Math.min(400, Math.round(heightRatio * scaleResult.scaleCmPerPx)));
-            }
-          } else {
-            const sourceW = overlay.sourceCanvasWidth || canvasDisplaySize.width || 636;
-            const sourceH = overlay.sourceCanvasHeight || canvasDisplaySize.height || 579;
-            const overlayW = overlay.sourceOverlayWidth ?? getOverlaySizeFromConfiguration(overlay.configuration).width;
-            const overlayH = overlay.sourceOverlayHeight ?? getOverlaySizeFromConfiguration(overlay.configuration).height;
-            const dims = getVerifiedScaleInitialDimensions(
-              scaleResult.scaleCmPerPx,
-              sourceW,
-              sourceH,
-              overlayW,
-              overlayH,
-              photoWidthPx,
-              photoHeightPx,
-            );
-            nextWidth = dims.widthCm;
-            nextHeight = dims.heightCm;
-          }
-
-          return {
-            ...overlay,
-            configuration: {
-              ...overlay.configuration,
-              widthCm: nextWidth,
-              heightCm: nextHeight,
-              visualParameterValues: {
-                ...(overlay.configuration.visualParameterValues ?? {}),
-                width: Math.round(nextWidth * 10),
-                height: Math.round(nextHeight * 10),
-                dimension_source: "verified_calibrated_visual",
-                paper_standard: paperStd,
-                calibration_scale_cm_per_px: scaleResult.scaleCmPerPx,
-                user_verified: true,
-              },
-            },
-          };
-        });
-        onPlacedOverlaysChange(rescaledOverlays);
+      if (placedOverlays && onPlacedOverlaysChange) {
+        onPlacedOverlaysChange(placedOverlays.map(overlay => recalculateMetricOverlay(overlay, geometry.reference, metricFrame, updatedMeta)));
       }
 
       setShowPaperPinPicker(false);
     },
     [
-      activeCalibrationMeta?.homographyMatrix,
+      manualDimensions,
       activeCalibrationMeta?.paperStandard,
+      activeCalibrationMeta?.suggested_paper_standard,
+      activeCalibrationMeta?.aspect_ratio_match_confidence,
+      activeCalibrationMeta?.unwarped_aspect_ratio,
       activeScaleSignal,
-      canvasDisplaySize,
+      metricFrame,
+      targetPlaneId,
+      metricReference,
       commitSessionCalibration,
-      isDoorProduct,
       onCalibrationChange,
       onPlacedOverlaysChange,
       perspectiveCorners,
       placedOverlays,
       setModelRevision,
+      spaceImageSession?.paperCalibration?.suggested_paper_standard,
+      spaceImageSession?.paperCalibration?.aspect_ratio_match_confidence,
+      spaceImageSession?.paperCalibration?.unwarped_aspect_ratio,
       spaceImageSession?.workspaceImage,
     ],
   );
 
-  const handlePaperPinSkip = useCallback(() => {
+  const handlePaperPinSkip = useCallback((review?: PaperReviewResult) => {
     const updatedMeta: CalibrationMetadata = {
-      mode: activeCalibrationMeta?.mode ?? "paper_fiducial",
-      paperStandard: activeCalibrationMeta?.paperStandard ?? null,
-      status: "heuristic_fallback",
-      confidence: activeCalibrationMeta?.confidence ?? 0.75,
-      homographyMatrix: activeCalibrationMeta?.homographyMatrix ?? null,
-      detectedCorners: activeCalibrationMeta?.detectedCorners ?? null,
+      mode: "standard", paperStandard: null, status: "heuristic_fallback", confidence: 0,
+      homographyMatrix: null, detectedCorners: null, user_verified: false,
+      verified_corners: null, verified_scale_cm_per_px: null, paperStandardConfirmed: false,
+      samePlaneConfirmed: false, selectedCandidateId: null,
+      placementReview: { version: "plane-placement-v1", assessment: review?.placementAssessment ?? "unknown",
+        riskReasons: review?.placementRiskReasons ?? [], targetPlaneId: null },
     };
     setActiveCalibrationMeta(updatedMeta);
-    const currentSignal =
-      activeScaleSignal ??
-      spaceImageSession?.scaleEstimation ??
-      spaceImageSession?.scale_estimation ??
-      sessionContext?.spaceImageSession?.scaleEstimation ??
-      sessionContext?.spaceImageSession?.scale_estimation;
-    const signalToCommit: ScaleEstimationSignal = currentSignal ?? {
-      best_scale_cm_per_px: null,
-      confidence: 0.75,
-      method: "heuristic_fallback",
-      anchors: [],
-      exif_focal_length_mm: null,
-      exif_focal_length_35mm: null,
-      exif_device_model: null,
+    const signalToCommit: ScaleEstimationSignal = {
+      reference_confirmed: false, best_scale_cm_per_px: null, confidence: 0,
+      method: "heuristic_fallback", anchors: [], exif_focal_length_mm: null,
+      exif_focal_length_35mm: null, exif_device_model: null,
     };
+    setActiveScaleSignal(signalToCommit);
     commitSessionCalibration?.(updatedMeta, signalToCommit);
+    onCalibrationChange?.(updatedMeta, signalToCommit);
+    if (placedOverlays && onPlacedOverlaysChange) {
+      onPlacedOverlaysChange(placedOverlays.map(overlay => recalculateMetricOverlay(overlay, null, metricFrame, updatedMeta)));
+    }
     setShowPaperPinPicker(false);
-  }, [activeCalibrationMeta, activeScaleSignal, commitSessionCalibration, sessionContext?.spaceImageSession, spaceImageSession]);
+  }, [commitSessionCalibration, onCalibrationChange, placedOverlays, onPlacedOverlaysChange, metricFrame]);
 
   const applySceneZoom = useCallback((nextZoomLevel: number) => {
     setZoomLevel((currentZoomLevel) => {
@@ -2421,6 +2365,7 @@ export function ProductModelWorkspace({
   );
 
   const handleWidthCmChange = (value: string) => {
+    setManualDimensions(false);
     const prevW = Number(widthCm) || 120;
     setWidthCm(value);
     setOverlaySize(getOverlaySizeFromDimensions(value, heightCm));
@@ -2440,6 +2385,7 @@ export function ProductModelWorkspace({
   };
 
   const handleHeightCmChange = (value: string) => {
+    setManualDimensions(false);
     const prevH = Number(heightCm) || 120;
     setHeightCm(value);
     setOverlaySize(getOverlaySizeFromDimensions(widthCm, value));
@@ -2729,6 +2675,17 @@ export function ProductModelWorkspace({
     [rotateAngle],
   );
 
+  const updateMetricPerspectiveCorners = useCallback((corners: QuadrilateralCorners) => {
+    setPerspectiveCorners(corners);
+    if (!metricReference || manualDimensions || targetPlaneId !== metricReference.planeId) return;
+    const measurement = evaluateMetricOpening(metricReference,
+      denormalizeCorners(corners, metricFrame.width, metricFrame.height), metricFrame);
+    if (!measurement.valid) return;
+    setWidthCm(String(measurement.widthMm / 10));
+    setHeightCm(String(measurement.heightMm / 10));
+    setOverlaySize(getOverlaySizeFromDimensions(String(measurement.widthMm / 10), String(measurement.heightMm / 10)));
+  }, [metricReference, metricFrame, targetPlaneId, manualDimensions]);
+
   const startPerspectiveResize = useCallback(
     (
       event: React.PointerEvent,
@@ -2772,6 +2729,7 @@ export function ProductModelWorkspace({
           const initialSpan = currentW * 0.35;
           const scaleRatio = Math.max(0.15, 1 + dominantDelta / initialSpan);
           const nextCorners = scaleCornersAlongAxis(session.startCorners, scaleRatio, "scale");
+          if (metricReference) { updateMetricPerspectiveCorners(nextCorners); return; }
           setPerspectiveCorners(nextCorners);
           const nextW = Math.max(20, Math.round(session.startWidthCm * scaleRatio));
           const nextH = Math.max(20, Math.round(session.startHeightCm * scaleRatio));
@@ -2785,6 +2743,7 @@ export function ProductModelWorkspace({
           const initialSpan = currentW * 0.30;
           const widthRatio = Math.max(0.15, 1 + dx / initialSpan);
           const nextCorners = scaleCornersAlongAxis(session.startCorners, widthRatio, "width");
+          if (metricReference) { updateMetricPerspectiveCorners(nextCorners); return; }
           setPerspectiveCorners(nextCorners);
           const nextW = Math.max(20, Math.round(session.startWidthCm * widthRatio));
           setWidthCm(String(nextW));
@@ -2796,6 +2755,7 @@ export function ProductModelWorkspace({
           const initialSpan = currentH * 0.30;
           const heightRatio = Math.max(0.15, 1 + dy / initialSpan);
           const nextCorners = scaleCornersAlongAxis(session.startCorners, heightRatio, "height");
+          if (metricReference) { updateMetricPerspectiveCorners(nextCorners); return; }
           setPerspectiveCorners(nextCorners);
           const nextH = Math.max(20, Math.round(session.startHeightCm * heightRatio));
           setHeightCm(String(nextH));
@@ -2817,7 +2777,7 @@ export function ProductModelWorkspace({
       window.addEventListener("pointerup", handleEnd);
       window.addEventListener("pointercancel", handleEnd);
     },
-    [perspectiveCorners, widthCm, heightCm, canvasDisplaySize.width, canvasDisplaySize.height],
+    [perspectiveCorners, widthCm, heightCm, canvasDisplaySize.width, canvasDisplaySize.height, metricReference, updateMetricPerspectiveCorners],
   );
 
   const startPerspectiveMove = useCallback(
@@ -2845,7 +2805,7 @@ export function ProductModelWorkspace({
           y: clampNumber(p.y + normDy, -0.2, 1.2),
         })) as QuadrilateralCorners;
 
-        setPerspectiveCorners(nextCorners);
+        updateMetricPerspectiveCorners(nextCorners);
       };
 
       const handleEnd = () => {
@@ -2859,7 +2819,7 @@ export function ProductModelWorkspace({
       window.addEventListener("pointerup", handleEnd);
       window.addEventListener("pointercancel", handleEnd);
     },
-    [perspectiveCorners, isUsingTransformHandle, canvasDisplaySize.width, canvasDisplaySize.height],
+    [perspectiveCorners, isUsingTransformHandle, canvasDisplaySize.width, canvasDisplaySize.height, updateMetricPerspectiveCorners],
   );
 
   return (
@@ -3182,11 +3142,7 @@ export function ProductModelWorkspace({
                   <div className="flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-600 dark:text-emerald-400 backdrop-blur-md shadow-xs">
                     <CheckCircle2 className="size-3.5 text-emerald-500 shrink-0" />
                     <span>
-                      {isVerifiedCalibrated && activeCalibrationMeta?.paperStandard
-                        ? `Calibrated (Verified: ${activeCalibrationMeta.paperStandard.toUpperCase()}) - ${(
-                            verifiedScaleCmPerPx ?? activeScaleSignal?.best_scale_cm_per_px ?? 0
-                          ).toFixed(4)} cm/px`
-                        : "Calibrated Scale: ±2-5% Precision"}
+                      {manualDimensions ? "Manual tape measurement" : isVerifiedCalibrated ? "Photo estimate: paper calibrated" : "Reference reviewed: fit the opening"}
                     </span>
                     <button
                       type="button"
@@ -3198,11 +3154,11 @@ export function ProductModelWorkspace({
                   </div>
                 ) : (
                   <div
-                    title="Upload with a taped sheet of paper for quote-ready accuracy."
+                    title="Review a flat paper reference and fit the installation perimeter."
                     className="flex items-center gap-2 rounded-full border border-neutral-500/20 bg-neutral-900/60 px-3 py-1.5 text-xs text-white/90 backdrop-blur-md shadow-xs"
                   >
                     <Info className="size-3.5 text-neutral-300 shrink-0" />
-                    <span>Heuristic Scale: Ballpark Preview</span>
+                    <span>{manualDimensions ? "Manual tape measurement" : "Heuristic Scale: Ballpark Preview"}</span>
                     {activeCalibrationMeta?.mode === "paper_fiducial" && (
                       <button
                         type="button"
@@ -3733,7 +3689,7 @@ export function ProductModelWorkspace({
                               <div className="size-2 bg-white rounded-full" />
                             </div>
 
-                            {/* Live Grounded Dimension Callouts & Precision Badge (IMP-MS52) */}
+                            {/* Live Dimension Callouts and Plane Estimate (IMP-MS52) */}
                             {isVerifiedCalibrated && (
                               <>
                                 {/* Width Callout: Top Center */}
@@ -3750,9 +3706,9 @@ export function ProductModelWorkspace({
                                   <span className="hidden sm:inline"> ({Number(heightCm).toFixed(1)} cm)</span>
                                 </div>
 
-                                {/* Precision Badge: Top-Right Corner */}
+                                {/* Plane estimate label at the top right */}
                                 <div className="absolute -top-7 right-0 z-30 flex items-center gap-1 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded text-[10px] font-medium tracking-wide uppercase shadow-sm pointer-events-none select-none whitespace-nowrap">
-                                  <span>Verified Scale (±2%)</span>
+                                  <span>Perspective estimate</span>
                                 </div>
                               </>
                             )}
@@ -4428,7 +4384,26 @@ export function ProductModelWorkspace({
           canvasWidth={spaceImageSession?.workspaceImage.width || canvasDisplaySize.width}
           canvasHeight={spaceImageSession?.workspaceImage.height || canvasDisplaySize.height}
           paperStandard={activeCalibrationMeta?.paperStandard ?? "a4"}
-          confidence={activeCalibrationMeta?.confidence ?? activeScaleSignal?.confidence ?? 0.95}
+          confidence={activeCalibrationMeta?.confidence ?? 0}
+          status={activeCalibrationMeta?.status}
+          candidates={spaceImageSession?.paperCalibration?.candidates}
+          selectedCandidateId={activeCalibrationMeta?.selectedCandidateId}
+          paperStandardConfirmed={activeCalibrationMeta?.paperStandardConfirmed}
+          suggestedPaperStandard={
+            spaceImageSession?.paperCalibration?.suggested_paper_standard ??
+            activeCalibrationMeta?.suggested_paper_standard ??
+            null
+          }
+          aspectRatioMatchConfidence={
+            spaceImageSession?.paperCalibration?.aspect_ratio_match_confidence ??
+            activeCalibrationMeta?.aspect_ratio_match_confidence ??
+            0
+          }
+          unwarpedAspectRatio={
+            spaceImageSession?.paperCalibration?.unwarped_aspect_ratio ??
+            activeCalibrationMeta?.unwarped_aspect_ratio ??
+            null
+          }
           initialCorners={
             activeCalibrationMeta?.verified_corners ??
             (activeCalibrationMeta?.detectedCorners
@@ -4445,6 +4420,7 @@ export function ProductModelWorkspace({
             handlePaperPinConfirm(corners, scaleResult, paperStandard)
           }
           onSkip={handlePaperPinSkip}
+          onRetake={onBack}
           onCancel={() => setShowPaperPinPicker(false)}
         />
       )}
@@ -4474,9 +4450,13 @@ export function ProductModelWorkspace({
           canvasHeight={aspectHeight}
           initialCorners={perspectiveCorners}
           openingType={isDoorProduct ? "door" : "window"}
-          scaleCmPerPx={verifiedScaleCmPerPx ?? activeScaleSignal?.best_scale_cm_per_px ?? null}
+          metricReference={isPaperCalibrated ? metricReference : null}
+          calibrationMeta={activeCalibrationMeta}
+          initialTargetPlaneId={targetPlaneId}
+          metricFrame={metricFrame}
           isVerifiedCalibrated={isVerifiedCalibrated}
-          onConfirm={async (corners) => {
+          onConfirm={async (corners, confirmedPlaneId) => {
+            setTargetPlaneId(confirmedPlaneId ?? null);
             const photoWidth =
               spaceImageSession?.workspaceImage.width ||
               canvasRef.current?.clientWidth || canvasDisplaySize.width;
@@ -4484,6 +4464,26 @@ export function ProductModelWorkspace({
               spaceImageSession?.workspaceImage.height ||
               canvasRef.current?.clientHeight || canvasDisplaySize.height;
             const photoCorners = denormalizeCorners(corners, photoWidth, photoHeight);
+            if (metricReference && confirmedPlaneId === metricReference.planeId) {
+              const record = createMeasurementRecord(activeCalibrationMeta, corners, metricFrame, confirmedPlaneId);
+              if (!record) return;
+              const measurement = evaluatePlaneEligibility(activeCalibrationMeta, confirmedPlaneId, photoCorners, metricFrame).measurement;
+              if (!measurement) return;
+              if (!measurement.valid) return;
+              setWidthCm(String(measurement.widthMm / 10));
+              setHeightCm(String(measurement.heightMm / 10));
+              setOverlaySize(getOverlaySizeFromDimensions(String(measurement.widthMm / 10), String(measurement.heightMm / 10)));
+              setPerspectiveCorners(corners);
+              setTargetPlaneId(metricReference.planeId);
+              setManualDimensions(false);
+              setSavedMeasurementEvidence(record);
+              setYaw(0); setPitch(0); setRotateAngle(0);
+              setModelRevision((prev) => prev + 1);
+              setShowPerspectivePicker(false);
+              return;
+            }
+            const fitImageId = metricFrame.imageId;
+            const fitProductId = structuralDefinition?.product.productId;
             const { widthRatio, heightRatio } = estimateDimensionsFromCorners(photoCorners);
             if (heightRatio > 0 && widthRatio > 0) {
               const quadCenterX = (corners[0].x + corners[1].x + corners[2].x + corners[3].x) / 4;
@@ -4498,6 +4498,10 @@ export function ProductModelWorkspace({
                 }
               }
 
+              if (fitImageId !== latestFitIdentityRef.current.imageId || fitProductId !== latestFitIdentityRef.current.productId) return;
+              setTargetPlaneId(null);
+              setManualDimensions(false);
+              setSavedMeasurementEvidence(null);
               const templateDefaultH = Number(
                 structuralDefinition?.parameters?.find((p) => p.parameterKey === "height")?.defaultValue
               ) || null;

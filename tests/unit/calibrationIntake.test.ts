@@ -101,7 +101,7 @@ describe("IMP-MS45: Dual-Mode Space Ingestion and Fiducial Paper Calibration Int
   });
 
   describe("2. API Client Payload Serialization (analyzeImage)", () => {
-    it("dispatches calibration_mode: 'standard' and omits paper_standard when options are omitted", async () => {
+    it("dispatches explicit auto_detect and omits paper format when options are omitted", async () => {
       let interceptedFormData: FormData | null = null;
 
       globalThis.fetch = async (_input, init) => {
@@ -117,7 +117,7 @@ describe("IMP-MS45: Dual-Mode Space Ingestion and Fiducial Paper Calibration Int
 
       assert.ok(interceptedFormData, "fetch must receive FormData body");
       const fd1 = interceptedFormData as unknown as FormData;
-      assert.equal(fd1.get("calibration_mode"), "standard");
+      assert.equal(fd1.get("calibration_mode"), "auto_detect");
       assert.equal(fd1.get("paper_standard"), null);
       assert.equal(session.sessionId, "test-session-123");
     });
@@ -235,12 +235,12 @@ describe("IMP-MS45: Dual-Mode Space Ingestion and Fiducial Paper Calibration Int
       const session = await analyzeImage(file, { mode: "paper_fiducial", paperStandard: "short" });
 
       assert.equal(session.calibrationMeta?.mode, "paper_fiducial");
-      assert.equal(session.calibrationMeta?.paperStandard, "short");
-      assert.equal(session.calibrationMeta?.status, "calibrated");
-      assert.equal(session.calibrationMeta?.confidence, 0.98);
-      assert.equal(session.paperCalibration?.status, "detected");
-      assert.equal(session.paperCalibration?.scale_cm_per_px, 0.125);
-      assert.equal(session.paperCalibration?.homography_matrix?.length, 3);
+      assert.equal(session.calibrationMeta?.paperStandard, null);
+      assert.equal(session.calibrationMeta?.status, "manual_pin_required");
+      assert.equal(session.calibrationMeta?.confidence, 0);
+      assert.equal(session.paperCalibration?.status, "manual_pin_required");
+      assert.equal(session.paperCalibration?.scale_cm_per_px, null);
+      assert.equal(session.paperCalibration?.homography_matrix, null);
     });
   });
 
@@ -275,8 +275,8 @@ describe("IMP-MS45: Dual-Mode Space Ingestion and Fiducial Paper Calibration Int
       assert.ok(src.includes("aria-checked="));
       assert.ok(src.includes("Standard (Fast)"));
       assert.ok(src.includes("Recommended for Quotation"));
-      assert.ok(src.includes("Ballpark Sizing (~75% - 85%)"));
-      assert.ok(src.includes("High Precision (±2% - 5%)"));
+      assert.ok(src.includes("Approximate Preview Available"));
+      assert.ok(src.includes("Requires Reference Review"));
       assert.ok(src.includes("Short Bond / Letter"));
       assert.ok(src.includes("A4 Standard"));
       assert.ok(src.includes("Long Bond / Folio"));

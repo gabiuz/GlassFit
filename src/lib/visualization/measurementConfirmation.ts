@@ -109,7 +109,7 @@ export function buildMeasurementEntries(
       structuralDefinition:
         activeStructuralDefinition?.product.productId === overlay.productId
           ? activeStructuralDefinition
-          : null,
+          : overlay.variationRenderRecipe?.structuralDefinition ?? null,
       overlayConfiguration: config,
       isActiveProduct: false,
       override: {
@@ -240,8 +240,7 @@ export function applyMeasurementOverridesToOverlays(
   return currentOverlays.map((overlay) => {
     const matchedEntry = confirmedEntries.find(
       (entry) =>
-        entry.overlayId === overlay.overlayId ||
-        (!entry.isActiveProduct && entry.productId === overlay.productId),
+        entry.overlayId === overlay.overlayId,
     );
 
     if (!matchedEntry) {
@@ -274,6 +273,8 @@ export function applyMeasurementOverridesToOverlays(
             visualParameterValues: {
               ...(overlay.configuration.visualParameterValues ?? {}),
               ...(dimensionSource ? { dimension_source: dimensionSource } : {}),
+              ...(dimensionSource && dimensionSource !== "planar_paper_estimate"
+                ? { calibration_provenance: null, metric_measurement: null } : {}),
               ...(calibrationMethod ? { calibration_method: calibrationMethod } : {}),
               ...(calibrationConfidence !== undefined && calibrationConfidence !== null
                 ? { calibration_confidence: calibrationConfidence }
@@ -313,11 +314,12 @@ export function applyMeasurementOverridesToOverlays(
       ...(userVerified !== undefined && userVerified !== null
         ? { user_verified: userVerified }
         : {}),
+      dimension_source: "manual_tape", calibration_provenance: null, metric_measurement: null, user_verified: false,
       ...(override.widthOverridden
-        ? { width: Math.round(nextWidthCm * 10) }
+        ? { width: nextWidthCm * 10 }
         : {}),
       ...(override.heightOverridden
-        ? { height: Math.round(nextHeightCm * 10) }
+        ? { height: nextHeightCm * 10 }
         : {}),
     };
 

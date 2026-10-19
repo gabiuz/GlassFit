@@ -12,9 +12,8 @@ import {
 import type { SpaceImageSession } from "@/lib/imageApi";
 import type {
   ActiveOverlay,
-  CalibrationMode,
-  FiducialPaperStandard,
   PlacedOverlay,
+  PaperCalibrationResult,
   ProductConfigurationSeed,
   ProductConfigurationSnapshot,
   ProductStructuralDefinition,
@@ -34,26 +33,9 @@ import { variationAssetRegistry } from "./variationAssetRegistry";
 import { variationRenderQueue } from "./variationRenderQueue";
 import { normalizeAluminumFinish } from "./colorVariations";
 import { clearWorkspaceDefinitions } from "./workspaceDefinitionCache";
-import {
-  denormalizeCorners,
-  estimateDimensionsFromCorners,
-} from "./perspectiveTransform";
-import type {
-  PaperCalibrationStatus,
-  Point2D,
-} from "./types";
-
-export interface CalibrationMetadata {
-  mode: CalibrationMode;
-  paperStandard: FiducialPaperStandard | null;
-  status: PaperCalibrationStatus;
-  confidence: number;
-  homographyMatrix?: number[][] | null;
-  detectedCorners?: [number, number][] | null;
-  user_verified?: boolean;
-  verified_corners?: [Point2D, Point2D, Point2D, Point2D] | null;
-  verified_scale_cm_per_px?: number | null;
-}
+import { recalculateMetricConfiguration, recalculateMetricOverlay } from "./scaleEstimation";
+export type { CalibrationMetadata } from "./types";
+import type { CalibrationMetadata } from "./types";
 
 export interface TransitionWorkspaceProductOptions {
   nextProductId: string;
@@ -351,95 +333,46 @@ export function VisualizationSessionProvider({
         }
 
         const baseSession = current.spaceImageSession;
+        const incoming = calibrationMeta.metricReference;
+        const existing = baseSession.calibrationMeta?.metricReference;
+        if (incoming && (incoming.frame.imageId !== baseSession.sessionId ||
+            incoming.frame.width !== baseSession.workspaceImage.width || incoming.frame.height !== baseSession.workspaceImage.height ||
+            (existing?.planeId === incoming.planeId && incoming.revision < existing.revision))) return current;
+
+        const paper: PaperCalibrationResult | undefined = calibrationMeta.user_verified ? {
+          ...baseSession.paperCalibration,
+          status: "verified_calibrated", paper_standard: calibrationMeta.paperStandard,
+          paper_standard_confirmed: calibrationMeta.paperStandardConfirmed === true,
+          reference_source: calibrationMeta.referenceSource ?? "manual_corners",
+          selected_candidate_id: calibrationMeta.selectedCandidateId ?? null,
+          detected_corners: calibrationMeta.detectedCorners ?? null,
+          scale_cm_per_px: calibrationMeta.verified_scale_cm_per_px ?? null,
+          confidence: 0, homography_matrix: null, metric_reference: calibrationMeta.metricReference ?? null, user_verified: true,
+          verified_corners: calibrationMeta.verified_corners ?? null,
+          verified_scale_cm_per_px: calibrationMeta.verified_scale_cm_per_px ?? null,
+        } : undefined;
         const updatedSession: SpaceImageSession = {
           ...baseSession,
+          paperCalibration: paper,
+          paper_calibration: paper,
           scaleEstimation: scaleSignal,
           scale_estimation: scaleSignal,
-          calibrationMeta: {
-            mode: calibrationMeta.mode,
-            paperStandard: calibrationMeta.paperStandard,
-            status: calibrationMeta.status,
-            confidence: calibrationMeta.confidence,
-            homographyMatrix:
-              calibrationMeta.homographyMatrix ??
-              baseSession.calibrationMeta?.homographyMatrix ??
-              null,
-            detectedCorners:
-              calibrationMeta.detectedCorners ??
-              baseSession.calibrationMeta?.detectedCorners ??
-              null,
-            user_verified:
-              calibrationMeta.user_verified ??
-              baseSession.calibrationMeta?.user_verified,
-            verified_corners:
-              calibrationMeta.verified_corners ??
-              baseSession.calibrationMeta?.verified_corners ??
-              null,
-            verified_scale_cm_per_px:
-              calibrationMeta.verified_scale_cm_per_px ??
-              baseSession.calibrationMeta?.verified_scale_cm_per_px ??
-              null,
-          },
+          calibrationMeta: { ...calibrationMeta },
         };
 
-        const nextScale =
-          calibrationMeta.verified_scale_cm_per_px ??
-          scaleSignal.best_scale_cm_per_px;
-        let rescaledPlacedOverlays = current.placedOverlays;
-        if (nextScale && nextScale > 0 && current.placedOverlays.length > 0) {
-          const photoW = updatedSession.workspaceImage?.width ?? 0;
-          const photoH = updatedSession.workspaceImage?.height ?? 0;
-          rescaledPlacedOverlays = current.placedOverlays.map((overlay) => {
-            if (overlay.configuration.perspectiveFitCorners && photoW > 0 && photoH > 0) {
-              const photoCorners = denormalizeCorners(
-                overlay.configuration.perspectiveFitCorners,
-                photoW,
-                photoH,
-              );
-              const { widthRatio, heightRatio } = estimateDimensionsFromCorners(photoCorners);
-              if (widthRatio > 0 && heightRatio > 0) {
-                const nextW = Math.max(30, Math.min(600, Math.round(widthRatio * nextScale)));
-                const nextH = Math.max(30, Math.min(400, Math.round(heightRatio * nextScale)));
-                return {
-                  ...overlay,
-                  configuration: {
-                    ...overlay.configuration,
-                    widthCm: nextW,
-                    heightCm: nextH,
-                    visualParameterValues: {
-                      ...(overlay.configuration.visualParameterValues ?? {}),
-                      dimension_source: "verified_calibrated_visual",
-                      paper_standard: calibrationMeta.paperStandard,
-                      calibration_scale_cm_per_px: nextScale,
-                      user_verified: Boolean(calibrationMeta.user_verified),
-                    },
-                  },
-                };
-              }
-            }
-            return overlay;
-          });
-        }
-
-        let rescaledProductConfig = current.productConfiguration;
-        if (rescaledProductConfig && nextScale && nextScale > 0) {
-          rescaledProductConfig = {
-            ...rescaledProductConfig,
-            visualParameterValues: {
-              ...(rescaledProductConfig.visualParameterValues ?? {}),
-              dimension_source: "verified_calibrated_visual",
-              paper_standard: calibrationMeta.paperStandard,
-              calibration_scale_cm_per_px: nextScale,
-              user_verified: Boolean(calibrationMeta.user_verified),
-            },
-          };
-        }
+        const reference = calibrationMeta.metricReference;
+        const frame = { imageId: updatedSession.sessionId, width: updatedSession.workspaceImage.width,
+          height: updatedSession.workspaceImage.height };
+        const rescaledPlacedOverlays = current.placedOverlays.map(overlay => recalculateMetricOverlay(overlay, reference, frame, calibrationMeta));
+        const rescaledProductConfig = current.productConfiguration
+          ? recalculateMetricConfiguration(current.productConfiguration, reference, frame, calibrationMeta) : null;
 
         const nextState: VisualizationSessionState = {
           ...current,
           spaceImageSession: updatedSession,
           placedOverlays: rescaledPlacedOverlays,
           productConfiguration: rescaledProductConfig,
+          comparisonOverlays: current.comparisonOverlays.map(overlay => recalculateMetricOverlay(overlay, reference, frame, calibrationMeta)),
         };
 
         writeStoredVisualizationSession(nextState);
@@ -583,6 +516,23 @@ export function VisualizationSessionProvider({
   );
 }
 
+/** IMP-MS55: stale and legacy persisted readings never inherit metric eligibility. */
+export function validateSessionPlaneEligibility(state: VisualizationSessionState): VisualizationSessionState {
+  const session = state.spaceImageSession;
+  const meta = session?.workspaceImage?.url ? session.calibrationMeta : null;
+  const frame = { imageId: session?.sessionId ?? "", width: session?.workspaceImage.width ?? 0,
+    height: session?.workspaceImage.height ?? 0 };
+  const validate = (configuration: ProductConfigurationSnapshot) =>
+    recalculateMetricConfiguration(configuration, meta?.metricReference, frame, meta);
+  const overlays = (items: PlacedOverlay[]) => items.map(overlay => ({ ...overlay,
+    configuration: validate(overlay.configuration),
+    variationRenderRecipe: overlay.variationRenderRecipe ? { ...overlay.variationRenderRecipe,
+      configuration: validate(overlay.variationRenderRecipe.configuration) } : undefined,
+  }));
+  return { ...state, productConfiguration: state.productConfiguration ? validate(state.productConfiguration) : null,
+    placedOverlays: overlays(state.placedOverlays), comparisonOverlays: overlays(state.comparisonOverlays) };
+}
+
 export function readStoredVisualizationSession(): VisualizationSessionState {
   if (typeof window === "undefined") {
     return initialState;
@@ -595,7 +545,7 @@ export function readStoredVisualizationSession(): VisualizationSessionState {
     }
 
     const parsed = JSON.parse(stored) as Partial<VisualizationSessionState>;
-    return {
+    const restored: VisualizationSessionState = {
       assetSessionId: typeof parsed.assetSessionId === "string" ? parsed.assetSessionId : null,
       selectedProductId: typeof parsed.selectedProductId === "string" ? parsed.selectedProductId : null,
       pendingProductConfiguration: normalizePendingProductConfiguration(parsed.pendingProductConfiguration),
@@ -640,6 +590,7 @@ export function readStoredVisualizationSession(): VisualizationSessionState {
           ? parsed.finalSnapshotDataUrl
           : null,
     };
+    return validateSessionPlaneEligibility(restored);
   } catch {
     return initialState;
   }

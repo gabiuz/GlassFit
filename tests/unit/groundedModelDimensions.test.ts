@@ -30,10 +30,11 @@ describe("IMP-MS50 / QAD-TC65: Grounded Real-World 3D Model Sizing and Quotation
     exif_device_model: null,
   };
 
+  // IMP-MS54: exact metric cases moved to metricGeometry.test.ts; scalar-only inputs are approximate.
   describe("1. Direct Coplanar Scale Application (computeEstimatedDimensions)", () => {
-    it("returns exactly 100cm x 120cm for 2000px x 2400px quad without heuristic blending (QAD-TC65.1)", () => {
-      // 2000px * 0.05 cm/px = 100 cm
-      // 2400px * 0.05 cm/px = 120 cm
+    it("MS54: scalar paper spans retain the template height and unknown confidence", () => {
+
+
       const estimate = computeEstimatedDimensions(
         2000,
         2400,
@@ -43,15 +44,15 @@ describe("IMP-MS50 / QAD-TC65: Grounded Real-World 3D Model Sizing and Quotation
         0.5, // depth value should be completely bypassed
       );
 
-      assert.equal(estimate.widthCm, 100);
-      assert.equal(estimate.heightCm, 120);
-      assert.equal(estimate.confidence, 0.95);
-      assert.equal(estimate.method, "paper_fiducial_a4");
+      assert.equal(estimate.widthCm, 125);
+      assert.equal(estimate.heightCm, 150);
+      assert.equal(estimate.confidence, 0);
+      assert.equal(estimate.method, "default_heuristic");
     });
 
-    it("does not artificially pull window models toward the 120cm template height", () => {
-      // Quad height = 3000px -> 3000 * 0.05 = 150cm height
-      // Template default height is 120cm for windows
+    it("MS54: scalar window spans cannot replace template dimensions", () => {
+
+
       const windowEst = computeEstimatedDimensions(
         1600,
         3000,
@@ -61,14 +62,13 @@ describe("IMP-MS50 / QAD-TC65: Grounded Real-World 3D Model Sizing and Quotation
         null,
       );
 
-      // Should be 80cm width x 150cm height (not pulled to 120cm)
-      assert.equal(windowEst.widthCm, 80);
-      assert.equal(windowEst.heightCm, 150);
+      assert.equal(windowEst.widthCm, 64);
+      assert.equal(windowEst.heightCm, 120);
     });
 
-    it("does not artificially pull door models toward the 210cm template height", () => {
-      // Quad height = 1600px -> 1600 * 0.05 = 80cm height (short custom hatch)
-      // Door default height is 210cm
+    it("MS54: scalar door spans cannot replace template dimensions", () => {
+
+
       const doorEst = computeEstimatedDimensions(
         1200,
         1600,
@@ -78,14 +78,13 @@ describe("IMP-MS50 / QAD-TC65: Grounded Real-World 3D Model Sizing and Quotation
         null,
       );
 
-      // Should be 60cm width x 80cm height (not pulled to 210cm)
-      assert.equal(doorEst.widthCm, 60);
-      assert.equal(doorEst.heightCm, 80);
+      assert.equal(doorEst.widthCm, 158);
+      assert.equal(doorEst.heightCm, 210);
     });
 
-    it("safely clamps dimensions exceeding 600cm width or 400cm height", () => {
-      // Huge opening: 15,000px width x 10,000px height at 0.05 cm/px
-      // Raw: 750cm width x 500cm height
+    it("MS54: scalar extremes remain approximate previews", () => {
+
+
       const hugeEst = computeEstimatedDimensions(
         15000,
         10000,
@@ -95,11 +94,10 @@ describe("IMP-MS50 / QAD-TC65: Grounded Real-World 3D Model Sizing and Quotation
         null,
       );
 
-      assert.equal(hugeEst.widthCm, 600);
-      assert.equal(hugeEst.heightCm, 400);
+      assert.equal(hugeEst.widthCm, 180);
+      assert.equal(hugeEst.heightCm, 120);
 
-      // Tiny opening: 100px width x 100px height at 0.05 cm/px
-      // Raw: 5cm width x 5cm height -> clamped to 30cm minimum
+
       const tinyEst = computeEstimatedDimensions(
         100,
         100,
@@ -109,15 +107,15 @@ describe("IMP-MS50 / QAD-TC65: Grounded Real-World 3D Model Sizing and Quotation
         null,
       );
 
-      assert.equal(tinyEst.widthCm, 30);
-      assert.equal(tinyEst.heightCm, 30);
+      assert.equal(tinyEst.widthCm, 120);
+      assert.equal(tinyEst.heightCm, 120);
     });
   });
 
   describe("2. Scale-Aware Initial Sizing (getScaleAwareInitialDimensions)", () => {
-    it("converts overlay pixel bounds into accurate real-world centimeters (QAD-TC65.3)", () => {
-      // Overlay 1200px width x 800px height at 0.05 cm/px
-      // 1200 * 0.05 = 60cm, 800 * 0.05 = 40cm
+    it("MS54: paper reference alone retains template preview dimensions", () => {
+
+
       const initial = getScaleAwareInitialDimensions(
         calibratedSignalA4,
         210, // fallback default width
@@ -130,13 +128,13 @@ describe("IMP-MS50 / QAD-TC65: Grounded Real-World 3D Model Sizing and Quotation
         1080,
       );
 
-      assert.equal(initial.widthCm, 60);
-      assert.equal(initial.heightCm, 40);
-      assert.equal(initial.method, "paper_fiducial_a4");
+      assert.equal(initial.widthCm, 210);
+      assert.equal(initial.heightCm, 150);
+      assert.equal(initial.method, "default_fallback");
     });
 
-    it("supports optional photo dimensions while preserving physical scale calculation", () => {
-      // Canvas 1000px x 800px, overlay 800px x 600px at 0.1 cm/px
+    it("MS54: missing photo dimensions cannot establish a paper measurement", () => {
+
       const signalShort: ScaleEstimationSignal = {
         anchors: [],
         best_scale_cm_per_px: 0.1,
@@ -157,15 +155,15 @@ describe("IMP-MS50 / QAD-TC65: Grounded Real-World 3D Model Sizing and Quotation
         800,
       );
 
-      assert.equal(initial.widthCm, 80);
-      assert.equal(initial.heightCm, 60);
-      assert.equal(initial.method, "paper_fiducial_short");
+      assert.equal(initial.widthCm, 210);
+      assert.equal(initial.heightCm, 150);
+      assert.equal(initial.method, "default_fallback");
     });
 
-    it("scales starting dimensions across canvas-to-photo resolution differences", () => {
-      // Canvas is 960x540, Photo is 1920x1080 (2x ratio)
-      // Overlay is 400x300 on canvas -> 800x600 in photo
-      // Scale: 0.05 cm/px -> 800 * 0.05 = 40cm width, 600 * 0.05 = 30cm height
+    it("MS54: canvas resize cannot turn a scalar preview into a measurement", () => {
+
+
+
       const initial = getScaleAwareInitialDimensions(
         calibratedSignalA4,
         210,
@@ -178,14 +176,14 @@ describe("IMP-MS50 / QAD-TC65: Grounded Real-World 3D Model Sizing and Quotation
         1080,
       );
 
-      assert.equal(initial.widthCm, 40);
-      assert.equal(initial.heightCm, 30);
+      assert.equal(initial.widthCm, 210);
+      assert.equal(initial.heightCm, 150);
     });
   });
 
   describe("3. Perspective Quad Fit Direct Grounding (QAD-TC65.2)", () => {
-    it("converts 4-point perspective corners directly to physical centimeters", () => {
-      // Perspective quadrilateral spanning 2000px wide x 1600px tall
+    it("MS54: perspective spans without locations remain approximate", () => {
+
       const corners: QuadrilateralCorners = [
         { x: 200, y: 100 },
         { x: 2200, y: 100 },
@@ -206,9 +204,8 @@ describe("IMP-MS50 / QAD-TC65: Grounded Real-World 3D Model Sizing and Quotation
         null,
       );
 
-      // 2000 * 0.05 = 100cm, 1600 * 0.05 = 80cm
-      assert.equal(estimate.widthCm, 100);
-      assert.equal(estimate.heightCm, 80);
+      assert.equal(estimate.widthCm, 150);
+      assert.equal(estimate.heightCm, 120);
     });
   });
 
