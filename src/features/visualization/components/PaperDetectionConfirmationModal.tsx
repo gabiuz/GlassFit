@@ -619,16 +619,16 @@ export function PaperDetectionConfirmationModal({
 
   // Detection state badge label & styling
   let badgeLabel = "Review Reference Outline";
-  let badgeStyle = "bg-emerald-500/15 text-emerald-300 border-emerald-500/30";
+  let badgeStyle = "bg-emerald-50 text-emerald-700 border-emerald-200";
   if (hasUserAdjusted || manualMode) {
     badgeLabel = "Manual Corner Review";
-    badgeStyle = "bg-amber-500/15 text-amber-300 border-amber-500/30";
+    badgeStyle = "bg-amber-50 text-amber-700 border-amber-200";
   } else if (currentReferenceSource === "click_guided") {
     badgeLabel = "Click-Guided Snapped Reference";
-    badgeStyle = "bg-emerald-500/15 text-emerald-300 border-emerald-500/30";
+    badgeStyle = "bg-emerald-50 text-emerald-700 border-emerald-200";
   } else if (!candidateId) {
     badgeLabel = "Tap Paper Sheet to Snap Corners";
-    badgeStyle = "bg-sky-500/15 text-sky-300 border-sky-500/30";
+    badgeStyle = "bg-sky-50 text-sky-700 border-sky-200";
   }
 
   // Loupe position calculation
@@ -682,21 +682,21 @@ export function PaperDetectionConfirmationModal({
       role="dialog"
       aria-modal="true"
       aria-label="Review paper reference"
-      className="fixed inset-0 z-[150] bg-[#0b0e17]/95 backdrop-blur-xl flex flex-col select-none animate-in fade-in duration-200 overflow-hidden text-neutral-100"
+      className="fixed inset-0 z-[150] bg-neutral-900/60 backdrop-blur-sm flex flex-col select-none animate-in fade-in duration-200 overflow-hidden text-[#0f1422]"
     >
       {/* ── Top Header Bar ── */}
-      <header className="z-20 flex h-16 w-full items-center justify-between border-b border-white/10 bg-neutral-900/80 px-4 sm:px-6 shrink-0 backdrop-blur-md">
+      <header className="z-20 flex h-16 w-full items-center justify-between border-b border-neutral-200 bg-white/95 px-4 sm:px-6 shrink-0 backdrop-blur-md shadow-xs">
         <div className="flex items-center gap-3">
-          <div className="size-9 rounded-xl bg-cyan-500/15 border border-cyan-500/20 flex items-center justify-center text-cyan-400 shrink-0 shadow-xs">
+          <div className="size-9 rounded-xl bg-cyan-50 border border-cyan-200 flex items-center justify-center text-[#07b6d3] shrink-0 shadow-xs">
             <FileCheck2 className="size-5" />
           </div>
           <div className="min-w-0">
-            <h2 className="text-sm sm:text-base font-semibold text-white leading-tight">
+            <h2 className="text-sm sm:text-base font-bold text-[#0f1422] leading-tight">
               {hasAutoDetection && !hasUserAdjusted
                 ? "Confirm Reference Paper Marker"
                 : "Refine Reference Paper Marker"}
             </h2>
-            <p className="text-xs text-neutral-400 truncate hidden sm:block">
+            <p className="text-xs text-neutral-500 truncate hidden sm:block">
               Review the sheet boundary, actual format, and placement. Dimensions remain estimates.
             </p>
           </div>
@@ -705,7 +705,7 @@ export function PaperDetectionConfirmationModal({
         <div className="flex items-center gap-2.5 sm:gap-3">
           {/* Detection status badge */}
           <span
-            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border ${badgeStyle} shadow-xs`}
+            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${badgeStyle} shadow-xs`}
           >
             <span className="size-2 rounded-full bg-current" />
             {badgeLabel}
@@ -713,7 +713,7 @@ export function PaperDetectionConfirmationModal({
 
           {/* Edge straightness collinearity trust badge (IMP-MS59) */}
           {isValidQuad && (
-            <span className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border bg-emerald-500/10 text-emerald-400 border-emerald-500/20 shadow-xs">
+            <span className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border bg-emerald-50 text-emerald-700 border-emerald-200 shadow-xs">
               <span className="size-1.5 rounded-full bg-current" />
               {edgeQualityLabel}
             </span>
@@ -723,7 +723,7 @@ export function PaperDetectionConfirmationModal({
           <button
             type="button"
             onClick={onCancel}
-            className="cursor-pointer rounded-full p-2 text-neutral-400 hover:bg-white/10 hover:text-white transition-colors"
+            className="cursor-pointer rounded-full p-2 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 transition-colors"
             aria-label="Close"
           >
             <X className="size-5" />
@@ -736,15 +736,15 @@ export function PaperDetectionConfirmationModal({
         {/* ── Left / Center: Interactive Canvas ── */}
         <div
           ref={containerRef}
-          className="relative flex-1 min-h-[45vh] lg:min-h-0 h-full flex flex-col items-center justify-center p-3 sm:p-5 overflow-hidden"
+          className="relative flex-1 min-h-[45vh] lg:min-h-0 h-full flex flex-col items-center justify-center p-3 sm:p-5 overflow-hidden bg-neutral-100/70"
         >
           {/* Floating Tap to Snap Guidance Banner (IMP-MS58) */}
-          <div className="absolute top-4 z-20 max-w-xl mx-auto flex items-center justify-between gap-2.5 rounded-full bg-neutral-900/85 border border-white/15 px-4 py-1.5 text-xs text-neutral-200 shadow-xl backdrop-blur-md">
+          <div className="absolute top-4 z-20 max-w-xl mx-auto flex items-center justify-between gap-2.5 rounded-full bg-white/95 border border-neutral-200 px-4 py-1.5 text-xs text-neutral-700 shadow-md backdrop-blur-md">
             <div className="flex items-center gap-2 min-w-0">
               {isSnapping ? (
-                <Loader2 className="size-3.5 text-cyan-400 shrink-0 animate-spin" />
+                <Loader2 className="size-3.5 text-[#07b6d3] shrink-0 animate-spin" />
               ) : (
-                <Sparkles className="size-3.5 text-cyan-400 shrink-0 animate-pulse" />
+                <Sparkles className="size-3.5 text-[#07b6d3] shrink-0 animate-pulse" />
               )}
               <span className="truncate">
                 {isSnapping
@@ -760,7 +760,7 @@ export function PaperDetectionConfirmationModal({
               <button
                 type="button"
                 onClick={() => setSnapNotice(null)}
-                className="text-neutral-400 hover:text-white p-0.5 ml-1"
+                className="text-neutral-400 hover:text-neutral-700 p-0.5 ml-1"
                 aria-label="Dismiss notice"
               >
                 <X className="size-3.5" />
@@ -771,7 +771,7 @@ export function PaperDetectionConfirmationModal({
           {/* Canvas Box */}
           {fittedCanvasSize.width > 0 && fittedCanvasSize.height > 0 && (
             <div
-              className="relative rounded-2xl overflow-hidden shadow-2xl bg-neutral-950 border border-white/10 ring-1 ring-white/5"
+              className="relative rounded-2xl overflow-hidden shadow-xl bg-neutral-900 border border-neutral-200 ring-1 ring-black/5"
               style={{
                 width: fittedCanvasSize.width,
                 height: fittedCanvasSize.height,
@@ -940,15 +940,15 @@ export function PaperDetectionConfirmationModal({
             <button
               type="button"
               onClick={handleResetCorners}
-              className="flex min-h-11 cursor-pointer items-center gap-1.5 rounded-full border border-white/15 bg-neutral-900/85 backdrop-blur-md px-4 py-2 text-xs font-medium text-neutral-200 transition-colors hover:bg-white/10 hover:text-white shadow-lg"
+              className="flex min-h-11 cursor-pointer items-center gap-1.5 rounded-full border border-neutral-200 bg-white/95 backdrop-blur-md px-4 py-2 text-xs font-semibold text-neutral-700 transition-colors hover:bg-neutral-50 hover:text-[#0f1422] shadow-md"
             >
-              <RotateCcw className="size-3.5 text-neutral-400" />
+              <RotateCcw className="size-3.5 text-neutral-500" />
               <span>Map Corners Manually</span>
             </button>
 
             {isValidQuad && liveScale && (
-              <div className="hidden sm:flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-950/70 backdrop-blur-md px-3.5 py-2 text-xs font-medium text-emerald-300 shadow-lg">
-                <span className="size-2 rounded-full bg-emerald-400" />
+              <div className="hidden sm:flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50/95 backdrop-blur-md px-3.5 py-2 text-xs font-semibold text-emerald-700 shadow-md">
+                <span className="size-2 rounded-full bg-emerald-500" />
                 <span>Reference ready{effectiveUnwarpedRatio ? ` · ratio ${effectiveUnwarpedRatio.toFixed(2)}` : ""}</span>
               </div>
             )}
@@ -957,7 +957,7 @@ export function PaperDetectionConfirmationModal({
 
         {/* ── Right: Inspector Control Panel ── */}
         <aside
-          className={`w-full lg:w-[400px] xl:w-[440px] bg-neutral-900/90 border-t lg:border-t-0 lg:border-l border-white/10 p-5 flex flex-col justify-between overflow-y-auto shrink-0 transition-opacity ${
+          className={`w-full lg:w-[400px] xl:w-[440px] bg-white border-t lg:border-t-0 lg:border-l border-neutral-200 p-5 flex flex-col justify-between overflow-y-auto shrink-0 shadow-sm transition-opacity ${
             activeDragIndex !== null ? "pointer-events-none opacity-40" : ""
           }`}
         >
@@ -965,11 +965,11 @@ export function PaperDetectionConfirmationModal({
             {/* Paper Standard Selection */}
             <div>
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400">
+                <span className="text-xs font-bold uppercase tracking-wider text-neutral-500">
                   Paper Standard
                 </span>
                 {effectiveSuggestedStandard && effectiveMatchConfidence >= 0.85 && (
-                  <span className="inline-flex items-center rounded-full bg-emerald-500/15 text-emerald-400 text-[10px] px-2 py-0.5 font-semibold border border-emerald-500/30">
+                  <span className="inline-flex items-center rounded-full bg-emerald-50 text-emerald-700 text-[10px] px-2 py-0.5 font-semibold border border-emerald-200">
                     Suggested
                   </span>
                 )}
@@ -991,8 +991,8 @@ export function PaperDetectionConfirmationModal({
                       }}
                       className={`min-h-11 cursor-pointer rounded-xl px-3.5 py-2 text-xs transition-all flex items-center justify-between border ${
                         isSelected
-                          ? "bg-white/15 border-cyan-400 text-white font-semibold shadow-xs"
-                          : "bg-white/5 border-white/10 text-neutral-300 hover:bg-white/10 hover:text-white"
+                          ? "bg-[#07b6d3]/10 border-[#07b6d3] text-[#07b6d3] font-bold shadow-xs"
+                          : "bg-white border-neutral-200 text-neutral-700 hover:bg-neutral-50 hover:border-neutral-300 font-medium"
                       }`}
                     >
                       <span>
@@ -1003,7 +1003,7 @@ export function PaperDetectionConfirmationModal({
                           : "Long Bond (8.5x13in)"}
                       </span>
                       {isBestMatch && (
-                        <span className="text-[10px] text-emerald-400 font-semibold bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                        <span className="text-[10px] text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
                           Suggested
                         </span>
                       )}
@@ -1018,13 +1018,13 @@ export function PaperDetectionConfirmationModal({
               const dims = CANONICAL_PAPER_DIMENSIONS_MM[selectedStandard];
               const recommended = matchResult?.recommendedFirstEdge;
               return (
-                <div className="pt-3 border-t border-white/10">
+                <div className="pt-3 border-t border-neutral-200">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400">
+                    <span className="text-xs font-bold uppercase tracking-wider text-neutral-500">
                       Edge 1-2 correspondence
                     </span>
                     {recommended && (
-                      <span className="text-[10px] text-neutral-400">
+                      <span className="text-[10px] text-neutral-500 font-medium">
                         Suggested: Edge 1-2: {recommended === "short" ? "Short" : "Long"}
                       </span>
                     )}
@@ -1045,12 +1045,12 @@ export function PaperDetectionConfirmationModal({
                           }}
                           className={`min-h-11 rounded-xl p-2.5 text-left text-xs transition-all border ${
                             isSelected
-                              ? "bg-cyan-500/20 border-cyan-400 text-white font-semibold shadow-xs"
-                              : "bg-white/5 border-white/10 text-neutral-300 hover:bg-white/10 hover:text-white"
+                              ? "bg-[#07b6d3]/10 border-[#07b6d3] text-[#07b6d3] font-bold shadow-xs"
+                              : "bg-white border-neutral-200 text-neutral-700 hover:bg-neutral-50 hover:border-neutral-300 font-medium"
                           }`}
                         >
                           <span className="block font-medium">Edge 1-2: {edge === "short" ? "Short" : "Long"}</span>
-                          <span className="block text-[10px] text-neutral-400 mt-0.5">
+                          <span className={`block text-[10px] mt-0.5 ${isSelected ? "text-[#07b6d3]/80 font-medium" : "text-neutral-500"}`}>
                             {lengthMm}mm{recommended === edge ? " · Suggested" : ""}
                           </span>
                         </button>
@@ -1062,8 +1062,8 @@ export function PaperDetectionConfirmationModal({
             })()}
 
             {/* Paper Outline Candidates */}
-            <section className="pt-3 border-t border-white/10" aria-labelledby="paper-outline-heading">
-              <h3 id="paper-outline-heading" className="text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-2">
+            <section className="pt-3 border-t border-neutral-200" aria-labelledby="paper-outline-heading">
+              <h3 id="paper-outline-heading" className="text-xs font-bold uppercase tracking-wider text-neutral-500 mb-2">
                 Paper outline
               </h3>
               <div className="flex flex-wrap gap-2">
@@ -1077,8 +1077,8 @@ export function PaperDetectionConfirmationModal({
                     onBlur={() => setHoveredCandidateId(null)}
                     className={`min-h-11 rounded-xl border px-3 py-1.5 text-xs transition-all ${
                       candidateId === candidate.id
-                        ? "bg-emerald-500/20 border-emerald-400 text-emerald-200 font-semibold"
-                        : "bg-white/5 border-white/10 text-neutral-300 hover:bg-white/10 hover:text-white"
+                        ? "bg-emerald-50 border-emerald-400 text-emerald-800 font-bold shadow-xs"
+                        : "bg-white border-neutral-200 text-neutral-700 hover:bg-neutral-50 hover:border-neutral-300 font-medium"
                     } focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500`}
                   >
                     Boundary evidence {Math.round(candidate.score * 100)}%
@@ -1089,7 +1089,7 @@ export function PaperDetectionConfirmationModal({
                     type="button"
                     aria-expanded={showAllCandidates}
                     onClick={() => setShowAllCandidates((show) => !show)}
-                    className="min-h-11 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-neutral-300 hover:bg-white/10 hover:text-white transition-all"
+                    className="min-h-11 rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-1.5 text-xs text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 transition-all font-medium"
                   >
                     {showAllCandidates ? "Show fewer candidates" : "Show all candidates"}
                   </button>
@@ -1098,14 +1098,14 @@ export function PaperDetectionConfirmationModal({
             </section>
 
             {/* Paper Placement Section */}
-            <section className="pt-3 border-t border-white/10" aria-labelledby="paper-placement-heading">
+            <section className="pt-3 border-t border-neutral-200" aria-labelledby="paper-placement-heading">
               <button
                 type="button"
                 id="paper-placement-heading"
                 aria-expanded={placementOpen}
                 aria-controls="paper-placement-content"
                 onClick={() => setPlacementManuallyToggled(!placementOpen)}
-                className="flex min-h-11 w-full items-center justify-between text-left text-xs font-semibold uppercase tracking-wider text-neutral-400 hover:text-white transition-colors"
+                className="flex min-h-11 w-full items-center justify-between text-left text-xs font-bold uppercase tracking-wider text-neutral-500 hover:text-[#0f1422] transition-colors"
               >
                 <span>Paper placement</span>
                 <span aria-hidden="true" className="text-base text-neutral-400">{placementOpen ? "−" : "+"}</span>
@@ -1123,8 +1123,8 @@ export function PaperDetectionConfirmationModal({
                       }}
                       className={`min-h-11 rounded-xl border p-2.5 text-left text-xs transition-all ${
                         samePlane
-                          ? "bg-emerald-500/20 border-emerald-400 text-emerald-200 font-semibold"
-                          : "bg-white/5 border-white/10 text-neutral-300 hover:bg-white/10 hover:text-white"
+                          ? "bg-emerald-50 border-emerald-400 text-emerald-800 font-bold shadow-xs"
+                          : "bg-white border-neutral-200 text-neutral-700 hover:bg-neutral-50 hover:border-neutral-300 font-medium"
                       }`}
                     >
                       Flat on the installation wall
@@ -1139,8 +1139,8 @@ export function PaperDetectionConfirmationModal({
                       }}
                       className={`min-h-11 rounded-xl border p-2.5 text-left text-xs transition-all ${
                         placement === "mismatch_reported" && !boundaryUnsafe
-                          ? "bg-amber-500/20 border-amber-400 text-amber-200 font-semibold"
-                          : "bg-white/5 border-white/10 text-neutral-300 hover:bg-white/10 hover:text-white"
+                          ? "bg-amber-50 border-amber-400 text-amber-800 font-bold shadow-xs"
+                          : "bg-white border-neutral-200 text-neutral-700 hover:bg-neutral-50 hover:border-neutral-300 font-medium"
                       }`}
                     >
                       Held or offset
@@ -1155,8 +1155,8 @@ export function PaperDetectionConfirmationModal({
                       }}
                       className={`min-h-11 rounded-xl border p-2.5 text-left text-xs transition-all ${
                         placement === "unknown" && !boundaryUnsafe
-                          ? "bg-amber-500/20 border-amber-400 text-amber-200 font-semibold"
-                          : "bg-white/5 border-white/10 text-neutral-300 hover:bg-white/10 hover:text-white"
+                          ? "bg-amber-50 border-amber-400 text-amber-800 font-bold shadow-xs"
+                          : "bg-white border-neutral-200 text-neutral-700 hover:bg-neutral-50 hover:border-neutral-300 font-medium"
                       }`}
                     >
                       Unsure
@@ -1171,22 +1171,22 @@ export function PaperDetectionConfirmationModal({
                       }}
                       className={`min-h-11 rounded-xl border p-2.5 text-left text-xs transition-all ${
                         boundaryUnsafe
-                          ? "bg-rose-500/20 border-rose-400 text-rose-200 font-semibold"
-                          : "bg-white/5 border-white/10 text-neutral-300 hover:bg-white/10 hover:text-white"
+                          ? "bg-rose-50 border-rose-400 text-rose-800 font-bold shadow-xs"
+                          : "bg-white border-neutral-200 text-neutral-700 hover:bg-neutral-50 hover:border-neutral-300 font-medium"
                       }`}
                     >
                       Corners obscured or paper curled
                     </button>
                   </div>
                   {!samePlane && (
-                    <div role="status" className="rounded-xl bg-amber-500/10 border border-amber-500/20 p-2.5 text-xs text-amber-200">
+                    <div role="status" className="rounded-xl bg-amber-50 border border-amber-200 p-2.5 text-xs text-amber-800">
                       Paper measurement is unavailable. Retake with all corners visible on the front installation surface, skip calibration, or enter both tape-measured dimensions during dimension confirmation. A recessed jamb or back wall needs its own reference.
                     </div>
                   )}
                   <button
                     type="button"
                     onClick={onRetake ?? onCancel}
-                    className="min-h-11 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-neutral-300 hover:bg-white/10 hover:text-white transition-all text-center"
+                    className="min-h-11 rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs text-neutral-700 hover:bg-neutral-100 hover:text-[#0f1422] transition-all text-center font-medium"
                   >
                     Retake Photo
                   </button>
@@ -1196,10 +1196,10 @@ export function PaperDetectionConfirmationModal({
           </div>
 
           {/* Sidebar Footer Area */}
-          <div className="pt-4 mt-4 border-t border-white/10 space-y-3">
+          <div className="pt-4 mt-4 border-t border-neutral-200 space-y-3">
             {/* Live scale status or validation guidance note */}
             {!canConfirm && (
-              <div className="flex items-center gap-1.5 text-xs text-rose-400 font-medium">
+              <div className="flex items-center gap-1.5 text-xs text-rose-700 font-medium bg-rose-50 border border-rose-200 rounded-xl px-3 py-2">
                 <AlertTriangle className="size-3.5 shrink-0" />
                 <span>
                   {formatConfirmed ? "Review all four sheet corners" : "Choose the actual paper format"}
@@ -1212,7 +1212,7 @@ export function PaperDetectionConfirmationModal({
               type="button"
               onClick={handleConfirm}
               disabled={!isValidQuad || !canConfirm}
-              className="w-full min-h-11 cursor-pointer flex items-center justify-center gap-2 rounded-2xl bg-[#07b6d3] hover:bg-[#06a3bd] disabled:opacity-40 disabled:cursor-not-allowed text-[#0f1422] font-bold text-sm py-3.5 shadow-lg shadow-cyan-500/20 transition-all"
+              className="w-full min-h-11 cursor-pointer flex items-center justify-center gap-2 rounded-2xl bg-green hover:bg-[#06a3bd] disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-sm py-3.5 shadow-md shadow-cyan-500/20 transition-all"
             >
               <Check className="size-5 stroke-[2.5]" />
               <span>Confirm and Enter Workspace</span>
@@ -1223,7 +1223,7 @@ export function PaperDetectionConfirmationModal({
               <button
                 type="button"
                 onClick={() => onSkip(recoveryReview)}
-                className="text-xs text-neutral-400 hover:text-white transition-colors cursor-pointer py-1"
+                className="text-xs text-neutral-500 hover:text-[#0f1422] transition-colors cursor-pointer py-1 font-medium"
               >
                 <span>Skip Calibration</span>
               </button>
