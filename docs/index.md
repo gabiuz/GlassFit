@@ -58,6 +58,7 @@ GlassFit is a responsive, web-based photo-simulation and consultation-support pl
 | IMP-MS59 | Sub-Pixel Edge Snapping, Magnetic Loupe Alignment, and Corner Refinement | `docs/implementation/ms59.md` | Implemented | October 19, 2026 | GlassFit Capstone Team |
 | IMP-MS60 | Perspective Unwarping Aspect Ratio Matcher, Standard Auto-Suggestion, and Model Sizing Parity | `docs/implementation/ms60.md` | Implemented | October 19, 2026 | GlassFit Capstone Team |
 | IMP-MS61 | Empirical Real-World Accuracy Benchmark and Comparative Release Protocol | `docs/implementation/ms61.md` | Implemented | October 19, 2026 | GlassFit Capstone Team |
+| IMP-MS62 | Paper Reference Confirmation Modal UI Redesign and Flow Refinement | `docs/implementation/ms62.md` | Ready for Implementation | October 19, 2026 | GlassFit Capstone Team |
 
 ---
 

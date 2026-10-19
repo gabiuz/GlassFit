@@ -24,6 +24,7 @@ import {
   orderPaperCorners,
 } from "@/lib/visualization/scaleEstimation";
 import { isValidQuadrilateral } from "@/lib/visualization/perspectiveTransform";
+import { useNavbarVisibility } from "@/components/shared/NavbarVisibilityContext";
 import { useDocumentScrollLock } from "../hooks/useDocumentScrollLock";
 import { mapPointerToCanvas, TOUCH_PROXY_OFFSET_CSS_PX } from "../mobileConfiguratorGeometry";
 import {
@@ -138,17 +139,29 @@ export function PaperDetectionConfirmationModal({
   onCancel,
   onRetake,
 }: PaperDetectionConfirmationModalProps) {
+  const { setNavbarHidden } = useNavbarVisibility();
+
+  useEffect(() => {
+    if (isOpen) {
+      setNavbarHidden(true);
+      return () => setNavbarHidden(false);
+    }
+  }, [isOpen, setNavbarHidden]);
+
   const [firstEdge, setFirstEdge] = useState<"short" | "long">("short");
   const [orientationConfirmed, setOrientationConfirmed] = useState(false);
   const [formatConfirmed, setFormatConfirmed] = useState(paperStandardConfirmed);
   const [placement, setPlacement] = useState<"unknown" | "user_confirmed_same_plane" | "mismatch_reported">("unknown");
   const [boundaryUnsafe, setBoundaryUnsafe] = useState(false);
+  const [boundaryRisk, setBoundaryRisk] = useState<"warped_paper" | "occluded_boundary" | null>(null);
   const samePlane = placement === "user_confirmed_same_plane" && !boundaryUnsafe;
   const recoveryReview: PaperReviewResult = { scaleCmPerPx: 0, confidence: 0,
-    placementAssessment: placement, placementRiskReasons: boundaryUnsafe ? ["warped_paper"] :
+    placementAssessment: placement, placementRiskReasons: boundaryUnsafe ? [boundaryRisk ?? "warped_paper"] :
       placement === "mismatch_reported" ? ["handheld_or_offset"] : placement === "unknown" ? ["unknown_offset"] : [] };
   const [candidateId, setCandidateId] = useState(selectedCandidateId);
   const [rejectedIds, setRejectedIds] = useState<string[]>([]);
+  const [showAllCandidates, setShowAllCandidates] = useState(false);
+  const [hoveredCandidateId, setHoveredCandidateId] = useState<string | null>(null);
   const [manualMode, setManualMode] = useState(Boolean(initialCorners?.length === 4 && status === "verified_calibrated"));
   const [hasBoundarySeed, setHasBoundarySeed] = useState(Boolean(initialCorners?.length === 4));
   const [adjustedIndices, setAdjustedIndices] = useState<number[]>([]);
@@ -228,8 +241,14 @@ export function PaperDetectionConfirmationModal({
   // Client-side magnetic edge snapping state (IMP-MS59)
   const [isSnapped, setIsSnapped] = useState<boolean>(false);
   const [snapGradientStrength, setSnapGradientStrength] = useState<number>(0);
+  const [snapPulseId, setSnapPulseId] = useState<number | null>(null);
+  const [placementManuallyToggled, setPlacementManuallyToggled] = useState<boolean | null>(null);
   const lastSnappedRef = useRef<boolean>(false);
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const edgeQuality = computeEdgeFitQuality(snapGradientStrength, isSnapped);
+  const hasPlacementRisk = placement !== "unknown" || boundaryUnsafe;
+  const isPlacementAutoOpen = edgeQuality.badgeVariant !== "green" || hasPlacementRisk;
+  const placementOpen = placementManuallyToggled ?? isPlacementAutoOpen;
 
   useEffect(() => {
     if (!backgroundImageUrl || canvasWidth <= 0 || canvasHeight <= 0) return;
@@ -388,6 +407,7 @@ export function PaperDetectionConfirmationModal({
               // Best effort
             }
           }
+          if (!lastSnappedRef.current) setSnapPulseId(Date.now());
         }
       }
     }
@@ -453,6 +473,18 @@ export function PaperDetectionConfirmationModal({
     setHasUserAdjusted(false);
     setAdjustedIndices([]);
   };
+
+  const rankedCandidates = useMemo(() => activeCandidates
+    .filter((candidate) => !rejectedIds.includes(candidate.id) && !candidate.rejection_reasons.includes("cropped_boundary"))
+    .sort((left, right) => right.score - left.score || left.id.localeCompare(right.id)), [activeCandidates, rejectedIds]);
+  const visibleCandidates = useMemo(() => {
+    if (showAllCandidates) return rankedCandidates;
+    const firstThree = rankedCandidates.slice(0, 3);
+    const selected = rankedCandidates.find((candidate) => candidate.id === candidateId);
+    return selected && !firstThree.some((candidate) => candidate.id === selected.id)
+      ? [...firstThree, selected]
+      : firstThree;
+  }, [candidateId, rankedCandidates, showAllCandidates]);
 
   const handleTapToSnap = useCallback(
     async (canvasX: number, canvasY: number) => {
@@ -579,19 +611,24 @@ export function PaperDetectionConfirmationModal({
 
   const polygonPointsAttr = points.map((p) => `${p.x},${p.y}`).join(" ");
   const extendedGuides = calculateExtendedGuideLines(points, 20);
+  const edgeQualityLabel = edgeQuality.badgeVariant === "green"
+    ? "Sharp edge alignment"
+    : edgeQuality.badgeVariant === "yellow"
+    ? "Moderate edge contrast"
+    : "Manual alignment recommended";
 
   // Detection state badge label & styling
   let badgeLabel = "Review Reference Outline";
-  let badgeStyle = "bg-emerald-50 text-emerald-700 border-emerald-200";
+  let badgeStyle = "bg-emerald-500/15 text-emerald-300 border-emerald-500/30";
   if (hasUserAdjusted || manualMode) {
     badgeLabel = "Manual Corner Review";
-    badgeStyle = "bg-amber-50 text-amber-700 border-amber-200";
+    badgeStyle = "bg-amber-500/15 text-amber-300 border-amber-500/30";
   } else if (currentReferenceSource === "click_guided") {
     badgeLabel = "Click-Guided Snapped Reference";
-    badgeStyle = "bg-emerald-50 text-emerald-700 border-emerald-200";
+    badgeStyle = "bg-emerald-500/15 text-emerald-300 border-emerald-500/30";
   } else if (!candidateId) {
     badgeLabel = "Tap Paper Sheet to Snap Corners";
-    badgeStyle = "bg-sky-50 text-sky-700 border-sky-200";
+    badgeStyle = "bg-sky-500/15 text-sky-300 border-sky-500/30";
   }
 
   // Loupe position calculation
@@ -639,374 +676,565 @@ export function PaperDetectionConfirmationModal({
     };
   })();
 
-
   return (
-    <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="Review paper reference" className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col items-center justify-between select-none animate-in fade-in duration-200 p-2 sm:p-4 md:p-6 overflow-hidden">
-      {/* ── Top Header Card ── */}
-      <div className="z-10 flex w-full max-w-5xl flex-col gap-2.5">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white rounded-[20px] px-4 sm:px-6 py-3 shadow-xl">
-          <div className="flex items-center gap-3">
-            <div className="size-10 rounded-[12px] bg-emerald-500/15 flex items-center justify-center text-emerald-600 shrink-0">
-              <FileCheck2 className="size-5" />
-            </div>
-            <div className="min-w-0">
-              <h2 className="text-base sm:text-lg font-bold text-[#0f1422] leading-tight">
-                {hasAutoDetection && !hasUserAdjusted
-                  ? "Confirm Reference Paper Marker"
-                  : "Refine Reference Paper Marker"}
-              </h2>
-              <p className="text-xs sm:text-sm text-neutral-500 truncate">
-                Review the sheet boundary, actual format, and placement. Dimensions remain estimates.
-              </p>
-            </div>
+    <div
+      ref={dialogRef}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Review paper reference"
+      className="fixed inset-0 z-[150] bg-[#0b0e17]/95 backdrop-blur-xl flex flex-col select-none animate-in fade-in duration-200 overflow-hidden text-neutral-100"
+    >
+      {/* ── Top Header Bar ── */}
+      <header className="z-20 flex h-16 w-full items-center justify-between border-b border-white/10 bg-neutral-900/80 px-4 sm:px-6 shrink-0 backdrop-blur-md">
+        <div className="flex items-center gap-3">
+          <div className="size-9 rounded-xl bg-cyan-500/15 border border-cyan-500/20 flex items-center justify-center text-cyan-400 shrink-0 shadow-xs">
+            <FileCheck2 className="size-5" />
           </div>
-
-          <div className="flex items-center justify-between sm:justify-end gap-2.5">
-            {/* Detection status badge */}
-            <span
-              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${badgeStyle} shadow-xs`}
-            >
-              <span className="size-2 rounded-full bg-current" />
-              {badgeLabel}
-            </span>
-
-            {/* Edge straightness collinearity trust badge (IMP-MS59) */}
-            {isValidQuad && (
-              <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border bg-emerald-50 text-emerald-700 border-emerald-200 shadow-xs">
-                <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                Edge Alignment: Sharp
-              </span>
-            )}
-
-            {/* Close button */}
-            <button
-              type="button"
-              onClick={onCancel}
-              className="cursor-pointer rounded-full p-2 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 transition-colors"
-              aria-label="Close"
-            >
-              <X className="size-5" />
-            </button>
+          <div className="min-w-0">
+            <h2 className="text-sm sm:text-base font-semibold text-white leading-tight">
+              {hasAutoDetection && !hasUserAdjusted
+                ? "Confirm Reference Paper Marker"
+                : "Refine Reference Paper Marker"}
+            </h2>
+            <p className="text-xs text-neutral-400 truncate hidden sm:block">
+              Review the sheet boundary, actual format, and placement. Dimensions remain estimates.
+            </p>
           </div>
         </div>
 
-        {/* ── Guidance & Paper Standard Selector HUD ── */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 rounded-[16px] bg-neutral-900/90 backdrop-blur-md px-4 py-2 text-xs text-white shadow-md">
-          {/* Paper Standard Pills */}
-          <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap">
-            <span className="text-neutral-400 text-xs font-medium mr-1 hidden sm:inline">
-              Paper Standard:
-            </span>
-            <div className="flex items-center gap-1 rounded-full bg-neutral-800/80 p-0.5 border border-white/10 flex-wrap sm:flex-nowrap">
-              {(["short", "a4", "long"] as const).map((std) => {
-                const isBestMatch = effectiveSuggestedStandard === std && effectiveMatchConfidence >= 0.85;
-                return (
-                  <button
-                    key={std}
-                    type="button"
-                    onClick={() => {
-                      userSelectedStandardRef.current = true;
-                      setSelectedStandard(std);
-                      setFormatConfirmed(true);
-                      setOrientationConfirmed(false);
-                    }}
-                    className={`cursor-pointer rounded-full px-2.5 py-1 text-xs transition-all flex items-center gap-1.5 ${
-                      selectedStandard === std
-                        ? "bg-white text-[#0f1422] font-bold shadow-xs"
-                        : "text-neutral-300 hover:text-white"
-                    }`}
-                  >
-                    <span>
-                      {std === "short"
-                        ? "Short Bond (8.5x11in)"
-                        : std === "a4"
-                        ? "A4 (210x297mm)"
-                        : "Long Bond (8.5x13in)"}
-                    </span>
-                    {isBestMatch && (
-                      <span className="inline-flex items-center rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] px-1.5 py-0.2 font-semibold border border-emerald-500/30">
-                        Best Match {Math.round(effectiveMatchConfidence * 100)}%
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+        <div className="flex items-center gap-2.5 sm:gap-3">
+          {/* Detection status badge */}
+          <span
+            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border ${badgeStyle} shadow-xs`}
+          >
+            <span className="size-2 rounded-full bg-current" />
+            {badgeLabel}
+          </span>
 
-          {/* Metric Scale Readout, Best Match Notification, or Error */}
-          <div className="flex items-center gap-2 font-mono text-xs">
-            {isValidQuad && liveScale ? (
-              <span className="text-emerald-400 font-medium flex items-center gap-1.5">
-                {effectiveSuggestedStandard && effectiveMatchConfidence >= 0.85 && (
-                  <span className="text-emerald-300">
-                    Recommended: {effectiveSuggestedStandard === "short" ? "Short Bond" : effectiveSuggestedStandard === "a4" ? "A4 Standard" : "Long Bond"} ({Math.round(effectiveMatchConfidence * 100)}% match{effectiveUnwarpedRatio ? `, ratio ${effectiveUnwarpedRatio.toFixed(2)}` : ""}) :{" "}
-                  </span>
-                )}
-                Reference ready
-              </span>
-            ) : (
-              <span className="text-rose-400 font-medium flex items-center gap-1">
-                <AlertTriangle className="size-3.5" />
-                {formatConfirmed ? "Review all four sheet corners" : "Choose the actual paper format"}
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* ── Tap to Snap Guidance Banner (IMP-MS58) ── */}
-        <div className="flex items-center justify-between gap-2.5 rounded-[16px] bg-neutral-900/90 border border-emerald-500/20 px-4 py-2 text-xs text-white shadow-md">
-          <div className="flex items-center gap-2 min-w-0">
-            {isSnapping ? (
-              <Loader2 className="size-4 text-emerald-400 shrink-0 animate-spin" />
-            ) : (
-              <Sparkles className="size-4 text-emerald-400 shrink-0 animate-pulse" />
-            )}
-            <span className="truncate">
-              {isSnapping
-                ? "Snapping corners to paper sheet boundary..."
-                : snapNotice
-                ? snapNotice.message
-                : (!hasAutoDetection || manualMode || !candidateId)
-                ? "Automatic detection uncertain. Tap directly on the paper sheet to snap corners automatically."
-                : "Tap anywhere on the paper sheet to re-snap corners automatically, or drag pins to adjust."}
+          {/* Edge straightness collinearity trust badge (IMP-MS59) */}
+          {isValidQuad && (
+            <span className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border bg-emerald-500/10 text-emerald-400 border-emerald-500/20 shadow-xs">
+              <span className="size-1.5 rounded-full bg-current" />
+              {edgeQualityLabel}
             </span>
-          </div>
-          {snapNotice && (
-            <button
-              type="button"
-              onClick={() => setSnapNotice(null)}
-              className="text-neutral-400 hover:text-white p-1"
-              aria-label="Dismiss notice"
-            >
-              <X className="size-3.5" />
-            </button>
           )}
-        </div>
-      </div>
 
-      {/* ── Middle Interactive Canvas Viewport ── */}
-      <div className="z-10 flex max-h-40 w-full max-w-5xl flex-wrap gap-2 overflow-y-auto rounded-[16px] bg-white px-4 py-2 text-xs text-neutral-700">
-        {activeCandidates.filter((c) => !rejectedIds.includes(c.id) && !c.rejection_reasons.includes("cropped_boundary")).map((candidate) => (
-          <button key={candidate.id} type="button" aria-pressed={candidateId === candidate.id}
-            onClick={() => selectCandidate(candidate)}
-            className="min-h-11 rounded-full border border-neutral-300 px-3 hover:bg-neutral-100">
-            Outline {candidate.id.replace("candidate-", "")}
+          {/* Close button */}
+          <button
+            type="button"
+            onClick={onCancel}
+            className="cursor-pointer rounded-full p-2 text-neutral-400 hover:bg-white/10 hover:text-white transition-colors"
+            aria-label="Close"
+          >
+            <X className="size-5" />
           </button>
-        ))}
-        {(() => {
-          const dims = CANONICAL_PAPER_DIMENSIONS_MM[selectedStandard];
-          const curWidthMm = firstEdge === "short" ? dims.shortMm : dims.longMm;
-          const curHeightMm = firstEdge === "short" ? dims.longMm : dims.shortMm;
-          const curOrient = firstEdge === "short" ? "Portrait" : "Landscape";
-          return (
-            <>
+        </div>
+      </header>
+
+      {/* ── Main Workspace Body (Canvas + Inspector) ── */}
+      <div className="flex-1 min-h-0 flex flex-col lg:flex-row overflow-hidden relative">
+        {/* ── Left / Center: Interactive Canvas ── */}
+        <div
+          ref={containerRef}
+          className="relative flex-1 min-h-[45vh] lg:min-h-0 h-full flex flex-col items-center justify-center p-3 sm:p-5 overflow-hidden"
+        >
+          {/* Floating Tap to Snap Guidance Banner (IMP-MS58) */}
+          <div className="absolute top-4 z-20 max-w-xl mx-auto flex items-center justify-between gap-2.5 rounded-full bg-neutral-900/85 border border-white/15 px-4 py-1.5 text-xs text-neutral-200 shadow-xl backdrop-blur-md">
+            <div className="flex items-center gap-2 min-w-0">
+              {isSnapping ? (
+                <Loader2 className="size-3.5 text-cyan-400 shrink-0 animate-spin" />
+              ) : (
+                <Sparkles className="size-3.5 text-cyan-400 shrink-0 animate-pulse" />
+              )}
+              <span className="truncate">
+                {isSnapping
+                  ? "Snapping corners to paper sheet boundary..."
+                  : snapNotice
+                  ? snapNotice.message
+                  : (!hasAutoDetection || manualMode || !candidateId)
+                  ? "Automatic detection uncertain. Tap directly on the paper sheet to snap corners automatically."
+                  : "Tap anywhere on the paper sheet to re-snap corners automatically, or drag pins to adjust."}
+              </span>
+            </div>
+            {snapNotice && (
               <button
                 type="button"
-                onClick={() => {
-                  userOrientationToggledRef.current = true;
-                  setFirstEdge(firstEdge === "short" ? "long" : "short");
-                  setOrientationConfirmed(false);
-                }}
-                className="min-h-11 rounded-full border border-neutral-300 px-3 hover:bg-neutral-100 flex items-center gap-1.5 font-medium"
+                onClick={() => setSnapNotice(null)}
+                className="text-neutral-400 hover:text-white p-0.5 ml-1"
+                aria-label="Dismiss notice"
               >
-                <span>⇄ Swap Orientation ({curOrient}: {curWidthMm}mm W x {curHeightMm}mm H)</span>
+                <X className="size-3.5" />
               </button>
-              <label className="flex min-h-11 items-center gap-2">
-                <input type="checkbox" checked={orientationConfirmed} onChange={(e) => setOrientationConfirmed(e.target.checked)} />
-                I confirm edge 1 to 2 follows the physical {firstEdge} side of the sheet ({curWidthMm}mm horizontal width)
-              </label>
-            </>
-          );
-        })()}
-        <label className="flex min-h-11 items-center gap-2">
-          <input type="checkbox" checked={formatConfirmed} onChange={(e) => setFormatConfirmed(e.target.checked)} />
-          I confirm the selected paper format
-        </label>
-        <fieldset>
-          <legend>Was the paper flat against the same surface as the opening? Holding it in front can change the measurements.</legend>
-          {([
-            ["user_confirmed_same_plane", "Flat against the same installation surface"],
-            ["mismatch_reported", "Held in front, another wall, or known offset"],
-            ["unknown", "Unsure"],
-          ] as const).map(([value, label]) => (
-            <label key={value} className="flex min-h-11 items-center gap-2">
-              <input type="radio" name="paper-placement" checked={placement === value} onChange={() => setPlacement(value)} />{label}
-            </label>
-          ))}
-          <label className="flex min-h-11 items-center gap-2">
-            <input type="checkbox" checked={boundaryUnsafe} onChange={(e) => setBoundaryUnsafe(e.target.checked)} />
-            Paper is curled or some corners are hidden
-          </label>
-          {!samePlane && <p role="status">Paper measurement is unavailable. Retake with all corners visible on the front installation surface, continue approximate preview, or enter both tape-measured dimensions during dimension confirmation. A recessed jamb or back wall needs its own reference.</p>}
-          <button type="button" onClick={onRetake ?? onCancel} className="min-h-11 rounded-full border border-neutral-300 px-3 hover:bg-neutral-100">Retake photo</button>
-        </fieldset>
-      </div>
-
-      <div
-        ref={containerRef}
-        className="relative flex-1 w-full max-w-5xl flex items-center justify-center my-2 overflow-hidden"
-      >
-        {fittedCanvasSize.width > 0 && fittedCanvasSize.height > 0 && (
-          <div
-            className="relative rounded-[16px] overflow-hidden shadow-2xl bg-neutral-950 border border-white/10"
-            style={{
-              width: fittedCanvasSize.width,
-              height: fittedCanvasSize.height,
-            }}
-          >
-            {/* Background Room Photo */}
-            <img
-              src={backgroundImageUrl}
-              alt="Uploaded room space"
-              className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none"
-            />
-
-            {/* Non-convex warning overlay banner */}
-            {!isValidQuad && (
-              <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 bg-rose-600/90 text-white text-xs px-3.5 py-1.5 rounded-full shadow-lg backdrop-blur-sm flex items-center gap-1.5 font-medium animate-pulse">
-                <AlertTriangle className="size-4 shrink-0" />
-                <span>Please ensure corner pins form a valid 4-sided rectangle.</span>
-              </div>
             )}
+          </div>
 
-            {/* Interactive SVG Pin Overlay */}
-            <svg
-              ref={svgRef}
-              viewBox={`0 0 ${canvasWidth} ${canvasHeight}`}
-              className="absolute inset-0 w-full h-full cursor-crosshair touch-none select-none"
-              onPointerDown={handleSvgPointerDown}
-              onPointerMove={handleSvgPointerMove}
-              onPointerUp={handleSvgPointerUp}
-              onPointerCancel={handleSvgPointerUp}
+          {/* Canvas Box */}
+          {fittedCanvasSize.width > 0 && fittedCanvasSize.height > 0 && (
+            <div
+              className="relative rounded-2xl overflow-hidden shadow-2xl bg-neutral-950 border border-white/10 ring-1 ring-white/5"
+              style={{
+                width: fittedCanvasSize.width,
+                height: fittedCanvasSize.height,
+              }}
             >
-              {activeCandidates.filter((c) => c.id !== candidateId && !rejectedIds.includes(c.id)).map((candidate) => (
-                <polygon key={candidate.id} points={candidate.corners.map(([x, y]) => `${x},${y}`).join(" ")}
-                  fill="transparent" stroke="#06a3bd" strokeWidth={2} strokeDasharray="6 4"
-                  onClick={(e) => { e.stopPropagation(); selectCandidate(candidate); }} />
-              ))}
-              {/* Tap to Snap Ripple Animation (IMP-MS58) */}
-              {clickRipple && (
-                <g className="pointer-events-none">
-                  <circle
-                    cx={clickRipple.x}
-                    cy={clickRipple.y}
-                    r={28}
-                    fill="none"
-                    stroke="#10b981"
-                    strokeWidth={2.5}
-                    className="animate-ping"
-                    style={{ transformOrigin: `${clickRipple.x}px ${clickRipple.y}px` }}
-                  />
-                  <circle
-                    cx={clickRipple.x}
-                    cy={clickRipple.y}
-                    r={5}
-                    fill="#10b981"
-                  />
-                </g>
-              )}
-              {/* Collinearity straightness guide lines (IMP-MS59) */}
-              {extendedGuides.map((guide, idx) => (
-                <line
-                  key={`guide-ext-${idx}`}
-                  x1={guide.start.x}
-                  y1={guide.start.y}
-                  x2={guide.end.x}
-                  y2={guide.end.y}
-                  stroke={isSnapped ? "#10b981" : "#0284c7"}
-                  strokeWidth="1.5"
-                  strokeDasharray="4 3"
-                  strokeOpacity="0.65"
-                  className="pointer-events-none"
-                />
-              ))}
-
-              {/* Semi-transparent Polygon Fill & Glowing Perimeter */}
-              <polygon
-                points={polygonPointsAttr}
-                fill={isValidQuad ? "rgba(16, 185, 129, 0.20)" : "rgba(239, 68, 68, 0.20)"}
-                stroke={isValidQuad ? "#10b981" : "#ef4444"}
-                strokeWidth={Math.max(2.5, Math.round(canvasWidth * 0.003))}
-                strokeDasharray="none"
+              {/* Background Room Photo */}
+              <img
+                src={backgroundImageUrl}
+                alt="Uploaded room space"
+                className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none"
               />
 
-              {/* Labeled Corner Handles (1 to 4) */}
-              {points.map((pt, idx) => {
-                const isActive = activeDragIndex === idx;
-                const handleRadius = Math.max(14, Math.round(canvasWidth * 0.016));
+              {/* Non-convex warning overlay banner */}
+              {!isValidQuad && (
+                <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 bg-rose-600/90 text-white text-xs px-3.5 py-1.5 rounded-full shadow-lg backdrop-blur-sm flex items-center gap-1.5 font-medium animate-pulse">
+                  <AlertTriangle className="size-4 shrink-0" />
+                  <span>Please ensure corner pins form a valid 4-sided rectangle.</span>
+                </div>
+              )}
 
-                return (
-                  <g
-                    key={idx}
-                    onPointerDown={(e) => handleHandlePointerDown(idx, e)}
-                    className="cursor-grab active:cursor-grabbing"
-                  >
-                    {/* Outer glow ring when active */}
-                    {isActive && (
+              {/* Interactive SVG Pin Overlay */}
+              <svg
+                ref={svgRef}
+                viewBox={`0 0 ${canvasWidth} ${canvasHeight}`}
+                className="absolute inset-0 w-full h-full cursor-crosshair touch-none select-none"
+                onPointerDown={handleSvgPointerDown}
+                onPointerMove={handleSvgPointerMove}
+                onPointerUp={handleSvgPointerUp}
+                onPointerCancel={handleSvgPointerUp}
+              >
+                {rankedCandidates.filter((candidate) => candidate.id !== candidateId).map((candidate) => (
+                  <polygon key={candidate.id} points={candidate.corners.map(([x, y]) => `${x},${y}`).join(" ")}
+                    fill="transparent" stroke="#ffffff" strokeWidth={1.2} strokeDasharray="6 4"
+                    strokeOpacity={hoveredCandidateId === candidate.id ? 0.55 : 0.25} tabIndex={0} role="button"
+                    aria-label={`Select candidate with boundary evidence ${Math.round(candidate.score * 100)} percent`}
+                    onPointerEnter={() => setHoveredCandidateId(candidate.id)} onPointerLeave={() => setHoveredCandidateId(null)}
+                    onFocus={() => setHoveredCandidateId(candidate.id)} onBlur={() => setHoveredCandidateId(null)}
+                    onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); selectCandidate(candidate); } }}
+                    onClick={(e) => { e.stopPropagation(); selectCandidate(candidate); }} />
+                ))}
+                {/* Tap to Snap Ripple Animation (IMP-MS58) */}
+                {clickRipple && (
+                  <g className="pointer-events-none">
+                    <circle
+                      cx={clickRipple.x}
+                      cy={clickRipple.y}
+                      r={28}
+                      fill="none"
+                      stroke="#10b981"
+                      strokeWidth={2.5}
+                      className="animate-ping"
+                      style={{ transformOrigin: `${clickRipple.x}px ${clickRipple.y}px` }}
+                    />
+                    <circle
+                      cx={clickRipple.x}
+                      cy={clickRipple.y}
+                      r={5}
+                      fill="#10b981"
+                    />
+                  </g>
+                )}
+                {/* Collinearity straightness guide lines (IMP-MS59) */}
+                {extendedGuides.map((guide, idx) => (
+                  <line
+                    key={`guide-ext-${idx}`}
+                    x1={guide.start.x}
+                    y1={guide.start.y}
+                    x2={guide.end.x}
+                    y2={guide.end.y}
+                    stroke={isSnapped ? "#10b981" : "#0284c7"}
+                    strokeWidth="1.5"
+                    strokeDasharray="4 3"
+                    strokeOpacity="0.65"
+                    className="pointer-events-none"
+                  />
+                ))}
+
+                {/* Semi-transparent Polygon Fill & Glowing Perimeter */}
+                <polygon
+                  points={polygonPointsAttr}
+                  fill={isValidQuad ? "rgba(16, 185, 129, 0.20)" : "rgba(239, 68, 68, 0.20)"}
+                  stroke={isValidQuad ? "#10b981" : "#ef4444"}
+                  strokeWidth={Math.max(2.5, Math.round(canvasWidth * 0.003))}
+                  strokeDasharray="none"
+                />
+                {snapPulseId !== null && activeDragIndex !== null && (
+                  <circle key={snapPulseId} cx={points[activeDragIndex].x} cy={points[activeDragIndex].y}
+                    r={Math.max(18, Math.round(canvasWidth * 0.02))} fill="none" stroke="#10b981" strokeWidth="3"
+                    className="motion-safe:animate-ping motion-reduce:hidden" style={{ animationDuration: "200ms", transformOrigin: `${points[activeDragIndex].x}px ${points[activeDragIndex].y}px` }} />
+                )}
+
+                {/* Labeled Corner Handles (1 to 4) */}
+                {points.map((pt, idx) => {
+                  const isActive = activeDragIndex === idx;
+                  const handleRadius = Math.max(14, Math.round(canvasWidth * 0.016));
+
+                  return (
+                    <g
+                      key={idx}
+                      onPointerDown={(e) => handleHandlePointerDown(idx, e)}
+                      className="cursor-grab active:cursor-grabbing"
+                    >
+                      {/* Outer glow ring when active */}
+                      {isActive && (
+                        <circle
+                          cx={pt.x}
+                          cy={pt.y}
+                          r={handleRadius * 1.9}
+                          fill="none"
+                          stroke="#10b981"
+                          strokeWidth="2.5"
+                          strokeDasharray="4 2"
+                          className="animate-spin"
+                          style={{ transformOrigin: `${pt.x}px ${pt.y}px` }}
+                        />
+                      )}
+
+                      {/* Touch hit proxy area */}
                       <circle
                         cx={pt.x}
                         cy={pt.y}
-                        r={handleRadius * 1.9}
-                        fill="none"
-                        stroke="#10b981"
-                        strokeWidth="2.5"
-                        strokeDasharray="4 2"
-                        className="animate-spin"
-                        style={{ transformOrigin: `${pt.x}px ${pt.y}px` }}
+                        r={Math.max(26, handleRadius * 2.2)}
+                        fill="transparent"
                       />
-                    )}
 
-                    {/* Touch hit proxy area */}
-                    <circle
-                      cx={pt.x}
-                      cy={pt.y}
-                      r={Math.max(26, handleRadius * 2.2)}
-                      fill="transparent"
-                    />
+                      {/* Outer white ring */}
+                      <circle
+                        cx={pt.x}
+                        cy={pt.y}
+                        r={handleRadius}
+                        fill="#ffffff"
+                        stroke={isValidQuad ? "#10b981" : "#ef4444"}
+                        strokeWidth={isActive ? "3.5" : "2.5"}
+                        style={{ filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.5))" }}
+                      />
 
-                    {/* Outer white ring */}
-                    <circle
-                      cx={pt.x}
-                      cy={pt.y}
-                      r={handleRadius}
-                      fill="#ffffff"
-                      stroke={isValidQuad ? "#10b981" : "#ef4444"}
-                      strokeWidth={isActive ? "3.5" : "2.5"}
-                      style={{ filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.5))" }}
-                    />
+                      {/* Emerald center core */}
+                      <circle
+                        cx={pt.x}
+                        cy={pt.y}
+                        r={Math.max(7, Math.round(handleRadius * 0.55))}
+                        fill={isValidQuad ? "#10b981" : "#ef4444"}
+                      />
 
-                    {/* Emerald center core */}
-                    <circle
-                      cx={pt.x}
-                      cy={pt.y}
-                      r={Math.max(7, Math.round(handleRadius * 0.55))}
-                      fill={isValidQuad ? "#10b981" : "#ef4444"}
-                    />
+                      {/* Corner Number & Name Label */}
+                      <text
+                        x={pt.x}
+                        y={idx === 0 || idx === 1 ? pt.y - handleRadius - 6 : pt.y + handleRadius + 14}
+                        textAnchor="middle"
+                        fill="#ffffff"
+                        fontSize={Math.max(11, Math.round(canvasWidth * 0.012))}
+                        fontWeight="700"
+                        className="pointer-events-none select-none drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)]"
+                      >
+                        {idx + 1}: {CORNER_NAMES[idx]}
+                      </text>
+                    </g>
+                  );
+                })}
+              </svg>
+            </div>
+          )}
 
-                    {/* Corner Number & Name Label */}
-                    <text
-                      x={pt.x}
-                      y={idx === 0 || idx === 1 ? pt.y - handleRadius - 6 : pt.y + handleRadius + 14}
-                      textAnchor="middle"
-                      fill="#ffffff"
-                      fontSize={Math.max(11, Math.round(canvasWidth * 0.012))}
-                      fontWeight="700"
-                      className="pointer-events-none select-none drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)]"
-                    >
-                      {idx + 1}: {CORNER_NAMES[idx]}
-                    </text>
-                  </g>
-                );
-              })}
-            </svg>
+          {/* Floating Canvas Controls (Bottom-Left) */}
+          <div className="absolute bottom-4 left-4 z-20 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleResetCorners}
+              className="flex min-h-11 cursor-pointer items-center gap-1.5 rounded-full border border-white/15 bg-neutral-900/85 backdrop-blur-md px-4 py-2 text-xs font-medium text-neutral-200 transition-colors hover:bg-white/10 hover:text-white shadow-lg"
+            >
+              <RotateCcw className="size-3.5 text-neutral-400" />
+              <span>Map Corners Manually</span>
+            </button>
+
+            {isValidQuad && liveScale && (
+              <div className="hidden sm:flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-950/70 backdrop-blur-md px-3.5 py-2 text-xs font-medium text-emerald-300 shadow-lg">
+                <span className="size-2 rounded-full bg-emerald-400" />
+                <span>Reference ready{effectiveUnwarpedRatio ? ` · ratio ${effectiveUnwarpedRatio.toFixed(2)}` : ""}</span>
+              </div>
+            )}
           </div>
-        )}
+        </div>
+
+        {/* ── Right: Inspector Control Panel ── */}
+        <aside
+          className={`w-full lg:w-[400px] xl:w-[440px] bg-neutral-900/90 border-t lg:border-t-0 lg:border-l border-white/10 p-5 flex flex-col justify-between overflow-y-auto shrink-0 transition-opacity ${
+            activeDragIndex !== null ? "pointer-events-none opacity-40" : ""
+          }`}
+        >
+          <div className="space-y-4">
+            {/* Paper Standard Selection */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400">
+                  Paper Standard
+                </span>
+                {effectiveSuggestedStandard && effectiveMatchConfidence >= 0.85 && (
+                  <span className="inline-flex items-center rounded-full bg-emerald-500/15 text-emerald-400 text-[10px] px-2 py-0.5 font-semibold border border-emerald-500/30">
+                    Suggested
+                  </span>
+                )}
+              </div>
+              <div className="grid grid-cols-1 gap-1.5">
+                {(["short", "a4", "long"] as const).map((std) => {
+                  const isBestMatch = effectiveSuggestedStandard === std && effectiveMatchConfidence >= 0.85;
+                  const isSelected = selectedStandard === std && formatConfirmed;
+                  return (
+                    <button
+                      key={std}
+                      type="button"
+                      aria-pressed={isSelected}
+                      onClick={() => {
+                        userSelectedStandardRef.current = true;
+                        setSelectedStandard(std);
+                        setFormatConfirmed(true);
+                        setOrientationConfirmed(false);
+                      }}
+                      className={`min-h-11 cursor-pointer rounded-xl px-3.5 py-2 text-xs transition-all flex items-center justify-between border ${
+                        isSelected
+                          ? "bg-white/15 border-cyan-400 text-white font-semibold shadow-xs"
+                          : "bg-white/5 border-white/10 text-neutral-300 hover:bg-white/10 hover:text-white"
+                      }`}
+                    >
+                      <span>
+                        {std === "short"
+                          ? "Short Bond (8.5x11in)"
+                          : std === "a4"
+                          ? "A4 (210x297mm)"
+                          : "Long Bond (8.5x13in)"}
+                      </span>
+                      {isBestMatch && (
+                        <span className="text-[10px] text-emerald-400 font-semibold bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                          Suggested
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Edge 1-2 Correspondence (Orientation) */}
+            {(() => {
+              const dims = CANONICAL_PAPER_DIMENSIONS_MM[selectedStandard];
+              const recommended = matchResult?.recommendedFirstEdge;
+              return (
+                <div className="pt-3 border-t border-white/10">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400">
+                      Edge 1-2 correspondence
+                    </span>
+                    {recommended && (
+                      <span className="text-[10px] text-neutral-400">
+                        Suggested: Edge 1-2: {recommended === "short" ? "Short" : "Long"}
+                      </span>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2" aria-label="Paper edge 1 to 2 correspondence">
+                    {(["short", "long"] as const).map((edge) => {
+                      const lengthMm = edge === "short" ? dims.shortMm : dims.longMm;
+                      const isSelected = firstEdge === edge && orientationConfirmed;
+                      return (
+                        <button
+                          key={edge}
+                          type="button"
+                          aria-pressed={isSelected}
+                          onClick={() => {
+                            userOrientationToggledRef.current = true;
+                            setFirstEdge(edge);
+                            setOrientationConfirmed(true);
+                          }}
+                          className={`min-h-11 rounded-xl p-2.5 text-left text-xs transition-all border ${
+                            isSelected
+                              ? "bg-cyan-500/20 border-cyan-400 text-white font-semibold shadow-xs"
+                              : "bg-white/5 border-white/10 text-neutral-300 hover:bg-white/10 hover:text-white"
+                          }`}
+                        >
+                          <span className="block font-medium">Edge 1-2: {edge === "short" ? "Short" : "Long"}</span>
+                          <span className="block text-[10px] text-neutral-400 mt-0.5">
+                            {lengthMm}mm{recommended === edge ? " · Suggested" : ""}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Paper Outline Candidates */}
+            <section className="pt-3 border-t border-white/10" aria-labelledby="paper-outline-heading">
+              <h3 id="paper-outline-heading" className="text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-2">
+                Paper outline
+              </h3>
+              <div className="flex flex-wrap gap-2">
+                {visibleCandidates.map((candidate) => (
+                  <button
+                    key={candidate.id}
+                    type="button"
+                    aria-pressed={candidateId === candidate.id}
+                    onClick={() => selectCandidate(candidate)}
+                    onFocus={() => setHoveredCandidateId(candidate.id)}
+                    onBlur={() => setHoveredCandidateId(null)}
+                    className={`min-h-11 rounded-xl border px-3 py-1.5 text-xs transition-all ${
+                      candidateId === candidate.id
+                        ? "bg-emerald-500/20 border-emerald-400 text-emerald-200 font-semibold"
+                        : "bg-white/5 border-white/10 text-neutral-300 hover:bg-white/10 hover:text-white"
+                    } focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500`}
+                  >
+                    Boundary evidence {Math.round(candidate.score * 100)}%
+                  </button>
+                ))}
+                {rankedCandidates.length > 3 && (
+                  <button
+                    type="button"
+                    aria-expanded={showAllCandidates}
+                    onClick={() => setShowAllCandidates((show) => !show)}
+                    className="min-h-11 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-neutral-300 hover:bg-white/10 hover:text-white transition-all"
+                  >
+                    {showAllCandidates ? "Show fewer candidates" : "Show all candidates"}
+                  </button>
+                )}
+              </div>
+            </section>
+
+            {/* Paper Placement Section */}
+            <section className="pt-3 border-t border-white/10" aria-labelledby="paper-placement-heading">
+              <button
+                type="button"
+                id="paper-placement-heading"
+                aria-expanded={placementOpen}
+                aria-controls="paper-placement-content"
+                onClick={() => setPlacementManuallyToggled(!placementOpen)}
+                className="flex min-h-11 w-full items-center justify-between text-left text-xs font-semibold uppercase tracking-wider text-neutral-400 hover:text-white transition-colors"
+              >
+                <span>Paper placement</span>
+                <span aria-hidden="true" className="text-base text-neutral-400">{placementOpen ? "−" : "+"}</span>
+              </button>
+              {placementOpen && (
+                <div id="paper-placement-content" className="flex flex-col gap-2 pt-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      aria-pressed={samePlane}
+                      onClick={() => {
+                        setPlacement("user_confirmed_same_plane");
+                        setBoundaryUnsafe(false);
+                        setBoundaryRisk(null);
+                      }}
+                      className={`min-h-11 rounded-xl border p-2.5 text-left text-xs transition-all ${
+                        samePlane
+                          ? "bg-emerald-500/20 border-emerald-400 text-emerald-200 font-semibold"
+                          : "bg-white/5 border-white/10 text-neutral-300 hover:bg-white/10 hover:text-white"
+                      }`}
+                    >
+                      Flat on the installation wall
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={placement === "mismatch_reported" && !boundaryUnsafe}
+                      onClick={() => {
+                        setPlacement("mismatch_reported");
+                        setBoundaryUnsafe(false);
+                        setBoundaryRisk(null);
+                      }}
+                      className={`min-h-11 rounded-xl border p-2.5 text-left text-xs transition-all ${
+                        placement === "mismatch_reported" && !boundaryUnsafe
+                          ? "bg-amber-500/20 border-amber-400 text-amber-200 font-semibold"
+                          : "bg-white/5 border-white/10 text-neutral-300 hover:bg-white/10 hover:text-white"
+                      }`}
+                    >
+                      Held or offset
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={placement === "unknown" && !boundaryUnsafe}
+                      onClick={() => {
+                        setPlacement("unknown");
+                        setBoundaryUnsafe(false);
+                        setBoundaryRisk(null);
+                      }}
+                      className={`min-h-11 rounded-xl border p-2.5 text-left text-xs transition-all ${
+                        placement === "unknown" && !boundaryUnsafe
+                          ? "bg-amber-500/20 border-amber-400 text-amber-200 font-semibold"
+                          : "bg-white/5 border-white/10 text-neutral-300 hover:bg-white/10 hover:text-white"
+                      }`}
+                    >
+                      Unsure
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={boundaryUnsafe}
+                      onClick={() => {
+                        setPlacement("unknown");
+                        setBoundaryUnsafe(true);
+                        setBoundaryRisk("warped_paper");
+                      }}
+                      className={`min-h-11 rounded-xl border p-2.5 text-left text-xs transition-all ${
+                        boundaryUnsafe
+                          ? "bg-rose-500/20 border-rose-400 text-rose-200 font-semibold"
+                          : "bg-white/5 border-white/10 text-neutral-300 hover:bg-white/10 hover:text-white"
+                      }`}
+                    >
+                      Corners obscured or paper curled
+                    </button>
+                  </div>
+                  {!samePlane && (
+                    <div role="status" className="rounded-xl bg-amber-500/10 border border-amber-500/20 p-2.5 text-xs text-amber-200">
+                      Paper measurement is unavailable. Retake with all corners visible on the front installation surface, skip calibration, or enter both tape-measured dimensions during dimension confirmation. A recessed jamb or back wall needs its own reference.
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={onRetake ?? onCancel}
+                    className="min-h-11 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-neutral-300 hover:bg-white/10 hover:text-white transition-all text-center"
+                  >
+                    Retake Photo
+                  </button>
+                </div>
+              )}
+            </section>
+          </div>
+
+          {/* Sidebar Footer Area */}
+          <div className="pt-4 mt-4 border-t border-white/10 space-y-3">
+            {/* Live scale status or validation guidance note */}
+            {!canConfirm && (
+              <div className="flex items-center gap-1.5 text-xs text-rose-400 font-medium">
+                <AlertTriangle className="size-3.5 shrink-0" />
+                <span>
+                  {formatConfirmed ? "Review all four sheet corners" : "Choose the actual paper format"}
+                </span>
+              </div>
+            )}
+
+            {/* Primary Action Button */}
+            <button
+              type="button"
+              onClick={handleConfirm}
+              disabled={!isValidQuad || !canConfirm}
+              className="w-full min-h-11 cursor-pointer flex items-center justify-center gap-2 rounded-2xl bg-[#07b6d3] hover:bg-[#06a3bd] disabled:opacity-40 disabled:cursor-not-allowed text-[#0f1422] font-bold text-sm py-3.5 shadow-lg shadow-cyan-500/20 transition-all"
+            >
+              <Check className="size-5 stroke-[2.5]" />
+              <span>Confirm and Enter Workspace</span>
+            </button>
+
+            {/* Tertiary Action: Skip Calibration */}
+            <div className="text-center">
+              <button
+                type="button"
+                onClick={() => onSkip(recoveryReview)}
+                className="text-xs text-neutral-400 hover:text-white transition-colors cursor-pointer py-1"
+              >
+                <span>Skip Calibration</span>
+              </button>
+            </div>
+          </div>
+        </aside>
       </div>
 
       {/* ── Loupe Magnifier (2.5x Zoom with Crosshairs) ── */}
       {loupeParams && (
-        <div className="pointer-events-none fixed inset-0 z-[70]" aria-hidden="true">
+        <div className="pointer-events-none fixed inset-0 z-[170]" aria-hidden="true">
           {/* Connecting line on touch devices */}
           {loupeParams.pointerType === "touch" && (
             <span
@@ -1101,41 +1329,6 @@ export function PaperDetectionConfirmationModal({
           </div>
         </div>
       )}
-
-      {/* ── Interactive Action Bar (Modal Footer) ── */}
-      <div className="z-10 flex w-full max-w-5xl flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white rounded-[20px] px-4 sm:px-6 py-3 shadow-xl">
-        <div className="flex items-center justify-between sm:justify-start gap-2.5">
-          {/* Secondary Action: Reset Corners */}
-          <button
-            type="button"
-            onClick={handleResetCorners}
-            className="flex cursor-pointer items-center gap-1.5 rounded-[20px] border border-neutral-300 bg-white px-4 py-2.5 text-xs sm:text-sm font-medium text-[#0f1422] transition-colors hover:bg-neutral-100"
-          >
-            <RotateCcw className="size-4 text-neutral-500" />
-            <span>Wrong outline / Map corners</span>
-          </button>
-
-          {/* Tertiary Action: Skip Calibration */}
-          <button
-            type="button"
-            onClick={() => onSkip(recoveryReview)}
-            className="flex cursor-pointer items-center gap-1 rounded-[20px] border border-neutral-200 bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-normal text-neutral-600 transition-colors hover:bg-neutral-100"
-          >
-            <span>Continue Approximate Preview</span>
-          </button>
-        </div>
-
-        {/* Primary Action: Looks Right / Confirm & Enter Workspace */}
-        <button
-          type="button"
-          onClick={handleConfirm}
-          disabled={!isValidQuad || !canConfirm}
-          className="flex cursor-pointer items-center justify-center gap-2 rounded-[25px] bg-green hover:bg-[#06a3bd] disabled:opacity-50 disabled:cursor-not-allowed text-white px-8 py-3.5 font-medium text-base shadow-md transition-colors"
-        >
-          <Check className="size-5" />
-          <span>Looks Right / Confirm & Enter Workspace</span>
-        </button>
-      </div>
     </div>
   );
 }
