@@ -172,6 +172,18 @@ export function BookingFlow() {
           totalPrice: pricing.totalPrice,
           imageUrl: overlay.flattenedImageDataUrl || finalSnapshotDataUrl || "",
           bomResult: pricing.bomResult,
+          dimensionSource:
+            (config.visualParameterValues as Record<string, unknown> | undefined)?.dimension_source as string | undefined,
+          paperStandard:
+            (config.visualParameterValues as Record<string, unknown> | undefined)?.paper_standard as string | undefined,
+          calibrationScaleCmPerPx:
+            (config.visualParameterValues as Record<string, unknown> | undefined)?.calibration_scale_cm_per_px as number | undefined,
+          userVerified:
+            Boolean((config.visualParameterValues as Record<string, unknown> | undefined)?.user_verified),
+          calibrationMethod:
+            ((config.visualParameterValues as Record<string, unknown> | undefined)?.calibration_method as string | undefined) ?? null,
+          calibrationConfidence:
+            ((config.visualParameterValues as Record<string, unknown> | undefined)?.calibration_confidence as number | undefined) ?? null,
         });
       });
     } else if (structuralDefinition) {
@@ -197,6 +209,18 @@ export function BookingFlow() {
         totalPrice: bomCalc.finalQuotation * quantity,
         imageUrl: finalSnapshotDataUrl || structuralDefinition.product.catalogImageUrl || "",
         bomResult: bomCalc,
+        dimensionSource:
+          (productConfiguration?.visualParameterValues as Record<string, unknown> | undefined)?.dimension_source as string | undefined,
+        paperStandard:
+          (productConfiguration?.visualParameterValues as Record<string, unknown> | undefined)?.paper_standard as string | undefined,
+        calibrationScaleCmPerPx:
+          (productConfiguration?.visualParameterValues as Record<string, unknown> | undefined)?.calibration_scale_cm_per_px as number | undefined,
+        userVerified:
+          Boolean((productConfiguration?.visualParameterValues as Record<string, unknown> | undefined)?.user_verified),
+        calibrationMethod:
+          ((productConfiguration?.visualParameterValues as Record<string, unknown> | undefined)?.calibration_method as string | undefined) ?? null,
+        calibrationConfidence:
+          ((productConfiguration?.visualParameterValues as Record<string, unknown> | undefined)?.calibration_confidence as number | undefined) ?? null,
       });
     }
 

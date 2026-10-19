@@ -8,7 +8,143 @@
  * Traces to: PRD-F10, SDD-C5, BRD-M1
  */
 
-import type { DimensionEstimate, ScaleEstimationSignal } from "./types";
+import type {
+  DimensionEstimate,
+  FiducialPaperStandard,
+  Point2D,
+  ScaleEstimationSignal,
+} from "./types";
+import { PAPER_STANDARD_METRICS } from "./types";
+
+/**
+ * Canonical corner ordering for 4 paper corner points:
+ * [top_left, top_right, bottom_right, bottom_left]
+ *
+ * Algorithm:
+ * - Top-left corner has the smallest sum (x + y).
+ * - Bottom-right corner has the largest sum (x + y).
+ * - Top-right corner has the smallest difference (y - x).
+ * - Bottom-left corner has the largest difference (y - x).
+ *
+ * Traces to: IMP-MS47, PRD-F6, SDD-C4
+ */
+export function orderPaperCorners(pts: Point2D[]): [Point2D, Point2D, Point2D, Point2D] {
+  if (pts.length !== 4) {
+    throw new Error("Exactly 4 corner points are required for paper calibration.");
+  }
+  const sums = pts.map((p) => p.x + p.y);
+  let tlIdx = 0;
+  let brIdx = 0;
+  for (let i = 1; i < 4; i++) {
+    if (sums[i] < sums[tlIdx]) tlIdx = i;
+    if (sums[i] > sums[brIdx]) brIdx = i;
+  }
+
+  const diffs = pts.map((p) => p.y - p.x);
+  const remaining = [0, 1, 2, 3].filter((i) => i !== tlIdx && i !== brIdx);
+  let trIdx = remaining[0];
+  let blIdx = remaining[1];
+  if (remaining.length === 2) {
+    if (diffs[remaining[0]] > diffs[remaining[1]]) {
+      trIdx = remaining[1];
+      blIdx = remaining[0];
+    }
+  } else {
+    trIdx = (tlIdx + 1) % 4;
+    blIdx = (brIdx + 1) % 4;
+  }
+
+  return [pts[tlIdx], pts[trIdx], pts[brIdx], pts[blIdx]];
+}
+
+/**
+ * Derives physical metric scale factor (centimeters per pixel) directly from
+ * 4 interactive or detected corners on a Philippine standard paper fiducial.
+ *
+ * Traces to: IMP-MS47, PRD-F6, PRD-F10, SDD-C5
+ */
+export function computeScaleFromPaperCorners(
+  corners: [Point2D, Point2D, Point2D, Point2D] | Point2D[],
+  paperStandard: FiducialPaperStandard,
+): {
+  scaleCmPerPx: number;
+  confidence: number;
+  orderedCorners: [Point2D, Point2D, Point2D, Point2D];
+} {
+  const ordered = orderPaperCorners(corners);
+  const metrics = PAPER_STANDARD_METRICS[paperStandard] ?? PAPER_STANDARD_METRICS.a4;
+  const dist = (p1: Point2D, p2: Point2D) => Math.hypot(p2.x - p1.x, p2.y - p1.y);
+
+  const topWidthPx = dist(ordered[0], ordered[1]);
+  const bottomWidthPx = dist(ordered[3], ordered[2]);
+  const leftHeightPx = dist(ordered[0], ordered[3]);
+  const rightHeightPx = dist(ordered[1], ordered[2]);
+
+  const avgWidthPx = Math.sqrt(topWidthPx * bottomWidthPx);
+  const avgHeightPx = Math.sqrt(leftHeightPx * rightHeightPx);
+
+  // Check orientation (upright vs landscape) based on pixel aspect ratio
+  const isLandscape = avgWidthPx > avgHeightPx;
+  const realWidthCm = isLandscape
+    ? Math.max(metrics.widthMm, metrics.heightMm) / 10
+    : Math.min(metrics.widthMm, metrics.heightMm) / 10;
+  const realHeightCm = isLandscape
+    ? Math.min(metrics.widthMm, metrics.heightMm) / 10
+    : Math.max(metrics.widthMm, metrics.heightMm) / 10;
+
+  const scaleW = realWidthCm / Math.max(avgWidthPx, 1);
+  const scaleH = realHeightCm / Math.max(avgHeightPx, 1);
+
+  const scaleCmPerPx = (scaleW + scaleH) / 2;
+
+  return {
+    scaleCmPerPx: Number(scaleCmPerPx.toFixed(6)),
+    confidence: 0.95,
+    orderedCorners: ordered,
+  };
+}
+
+/**
+ * Grounded physical dimension formulation for verified fiducial paper calibration (IMP-MS52).
+ * Converts opening or overlay pixel dimensions directly to real-world metric centimeters
+ * using the verified coplanar scale factor, with zero heuristic blending or depth distortion.
+ *
+ * Clamps result within architectural fabrication limits: [30cm, 600cm] width and [30cm, 400cm] height.
+ *
+ * Traces to: IMP-MS52, PRD-F5, PRD-F6, SDD-C4, QAD-TC67
+ */
+export function getVerifiedScaleInitialDimensions(
+  verifiedScaleCmPerPx: number,
+  canvasWidthPx: number,
+  canvasHeightPx: number,
+  defaultOverlayWidthPx?: number,
+  defaultOverlayHeightPx?: number,
+  photoWidthPx?: number,
+  photoHeightPx?: number,
+): { widthCm: number; heightCm: number } {
+  const canvasToPhotoW =
+    photoWidthPx && photoWidthPx > 0 && canvasWidthPx > 0
+      ? photoWidthPx / canvasWidthPx
+      : 1;
+  const canvasToPhotoH =
+    photoHeightPx && photoHeightPx > 0 && canvasHeightPx > 0
+      ? photoHeightPx / canvasHeightPx
+      : 1;
+
+  const basePxW = defaultOverlayWidthPx || Math.round((canvasWidthPx || 636) * 0.35);
+  const basePxH = defaultOverlayHeightPx || Math.round((canvasHeightPx || 579) * 0.35);
+
+  const targetPxW = basePxW * canvasToPhotoW;
+  const targetPxH = basePxH * canvasToPhotoH;
+
+  const widthCm = Math.round(targetPxW * verifiedScaleCmPerPx);
+  const heightCm = Math.round(targetPxH * verifiedScaleCmPerPx);
+
+  return {
+    widthCm: Math.max(30, Math.min(600, widthCm)),
+    heightCm: Math.max(30, Math.min(400, heightCm)),
+  };
+}
 
 /**
  * Computes improved initial dimensions by blending the scale estimation
@@ -17,6 +153,10 @@ import type { DimensionEstimate, ScaleEstimationSignal } from "./types";
  * When a YOLO reference object anchor is available, the quad pixel
  * dimensions are multiplied by the physical scale factor. When no anchor
  * is available, falls back to the existing default-height heuristic.
+ *
+ * When paper fiducial calibration is present (method starts with paper_fiducial
+ * or verified_calibrated and confidence >= 0.65), coplanar scale is applied with 100% weighting without
+ * height heuristics or depth corrections.
  */
 export function computeEstimatedDimensions(
   quadWidthPx: number,
@@ -26,6 +166,30 @@ export function computeEstimatedDimensions(
   templateDefaultHeightCm: number | null | undefined,
   depthAtQuadCenter: number | null | undefined,
 ): DimensionEstimate {
+  // Check if high-precision paper calibration is available
+  const isPaperCalibrated =
+    (Boolean(scaleSignal?.method?.startsWith("paper_fiducial")) ||
+      scaleSignal?.method === "verified_calibrated" ||
+      scaleSignal?.method === "verified_calibrated_visual") &&
+    scaleSignal?.best_scale_cm_per_px !== null &&
+    scaleSignal?.best_scale_cm_per_px !== undefined &&
+    scaleSignal.best_scale_cm_per_px > 0 &&
+    (scaleSignal.confidence ?? 0) >= 0.65;
+
+  if (isPaperCalibrated) {
+    const scale = scaleSignal!.best_scale_cm_per_px!;
+    // Ground directly on coplanar scale: zero depth correction needed
+    const exactWidthCm = Math.round(quadWidthPx * scale);
+    const exactHeightCm = Math.round(quadHeightPx * scale);
+
+    return {
+      widthCm: Math.max(30, Math.min(600, exactWidthCm)),
+      heightCm: Math.max(30, Math.min(400, exactHeightCm)),
+      confidence: scaleSignal!.confidence,
+      method: scaleSignal!.method,
+    };
+  }
+
   // Normalize template default height (convert mm to cm if in mm, e.g. 2100mm -> 210cm)
   let normalizedTemplateHeightCm: number | null = null;
   if (templateDefaultHeightCm && templateDefaultHeightCm > 0) {
@@ -172,14 +336,53 @@ export function getScaleAwareInitialDimensions(
   overlayHeightPx: number,
   canvasWidthPx: number,
   canvasHeightPx: number,
-  photoWidthPx: number,
-  photoHeightPx: number,
+  photoWidthPx?: number,
+  photoHeightPx?: number,
 ): { widthCm: number; heightCm: number; method: string } {
+  // Check if high-precision paper calibration is active (IMP-MS50, IMP-MS52)
+  const isPaperCalibrated =
+    (Boolean(scaleSignal?.method?.startsWith("paper_fiducial")) ||
+      scaleSignal?.method === "verified_calibrated" ||
+      scaleSignal?.method === "verified_calibrated_visual") &&
+    scaleSignal?.best_scale_cm_per_px !== null &&
+    scaleSignal?.best_scale_cm_per_px !== undefined &&
+    scaleSignal.best_scale_cm_per_px > 0 &&
+    (scaleSignal.confidence ?? 0) >= 0.65;
+
+  if (isPaperCalibrated) {
+    const scale = scaleSignal!.best_scale_cm_per_px!;
+    const canvasToPhotoRatioW =
+      photoWidthPx && photoWidthPx > 0 && canvasWidthPx > 0
+        ? photoWidthPx / canvasWidthPx
+        : 1;
+    const canvasToPhotoRatioH =
+      photoHeightPx && photoHeightPx > 0 && canvasHeightPx > 0
+        ? photoHeightPx / canvasHeightPx
+        : 1;
+
+    const basePxWidth = overlayWidthPx || Math.round((canvasWidthPx || 636) * 0.35);
+    const basePxHeight = overlayHeightPx || Math.round((canvasHeightPx || 579) * 0.35);
+
+    const targetPxWidth = basePxWidth * canvasToPhotoRatioW;
+    const targetPxHeight = basePxHeight * canvasToPhotoRatioH;
+
+    const calculatedWidthCm = Math.round(targetPxWidth * scale);
+    const calculatedHeightCm = Math.round(targetPxHeight * scale);
+
+    return {
+      widthCm: Math.max(30, Math.min(600, calculatedWidthCm)),
+      heightCm: Math.max(30, Math.min(400, calculatedHeightCm)),
+      method: scaleSignal!.method,
+    };
+  }
+
   if (
     !scaleSignal ||
     scaleSignal.best_scale_cm_per_px === null ||
     scaleSignal.confidence < 0.2 ||
+    !photoWidthPx ||
     photoWidthPx <= 0 ||
+    !photoHeightPx ||
     photoHeightPx <= 0
   ) {
     return {

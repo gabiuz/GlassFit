@@ -12,11 +12,14 @@ import {
 import type { SpaceImageSession } from "@/lib/imageApi";
 import type {
   ActiveOverlay,
+  CalibrationMode,
+  FiducialPaperStandard,
   PlacedOverlay,
   ProductConfigurationSeed,
   ProductConfigurationSnapshot,
   ProductStructuralDefinition,
   ProductVariationSnapshot,
+  ScaleEstimationSignal,
   VisualizationSessionState,
 } from "./types";
 import {
@@ -31,6 +34,26 @@ import { variationAssetRegistry } from "./variationAssetRegistry";
 import { variationRenderQueue } from "./variationRenderQueue";
 import { normalizeAluminumFinish } from "./colorVariations";
 import { clearWorkspaceDefinitions } from "./workspaceDefinitionCache";
+import {
+  denormalizeCorners,
+  estimateDimensionsFromCorners,
+} from "./perspectiveTransform";
+import type {
+  PaperCalibrationStatus,
+  Point2D,
+} from "./types";
+
+export interface CalibrationMetadata {
+  mode: CalibrationMode;
+  paperStandard: FiducialPaperStandard | null;
+  status: PaperCalibrationStatus;
+  confidence: number;
+  homographyMatrix?: number[][] | null;
+  detectedCorners?: [number, number][] | null;
+  user_verified?: boolean;
+  verified_corners?: [Point2D, Point2D, Point2D, Point2D] | null;
+  verified_scale_cm_per_px?: number | null;
+}
 
 export interface TransitionWorkspaceProductOptions {
   nextProductId: string;
@@ -52,6 +75,10 @@ export type VisualizationSessionContextValue = VisualizationSessionState & {
     productConfiguration?: ProductConfigurationSnapshot,
   ) => void;
   transitionWorkspaceProduct: (options: TransitionWorkspaceProductOptions) => void;
+  updateSessionCalibration: (
+    calibrationMeta: CalibrationMetadata,
+    scaleSignal: ScaleEstimationSignal,
+  ) => void;
   setStructuralDefinition: (definition: ProductStructuralDefinition | null) => void;
   setProductConfiguration: (configuration: ProductConfigurationSnapshot | null) => void;
   setVariationSnapshots: (snapshots: ProductVariationSnapshot[]) => void;
@@ -148,6 +175,18 @@ export function transitionSessionState(
     ...current,
     selectedProductId: nextProductId,
     pendingProductConfiguration: null,
+    spaceImageSession: current.spaceImageSession
+      ? {
+          ...current.spaceImageSession,
+          calibrationMeta: current.spaceImageSession.calibrationMeta,
+          scaleEstimation:
+            current.spaceImageSession.scaleEstimation ??
+            current.spaceImageSession.scale_estimation,
+          scale_estimation:
+            current.spaceImageSession.scale_estimation ??
+            current.spaceImageSession.scaleEstimation,
+        }
+      : null,
     placedOverlays: updatedPlacedOverlays,
     structuralDefinition: nextDefinition ?? (isSameProduct ? current.structuralDefinition : null),
     productConfiguration: nextConfiguration ?? null,
@@ -304,6 +343,112 @@ export function VisualizationSessionProvider({
     [],
   );
 
+  const updateSessionCalibration = useCallback(
+    (calibrationMeta: CalibrationMetadata, scaleSignal: ScaleEstimationSignal) => {
+      setState((current) => {
+        if (!current.spaceImageSession) {
+          return current;
+        }
+
+        const baseSession = current.spaceImageSession;
+        const updatedSession: SpaceImageSession = {
+          ...baseSession,
+          scaleEstimation: scaleSignal,
+          scale_estimation: scaleSignal,
+          calibrationMeta: {
+            mode: calibrationMeta.mode,
+            paperStandard: calibrationMeta.paperStandard,
+            status: calibrationMeta.status,
+            confidence: calibrationMeta.confidence,
+            homographyMatrix:
+              calibrationMeta.homographyMatrix ??
+              baseSession.calibrationMeta?.homographyMatrix ??
+              null,
+            detectedCorners:
+              calibrationMeta.detectedCorners ??
+              baseSession.calibrationMeta?.detectedCorners ??
+              null,
+            user_verified:
+              calibrationMeta.user_verified ??
+              baseSession.calibrationMeta?.user_verified,
+            verified_corners:
+              calibrationMeta.verified_corners ??
+              baseSession.calibrationMeta?.verified_corners ??
+              null,
+            verified_scale_cm_per_px:
+              calibrationMeta.verified_scale_cm_per_px ??
+              baseSession.calibrationMeta?.verified_scale_cm_per_px ??
+              null,
+          },
+        };
+
+        const nextScale =
+          calibrationMeta.verified_scale_cm_per_px ??
+          scaleSignal.best_scale_cm_per_px;
+        let rescaledPlacedOverlays = current.placedOverlays;
+        if (nextScale && nextScale > 0 && current.placedOverlays.length > 0) {
+          const photoW = updatedSession.workspaceImage?.width ?? 0;
+          const photoH = updatedSession.workspaceImage?.height ?? 0;
+          rescaledPlacedOverlays = current.placedOverlays.map((overlay) => {
+            if (overlay.configuration.perspectiveFitCorners && photoW > 0 && photoH > 0) {
+              const photoCorners = denormalizeCorners(
+                overlay.configuration.perspectiveFitCorners,
+                photoW,
+                photoH,
+              );
+              const { widthRatio, heightRatio } = estimateDimensionsFromCorners(photoCorners);
+              if (widthRatio > 0 && heightRatio > 0) {
+                const nextW = Math.max(30, Math.min(600, Math.round(widthRatio * nextScale)));
+                const nextH = Math.max(30, Math.min(400, Math.round(heightRatio * nextScale)));
+                return {
+                  ...overlay,
+                  configuration: {
+                    ...overlay.configuration,
+                    widthCm: nextW,
+                    heightCm: nextH,
+                    visualParameterValues: {
+                      ...(overlay.configuration.visualParameterValues ?? {}),
+                      dimension_source: "verified_calibrated_visual",
+                      paper_standard: calibrationMeta.paperStandard,
+                      calibration_scale_cm_per_px: nextScale,
+                      user_verified: Boolean(calibrationMeta.user_verified),
+                    },
+                  },
+                };
+              }
+            }
+            return overlay;
+          });
+        }
+
+        let rescaledProductConfig = current.productConfiguration;
+        if (rescaledProductConfig && nextScale && nextScale > 0) {
+          rescaledProductConfig = {
+            ...rescaledProductConfig,
+            visualParameterValues: {
+              ...(rescaledProductConfig.visualParameterValues ?? {}),
+              dimension_source: "verified_calibrated_visual",
+              paper_standard: calibrationMeta.paperStandard,
+              calibration_scale_cm_per_px: nextScale,
+              user_verified: Boolean(calibrationMeta.user_verified),
+            },
+          };
+        }
+
+        const nextState: VisualizationSessionState = {
+          ...current,
+          spaceImageSession: updatedSession,
+          placedOverlays: rescaledPlacedOverlays,
+          productConfiguration: rescaledProductConfig,
+        };
+
+        writeStoredVisualizationSession(nextState);
+        return nextState;
+      });
+    },
+    [],
+  );
+
   const setStructuralDefinition = useCallback(
     (definition: ProductStructuralDefinition | null) => {
       setState((current) => {
@@ -402,6 +547,7 @@ export function VisualizationSessionProvider({
       clearPendingProductConfiguration,
       selectWorkspaceProduct,
       transitionWorkspaceProduct,
+      updateSessionCalibration,
       setStructuralDefinition,
       setProductConfiguration,
       setVariationSnapshots,
@@ -418,6 +564,7 @@ export function VisualizationSessionProvider({
       clearPendingProductConfiguration,
       selectWorkspaceProduct,
       transitionWorkspaceProduct,
+      updateSessionCalibration,
       setStructuralDefinition,
       setProductConfiguration,
       setVariationSnapshots,
@@ -453,7 +600,16 @@ export function readStoredVisualizationSession(): VisualizationSessionState {
       selectedProductId: typeof parsed.selectedProductId === "string" ? parsed.selectedProductId : null,
       pendingProductConfiguration: normalizePendingProductConfiguration(parsed.pendingProductConfiguration),
       spaceImageSession: parsed.spaceImageSession && typeof parsed.spaceImageSession === "object"
-        ? parsed.spaceImageSession
+        ? {
+            ...parsed.spaceImageSession,
+            calibrationMeta: parsed.spaceImageSession.calibrationMeta,
+            scaleEstimation:
+              parsed.spaceImageSession.scaleEstimation ??
+              parsed.spaceImageSession.scale_estimation,
+            scale_estimation:
+              parsed.spaceImageSession.scale_estimation ??
+              parsed.spaceImageSession.scaleEstimation,
+          }
         : null,
       workspaceBackgroundDataUrl:
         typeof parsed.workspaceBackgroundDataUrl === "string"
@@ -514,6 +670,13 @@ export function writeStoredVisualizationSession(state: VisualizationSessionState
                     ? ""
                     : state.spaceImageSession.workspaceImage.url,
               },
+              calibrationMeta: state.spaceImageSession.calibrationMeta,
+              scaleEstimation:
+                state.spaceImageSession.scaleEstimation ??
+                state.spaceImageSession.scale_estimation,
+              scale_estimation:
+                state.spaceImageSession.scale_estimation ??
+                state.spaceImageSession.scaleEstimation,
             }
           : null,
         workspaceBackgroundDataUrl: null,
@@ -543,6 +706,13 @@ export function writeStoredVisualizationSession(state: VisualizationSessionState
               ? {
                   ...state.spaceImageSession,
                   workspaceImage: { ...state.spaceImageSession.workspaceImage, url: "" },
+                  calibrationMeta: state.spaceImageSession.calibrationMeta,
+                  scaleEstimation:
+                    state.spaceImageSession.scaleEstimation ??
+                    state.spaceImageSession.scale_estimation,
+                  scale_estimation:
+                    state.spaceImageSession.scale_estimation ??
+                    state.spaceImageSession.scaleEstimation,
                 }
               : null,
             workspaceBackgroundDataUrl: null,
@@ -629,7 +799,18 @@ export function serializeVisualizationSession(state: VisualizationSessionState) 
     assetSessionId: state.assetSessionId,
     selectedProductId: state.selectedProductId,
     pendingProductConfiguration: state.pendingProductConfiguration,
-    spaceImageSession: state.spaceImageSession,
+    spaceImageSession: state.spaceImageSession
+      ? {
+          ...state.spaceImageSession,
+          calibrationMeta: state.spaceImageSession.calibrationMeta,
+          scaleEstimation:
+            state.spaceImageSession.scaleEstimation ??
+            state.spaceImageSession.scale_estimation,
+          scale_estimation:
+            state.spaceImageSession.scale_estimation ??
+            state.spaceImageSession.scaleEstimation,
+        }
+      : null,
     workspaceBackgroundDataUrl: state.workspaceBackgroundDataUrl?.startsWith("data:")
       || state.workspaceBackgroundDataUrl?.startsWith("blob:")
       ? null
@@ -667,3 +848,8 @@ export function useVisualizationSession() {
 
   return context;
 }
+
+export function useOptionalVisualizationSession() {
+  return useContext(VisualizationSessionContext);
+}
+

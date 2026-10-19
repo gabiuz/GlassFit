@@ -102,7 +102,16 @@ export interface SceneAnalysis {
   error: string | null;
 }
 
-import type { ScaleEstimationSignal } from "@/lib/visualization/types";
+import type {
+  CalibrationIntakeOptions,
+  CalibrationMetadata,
+  CalibrationMode,
+  FiducialPaperStandard,
+  PaperCalibrationResult,
+  PaperCalibrationStatus,
+  Point2D,
+  ScaleEstimationSignal,
+} from "@/lib/visualization/types";
 
 export interface WorkspaceImage {
   url: string;
@@ -123,6 +132,18 @@ export interface ImageAnalysisResponse {
   depth?: DepthAnalysis;
   scene?: SceneAnalysis;
   scale_estimation?: ScaleEstimationSignal;
+  paper_calibration?: PaperCalibrationResult;
+  calibration_meta?: {
+    mode: CalibrationMode;
+    paper_standard: FiducialPaperStandard | null;
+    status: PaperCalibrationStatus;
+    confidence: number;
+    homography_matrix?: number[][] | null;
+    detected_corners?: [number, number][] | null;
+    user_verified?: boolean;
+    verified_corners?: [Point2D, Point2D, Point2D, Point2D] | null;
+    verified_scale_cm_per_px?: number | null;
+  };
   warning?: string | null;
   warnings?: string[];
 }
@@ -139,6 +160,9 @@ export interface SpaceImageSession {
   scene?: SceneAnalysis;
   scaleEstimation?: ScaleEstimationSignal;
   scale_estimation?: ScaleEstimationSignal;
+  paperCalibration?: PaperCalibrationResult;
+  paper_calibration?: PaperCalibrationResult;
+  calibrationMeta?: CalibrationMetadata;
   warnings: string[];
 }
 
@@ -197,9 +221,19 @@ export async function validateImageDecode(file: File): Promise<ImagePreviewMode>
   }
 }
 
-export async function analyzeImage(file: File): Promise<SpaceImageSession> {
+export async function analyzeImage(
+  file: File,
+  calibrationOptions?: CalibrationIntakeOptions,
+): Promise<SpaceImageSession> {
   const formData = new FormData();
   formData.append("image", file);
+
+  const mode = calibrationOptions?.mode ?? "standard";
+  formData.append("calibration_mode", mode);
+
+  if (mode === "paper_fiducial" && calibrationOptions?.paperStandard) {
+    formData.append("paper_standard", calibrationOptions.paperStandard);
+  }
 
   const apiBaseUrl = getImageApiBaseUrl();
   const response = await fetch(`${apiBaseUrl}/analyze-image`, {
@@ -223,7 +257,18 @@ export async function analyzeImage(file: File): Promise<SpaceImageSession> {
   }
 
   const payload = (await response.json()) as ImageAnalysisResponse;
-  return toSpaceImageSession(payload, file.name, apiBaseUrl);
+  const session = toSpaceImageSession(payload, file.name, apiBaseUrl);
+  if (!session.calibrationMeta && calibrationOptions) {
+    session.calibrationMeta = {
+      mode: calibrationOptions.mode,
+      paperStandard: calibrationOptions.paperStandard ?? null,
+      status: "heuristic_fallback",
+      confidence: calibrationOptions.mode === "paper_fiducial" ? 0.9 : 0.75,
+      homographyMatrix: null,
+      detectedCorners: null,
+    };
+  }
+  return session;
 }
 
 function toSpaceImageSession(
@@ -260,6 +305,35 @@ function toSpaceImageSession(
       : undefined,
     scaleEstimation: payload.scale_estimation,
     scale_estimation: payload.scale_estimation,
+    paperCalibration: payload.paper_calibration,
+    paper_calibration: payload.paper_calibration,
+    calibrationMeta: payload.calibration_meta
+      ? {
+          mode: payload.calibration_meta.mode,
+          paperStandard: payload.calibration_meta.paper_standard,
+          status: payload.calibration_meta.status,
+          confidence: payload.calibration_meta.confidence,
+          homographyMatrix:
+            payload.calibration_meta.homography_matrix ??
+            payload.paper_calibration?.homography_matrix ??
+            null,
+          detectedCorners:
+            payload.calibration_meta.detected_corners ??
+            payload.paper_calibration?.detected_corners ??
+            null,
+          user_verified:
+            payload.calibration_meta.user_verified ??
+            payload.paper_calibration?.user_verified,
+          verified_corners:
+            payload.calibration_meta.verified_corners ??
+            payload.paper_calibration?.verified_corners ??
+            null,
+          verified_scale_cm_per_px:
+            payload.calibration_meta.verified_scale_cm_per_px ??
+            payload.paper_calibration?.verified_scale_cm_per_px ??
+            null,
+        }
+      : undefined,
     warnings: payload.warnings?.length ? payload.warnings : payload.warning ? [payload.warning] : [],
   };
 }

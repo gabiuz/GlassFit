@@ -47,6 +47,9 @@ export const QuotationDocumentItemSchema = z.object({
   calculatedSubtotal: money,
   imageSource: z.string().nullable(),
   groups: z.array(QuotationDocumentGroupSchema).min(1),
+  dimensionSource: z.string().optional(),
+  calibrationMethod: z.string().nullable().optional(),
+  calibrationConfidence: z.number().nullable().optional(),
 }).superRefine((item, context) => {
   if (Math.round(item.unitPrice * item.quantity * 100) !== Math.round(item.calculatedSubtotal * 100)) {
     context.addIssue({ code: "custom", path: ["calculatedSubtotal"], message: "Item arithmetic mismatch" });
@@ -190,6 +193,9 @@ export function createQuotationDocumentSnapshotV1(input: {
     panelCount: item.panelCount, hasSill: item.hasSill, structuralWaiver: item.structuralWaiver,
     finishLabel: item.finishType, glassLabel: item.glassType, quantity: item.quantity, unitPrice: item.unitPrice,
     calculatedSubtotal: item.totalPrice, imageSource: item.imageUrl || null, groups: groupsFromBom(item.bomResult),
+    dimensionSource: item.dimensionSource,
+    calibrationMethod: item.calibrationMethod,
+    calibrationConfidence: item.calibrationConfidence,
   }));
   const pricing = sourceItems.reduce((totals, item) => ({
     directMaterialsSubtotal: totals.directMaterialsSubtotal + item.bomResult.directMaterialsSubtotal * item.quantity,

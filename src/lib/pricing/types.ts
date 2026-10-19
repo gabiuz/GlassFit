@@ -367,6 +367,12 @@ export interface ItemizedProductQuotation {
   totalPrice: number;
   imageUrl: string;
   bomResult: CalculatedBOMResult;
+  dimensionSource?: string;
+  paperStandard?: string | null;
+  calibrationScaleCmPerPx?: number | null;
+  userVerified?: boolean | null;
+  calibrationMethod?: string | null;
+  calibrationConfidence?: number | null;
 }
 
 export interface ConsolidatedQuotationSummary {

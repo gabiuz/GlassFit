@@ -48,6 +48,11 @@ When implementing or modifying any user interface within these milestones (such 
 | MS-39 | Discrete Yaw and Pitch Degree Stepper Controls | Visualization Client | Accessible single-degree yaw and pitch controls with boundary clamping and slider synchronization | Maintenance Release | `BRD-M4`, `PRD-F6`, `SDD-C5`, `DSD-UI4`, `DSD-UI15`, `QAD-TC54` |
 | MS-40 | Neutral Orientation After Perspective Fit | Visualization Client | Reset yaw and pitch to zero on fit confirmation while preserving corner-based dimension estimation and later manual adjustments | Maintenance Release, after MS-39 | `BRD-M4`, `PRD-F6`, `SDD-C5`, `DSD-UI4`, `QAD-TC55` |
 | MS-44 | Seamless Cross-Product Workspace Switching | Visualization Client | Stage target definitions and models before committing an in-place product switch | Maintenance Release | `BRD-M2`, `BRD-M4`, `PRD-F6`, `SDD-C5`, `DSD-UI4`, `QAD-TC59` |
+| MS-47 | Interactive Fiducial Pin Fallback and Precision Dimension Grounding | Visualization Client | 4-point paper fiducial pin fallback modal, direct coplanar dimension grounding, and calibrated HUD badge | Maintenance Release | `BRD-M1`, `BRD-M5`, `PRD-F6`, `PRD-F10`, `SDD-C5`, `SDD-C7`, `QAD-TC62` |
+| MS-48 | Autonomous Multi-Standard Paper Fiducial Detection and Resilient Scale Engine | Computer Vision Service | Multi-standard paper aspect ratio matching, orientation normalization, and adaptive edge closing | Maintenance Release | `BRD-M1`, `BRD-M6`, `PRD-F4`, `SDD-C3`, `QAD-TC63` |
+| MS-49 | Session-Permanent Calibration State and Fallback Pinning Lifecycle | Visualization Client / Session Layer | Session-permanent calibration state persistence across product additions, product switching, and quotation round-trips | Maintenance Release | `BRD-M1`, `BRD-M4`, `PRD-F6`, `PRD-F10`, `SDD-C5`, `SDD-C7`, `QAD-TC64` |
+| MS-50 | Grounded Real-World 3D Model Sizing and Quotation Parity | Visualization Client / Sizing Engine | Direct coplanar scale grounding, 100% mathematical weight bypassing height heuristics, and quotation line item parity | Maintenance Release | `BRD-M1`, `BRD-M5`, `PRD-F6`, `PRD-F10`, `SDD-C5`, `SDD-C7`, `QAD-TC65` |
+| MS-51 | Pre-Workspace Fiducial Paper Detection Confirmation Gateway | Visualization Client / Upload Gateway | Pre-workspace confirmation modal, visual boundary verification, interactive 2.5x loupe adjustment, and paper standard override | Maintenance Release | `BRD-M1`, `BRD-M2`, `PRD-F3`, `PRD-F4`, `PRD-F6`, `SDD-C2`, `SDD-C5`, `QAD-TC66` |
 
 ---
 
@@ -432,6 +437,30 @@ MS-40 follows MS-39. Confirming a perspective fit sets yaw and pitch to zero whi
 ### MS-43: Unconstrained Dimension Parameters and Incremental Step-Loop Structural Rules
 
 MS-43 removes artificial upper limits on width and height parameters in the admin product setup wizard (`maximum_value = null`) while preserving minimum and default dimension constraints. It introduces first-class incremental step-loop structural rules ("FOR EVERY [step] mm ADD [quantity] parts") in both the admin rule authoring interface and the Three.js parametric structural resolver (`structuralResolver.ts`), preventing repetitive conditional threshold creation. Testing sandbox supports dimensions up to 10,000mm and is covered by QAD-TC58.
+
+### MS-47: Interactive Fiducial Pin Fallback and Precision Dimension Grounding
+
+MS-47 delivers a 4-point interactive fiducial pin picker modal (`FiducialPaperPickerModal`), coplanar scale factor derivation (cm per px) across Philippine paper standards (Short, A4, Long), direct coplanar dimension grounding in `computeEstimatedDimensions()` and `getScaleAwareInitialDimensions()`, and calibrated trust badges in the workspace HUD and quotation measurement modal. Covered by QAD-TC62.
+
+### MS-48: Autonomous Multi-Standard Paper Fiducial Detection and Resilient Scale Engine
+
+MS-48 enhances the FastAPI computer vision microservice (`paper_calibration.py`, `main.py`) to automatically detect standard Philippine paper dimensions (Short Bond, A4, Long Bond) under diverse room lighting and orientations without requiring manual client standard selection. Covered by QAD-TC63.
+
+### MS-49: Session-Permanent Calibration State and Fallback Pinning Lifecycle
+
+MS-49 establishes immutable, session-permanent calibration persistence across the visualization workspace. Calibrated status, metric scale, homography matrices, and detected corners persist in `VisualizationSessionContext` and `sessionStorage`, surviving multi-product additions (`mode: "add"`), product switches (`mode: "change"`), and quotation review round-trips without re-triggering the manual pin modal. Covered by QAD-TC64.
+
+### MS-50: Grounded Real-World 3D Model Sizing and Quotation Parity
+
+MS-50 mathematically grounds parametric 3D model dimensions, perspective quadrilateral fits, and quotation line items directly in verified coplanar scale factors. In `computeEstimatedDimensions()` and `getScaleAwareInitialDimensions()`, heuristic default height blending and depth corrections are bypassed when paper calibration is active, assigning 100% mathematical weight to the verified scale factor. Newly placed fixtures in multi-product workspaces calculate starting dimensions directly from physical scale, perspective quad fits synchronize dynamically with Three.js parametric meshes, and `MeasurementConfirmationModal` renders high-precision emerald trust choice cards while persisting `pricing_details.dimension_source = "calibrated_visual"` to downstream quotation items. Covered by QAD-TC65.
+
+### MS-51: Pre-Workspace Fiducial Paper Detection Confirmation and Interactive Refinement Gateway
+
+MS-51 intercepts the room space image upload pipeline prior to 3D workspace entry, replacing generic success prompts with `PaperDetectionConfirmationModal` whenever paper fiducial mode is selected or paper boundaries are detected. The modal highlights detected paper quadrilaterals with glowing emerald perimeter overlays and numbered corner pins, provides a single-tap approval path (`Looks Right / Confirm & Enter Workspace`), enables interactive corner refinement via a 2.5x circular loupe with adaptive boundary clamping, allows dynamic switching between Philippine paper standards (Short Bond, A4, Long Bond), enforces strict convexity guardrails against self-intersecting polygons, provides non-blocking heuristic fallbacks (`status: "heuristic_fallback"`), and suppresses redundant pinning prompts upon workspace hydration. Covered by QAD-TC66.
+
+### MS-52: Grounded Model Dimensioning Accuracy, Aperture Fitting, and Workspace Dynamic Synchronization
+
+MS-52 establishes end-to-end mathematical grounding and real-time visual dimensioning within the 3D visualization workspace based on verified fiducial scale factors. In `ProductModelWorkspace.tsx` and `scaleEstimation.ts`, 3D models initialize physical width and height directly from verified coplanar scale factors via `getVerifiedScaleInitialDimensions()`, completely bypassing heuristic height blending and depth distortions. The active model bounding box renders live floating physical dimension callout badges (in millimeters and centimeters) with emerald lock icons and verified trust badges. During quadrilateral aperture alignment in `PerspectivePlanePicker.tsx`, real-time millimeter edge dimension tags dynamically reflect opening geometry as corners are dragged. When the user initiates marker re-adjustments via the top-left HUD calibration pill, `PaperDetectionConfirmationModal` opens and confirms new corner pin bounds, hot-rescaling the active fixture and all placed scene fixtures in real time while triggering Three.js parametric mesh re-extrusion without resetting finishes, glass selections, or quotation state. Multi-product additions (`mode: "add"`) automatically inherit the active verified scale factor. Quotation item payloads in `MeasurementConfirmationModal.tsx` and `bookingActions.ts` permanently record `pricing_details.dimension_source = "verified_calibrated_visual"` alongside `paper_standard`, `calibration_scale_cm_per_px`, and `user_verified`, providing an immutable audit trail for fabricators. Covered by QAD-TC67.
 
 ---
 

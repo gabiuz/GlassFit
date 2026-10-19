@@ -296,6 +296,12 @@ export type MeasurementConfirmationEntry = {
   isActiveProduct: boolean;
   override: MeasurementOverride;
   recalculatedTotalPrice: number | null;
+  dimensionSource?: string;
+  calibrationMethod?: string | null;
+  calibrationConfidence?: number | null;
+  paperStandard?: string | null;
+  calibrationScaleCmPerPx?: number | null;
+  userVerified?: boolean | null;
 };
 
 export type ScaleEstimationAnchor = {
@@ -324,4 +330,70 @@ export type DimensionEstimate = {
   method: string;
 };
 
+export type CalibrationMode = "standard" | "paper_fiducial";
+
+export type FiducialPaperStandard = "short" | "a4" | "long";
+
+export interface PaperStandardDimensionsMm {
+  widthMm: number;
+  heightMm: number;
+  label: string;
+}
+
+export const PAPER_STANDARD_METRICS: Record<FiducialPaperStandard, PaperStandardDimensionsMm> = {
+  short: {
+    widthMm: 215.9,
+    heightMm: 279.4,
+    label: 'Short Bond / Letter (8.5" x 11")',
+  },
+  a4: {
+    widthMm: 210.0,
+    heightMm: 297.0,
+    label: 'A4 Standard (8.27" x 11.69")',
+  },
+  long: {
+    widthMm: 215.9,
+    heightMm: 330.2,
+    label: 'Long Bond / Folio (8.5" x 13")',
+  },
+};
+
+export interface CalibrationIntakeOptions {
+  mode: CalibrationMode;
+  paperStandard?: FiducialPaperStandard;
+}
+
+export type PaperCalibrationStatus =
+  | "calibrated"
+  | "detected"
+  | "manual_pin_required"
+  | "verified_calibrated"
+  | "heuristic_fallback"
+  | "not_requested";
+
+export interface PaperCalibrationResult {
+  status: "detected" | "manual_pin_required" | "not_requested" | "verified_calibrated" | "calibrated";
+  paper_standard: FiducialPaperStandard | null;
+  detected_corners: [number, number][] | null;
+  scale_cm_per_px: number | null;
+  confidence: number;
+  homography_matrix: number[][] | null;
+  user_verified?: boolean;
+  verified_corners?: [Point2D, Point2D, Point2D, Point2D] | null;
+  verified_scale_cm_per_px?: number | null;
+}
+
+export interface CalibrationMetadata {
+  mode: CalibrationMode;
+  paperStandard: FiducialPaperStandard | null;
+  status: PaperCalibrationStatus;
+  confidence: number;
+  homographyMatrix?: number[][] | null;
+  detectedCorners?: [number, number][] | null;
+  user_verified?: boolean;
+  verified_corners?: [Point2D, Point2D, Point2D, Point2D] | null;
+  verified_scale_cm_per_px?: number | null;
+}
+
+export type CalibrationMeta = CalibrationMetadata;
 

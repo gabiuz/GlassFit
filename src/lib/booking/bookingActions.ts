@@ -181,6 +181,36 @@ export async function generateSignedBookingLink(
             structural_waiver: item.structuralWaiver,
             image_url: item.imageSource,
             is_multi_product: quotationDocument.items.length > 1,
+            dimension_source:
+              (item as unknown as { dimensionSource?: string }).dimensionSource ??
+              ((item as unknown as { bomResult?: { bomSummary?: { groups?: Array<{ pricing_details?: { dimension_source?: string } }> } } }).bomResult?.bomSummary?.groups?.[0]?.pricing_details?.dimension_source) ??
+              ((group as unknown as { pricing_details?: { dimension_source?: string } }).pricing_details?.dimension_source) ??
+              "calibrated_visual",
+            paper_standard:
+              (item as unknown as { paperStandard?: string | null }).paperStandard ??
+              ((item as unknown as { bomResult?: { bomSummary?: { groups?: Array<{ pricing_details?: { paper_standard?: string } }> } } }).bomResult?.bomSummary?.groups?.[0]?.pricing_details?.paper_standard) ??
+              ((group as unknown as { pricing_details?: { paper_standard?: string } }).pricing_details?.paper_standard) ??
+              null,
+            calibration_scale_cm_per_px:
+              (item as unknown as { calibrationScaleCmPerPx?: number | null }).calibrationScaleCmPerPx ??
+              ((item as unknown as { bomResult?: { bomSummary?: { groups?: Array<{ pricing_details?: { calibration_scale_cm_per_px?: number } }> } } }).bomResult?.bomSummary?.groups?.[0]?.pricing_details?.calibration_scale_cm_per_px) ??
+              ((group as unknown as { pricing_details?: { calibration_scale_cm_per_px?: number } }).pricing_details?.calibration_scale_cm_per_px) ??
+              null,
+            user_verified:
+              (item as unknown as { userVerified?: boolean | null }).userVerified ??
+              ((item as unknown as { bomResult?: { bomSummary?: { groups?: Array<{ pricing_details?: { user_verified?: boolean } }> } } }).bomResult?.bomSummary?.groups?.[0]?.pricing_details?.user_verified) ??
+              ((group as unknown as { pricing_details?: { user_verified?: boolean } }).pricing_details?.user_verified) ??
+              false,
+            calibration_method:
+              (item as unknown as { calibrationMethod?: string | null }).calibrationMethod ??
+              ((item as unknown as { bomResult?: { bomSummary?: { groups?: Array<{ pricing_details?: { calibration_method?: string } }> } } }).bomResult?.bomSummary?.groups?.[0]?.pricing_details?.calibration_method) ??
+              ((group as unknown as { pricing_details?: { calibration_method?: string } }).pricing_details?.calibration_method) ??
+              null,
+            calibration_confidence:
+              (item as unknown as { calibrationConfidence?: number | null }).calibrationConfidence ??
+              ((item as unknown as { bomResult?: { bomSummary?: { groups?: Array<{ pricing_details?: { calibration_confidence?: number } }> } } }).bomResult?.bomSummary?.groups?.[0]?.pricing_details?.calibration_confidence) ??
+              ((group as unknown as { pricing_details?: { calibration_confidence?: number } }).pricing_details?.calibration_confidence) ??
+              null,
           },
           display_order: displayOrder++,
         });

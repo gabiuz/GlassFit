@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useRef } from "react";
+import type { CalibrationMode } from "@/lib/visualization/types";
 
 type GuidelineType = "good" | "bad";
 
@@ -10,11 +11,11 @@ interface GuidelineCard {
     type: GuidelineType;
     title: string;
     description: string;
-    logoSrc: string;  // TODO: path to icon image, e.g. "/icons/full-wall.svg"
-    imageSrc: string; // TODO: path to example photo, e.g. "/guidelines/full-wall.jpg"
+    logoSrc: string;
+    imageSrc: string;
 }
 
-const guidelines: GuidelineCard[] = [
+const standardGuidelines: GuidelineCard[] = [
     {
         id: "full-wall",
         type: "good",
@@ -49,12 +50,52 @@ const guidelines: GuidelineCard[] = [
     },
 ];
 
+const fiducialGuidelines: GuidelineCard[] = [
+    {
+        id: "paper-same-wall",
+        type: "good",
+        title: "Tape Flat on Target Wall",
+        description: "Affix the paper to the exact same wall as the window or door opening. Both must share the same surface plane.",
+        logoSrc: "/guideline_assets/wall_icon.svg",
+        imageSrc: "/guideline_assets/paper_same_wall.png",
+    },
+    {
+        id: "paper-corners-visible",
+        type: "good",
+        title: "All 4 Corners Clear",
+        description: "Ensure the entire paper rectangle is in frame with no tape or objects covering the outer edges.",
+        logoSrc: "/guideline_assets/light_icon.svg",
+        imageSrc: "/guideline_assets/paper_corners_visible.png",
+    },
+    {
+        id: "paper-wrong-wall",
+        type: "bad",
+        title: "Do Not Place on Side Walls or Floor",
+        description: "Placing paper on floors, tables, or adjacent side walls distorts depth calibration and produces false measurements.",
+        logoSrc: "/guideline_assets/avoid_icon.svg",
+        imageSrc: "/guideline_assets/paper_wrong_wall.png",
+    },
+    {
+        id: "paper-flat",
+        type: "bad",
+        title: "Ensure Paper Lies Completely Flat",
+        description: "Curled or folded sheets cause perspective skew. Tape all 4 corners securely against the wall.",
+        logoSrc: "/guideline_assets/avoid_icon.svg",
+        imageSrc: "/guideline_assets/paper_flat.png",
+    },
+];
 
-export function GuideLine() {
+interface GuideLineProps {
+    mode?: CalibrationMode;
+}
+
+export function GuideLine({ mode = "standard" }: GuideLineProps = {}) {
     const scrollRef = useRef<HTMLDivElement>(null);
     const isDragging = useRef(false);
     const startX = useRef(0);
     const scrollLeft = useRef(0);
+    const isFiducial = mode === "paper_fiducial";
+    const cards = isFiducial ? fiducialGuidelines : standardGuidelines;
 
     const onMouseDown = (e: React.MouseEvent) => {
         const el = scrollRef.current;
@@ -86,7 +127,23 @@ export function GuideLine() {
     return (
         <div className="w-full flex flex-col gap-6 px-0 sm:px-6 md:px-12 lg:pl-35 lg:pr-0">
             {/* Section heading */}
-            <h2 className="text-3xl font-medium text-black">Photo Guideline</h2>
+            <div className="flex flex-col gap-1">
+                <div className="flex items-center gap-3">
+                    <h2 className="text-3xl font-medium text-black">
+                        {isFiducial ? "Precision Calibration Guidelines" : "Photo Guideline"}
+                    </h2>
+                    {isFiducial && (
+                        <span className="rounded-full bg-cyan-100 px-3 py-0.5 text-xs font-semibold text-cyan-800">
+                            Fiducial Paper Guidance
+                        </span>
+                    )}
+                </div>
+                {isFiducial && (
+                    <p className="text-base text-neutral-600">
+                        Follow these paper placement steps to achieve quote-ready dimensional accuracy (error within 2% to 5%).
+                    </p>
+                )}
+            </div>
 
             {/* Carousel track */}
             <div
@@ -98,14 +155,14 @@ export function GuideLine() {
                 className="flex gap-4 sm:gap-8 overflow-x-auto scroll-smooth snap-x snap-mandatory pb-2 no-scrollbar"
                 style={{ scrollbarWidth: "none", cursor: "grab" }}
             >
-                {guidelines.map((card) => (
+                {cards.map((card) => (
                     <div
                         key={card.id}
                         className="snap-start shrink-0 w-[calc(100vw-3rem)] max-w-[387px] sm:w-[387px] h-[490px] sm:h-auto p-5 sm:p-7 bg-gray-900 rounded-[20px] flex flex-col justify-between items-start gap-4 sm:gap-7"
                     >
                         {/* Card header */}
                         <div className="flex justify-start items-center gap-4 sm:gap-7 w-full">
-                            {/* Icon — replace logoSrc in the data above */}
+                            {/* Icon: replace logoSrc in the data above */}
                             <div className="size-14 sm:size-16 relative overflow-hidden shrink-0">
                                 {card.logoSrc ? (
                                     <Image src={card.logoSrc} alt={card.title} fill className="object-contain select-none" draggable="false" />
@@ -133,7 +190,7 @@ export function GuideLine() {
                             </div>
                         </div>
 
-                        {/* Card image — replace imageSrc in the data above */}
+                        {/* Card image: replace imageSrc in the data above */}
                         <div className="self-stretch flex-1 sm:flex-initial sm:h-72 overflow-hidden relative bg-gray-700 flex items-center justify-center rounded-xl sm:rounded-none">
                             {card.imageSrc ? (
                                 <Image src={card.imageSrc} alt={card.title} fill className="object-cover select-none" draggable="false" />

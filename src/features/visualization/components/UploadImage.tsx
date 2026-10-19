@@ -8,12 +8,14 @@ import {
     validateImageDecode,
     validateImageFile,
 } from "@/lib/imageApi";
+import type { CalibrationMode } from "@/lib/visualization/types";
 
 interface UploadImageProps {
     onImageSelected?: (file: File, previewUrl: string) => void;
+    mode?: CalibrationMode;
 }
 
-export function UploadImage({ onImageSelected }: UploadImageProps = {}) {
+export function UploadImage({ onImageSelected, mode = "standard" }: UploadImageProps = {}) {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [isDragging, setIsDragging] = useState(false);
     const [isValidating, setIsValidating] = useState(false);
@@ -179,10 +181,18 @@ export function UploadImage({ onImageSelected }: UploadImageProps = {}) {
                         </div>
                         <div className="flex flex-col gap-2 items-center justify-center text-center pointer-events-none">
                             <h2 className="text-xl sm:text-2xl md:text-3xl font-medium tracking-tight text-black leading-tight">
-                                {isValidating ? "Checking image..." : isDragging ? "Drop it here!" : "Drag your photo here"}
+                                {isValidating
+                                    ? "Checking image..."
+                                    : isDragging
+                                      ? "Drop it here!"
+                                      : mode === "paper_fiducial"
+                                        ? "Drag your calibrated photo here"
+                                        : "Drag your photo here"}
                             </h2>
                             <p className="text-base sm:text-lg md:text-xl font-normal text-black/90 tracking-tight leading-normal">
-                                or click to browse your files
+                                {mode === "paper_fiducial"
+                                    ? "Ensure your taped paper marker is visible on the target wall"
+                                    : "or click to browse your files"}
                             </p>
                         </div>
                         <button
@@ -215,8 +225,17 @@ export function UploadImage({ onImageSelected }: UploadImageProps = {}) {
             )}
 
             <p className="text-xl text-black font-normal tracking-tight leading-normal">
-                Upload a clear photo of the area where the glass or aluminum product may be installed. <br />
-                GlassFit will use this image as the background for your product overlay and visual output.
+                {mode === "paper_fiducial" ? (
+                    <>
+                        Upload a clear photo of the area where the glass or aluminum product will be installed, with your reference paper taped flat on the target wall. <br />
+                        GlassFit will calibrate real-world dimensions from the paper corners before building your 3D overlay.
+                    </>
+                ) : (
+                    <>
+                        Upload a clear photo of the area where the glass or aluminum product may be installed. <br />
+                        GlassFit will use this image as the background for your product overlay and visual output.
+                    </>
+                )}
             </p>
         </div>
     );

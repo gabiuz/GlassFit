@@ -25,6 +25,8 @@ interface PerspectivePlanePickerProps {
   backgroundImageUrl: string;
   initialCorners?: QuadrilateralCorners | null;
   openingType?: PerspectiveOpeningType;
+  scaleCmPerPx?: number | null;
+  isVerifiedCalibrated?: boolean;
   onConfirm: (corners: QuadrilateralCorners) => void;
   onCancel: () => void;
 }
@@ -59,6 +61,8 @@ export function PerspectivePlanePicker({
   backgroundImageUrl,
   initialCorners,
   openingType = "window",
+  scaleCmPerPx,
+  isVerifiedCalibrated,
   onConfirm,
   onCancel,
 }: PerspectivePlanePickerProps) {
@@ -307,6 +311,39 @@ export function PerspectivePlanePicker({
     ? rectangleToQuadrilateral(selectionDraft.start, selectionDraft.current)
     : null;
 
+  const edgeDimensions = (() => {
+    if (!isComplete || !isValidQuad || points.length !== 4) return null;
+    const dist = (p1: Point2D, p2: Point2D) => Math.hypot(p2.x - p1.x, p2.y - p1.y);
+    const topPx = dist(points[0], points[1]);
+    const bottomPx = dist(points[3], points[2]);
+    const leftPx = dist(points[0], points[3]);
+    const rightPx = dist(points[1], points[2]);
+
+    const scale = scaleCmPerPx && scaleCmPerPx > 0 ? scaleCmPerPx : null;
+    return {
+      top: {
+        x: (points[0].x + points[1].x) / 2,
+        y: (points[0].y + points[1].y) / 2 - 14,
+        label: scale ? `${Math.round(topPx * scale * 10).toLocaleString()} mm` : `${Math.round(topPx)} px`,
+      },
+      bottom: {
+        x: (points[3].x + points[2].x) / 2,
+        y: (points[3].y + points[2].y) / 2 + 14,
+        label: scale ? `${Math.round(bottomPx * scale * 10).toLocaleString()} mm` : `${Math.round(bottomPx)} px`,
+      },
+      left: {
+        x: (points[0].x + points[3].x) / 2 - 20,
+        y: (points[0].y + points[3].y) / 2,
+        label: scale ? `${Math.round(leftPx * scale * 10).toLocaleString()} mm` : `${Math.round(leftPx)} px`,
+      },
+      right: {
+        x: (points[1].x + points[2].x) / 2 + 20,
+        y: (points[1].y + points[2].y) / 2,
+        label: scale ? `${Math.round(rightPx * scale * 10).toLocaleString()} mm` : `${Math.round(rightPx)} px`,
+      },
+    };
+  })();
+
   const handleConfirm = () => {
     if (!currentQuad || !isValidQuad) return;
     const normalized = normalizeCorners(currentQuad, canvasWidth, canvasHeight);
@@ -439,6 +476,40 @@ export function PerspectivePlanePicker({
                 strokeWidth={2}
                 strokeDasharray={isValidQuad ? undefined : "6 4"}
               />
+            )}
+
+            {/* Real-time Physical Dimension Annotations along quadrilateral edges (IMP-MS52) */}
+            {edgeDimensions && (
+              <g className="pointer-events-none select-none">
+                {[edgeDimensions.top, edgeDimensions.bottom, edgeDimensions.left, edgeDimensions.right].map(
+                  (edge, i) => (
+                    <g key={i} transform={`translate(${edge.x}, ${edge.y})`}>
+                      <rect
+                        x={-38}
+                        y={-10}
+                        width={76}
+                        height={20}
+                        rx={10}
+                        fill={isVerifiedCalibrated ? "rgba(6, 78, 59, 0.9)" : "rgba(15, 20, 34, 0.85)"}
+                        stroke={isVerifiedCalibrated ? "rgba(52, 211, 153, 0.7)" : "rgba(7, 182, 211, 0.6)"}
+                        strokeWidth={1}
+                      />
+                      <text
+                        x={0}
+                        y={0}
+                        textAnchor="middle"
+                        dominantBaseline="central"
+                        fill={isVerifiedCalibrated ? "#ecfdf5" : "#ffffff"}
+                        fontSize={10}
+                        fontFamily="monospace"
+                        fontWeight={600}
+                      >
+                        {edge.label}
+                      </text>
+                    </g>
+                  ),
+                )}
+              </g>
             )}
 
             {/* Placed Corner Markers & Drag Handles */}
