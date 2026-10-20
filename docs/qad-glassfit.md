@@ -5,7 +5,7 @@
 **Version:** 1.3 (Capstone Production Release)
 **Owner:** Jedia Nicole I. Sagun (Quality Assurance Lead) & GlassFit Capstone Team (PUP CCIS)
 **Status:** Locked
-**Last reconciled:** October 19, 2026 (Added QAD-TC75 and QAD-TC76 for comparative fiducial accuracy benchmark and empirical release gates)
+**Last reconciled:** October 19, 2026 (Added QAD-TC77 for the contract-preserving paper reference confirmation UI redesign)
 **PRD:** docs/prd-glassfit.md
 
 ---
@@ -320,6 +320,19 @@ Traces to IMP-MS61, PRD-F3, PRD-F4, PRD-F5, PRD-F6, PRD-F10, SDD-C2, SDD-C3, SDD
 | QAD-TC76.4 | Interaction Time Comparison | Simulated user study on 5 test participants | 1. Measure MTTC for manual 4-pin mapping<br>2. Measure MTTC for click-guided snap | Manual mapping averages 38 seconds; click-guided snap averages 4.5 seconds (88% time savings) | P1 |
 | QAD-TC76.5 | Seed Point Jitter Invariance | Seed point tapped at center vs 30px off-center inside paper | 1. Dispatch seed at center<br>2. Dispatch seed near edge<br>3. Compare snapped corners | Snapped corners are mathematically identical (< 0.1px difference) due to edge line intersection | P0 |
 | QAD-TC76.6 | Safe Abstention on Seed Click Outside Paper | User taps on empty blank wall or floor tile | 1. Dispatch seed on tile<br>2. Inspect outcome | Service returns not_found with reason code; zero false metric promotions | P0 |
+
+## QAD-TC77: Contract-Preserving Paper Reference Confirmation UI Redesign (IMP-MS62)
+
+Traces to IMP-MS62, PRD-F3, PRD-F4, PRD-F5, PRD-F6, SDD-C2, SDD-C3, SDD-C5, DSD-UI3, DSD-UI4, DSD-UI7, BRD-M1, BRD-M4, BRD-M5, BRD-M6. This case is additive to QAD-TC68 through QAD-TC76. It does not relax their format, edge-correspondence, plane-eligibility, geometry, or benchmark requirements.
+
+| Test ID | Scenario | Preconditions | Execution Steps | Expected Outcome | Severity |
+|---|---|---|---|---|---|
+| QAD-TC77.1 | Checkbox-free explicit declarations | Valid detected quadrilateral, no prior paper reference declaration | 1. Open confirmation modal<br>2. Inspect controls<br>3. Select actual paper standard, physical edge correspondence, and Flat placement<br>4. Confirm | No checkbox or radio input renders. Confirm is disabled until all three explicit declarations and existing boundary and geometry guards are satisfied. Confirmed result retains `paperStandardConfirmed`, `samePlaneConfirmed`, `firstEdge`, and `orientationConfirmed`. | P0 |
+| QAD-TC77.2 | Neutral candidate selector | Multiple valid, non-cropped candidates with distinct scores | 1. Open modal<br>2. Inspect candidate list and SVG<br>3. Hover, focus, and select an inactive candidate<br>4. Open overflow | Candidates are ordered by score descending then ID ascending. Labels say Boundary evidence, not Match or Confidence. Three candidates are initially visible plus any selected candidate. Inactive SVG outlines are white, 25% opacity, and 1.2px dashed, increasing to 55% on interaction. | P1 |
+| QAD-TC77.3 | Suggested orientation remains unconfirmed | High-confidence recommended first edge | 1. Open modal<br>2. Observe recommendation<br>3. Attempt confirm<br>4. Explicitly select Short or Long correspondence<br>5. Confirm after remaining declarations | Recommendation is visible but does not set orientation confirmation. Explicit selector activation records the chosen edge and correct physical dimensions. | P0 |
+| QAD-TC77.4 | Discrete snap pulse and reduced motion | Manual corner mapping with a transition from unsnapped to snapped | 1. Drag a corner near an edge<br>2. Observe free tracking and snap settlement<br>3. Repeat with reduced motion enabled | Free drag does not lag behind pointer input. One 200ms emerald snap pulse appears after acquisition only. Motion is suppressed under reduced-motion preference. | P1 |
+| QAD-TC77.5 | Placement remains explicit despite good edge fit | Green, yellow, and muted edge-fit fixtures | 1. Open each fixture<br>2. Inspect placement state<br>3. Select Held, Unsure, and Corners obscured or paper curled paths | Green quality does not declare Flat placement. Yellow and muted quality expand guidance only. Non-flat, uncertain, obscured, or curled outcomes remain ineligible for metric promotion and expose Retake and Skip recovery. | P0 |
+| QAD-TC77.6 | Mathematical and benchmark preservation | QAD-TC76 held-out fixture manifest and reviewed declarations | 1. Run existing MS53 through MS61 test commands<br>2. Run `npm run benchmark:ms61`<br>3. Compare geometry and eligibility outputs to the unchanged baseline | No calibration math, eligibility outcome, geometry, provenance, or QAD-TC76 release threshold changes. MS62 introduces no new physical-accuracy or MTTC claim. | P0 |
 
 ### Comparative Empirical Release Gates (IMP-MS61)
 

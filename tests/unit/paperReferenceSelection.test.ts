@@ -20,17 +20,19 @@ const review = { scaleCmPerPx: 99, confidence: 0.99, referenceSource: "candidate
   selectedCandidateId: candidate.id, paperStandardConfirmed: true, samePlaneConfirmed: true, firstEdge: "short" as const, orientationConfirmed: true };
 
 describe("IMP-MS53 / QAD-TC68 reference selection", () => {
-  it("renders candidate choices and both declarations before allowing confirmation", () => {
+  it("renders checkbox-free candidate choices and explicit declarations before allowing confirmation", () => {
     const markup = renderToStaticMarkup(React.createElement(PaperDetectionConfirmationModal, {
       backgroundImageUrl: "room.webp", canvasWidth: 1024, canvasHeight: 768,
       initialCorners: corners, candidates: session.paperCalibration?.candidates,
       selectedCandidateId: candidate.id, status: "detected",
       onConfirm: () => {}, onSkip: () => {}, onCancel: () => {},
     }));
-    assert.match(markup, /Outline/);
-    assert.match(markup, /I confirm the selected paper format/);
-    assert.match(markup, /same installation surface/);
-    assert.equal((markup.match(/type="checkbox"/g) ?? []).length, 3);
+    assert.match(markup, /Boundary evidence/);
+    assert.match(markup, /Short Bond/);
+    assert.match(markup, /Edge 1-2: Short/);
+    assert.match(markup, /Flat on the installation wall/);
+    assert.equal((markup.match(/type="checkbox"/g) ?? []).length, 0);
+    assert.equal((markup.match(/type="radio"/g) ?? []).length, 0);
     assert.match(markup, /disabled=""/);
     assert.doesNotMatch(markup, /95%|millimeter-accurate/);
   });

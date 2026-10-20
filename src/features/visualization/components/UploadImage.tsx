@@ -184,10 +184,10 @@ export function UploadImage({ onImageSelected, mode = "standard" }: UploadImageP
                                 {isValidating
                                     ? "Checking image..."
                                     : isDragging
-                                      ? "Drop it here!"
-                                      : mode === "paper_fiducial"
-                                        ? "Drag your calibrated photo here"
-                                        : "Drag your photo here"}
+                                        ? "Drop it here!"
+                                        : mode === "paper_fiducial"
+                                            ? "Drag your calibrated photo here"
+                                            : "Drag your photo here"}
                             </h2>
                             <p className="text-base sm:text-lg md:text-xl font-normal text-black/90 tracking-tight leading-normal">
                                 {mode === "paper_fiducial"
@@ -224,7 +224,7 @@ export function UploadImage({ onImageSelected, mode = "standard" }: UploadImageP
                 <p className="text-red-500 text-lg font-normal">{error}</p>
             )}
 
-            <p className="text-xl text-black font-normal tracking-tight leading-normal">
+            <p className="text-xl text-black font-normal text-center tracking-tight leading-normal">
                 {mode === "paper_fiducial" ? (
                     <>
                         Upload a clear photo of the area where the glass or aluminum product will be installed, with your reference paper taped flat on the target wall. <br />

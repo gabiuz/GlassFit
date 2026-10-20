@@ -102,7 +102,9 @@ describe("IMP-MS55 / QAD-TC70 plane eligibility and recovery", () => {
       backgroundImageUrl:"room.webp",canvasWidth:frame.width,canvasHeight:frame.height,initialCorners:paper,
       onConfirm:()=>{},onSkip:()=>{},onCancel:()=>{},
     }));
-    for (const text of [/Held in front/,/Unsure/,/Retake photo/,/both tape-measured/,/Continue Approximate Preview/,/curled/]) assert.match(markup,text);
+    for (const text of [/Held or offset/,/Unsure/,/Retake Photo/,/both tape-measured/,/Skip Calibration/,/curled/]) assert.match(markup,text);
+    assert.equal((markup.match(/type="checkbox"/g) ?? []).length, 0);
+    assert.equal((markup.match(/type="radio"/g) ?? []).length, 0);
     assert.match(markup,/disabled=""/);
   });
 });
