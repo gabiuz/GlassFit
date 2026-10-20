@@ -8,6 +8,7 @@ import { autoDetectComponentSettings } from "@/lib/admin/products/autoDetection"
 import { decomposeWholeModel, type ExtractedComponentPart } from "@/lib/admin/products/modelDecomposer";
 import { DecompositionPreviewModal } from "./DecompositionPreviewModal";
 import { PartInspectorDrawer, type PartInspectorConfig } from "./PartInspectorDrawer";
+import { MaterialMappingPanel, PricingDriverPanel, type MappingPart } from "./components/ComponentMappingPanels";
 import { getRawMaterials } from "@/lib/admin/materials/materialActions";
 import type { RawMaterial, DimensionBinding, PresentationCategory } from "@/lib/pricing/types";
 import { Canvas } from "@react-three/fiber";
@@ -42,6 +43,7 @@ type MappedFile = {
     assemblyGroup: string;
     baseQuantity: number;
     rawMaterialId: string | null;
+    suggestedMaterialCategory: string;
     dimensionBinding: DimensionBinding;
     spanRatio: number;
     isRemovable: boolean;
@@ -165,26 +167,30 @@ function PartViewer3D({
                 if (child instanceof THREE.Mesh) {
                     if (isSelected) {
                         const isGlass = classifySceneMesh(child) === "Glass";
-                        if (Array.isArray(child.material)) {
-                            child.material = child.material.map((mat) => {
-                                const m = mat.clone();
-                                if ("emissive" in m && m.emissive instanceof THREE.Color) {
-                                    m.emissive.set("#07b6d3");
-                                    if ("emissiveIntensity" in m) {
-                                        (m as THREE.MeshStandardMaterial).emissiveIntensity = isGlass ? 0.25 : 0.45;
-                                    }
+                        const highlightMaterial = (material: THREE.Material) => {
+                            const selectedMaterial = material.clone();
+                            if (isGlass && selectedMaterial instanceof THREE.MeshStandardMaterial) {
+                                selectedMaterial.color.set("#164d61");
+                                selectedMaterial.opacity = 0.82;
+                                selectedMaterial.transparent = true;
+                                selectedMaterial.depthWrite = true;
+                                selectedMaterial.emissive.set("#092c38");
+                                selectedMaterial.emissiveIntensity = 0.12;
+                                if (selectedMaterial instanceof THREE.MeshPhysicalMaterial) {
+                                    selectedMaterial.transmission = 0.08;
                                 }
-                                return m;
-                            });
-                        } else if (child.material) {
-                            const m = child.material.clone();
-                            if ("emissive" in m && m.emissive instanceof THREE.Color) {
-                                m.emissive.set("#07b6d3");
-                                if ("emissiveIntensity" in m) {
-                                    (m as THREE.MeshStandardMaterial).emissiveIntensity = isGlass ? 0.25 : 0.45;
+                            } else if ("emissive" in selectedMaterial && selectedMaterial.emissive instanceof THREE.Color) {
+                                selectedMaterial.emissive.set("#07b6d3");
+                                if ("emissiveIntensity" in selectedMaterial) {
+                                    (selectedMaterial as THREE.MeshStandardMaterial).emissiveIntensity = 0.45;
                                 }
                             }
-                            child.material = m;
+                            return selectedMaterial;
+                        };
+                        if (Array.isArray(child.material)) {
+                            child.material = child.material.map(highlightMaterial);
+                        } else if (child.material) {
+                            child.material = highlightMaterial(child.material);
                         }
                     }
                 }
@@ -394,20 +400,30 @@ export function StructuralComponentsSection({
     const [decompositionError, setDecompositionError] = useState<string | null>(null);
 
     const [rawMaterials, setRawMaterials] = useState<RawMaterial[]>([]);
+    const [materialStatus, setMaterialStatus] = useState<"loading" | "ready" | "error">("loading");
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const [inspectorTab, setInspectorTab] = useState<"materials" | "drivers" | "settings">("materials");
+    const [mappingFeedback, setMappingFeedback] = useState<string | null>(null);
+    const [materialRetryKey, setMaterialRetryKey] = useState(0);
 
     // Fetch master raw materials
     useEffect(() => {
         let mounted = true;
-        getRawMaterials({ is_active: true })
+        getRawMaterials()
             .then((mats) => {
-                if (mounted) setRawMaterials(mats);
+                if (mounted) {
+                    setRawMaterials(mats);
+                    setMaterialStatus("ready");
+                }
             })
-            .catch((err) => console.error("Failed to load raw materials in setup:", err));
+            .catch((err) => {
+                console.error("Failed to load raw materials in setup:", err);
+                if (mounted) setMaterialStatus("error");
+            });
         return () => {
             mounted = false;
         };
-    }, []);
+    }, [materialRetryKey]);
 
     // Initialize from DB data if present
     const [mappedFiles, setMappedFiles] = useState<MappedFile[]>(() => {
@@ -424,6 +440,7 @@ export function StructuralComponentsSection({
                 assemblyGroup: String(compData.assembly_group || ""),
                 baseQuantity: typeof comp.base_quantity === "number" ? comp.base_quantity : 1,
                 rawMaterialId: (comp.raw_material_id as string) || null,
+                suggestedMaterialCategory: detected.suggestedMaterialCategory,
                 dimensionBinding: (comp.dimension_binding as DimensionBinding) || detected.dimensionBinding,
                 spanRatio: typeof comp.span_ratio === "number" ? comp.span_ratio : detected.spanRatio,
                 isRemovable: typeof comp.is_removable === "boolean" ? comp.is_removable : detected.isRemovable,
@@ -453,6 +470,7 @@ export function StructuralComponentsSection({
                             assemblyGroup: String(compData.assembly_group || ""),
                             baseQuantity: typeof comp.base_quantity === "number" ? comp.base_quantity : 1,
                             rawMaterialId: (comp.raw_material_id as string) || null,
+                            suggestedMaterialCategory: detected.suggestedMaterialCategory,
                             dimensionBinding: (comp.dimension_binding as DimensionBinding) || detected.dimensionBinding,
                             spanRatio: typeof comp.span_ratio === "number" ? comp.span_ratio : detected.spanRatio,
                             isRemovable: typeof comp.is_removable === "boolean" ? comp.is_removable : detected.isRemovable,
@@ -555,6 +573,7 @@ export function StructuralComponentsSection({
                 assemblyGroup: autoDetected.presentationCategory.toLowerCase(),
                 baseQuantity: 1,
                 rawMaterialId: null,
+                suggestedMaterialCategory: autoDetected.suggestedMaterialCategory,
                 dimensionBinding: autoDetected.dimensionBinding,
                 spanRatio: autoDetected.spanRatio,
                 isRemovable: autoDetected.isRemovable,
@@ -646,6 +665,7 @@ export function StructuralComponentsSection({
             assemblyGroup: part.presentationCategory.toLowerCase(),
             baseQuantity: part.baseQuantity || 1,
             rawMaterialId: null,
+            suggestedMaterialCategory: autoDetectComponentSettings(part.sourceNodeName || part.componentName).suggestedMaterialCategory,
             dimensionBinding: part.dimensionBinding,
             spanRatio: part.spanRatio,
             isRemovable: part.isRemovable,
@@ -674,7 +694,7 @@ export function StructuralComponentsSection({
 
     const handleSelectPart = (id: string, isShift: boolean) => {
         setSelectedIds(prev => {
-            const next = new Set(isShift ? prev : []);
+            const next = new Set(isShift || inspectorTab !== "settings" ? prev : []);
             if (next.has(id)) {
                 next.delete(id);
             } else {
@@ -704,6 +724,36 @@ export function StructuralComponentsSection({
                 return item;
             })
         );
+    };
+
+    // MS-45: material targets are explicit and never change pricing drivers.
+    const handleAssignMaterial = (ids: string[], materialId: string | null) => {
+        if (isUploadingAll || materialStatus !== "ready") return;
+        if (materialId !== null && !rawMaterials.some((material) => material.id === materialId && material.is_active)) return;
+        const targets = new Set(ids);
+        if (targets.size === 0) return;
+        setMappedFiles((prev) => prev.map((part) =>
+            targets.has(part.id) && part.rawMaterialId !== materialId
+                ? { ...part, rawMaterialId: materialId, status: "idle" as const }
+                : part
+        ));
+        setMappingFeedback(materialId === null
+            ? "Material link removed. Save component changes to persist."
+            : "Material links updated. Save component changes to persist.");
+    };
+
+    // MS-45: driver changes are independent of material assignments.
+    const handleApplyPricingDriver = (ids: string[], updates: { dimensionBinding?: DimensionBinding; spanRatio?: number }) => {
+        if (isUploadingAll || ids.length === 0) return;
+        if (updates.spanRatio !== undefined && (!Number.isFinite(updates.spanRatio) || updates.spanRatio < 0 || updates.spanRatio > 10)) return;
+        const targets = new Set(ids);
+        setMappedFiles((prev) => prev.map((part) => {
+            if (!targets.has(part.id)) return part;
+            const dimensionBinding = updates.dimensionBinding ?? part.dimensionBinding;
+            const spanRatio = updates.spanRatio ?? part.spanRatio;
+            if (dimensionBinding === part.dimensionBinding && spanRatio === part.spanRatio) return part;
+            return { ...part, dimensionBinding, spanRatio, status: "idle" as const };
+        }));
     };
 
     const removeMappedFile = (id: string) => {
@@ -846,6 +896,15 @@ export function StructuralComponentsSection({
                 assemblyGroup: m.assemblyGroup,
             }));
     }, [mappedFiles, selectedIds]);
+    const mappingParts: MappingPart[] = mappedFiles;
+    const selectedMappingParts = mappingParts.filter((part) => selectedIds.has(part.id));
+    const materialNeedsReview = mappedFiles.filter((part) => {
+        if (!part.rawMaterialId) return true;
+        if (materialStatus !== "ready") return false;
+        const material = rawMaterials.find((entry) => entry.id === part.rawMaterialId);
+        return !material || !material.is_active;
+    }).length;
+    const materialLinkedCount = mappedFiles.length - materialNeedsReview;
 
     // If it is fixed, skip structural components setup
     if (modelStrategy !== "Parametric") {
@@ -1051,23 +1110,20 @@ export function StructuralComponentsSection({
                         <div className="h-8 w-px bg-neutral-800" />
                         <div>
                             <span className="text-neutral-400 block text-[11px]">Catalog Linked</span>
-                            <span className="font-semibold text-[#07b6d3]">
-                                {mappedFiles.filter(m => m.rawMaterialId).length} of {mappedFiles.length} Linked
+                            <span className={`font-semibold ${materialStatus !== "ready" ? "text-white" : materialNeedsReview === 0 ? "text-emerald-400" : "text-amber-400"}`}>
+                                {materialLinkedCount} of {mappedFiles.length} {materialStatus === "ready" ? "Linked" : "IDs Present"}
                             </span>
                         </div>
                         <div className="h-8 w-px bg-neutral-800" />
                         <div>
-                            <span className="text-neutral-400 block text-[11px]">Toggleable (Sill)</span>
-                            <span className="font-semibold text-amber-400">
-                                {mappedFiles.filter(m => m.isRemovable).length} Removable
-                            </span>
+                            <span className="text-neutral-400 block text-[11px]">Needs Review</span>
+                            <span className="font-semibold text-amber-400">{materialNeedsReview} {materialStatus === "ready" ? "Parts" : "Known Missing"}</span>
                         </div>
                     </div>
                     <div className="text-right">
-                        <span className="text-neutral-400 block text-[11px]">BOM Estimation Status</span>
+                        <span className="text-neutral-400 block text-[11px]">Catalog Status</span>
                         <span className="text-xs font-medium text-emerald-400 flex items-center gap-1.5">
-                            <span className="size-2 rounded-full bg-emerald-400 animate-pulse" />
-                            Ready for Test-Drive Simulator (Step 6)
+                            {materialStatus === "ready" ? "Materials loaded" : materialStatus === "loading" ? "Loading materials" : "Materials unavailable"}
                         </span>
                     </div>
                 </div>
@@ -1126,7 +1182,7 @@ export function StructuralComponentsSection({
                         </div>
 
                         <div className="p-3 bg-white/90 border-t border-neutral-200/80 backdrop-blur-sm flex items-center justify-between text-xs text-neutral-500">
-                            <span>{mappedFiles.length} parts mapped ({selectedIds.size} selected)</span>
+                            <span>{mappedFiles.length} parts mapped ({selectedIds.size} selected){inspectorTab !== "settings" ? " · Click model parts to add or remove" : ""}</span>
                             <div className="flex gap-2">
                                 <button
                                     type="button"
@@ -1147,14 +1203,61 @@ export function StructuralComponentsSection({
                         </div>
                     </div>
 
-                    {/* Right Side: Part Inspector Drawer (40% / 5 cols) */}
-                    <div className="lg:col-span-5 bg-white flex flex-col h-full min-h-[460px]">
-                        <PartInspectorDrawer
-                            selectedParts={selectedPartConfigs}
-                            rawMaterials={rawMaterials}
-                            onUpdateParts={handleBatchUpdateSelected}
-                            onDeselect={() => setSelectedIds(new Set())}
-                        />
+                    {/* Right Side: MS-45 mapping and part settings, with the 3D preview kept visible. */}
+                    <div className="lg:col-span-5 bg-white flex min-h-[500px] min-w-0 flex-col">
+                        <div role="tablist" aria-label="Component configuration" className="flex shrink-0 gap-1 border-b border-neutral-200 bg-[#fcfcfc] p-2">
+                            {([
+                                ["materials", "Map Materials"],
+                                ["drivers", "Pricing Drivers"],
+                                ["settings", "Part Settings"],
+                            ] as const).map(([tab, label]) => (
+                                <button
+                                    key={tab}
+                                    type="button"
+                                    role="tab"
+                                    aria-selected={inspectorTab === tab}
+                                    onClick={() => setInspectorTab(tab)}
+                                    className={`flex-1 rounded-[7px] px-2 py-2 text-xs font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3] ${inspectorTab === tab ? "bg-[#07b6d3]/10 text-[#078ca5]" : "text-neutral-500 hover:bg-neutral-100"}`}
+                                >
+                                    {label}
+                                </button>
+                            ))}
+                        </div>
+                        <div role="tabpanel" className="min-h-0 flex-1">
+                            {inspectorTab === "materials" && (
+                                <MaterialMappingPanel
+                                    parts={mappingParts}
+                                    selectedIds={selectedIds}
+                                    materials={rawMaterials}
+                                    materialStatus={materialStatus}
+                                    disabled={isUploadingAll}
+                                    feedback={mappingFeedback}
+                                    onRetryMaterials={() => {
+                                        setMaterialStatus("loading");
+                                        setMaterialRetryKey((value) => value + 1);
+                                    }}
+                                    onSelectIds={setSelectedIds}
+                                    onAssignMaterial={handleAssignMaterial}
+                                />
+                            )}
+                            {inspectorTab === "drivers" && (
+                                <PricingDriverPanel
+                                    selectedParts={selectedMappingParts}
+                                    disabled={isUploadingAll}
+                                    onApply={handleApplyPricingDriver}
+                                />
+                            )}
+                            {inspectorTab === "settings" && (
+                                <PartInspectorDrawer
+                                    selectedParts={selectedPartConfigs}
+                                    rawMaterials={rawMaterials}
+                                    onUpdateParts={handleBatchUpdateSelected}
+                                    onDeselect={() => setSelectedIds(new Set())}
+                                    onOpenMaterialMapping={() => setInspectorTab("materials")}
+                                    onOpenPricingDrivers={() => setInspectorTab("drivers")}
+                                />
+                            )}
+                        </div>
                     </div>
                 </div>
             )}
@@ -1188,6 +1291,7 @@ export function StructuralComponentsSection({
                                     <th className="px-3 py-2 w-8">
                                         <button
                                             type="button"
+                                            aria-label={selectedIds.size === mappedFiles.length ? "Deselect all components" : "Select all components"}
                                             onClick={() => {
                                                 if (selectedIds.size === mappedFiles.length) setSelectedIds(new Set());
                                                 else setSelectedIds(new Set(mappedFiles.map(m => m.id)));
@@ -1222,33 +1326,52 @@ export function StructuralComponentsSection({
                                             className={`hover:bg-neutral-50 cursor-pointer transition-colors ${isSelected ? "bg-[#07b6d3]/5" : ""
                                                 }`}
                                         >
-                                            <td className="px-3 py-2" onClick={(e) => { e.stopPropagation(); handleSelectPart(mapped.id, true); }}>
-                                                {isSelected ? (
-                                                    <CheckSquare className="size-4 text-[#07b6d3]" />
-                                                ) : (
-                                                    <Square className="size-4 text-neutral-400" />
-                                                )}
+                                            <td className="px-3 py-2">
+                                                <button
+                                                    type="button"
+                                                    aria-label={`${isSelected ? "Deselect" : "Select"} ${mapped.componentName}`}
+                                                    aria-pressed={isSelected}
+                                                    onClick={(event) => { event.stopPropagation(); handleSelectPart(mapped.id, true); }}
+                                                    className="rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]"
+                                                >
+                                                    {isSelected ? <CheckSquare className="size-4 text-[#07b6d3]" /> : <Square className="size-4 text-neutral-400" />}
+                                                </button>
                                             </td>
                                             <td className="px-3 py-2 font-medium text-[#0f1422]">
                                                 <div>{mapped.componentName}</div>
                                                 <div className="text-[10px] text-neutral-400 font-mono">{mapped.componentKey}</div>
                                             </td>
                                             <td className="px-3 py-2">
-                                                <span className="px-2 py-0.5 rounded bg-neutral-100 text-neutral-700 font-mono text-[10px]">
-                                                    {mapped.dimensionBinding}
-                                                </span>
+                                                <select
+                                                    aria-label={`Pricing driver for ${mapped.componentName}`}
+                                                    value={mapped.dimensionBinding}
+                                                    disabled={isUploadingAll}
+                                                    onClick={(event) => event.stopPropagation()}
+                                                    onChange={(event) => handleApplyPricingDriver([mapped.id], { dimensionBinding: event.target.value as DimensionBinding })}
+                                                    className="rounded border border-neutral-200 bg-neutral-50 px-2 py-1 font-mono text-[10px] text-neutral-700 outline-none focus:border-[#07b6d3]"
+                                                >
+                                                    <option value="WIDTH">WIDTH</option>
+                                                    <option value="HEIGHT">HEIGHT</option>
+                                                    <option value="AREA">AREA</option>
+                                                    <option value="FIXED">FIXED</option>
+                                                </select>
                                             </td>
                                             <td className="px-3 py-2 font-mono text-neutral-600">
                                                 {mapped.spanRatio.toFixed(2)}x
                                             </td>
-                                            <td className="px-3 py-2 max-w-[180px] truncate text-neutral-600">
-                                                {mat ? (
-                                                    <span title={mat.description} className="text-[#07b6d3] font-medium">
-                                                        {mat.material_code}
-                                                    </span>
-                                                ) : (
-                                                    <span className="text-neutral-400 italic">Unassigned</span>
-                                                )}
+                                            <td className={`max-w-[180px] px-3 py-2 ${!mapped.rawMaterialId || (materialStatus === "ready" && (!mat || !mat.is_active)) ? "bg-amber-50/70" : ""}`}>
+                                                <button
+                                                    type="button"
+                                                    title={mat?.description || undefined}
+                                                    onClick={(event) => {
+                                                        event.stopPropagation();
+                                                        setSelectedIds(new Set([mapped.id]));
+                                                        setInspectorTab("materials");
+                                                    }}
+                                                    className={`max-w-full truncate rounded text-left font-medium hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3] ${!mapped.rawMaterialId || (materialStatus === "ready" && (!mat || !mat.is_active)) ? "text-amber-700" : "text-[#078ca5]"}`}
+                                                >
+                                                    {!mapped.rawMaterialId ? "Unassigned" : materialStatus === "ready" && !mat ? "Unavailable material" : mat && !mat.is_active ? `${mat.material_code} (Inactive)` : mat?.material_code ?? "Linked material"}
+                                                </button>
                                             </td>
                                             <td className="px-3 py-2">
                                                 {mapped.isRemovable ? (
@@ -1300,7 +1423,10 @@ export function StructuralComponentsSection({
                 </div>
             )}
 
-            <div className="flex justify-end pt-6 mt-2 border-t border-neutral-200">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-neutral-200 pt-6 mt-2">
+                <p className="text-xs text-amber-700">
+                    {materialStatus === "error" ? "Material catalog unavailable. Existing links could not be verified." : materialStatus === "loading" ? "Checking material links..." : materialNeedsReview > 0 ? `${materialNeedsReview} ${materialNeedsReview === 1 ? "part has" : "parts have"} no usable catalog material link; material cost may be omitted.` : "All component material links are ready."}
+                </p>
                 <button
                     type="button"
                     onClick={handleContinue}

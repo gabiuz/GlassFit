@@ -53,7 +53,7 @@ export function HeroSection() {
           <div className="absolute inset-0 bg-white/70"></div>
         </div>
         <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-24 shadow-[inset_0_-26px_30px_-26px_rgba(0,0,0,0.25)]"></div>
-        <div className="hidden xl:block pointer-events-none absolute -bottom-2 right-0 z-20 h-30 w-[38%] 2xl:w-[45%] 4xl:w-[50%] 5xl:!w-[55%] 4xl:h-40 5xl:!h-48 filter-[drop-shadow(0_-2px_24px_rgba(0,0,0,0.25))]">
+        <div className="home-hero-floor hidden xl:block pointer-events-none absolute -bottom-2 right-0 z-20 h-30 w-[38%] 2xl:w-[45%] 4xl:w-[50%] 5xl:!w-[55%] 4xl:h-40 5xl:!h-48 filter-[drop-shadow(0_-2px_24px_rgba(0,0,0,0.25))]">
           <div className="h-full w-full bg-white [clip-path:polygon(40%_0,100%_0,100%_100%,0_100%)]"></div>
         </div>
         <Image
@@ -62,9 +62,9 @@ export function HeroSection() {
           width={2000}
           height={1125}
           aria-hidden="true"
-          className="hidden xl:block pointer-events-none absolute xl:w-167.5 xl:h-236.5 xl:-bottom-22 2xl:w-192.5 2xl:h-272 2xl:-bottom-30 5xl:w-280! 5xl:h-395! 5xl:-bottom-44! right-0 z-30"
+          className="home-hero-door hidden xl:block pointer-events-none absolute xl:w-167.5 xl:h-236.5 xl:-bottom-22 2xl:w-192.5 2xl:h-272 2xl:-bottom-30 5xl:w-280! 5xl:h-395! 5xl:-bottom-44! right-0 z-30"
         />
-        <div className="relative z-10">
+        <div className="relative z-10 mx-auto w-full max-w-[3267px]">
           <div className="px-6 pt-32 pb-12 flex justify-start items-start md:pl-16 md:pt-48 lg:pl-27 lg:pt-57 lg:pb-0 4xl:pl-36 4xl:pt-64 5xl:pl-48! 5xl:pt-72!">
             <div className="flex w-full max-w-full flex-col gap-6 font-[family-name:var(--font-made-okine)] xl:max-w-[480px] xl:gap-7 2xl:max-w-[540px] 3xl:max-w-[700px] 4xl:max-w-[777px] 4xl:gap-[34px]">
               <div className="flex flex-col gap-2 4xl:gap-[10px]">

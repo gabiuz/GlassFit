@@ -26,6 +26,7 @@ import {
 } from "@/lib/visualization/measurementConfirmation";
 import { currentPhotoMeasurement, readMeasurementRecord } from "@/lib/visualization/measurementRecord";
 import { calculateBOMFromStructuralDefinition } from "@/lib/pricing/pricingEngine";
+import { formatPeso } from "@/lib/format";
 
 const ProductModel3D = dynamic(
   () =>
@@ -720,7 +721,7 @@ export function MeasurementConfirmationModal({
             </span>
           </div>
           <div className="text-xl font-semibold text-[#07b6d3]">
-            ₱{Math.round(displayedPrice).toLocaleString()}
+            {formatPeso(displayedPrice)}
           </div>
         </div>
 

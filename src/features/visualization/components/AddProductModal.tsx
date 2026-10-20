@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Image from "next/image";
 import { Search, X } from "lucide-react";
 import type { CatalogProduct } from "@/lib/products/types";
+import { formatPeso } from "@/lib/format";
 
 interface AddProductModalProps {
   isOpen: boolean;
@@ -174,7 +175,7 @@ export function AddProductModal({
             const isCurrent = product.id === currentProductId;
             const isSelecting = selectingProductId === product.id;
             const price = product.basePrice > 0
-              ? `₱ ${product.basePrice.toLocaleString("en-PH")}`
+              ? formatPeso(product.basePrice)
               : "Price after configuration";
 
             return (

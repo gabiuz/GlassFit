@@ -77,6 +77,26 @@ body {
   font-family: inherit;
 }
 
+/* PRD-F1 / DSD-UI1: keep the established 90% desktop composition at
+   the browser's default zoom while leaving compact viewports at full size. */
+@media (min-width: 1280px) {
+  html {
+    zoom: 0.9;
+  }
+}
+
+/* PRD-F1 / DSD-UI1: keep the homepage foreground grouped on TV widths. */
+@media (min-width: 3267px) {
+  .home-hero-door,
+  .home-hero-floor {
+    right: calc((100vw - 3267px) / 2);
+  }
+
+  .home-hero-floor {
+    max-width: 1797px;
+  }
+}
+
 .bg-grad-light {
   background-image: var(--grad-light);
 }
@@ -416,4 +436,3 @@ body {
     transition-duration: 0ms;
   }
 }
-

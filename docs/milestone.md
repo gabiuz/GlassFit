@@ -53,6 +53,7 @@ When implementing or modifying any user interface within these milestones (such 
 | MS-49 | Session-Permanent Calibration State and Fallback Pinning Lifecycle | Visualization Client / Session Layer | Session-permanent calibration state persistence across product additions, product switching, and quotation round-trips | Maintenance Release | `BRD-M1`, `BRD-M4`, `PRD-F6`, `PRD-F10`, `SDD-C5`, `SDD-C7`, `QAD-TC64` |
 | MS-50 | Grounded Real-World 3D Model Sizing and Quotation Parity | Visualization Client / Sizing Engine | Direct coplanar scale grounding, 100% mathematical weight bypassing height heuristics, and quotation line item parity | Maintenance Release | `BRD-M1`, `BRD-M5`, `PRD-F6`, `PRD-F10`, `SDD-C5`, `SDD-C7`, `QAD-TC65` |
 | MS-51 | Pre-Workspace Fiducial Paper Detection Confirmation Gateway | Visualization Client / Upload Gateway | Pre-workspace confirmation modal, visual boundary verification, interactive 2.5x loupe adjustment, and paper standard override | Maintenance Release | `BRD-M1`, `BRD-M2`, `PRD-F3`, `PRD-F4`, `PRD-F6`, `SDD-C2`, `SDD-C5`, `QAD-TC66` |
+| MS-45 | Preview-Preserving Material Mapping | Admin Components UI | Keep the 3D preview visible while batch linking selected parts, reviewing pricing drivers separately, and identifying incomplete material links | Maintenance Release | `PRD-F14`, `SDD-C9`, `DSD-UI10`, `ERD-E6`, `ERD-E17`, `QAD-TC60` |
 
 ---
 
@@ -393,6 +394,7 @@ Eliminate state desynchronization, parameter loss, and rule-blocking traps in th
 | MS-40 | `PRD-F6` | `SDD-C5` | N/A (Transient Presentation State) | `DSD-UI4` | `QAD-TC55` |
 | MS-43 | `PRD-F5`, `PRD-F14` | `SDD-C4`, `SDD-C9` | `ERD-E4`, `ERD-E5`, `ERD-E6`, `ERD-E7` | `DSD-UI10` | `QAD-TC58` |
 | MS-44 | `PRD-F6` | `SDD-C4`, `SDD-C5`, `SDD-C6` | `ERD-E4`, `ERD-E5`, `ERD-E6`, `ERD-E7` | `DSD-UI4` | `QAD-TC59` |
+| MS-45 | `PRD-F14` | `SDD-C9` | `ERD-E6`, `ERD-E17` | `DSD-UI10` | `QAD-TC60` |
 
 ### MS-30: Inclusive Identity and Administrator Email Change
 

@@ -32,6 +32,7 @@ import type { CatalogProduct } from "@/lib/products/types";
 import type { SpaceImageSession, LightingAnalysis } from "@/lib/imageApi";
 import { ProductModelRenderer } from "@/lib/visualization/modelRenderer";
 import { getWorkspaceDefinition } from "@/lib/visualization/workspaceDefinitionCache";
+import { formatPeso } from "@/lib/format";
 import {
   GlassAppearanceMode,
   GlassColorKey,
@@ -939,25 +940,15 @@ export function ProductModelWorkspace({
     structuralWaiver,
   ]);
 
-  const formattedPrice = useMemo(() => {
-    return new Intl.NumberFormat("en-PH", {
-      style: "currency",
-      currency: "PHP",
-      maximumFractionDigits: 0,
-    })
-      .format(realtimePricing.totalPrice)
-      .replace("PHP", "Php");
-  }, [realtimePricing.totalPrice]);
+  const formattedPrice = useMemo(
+    () => formatPeso(realtimePricing.totalPrice),
+    [realtimePricing.totalPrice],
+  );
 
-  const formattedUnitPrice = useMemo(() => {
-    return new Intl.NumberFormat("en-PH", {
-      style: "currency",
-      currency: "PHP",
-      maximumFractionDigits: 0,
-    })
-      .format(realtimePricing.unitPrice)
-      .replace("PHP", "Php");
-  }, [realtimePricing.unitPrice]);
+  const formattedUnitPrice = useMemo(
+    () => formatPeso(realtimePricing.unitPrice),
+    [realtimePricing.unitPrice],
+  );
 
   // Filter out any overlay that matches the activeOverlayId to avoid double-counting active product
   const nonActivePlacedOverlays = useMemo(() => {
@@ -1043,13 +1034,7 @@ export function ProductModelWorkspace({
     const isMultiProduct = totalSceneProductCount > 1;
 
     if (isApplied) {
-      const formattedTotal = new Intl.NumberFormat("en-PH", {
-        style: "currency",
-        currency: "PHP",
-        maximumFractionDigits: 0,
-      })
-        .format(totalScenePrice)
-        .replace("PHP", "Php");
+      const formattedTotal = formatPeso(totalScenePrice);
 
       return {
         title: isMultiProduct
@@ -2856,23 +2841,8 @@ export function ProductModelWorkspace({
 
       {/* ── Top Toolbar Controls ── */}
       <div className={shouldLockMobileEditor ? "hidden" : "w-full flex flex-col md:flex-row items-center justify-between gap-6 mb-10"}>
-        {/* Left: Undo, Redo, Zoom */}
+        {/* Left: Zoom */}
         <div className="flex flex-wrap items-center gap-4 sm:gap-6 justify-center md:justify-start">
-          {/* Undo / Redo */}
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              className="bg-[#0f1422] hover:bg-black text-white px-4 py-2 rounded-[10px] text-sm font-normal transition-colors cursor-pointer"
-            >
-              Undo
-            </button>
-            <button
-              type="button"
-              className="bg-white border border-[#c3c3c3] hover:bg-neutral-50 text-[#0f1422] px-4 py-2 rounded-[10px] text-sm font-normal transition-colors cursor-pointer"
-            >
-              Redo
-            </button>
-          </div>
 
           {/* Zoom Controls */}
           <div className="bg-white border border-[#c3c3c3] flex items-center justify-center gap-3 px-4 py-2 rounded-[10px] select-none">
@@ -4135,8 +4105,9 @@ export function ProductModelWorkspace({
                                 <span className="text-[#0f1422] text-base font-medium">{quantity}</span>
                                 <button
                                   type="button"
-                                  onClick={() => setQuantity((q) => q + 1)}
-                                  className="p-1 hover:opacity-75 transition-opacity cursor-pointer"
+                                  onClick={() => setQuantity((q) => Math.min(3, q + 1))}
+                                  disabled={quantity >= 3}
+                                  className={`p-1 transition-opacity ${quantity >= 3 ? "opacity-30 cursor-not-allowed" : "hover:opacity-75 cursor-pointer"}`}
                                 >
                                   <Image
                                     src="/visualization/plus-solid-full 1.svg"
