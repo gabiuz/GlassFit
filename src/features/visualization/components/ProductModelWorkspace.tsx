@@ -360,10 +360,6 @@ export function ProductModelWorkspace({
     height: spaceImageSession?.workspaceImage?.height ?? sessionContext?.spaceImageSession?.workspaceImage?.height ?? 0 }), [spaceImageSession, sessionContext?.spaceImageSession]);
   const referenceEligibility = evaluatePlaneEligibility(activeCalibrationMeta, activeCalibrationMeta?.metricReference?.planeId, null, metricFrame);
   const metricReference = referenceEligibility.status === "eligible_planar_estimate" ? activeCalibrationMeta?.metricReference ?? null : null;
-  const latestFitIdentityRef = useRef({ imageId: metricFrame.imageId, productId: structuralDefinition?.product.productId });
-  useLayoutEffect(() => {
-    latestFitIdentityRef.current = { imageId: metricFrame.imageId, productId: structuralDefinition?.product.productId };
-  }, [metricFrame.imageId, structuralDefinition?.product.productId]);
   const isPaperCalibrated = Boolean(metricReference && activeCalibrationMeta?.samePlaneConfirmed && activeCalibrationMeta?.paperStandardConfirmed);
   const verifiedScaleCmPerPx =
     activeCalibrationMeta?.verified_scale_cm_per_px ??
@@ -4450,13 +4446,9 @@ export function ProductModelWorkspace({
           canvasHeight={aspectHeight}
           initialCorners={perspectiveCorners}
           openingType={isDoorProduct ? "door" : "window"}
-          metricReference={isPaperCalibrated ? metricReference : null}
-          calibrationMeta={activeCalibrationMeta}
-          initialTargetPlaneId={targetPlaneId}
-          metricFrame={metricFrame}
+          scaleCmPerPx={verifiedScaleCmPerPx ?? activeScaleSignal?.best_scale_cm_per_px ?? null}
           isVerifiedCalibrated={isVerifiedCalibrated}
-          onConfirm={async (corners, confirmedPlaneId) => {
-            setTargetPlaneId(confirmedPlaneId ?? null);
+          onConfirm={async (corners) => {
             const photoWidth =
               spaceImageSession?.workspaceImage.width ||
               canvasRef.current?.clientWidth || canvasDisplaySize.width;
@@ -4464,26 +4456,6 @@ export function ProductModelWorkspace({
               spaceImageSession?.workspaceImage.height ||
               canvasRef.current?.clientHeight || canvasDisplaySize.height;
             const photoCorners = denormalizeCorners(corners, photoWidth, photoHeight);
-            if (metricReference && confirmedPlaneId === metricReference.planeId) {
-              const record = createMeasurementRecord(activeCalibrationMeta, corners, metricFrame, confirmedPlaneId);
-              if (!record) return;
-              const measurement = evaluatePlaneEligibility(activeCalibrationMeta, confirmedPlaneId, photoCorners, metricFrame).measurement;
-              if (!measurement) return;
-              if (!measurement.valid) return;
-              setWidthCm(String(measurement.widthMm / 10));
-              setHeightCm(String(measurement.heightMm / 10));
-              setOverlaySize(getOverlaySizeFromDimensions(String(measurement.widthMm / 10), String(measurement.heightMm / 10)));
-              setPerspectiveCorners(corners);
-              setTargetPlaneId(metricReference.planeId);
-              setManualDimensions(false);
-              setSavedMeasurementEvidence(record);
-              setYaw(0); setPitch(0); setRotateAngle(0);
-              setModelRevision((prev) => prev + 1);
-              setShowPerspectivePicker(false);
-              return;
-            }
-            const fitImageId = metricFrame.imageId;
-            const fitProductId = structuralDefinition?.product.productId;
             const { widthRatio, heightRatio } = estimateDimensionsFromCorners(photoCorners);
             if (heightRatio > 0 && widthRatio > 0) {
               const quadCenterX = (corners[0].x + corners[1].x + corners[2].x + corners[3].x) / 4;
@@ -4498,10 +4470,6 @@ export function ProductModelWorkspace({
                 }
               }
 
-              if (fitImageId !== latestFitIdentityRef.current.imageId || fitProductId !== latestFitIdentityRef.current.productId) return;
-              setTargetPlaneId(null);
-              setManualDimensions(false);
-              setSavedMeasurementEvidence(null);
               const templateDefaultH = Number(
                 structuralDefinition?.parameters?.find((p) => p.parameterKey === "height")?.defaultValue
               ) || null;
