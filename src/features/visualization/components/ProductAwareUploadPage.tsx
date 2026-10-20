@@ -5,16 +5,25 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  CalibrationModeSelector,
   GuideLine,
   HeroSection,
   ImageErrorModal,
   ImageLoadingModal,
   ImageSuccessModal,
+  PaperDetectionConfirmationModal,
   UploadImage,
 } from "@/features/visualization";
 import { analyzeImage, type SpaceImageSession } from "@/lib/imageApi";
 import { useVisualizationSession } from "@/lib/visualization/visualizationSession";
-import type { SelectedVisualizationProduct } from "@/lib/visualization/types";
+import {
+  type CalibrationMode,
+  type FiducialPaperStandard,
+  type Point2D,
+  type SelectedVisualizationProduct,
+} from "@/lib/visualization/types";
+
+import { confirmPaperReference, skipPaperReference, type PaperReviewResult } from "@/lib/visualization/paperReference";
 
 type UploadStatus = "idle" | "analyzing" | "ready" | "error";
 
@@ -31,6 +40,9 @@ export function ProductAwareUploadPage({
   const [status, setStatus] = useState<UploadStatus>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  const [calibrationMode, setCalibrationMode] = useState<CalibrationMode>("auto_detect");
+  const [paperStandard, setPaperStandard] = useState<FiducialPaperStandard>("short");
+
   const runAnalysis = async (file: File) => {
     const requestId = requestIdRef.current + 1;
     requestIdRef.current = requestId;
@@ -41,7 +53,10 @@ export function ProductAwareUploadPage({
     setErrorMessage(null);
 
     try {
-      const session = await analyzeImage(file);
+      const session = await analyzeImage(file, {
+        mode: calibrationMode,
+        paperStandard: calibrationMode === "paper_fiducial" ? paperStandard : undefined,
+      });
       if (requestIdRef.current !== requestId) return;
 
       setPendingSession(session);
@@ -62,6 +77,26 @@ export function ProductAwareUploadPage({
     router.push(`/visualize/${product.productId}/workspace`);
   };
 
+  const handlePaperConfirm = (
+    corners: [Point2D, Point2D, Point2D, Point2D],
+    result: PaperReviewResult,
+    paperStd: FiducialPaperStandard,
+  ) => {
+    if (!pendingSession) return;
+    const updatedSession = confirmPaperReference(pendingSession, corners, result, paperStd);
+
+    setPreparedSpaceImage(product.productId, updatedSession);
+    router.push(`/visualize/${product.productId}/workspace`);
+  };
+
+  const handlePaperSkip = (review?: PaperReviewResult) => {
+    if (!pendingSession) return;
+    const fallbackSession = skipPaperReference(pendingSession, review);
+
+    setPreparedSpaceImage(product.productId, fallbackSession);
+    router.push(`/visualize/${product.productId}/workspace`);
+  };
+
   const handleCancelModal = () => {
     requestIdRef.current += 1;
     setPendingSession(null);
@@ -78,6 +113,13 @@ export function ProductAwareUploadPage({
     setStatus("idle");
     setErrorMessage(null);
   };
+
+  const isPaperFiducialSession =
+    calibrationMode !== "standard" ||
+    pendingSession?.calibrationMeta?.mode === "paper_fiducial" ||
+    Boolean(pendingSession?.paperCalibration?.detected_corners) ||
+    Boolean(pendingSession?.calibrationMeta?.detectedCorners) ||
+    pendingSession?.calibrationMeta?.status === "manual_pin_required";
 
   return (
     <main className="flex min-h-screen flex-col">
@@ -119,9 +161,18 @@ export function ProductAwareUploadPage({
         </div>
       </section>
 
-      <div className="flex flex-col gap-14 px-6 py-8 md:px-12 md:py-12 lg:px-24.25 lg:py-17.75">
-        <UploadImage onImageSelected={(file) => void runAnalysis(file)} />
-        <GuideLine />
+      <div className="flex flex-col gap-10 px-6 py-8 md:px-12 md:py-12 lg:px-24.25 lg:py-17.75">
+        <CalibrationModeSelector
+          mode={calibrationMode}
+          paperStandard={paperStandard}
+          onModeChange={setCalibrationMode}
+          onPaperStandardChange={setPaperStandard}
+        />
+        <UploadImage
+          mode={calibrationMode}
+          onImageSelected={(file) => void runAnalysis(file)}
+        />
+        <GuideLine mode={calibrationMode} />
       </div>
 
       <ImageLoadingModal
@@ -130,11 +181,62 @@ export function ProductAwareUploadPage({
         isLoading
       />
 
-      <ImageSuccessModal
-        isOpen={status === "ready"}
-        onCancel={handleCancelModal}
-        onPlaceProduct={handlePlaceProduct}
-      />
+      {status === "ready" && isPaperFiducialSession && pendingSession && (
+        <PaperDetectionConfirmationModal
+          isOpen={status === "ready"}
+          backgroundImageUrl={pendingSession.workspaceImage.url}
+          canvasWidth={pendingSession.workspaceImage.width}
+          canvasHeight={pendingSession.workspaceImage.height}
+          initialCorners={
+            pendingSession.calibrationMeta?.verified_corners ??
+            (pendingSession.calibrationMeta?.detectedCorners
+              ? pendingSession.calibrationMeta.detectedCorners.map(([x, y]) => ({ x, y }))
+              : pendingSession.paperCalibration?.detected_corners
+              ? pendingSession.paperCalibration.detected_corners.map(([x, y]) => ({ x, y }))
+              : null)
+          }
+          candidates={pendingSession.paperCalibration?.candidates}
+          selectedCandidateId={pendingSession.paperCalibration?.selected_candidate_id}
+          paperStandardConfirmed={pendingSession.paperCalibration?.paper_standard_confirmed}
+          suggestedPaperStandard={
+            pendingSession.paperCalibration?.suggested_paper_standard ??
+            pendingSession.calibrationMeta?.suggested_paper_standard ??
+            null
+          }
+          aspectRatioMatchConfidence={
+            pendingSession.paperCalibration?.aspect_ratio_match_confidence ??
+            pendingSession.calibrationMeta?.aspect_ratio_match_confidence ??
+            0
+          }
+          unwarpedAspectRatio={
+            pendingSession.paperCalibration?.unwarped_aspect_ratio ??
+            pendingSession.calibrationMeta?.unwarped_aspect_ratio ??
+            null
+          }
+          paperStandard={
+            pendingSession.calibrationMeta?.paperStandard ??
+            pendingSession.paperCalibration?.paper_standard ??
+            paperStandard
+          }
+          confidence={
+            pendingSession.calibrationMeta?.confidence ??
+            pendingSession.paperCalibration?.confidence ??
+            0
+          }
+          status={pendingSession.calibrationMeta?.status ?? pendingSession.paperCalibration?.status}
+          onConfirm={handlePaperConfirm}
+          onSkip={handlePaperSkip}
+          onCancel={handleCancelModal}
+        />
+      )}
+
+      {status === "ready" && !isPaperFiducialSession && (
+        <ImageSuccessModal
+          isOpen={status === "ready"}
+          onCancel={handleCancelModal}
+          onPlaceProduct={handlePlaceProduct}
+        />
+      )}
 
       <ImageErrorModal
         isOpen={status === "error"}

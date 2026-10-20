@@ -19,13 +19,22 @@ import { useDocumentScrollLock } from "../hooks/useDocumentScrollLock";
 import { mapPointerToCanvas, TOUCH_PROXY_OFFSET_CSS_PX } from "../mobileConfiguratorGeometry";
 import { TouchDragProxy } from "./TouchDragProxy";
 
+import { evaluatePlaneEligibility } from "@/lib/visualization/planeEligibility";
+import { displayToWorkspace, type MetricReference, type MetricFrame } from "@/lib/visualization/metricGeometry";
+
 interface PerspectivePlanePickerProps {
+  calibrationMeta?: import("@/lib/visualization/types").CalibrationMetadata | null;
+  initialTargetPlaneId?: string | null;
+  metricReference?: MetricReference | null;
+  metricFrame?: MetricFrame;
   canvasWidth: number;
   canvasHeight: number;
   backgroundImageUrl: string;
   initialCorners?: QuadrilateralCorners | null;
   openingType?: PerspectiveOpeningType;
-  onConfirm: (corners: QuadrilateralCorners) => void;
+  scaleCmPerPx?: number | null;
+  isVerifiedCalibrated?: boolean;
+  onConfirm: (corners: QuadrilateralCorners, targetPlaneId?: string | null) => void;
   onCancel: () => void;
 }
 
@@ -59,9 +68,15 @@ export function PerspectivePlanePicker({
   backgroundImageUrl,
   initialCorners,
   openingType = "window",
+  metricReference,
+  calibrationMeta,
+  initialTargetPlaneId,
+  metricFrame,
+  isVerifiedCalibrated,
   onConfirm,
   onCancel,
 }: PerspectivePlanePickerProps) {
+  const [samePlane, setSamePlane] = useState(Boolean(initialTargetPlaneId && initialTargetPlaneId === metricReference?.planeId));
   // Store corner coordinates in pixel space (0..canvasWidth, 0..canvasHeight)
   const [points, setPoints] = useState<Point2D[]>(() => {
     if (initialCorners && initialCorners.length === 4) {
@@ -307,10 +322,48 @@ export function PerspectivePlanePicker({
     ? rectangleToQuadrilateral(selectionDraft.start, selectionDraft.current)
     : null;
 
+  const eligibility = evaluatePlaneEligibility(calibrationMeta, samePlane ? metricReference?.planeId : null,
+    currentQuad && metricFrame ? displayToWorkspace(currentQuad,
+      { left: 0, top: 0, width: canvasWidth, height: canvasHeight }, metricFrame) : null, metricFrame);
+  const metricMeasurement = currentQuad ? eligibility.measurement ?? null : null;
+
+  const edgeDimensions = (() => {
+    if (!isComplete || !isValidQuad || points.length !== 4) return null;
+    const dist = (p1: Point2D, p2: Point2D) => Math.hypot(p2.x - p1.x, p2.y - p1.y);
+    const topPx = dist(points[0], points[1]);
+    const bottomPx = dist(points[3], points[2]);
+    const leftPx = dist(points[0], points[3]);
+    const rightPx = dist(points[1], points[2]);
+
+    const metric = metricMeasurement?.valid ? metricMeasurement.edgesMm : null;
+    return {
+      top: {
+        x: (points[0].x + points[1].x) / 2,
+        y: (points[0].y + points[1].y) / 2 - 14,
+        label: metric ? `${Math.round(metric.top).toLocaleString()} mm` : `${Math.round(topPx)} px`,
+      },
+      bottom: {
+        x: (points[3].x + points[2].x) / 2,
+        y: (points[3].y + points[2].y) / 2 + 14,
+        label: metric ? `${Math.round(metric.bottom).toLocaleString()} mm` : `${Math.round(bottomPx)} px`,
+      },
+      left: {
+        x: (points[0].x + points[3].x) / 2 - 20,
+        y: (points[0].y + points[3].y) / 2,
+        label: metric ? `${Math.round(metric.left).toLocaleString()} mm` : `${Math.round(leftPx)} px`,
+      },
+      right: {
+        x: (points[1].x + points[2].x) / 2 + 20,
+        y: (points[1].y + points[2].y) / 2,
+        label: metric ? `${Math.round(metric.right).toLocaleString()} mm` : `${Math.round(rightPx)} px`,
+      },
+    };
+  })();
+
   const handleConfirm = () => {
-    if (!currentQuad || !isValidQuad) return;
+    if (!currentQuad || !isValidQuad || (samePlane && metricReference && !metricMeasurement?.valid)) return;
     const normalized = normalizeCorners(currentQuad, canvasWidth, canvasHeight);
-    onConfirm(normalized);
+    onConfirm(normalized, samePlane ? metricReference?.planeId : null);
   };
 
   // Dynamic instruction message
@@ -322,6 +375,7 @@ export function PerspectivePlanePicker({
       : "window";
 
   const getInstructionText = () => {
+    if (samePlane && eligibility.status !== "eligible_planar_estimate") return eligibility.message;
     if (selectionDraft) {
       return `Drag to roughly select the ${openingLabel} area.`;
     }
@@ -441,6 +495,40 @@ export function PerspectivePlanePicker({
               />
             )}
 
+            {/* Real-time Physical Dimension Annotations along quadrilateral edges (IMP-MS52) */}
+            {edgeDimensions && (
+              <g className="pointer-events-none select-none">
+                {[edgeDimensions.top, edgeDimensions.bottom, edgeDimensions.left, edgeDimensions.right].map(
+                  (edge, i) => (
+                    <g key={i} transform={`translate(${edge.x}, ${edge.y})`}>
+                      <rect
+                        x={-38}
+                        y={-10}
+                        width={76}
+                        height={20}
+                        rx={10}
+                        fill={isVerifiedCalibrated ? "rgba(6, 78, 59, 0.9)" : "rgba(15, 20, 34, 0.85)"}
+                        stroke={isVerifiedCalibrated ? "rgba(52, 211, 153, 0.7)" : "rgba(7, 182, 211, 0.6)"}
+                        strokeWidth={1}
+                      />
+                      <text
+                        x={0}
+                        y={0}
+                        textAnchor="middle"
+                        dominantBaseline="central"
+                        fill={isVerifiedCalibrated ? "#ecfdf5" : "#ffffff"}
+                        fontSize={10}
+                        fontFamily="monospace"
+                        fontWeight={600}
+                      >
+                        {edge.label}
+                      </text>
+                    </g>
+                  ),
+                )}
+              </g>
+            )}
+
             {/* Placed Corner Markers & Drag Handles */}
             {points.map((point, index) => {
               const isDraggable = isComplete;
@@ -527,6 +615,13 @@ export function PerspectivePlanePicker({
         </div>
       </div>
 
+      <div className="z-10 w-full max-w-3xl rounded-[20px] border border-white/15 bg-[#0f1422] px-4 py-2 text-sm text-white">
+        {metricReference && <label className="flex min-h-11 items-center gap-2">
+          <input type="checkbox" checked={samePlane} onChange={(e) => setSamePlane(e.target.checked)} />
+          This opening perimeter is on the reviewed paper installation surface
+        </label>}
+        <p role="status">{samePlane ? eligibility.message : "Approximate fit. Another wall, recessed jamb, or back surface needs its own paper reference or both tape dimensions."}</p>
+      </div>
       {/* Bottom Floating Control Toolbar */}
       <div className="w-full max-w-3xl bg-[#0f1422] border border-white/15 rounded-[25px] p-2 portrait:p-3 sm:portrait:p-4 shadow-2xl flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 sm:gap-4 z-10 landscape:absolute landscape:inset-x-2 landscape:bottom-2 landscape:mx-auto landscape:w-auto landscape:flex-nowrap">
         {/* Reset Action */}
@@ -562,7 +657,7 @@ export function PerspectivePlanePicker({
           <button
             type="button"
             onClick={handleConfirm}
-            disabled={!isComplete || !isValidQuad}
+            disabled={!isComplete || !isValidQuad || Boolean(samePlane && metricReference && !metricMeasurement?.valid)}
             className={`flex min-h-11 items-center justify-center gap-1.5 px-5 py-2.5 rounded-[20px] text-xs sm:text-sm font-semibold transition-all cursor-pointer ${
               isComplete && isValidQuad
                 ? "bg-[#07b6d3] hover:bg-[#06a3bd] text-white shadow-md cursor-pointer"

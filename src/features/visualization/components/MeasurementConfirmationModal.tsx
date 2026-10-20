@@ -15,12 +15,16 @@ import {
   Check,
 } from "lucide-react";
 import type {
+  CalibrationMetadata,
   MeasurementConfirmationEntry,
   MeasurementOverride,
+  ScaleEstimationSignal,
 } from "@/lib/visualization/types";
 import {
   convertInToCm,
+  convertCmToIn,
 } from "@/lib/visualization/measurementConfirmation";
+import { currentPhotoMeasurement, readMeasurementRecord } from "@/lib/visualization/measurementRecord";
 import { calculateBOMFromStructuralDefinition } from "@/lib/pricing/pricingEngine";
 import { formatPeso } from "@/lib/format";
 
@@ -42,6 +46,8 @@ const ProductModel3D = dynamic(
 export interface MeasurementConfirmationModalProps {
   isOpen: boolean;
   entries: MeasurementConfirmationEntry[];
+  calibrationMeta?: CalibrationMetadata | null;
+  scaleSignal?: ScaleEstimationSignal | null;
   onConfirmAll: (confirmedEntries: MeasurementConfirmationEntry[]) => void;
   onCancel: () => void;
 }
@@ -54,9 +60,20 @@ function formatFinishName(finish: string): string {
   return finish.charAt(0).toUpperCase() + finish.slice(1);
 }
 
+function formatPaperStandard(std: string | null | undefined): string {
+  if (!std) return "A4";
+  const s = std.toLowerCase();
+  if (s === "short") return "Short";
+  if (s === "long") return "Long";
+  if (s === "a4") return "A4";
+  return std.toUpperCase();
+}
+
 export function MeasurementConfirmationModal({
   isOpen,
   entries,
+  calibrationMeta,
+  scaleSignal,
   onConfirmAll,
   onCancel,
 }: MeasurementConfirmationModalProps) {
@@ -115,16 +132,19 @@ export function MeasurementConfirmationModal({
   }
 
   const currentEntry = localEntries[currentPageIndex] ?? localEntries[0];
+  const photoDifference = currentEntry.overlayConfiguration.visualParameterValues.photo_disagreement_mm;
+  const hasPhotoDisagreement = typeof photoDifference === "object" && photoDifference !== null &&
+    Object.values(photoDifference).some(value => typeof value === "number" && Number.isFinite(value) && Math.abs(value) > 0.5);
   const isMultiProduct = localEntries.length > 1;
   const isFirstPage = currentPageIndex === 0;
   const isLastPage = currentPageIndex === localEntries.length - 1;
 
   const currentWidthIn = currentEntry.override.widthIn;
   const currentHeightIn = currentEntry.override.heightIn;
-  const currentWidthCm = convertInToCm(currentWidthIn);
-  const currentHeightCm = convertInToCm(currentHeightIn);
-  const currentWidthMm = Math.round(currentWidthCm * 10);
-  const currentHeightMm = Math.round(currentHeightCm * 10);
+  const currentWidthCm = currentEntry.override.widthOverridden ? convertInToCm(currentWidthIn) : currentEntry.systemWidthCm;
+  const currentHeightCm = currentEntry.override.heightOverridden ? convertInToCm(currentHeightIn) : currentEntry.systemHeightCm;
+  const currentWidthMm = (currentWidthCm * 10);
+  const currentHeightMm = (currentHeightCm * 10);
 
   const isOverridden =
     currentEntry.override.widthOverridden || currentEntry.override.heightOverridden;
@@ -144,10 +164,10 @@ export function MeasurementConfirmationModal({
       return null;
     }
 
-    const widthCmVal = convertInToCm(override.widthIn);
-    const heightCmVal = convertInToCm(override.heightIn);
-    const widthMmVal = Math.round(widthCmVal * 10);
-    const heightMmVal = Math.round(heightCmVal * 10);
+    const widthCmVal = override.widthOverridden ? convertInToCm(override.widthIn) : entry.systemWidthCm;
+    const heightCmVal = override.heightOverridden ? convertInToCm(override.heightIn) : entry.systemHeightCm;
+    const widthMmVal = (widthCmVal * 10);
+    const heightMmVal = (heightCmVal * 10);
 
     const finishType =
       entry.overlayConfiguration.aluminumFinish === "white"
@@ -334,21 +354,55 @@ export function MeasurementConfirmationModal({
     }
   };
 
+  const hasCurrentPhotoEvidence = (entry: MeasurementConfirmationEntry) =>
+    Boolean(currentPhotoMeasurement(entry.overlayConfiguration, calibrationMeta));
+  // IMP-MS54: reviewing a reference alone never promotes default product dimensions.
+  const isCalibratedSession = ["planar_paper_estimate", "verified_calibrated_visual"].includes(currentEntry?.dimensionSource ?? "") &&
+    hasCurrentPhotoEvidence(currentEntry);
+  const isVerifiedCalibrated = isCalibratedSession;
+
   const handleConfirmAll = () => {
     const hasUnacknowledgedOverride = localEntries.some(
       (entry) =>
         (entry.override.widthOverridden || entry.override.heightOverridden) &&
-        !entry.override.acknowledged,
+        (!entry.override.acknowledged || !entry.override.widthOverridden || !entry.override.heightOverridden ||
+          !Number.isFinite(entry.override.widthIn) || entry.override.widthIn <= 0 ||
+          !Number.isFinite(entry.override.heightIn) || entry.override.heightIn <= 0),
     );
 
     if (hasUnacknowledgedOverride) {
       return;
     }
 
-    onConfirmAll(localEntries);
+    const finalizedEntries = localEntries.map((entry) => {
+      const entryCalibrated = ["planar_paper_estimate", "verified_calibrated_visual"].includes(entry.dimensionSource ?? "") &&
+        hasCurrentPhotoEvidence(entry);
+      const isOverriddenEntry = entry.override.widthOverridden || entry.override.heightOverridden;
+      return {
+        ...entry,
+        dimensionSource: isOverriddenEntry
+          ? "manual_tape"
+          : (entry.dimensionSource === "manual_tape" ? "manual_tape" : entryCalibrated ? "planar_paper_estimate" : "heuristic"),
+        calibrationMethod: entryCalibrated
+          ? (scaleSignal?.method ?? entry.calibrationMethod ?? (calibrationMeta?.paperStandard ? `paper_fiducial_${calibrationMeta.paperStandard}` : "paper_fiducial"))
+          : null,
+        calibrationConfidence: entryCalibrated
+          ? (scaleSignal?.confidence ?? entry.calibrationConfidence ?? calibrationMeta?.confidence ?? 0)
+          : null,
+        paperStandard: entryCalibrated
+          ? (calibrationMeta?.paperStandard ?? entry.paperStandard ?? null)
+          : null,
+        calibrationScaleCmPerPx: entryCalibrated
+          ? null
+          : null,
+        userVerified: false,
+      };
+    });
+
+    onConfirmAll(finalizedEntries);
   };
 
-  const canProceed = !isOverridden || isAcknowledged;
+  const canProceed = !isOverridden || (isAcknowledged && currentEntry.override.widthOverridden && currentEntry.override.heightOverridden);
 
   return (
     <div
@@ -356,6 +410,11 @@ export function MeasurementConfirmationModal({
       style={{ touchAction: "auto" }}
     >
       <div className="relative my-auto flex max-h-[90dvh] sm:max-h-[85vh] w-full max-w-[680px] flex-col rounded-[25px] border border-white bg-white p-5 sm:p-8 text-left shadow-[0px_0px_30px_0px_rgba(0,0,0,0.3)] select-none overflow-y-auto overscroll-contain">
+        {currentEntry.dimensionSource === "manual_tape" && <p role="status" className="mb-4 text-sm text-neutral-600">Manual tape measurement. Your entered dimensions take precedence.</p>}
+        {currentEntry.dimensionSource === "manual_tape" && hasPhotoDisagreement && <p role="status" className="mb-4 text-sm text-neutral-600">The current photo estimate differs from the tape dimensions. Tape dimensions are retained.</p>}
+        {!isCalibratedSession && currentEntry.dimensionSource !== "manual_tape" && <p role="status" className="mb-4 text-sm text-neutral-600">
+          Approximate preview. For manual measurements, enter both tape-measured width and height, then acknowledge them. Paper held away from this installation surface cannot establish its dimensions.
+        </p>}
         {/* Header with Product Identity, Finish Badge & Page Counter */}
         <div className="mb-4 flex items-start justify-between gap-4">
           <div>
@@ -415,6 +474,126 @@ export function MeasurementConfirmationModal({
           )}
         </div>
 
+        {/* Calibrated Visual Estimate Choice Cards (IMP-MS50, IMP-MS52) */}
+        {isCalibratedSession && (
+          <div className="mb-5 flex flex-col gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold uppercase tracking-wider text-emerald-800">
+                {isVerifiedCalibrated
+                  ? "User-Verified Calibrated"
+                  : "Calibrated Visual Estimate"}
+              </span>
+              <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-700">
+                Photo estimate: confirm on site
+              </span>
+            </div>
+
+            {/* Primary Choice Card: Photo estimate: paper calibrated */}
+            <button
+              type="button"
+              onClick={() => {
+                if (isOverridden) {
+                  setLocalEntries((prev) => {
+                    const updated = [...prev];
+                    const target = { ...updated[currentPageIndex] };
+                    const defaultWidthIn = convertCmToIn(target.systemWidthCm);
+                    const defaultHeightIn = convertCmToIn(target.systemHeightCm);
+                    target.override = {
+                      widthIn: defaultWidthIn,
+                      heightIn: defaultHeightIn,
+                      widthOverridden: false,
+                      heightOverridden: false,
+                      acknowledged: false,
+                    };
+                    target.recalculatedTotalPrice = null;
+                    updated[currentPageIndex] = target;
+                    return updated;
+                  });
+                  setWidthInputStr(String(convertCmToIn(currentEntry.systemWidthCm)));
+                  setHeightInputStr(String(convertCmToIn(currentEntry.systemHeightCm)));
+                  setIsEditingWidth(false);
+                  setIsEditingHeight(false);
+                }
+              }}
+              className={`flex w-full cursor-pointer flex-col rounded-[18px] border p-4 text-left transition-all ${
+                !isOverridden
+                  ? "border-emerald-500 bg-emerald-500/10 shadow-xs ring-2 ring-emerald-500/20"
+                  : "border-neutral-200 bg-white hover:border-emerald-300 hover:bg-emerald-50/30"
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div
+                    className={`flex size-5 items-center justify-center rounded-full border ${
+                      !isOverridden
+                        ? "border-emerald-600 bg-emerald-600 text-white"
+                        : "border-neutral-300 bg-white"
+                    }`}
+                  >
+                    {!isOverridden && <Check className="size-3" />}
+                  </div>
+                  <span className="text-sm font-semibold text-[#0f1422]">
+                    {isVerifiedCalibrated
+                      ? "Photo estimate: paper calibrated"
+                      : "Photo estimate: paper calibrated"}
+                  </span>
+                </div>
+                <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-700">
+                  Photo estimate: confirm on site
+                </span>
+              </div>
+              <div className="mt-2 font-mono text-lg font-semibold tracking-tight text-[#0f1422]">
+                {Math.round(currentEntry.systemWidthCm * 10).toLocaleString()} mm Width x{" "}
+                {Math.round(currentEntry.systemHeightCm * 10).toLocaleString()} mm Height
+              </div>
+              <p className="mt-1 text-xs text-neutral-500">
+                {isVerifiedCalibrated
+                  ? `Reviewed ${formatPaperStandard(readMeasurementRecord(currentEntry.overlayConfiguration.visualParameterValues.calibration_provenance)?.paper_standard)} reference. Same-plane placement is user-declared; confirm on site.`
+                  : "Calibrated from wall-mounted fiducial marker on installation plane"}
+              </p>
+            </button>
+
+            {/* Secondary Choice Card: Enter Manual (Tape-Measured) Dimensions */}
+            <button
+              type="button"
+              onClick={() => {
+                if (!isOverridden) {
+                  setIsEditingWidth(true);
+                  setIsEditingHeight(true);
+                }
+              }}
+              className={`flex w-full cursor-pointer flex-col rounded-[18px] border p-4 text-left transition-all ${
+                isOverridden
+                  ? "border-[#07b6d3] bg-[#07b6d3]/5 shadow-xs ring-2 ring-[#07b6d3]/20"
+                  : "border-neutral-200 bg-white hover:border-neutral-300 hover:bg-neutral-50"
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div
+                    className={`flex size-5 items-center justify-center rounded-full border ${
+                      isOverridden
+                        ? "border-[#07b6d3] bg-[#07b6d3] text-white"
+                        : "border-neutral-300 bg-white"
+                    }`}
+                  >
+                    {isOverridden && <Check className="size-3" />}
+                  </div>
+                  <span className="text-sm font-semibold text-[#0f1422]">
+                    Enter Manual (Tape-Measured) Dimensions
+                  </span>
+                </div>
+                <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-medium text-neutral-600">
+                  Customer Measuring Tape
+                </span>
+              </div>
+              <p className="mt-1.5 text-xs text-neutral-500">
+                Override with verified tape measurements if you have physical measurements ready
+              </p>
+            </button>
+          </div>
+        )}
+
         {/* Measurement Verification Section */}
         <div className="mb-5 flex flex-col gap-1.5">
           <div className="text-base font-semibold tracking-tight text-[#0f1422]">
@@ -471,7 +650,7 @@ export function MeasurementConfirmationModal({
             )}
 
             <div className="text-[11px] text-[#0f1422]/60">
-              Approx. {currentWidthCm} cm ({currentWidthMm} mm)
+              Approx. {Number(currentWidthCm.toFixed(3))} cm ({Number(currentWidthMm.toFixed(3))} mm)
             </div>
 
             {isStructuralLimitExceeded && (
@@ -526,7 +705,7 @@ export function MeasurementConfirmationModal({
             )}
 
             <div className="text-[11px] text-[#0f1422]/60">
-              Approx. {currentHeightCm} cm ({currentHeightMm} mm)
+              Approx. {Number(currentHeightCm.toFixed(3))} cm ({Number(currentHeightMm.toFixed(3))} mm)
             </div>
           </div>
         </div>

@@ -554,3 +554,18 @@ Person identity uses a required first name and optional last name with canonical
 - [x] Section 8 documents technical dependencies and operational business assumptions.
 - [x] Section 9 details all milestones M1 through M9 through post-launch, including rollout and rollback plans.
 - [x] Answers *what* to build and *why*, while leaving purely internal code mechanics to the SDD.
+
+
+## MS53 Reference Selection Reconciliation
+
+PRD-F3 and PRD-F4 (IMP-MS53 / QAD-TC68): both upload paths request automatic reference localization. A detected quadrilateral is separate from physical paper format and placement. Require an actual Short/A4/Long declaration and same-plane confirmation before accepting a reference; retain candidate selection, manual corners, and approximate preview. Never infer physical format from projected aspect or describe detector evidence as measurement accuracy.
+
+
+PRD-F4, PRD-F5, PRD-F6, PRD-F10 (IMP-MS54 / QAD-TC69): calibrated opening dimensions require four installation-perimeter corners projected from canonical workspace pixels into the reviewed paper plane in millimeters. Explicitly confirm physical short/long edge correspondence; allow swapping sides. A scalar, detector score, reference confirmation, or default preview footprint cannot establish a measured opening. Keep full precision and reject invalid geometry without clamping the physical reading. This supersedes earlier global calibrated-scale formulas and fixed percentage accuracy wording. MS55 eligibility and MS57 real-photo validation remain separate gates.
+
+
+PRD-F3, PRD-F4, PRD-F6, PRD-F10 (IMP-MS55 / QAD-TC70): paper outline approval does not establish coplanarity. Require a versioned same-plane placement declaration and an explicit per-opening plane assignment before publishing metric paper-derived dimensions. Held, offset, uncertain, obscured, or warped references offer retake, both manual tape dimensions, or approximate preview. Legacy verified flags cannot establish eligibility.
+
+PRD-F5, PRD-F6, PRD-F10, PRD-F11 (IMP-MS56 / QAD-TC71): an explicitly assigned, MS55-eligible opening commits one versioned metric result to model parameters and quotation dimensions. Defaults remain approximate. Reference changes update matching draft planes, preserve tape measurements and unrelated planes, and invalidate stale photo acceptance. New quotation drafts require confirmation and reproducible provenance; historical prices and dimensions remain immutable.
+
+PRD-F3, PRD-F4, PRD-F5, PRD-F6, PRD-F10 (IMP-MS57 / QAD-TC72): physical accuracy claims require a grouped held-out benchmark with independent tape ground truth and simultaneous precision, coverage, safety and per-axis error gates. Offline tooling records missing evidence explicitly. Synthetic formula correctness, user placement declarations and a detector confidence score cannot establish physical accuracy. Manual/device acceptance and original physical captures remain pending.

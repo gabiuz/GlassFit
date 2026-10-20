@@ -181,6 +181,13 @@ export async function generateSignedBookingLink(
             structural_waiver: item.structuralWaiver,
             image_url: item.imageSource,
             is_multi_product: quotationDocument.items.length > 1,
+            dimension_source: item.dimensionSource ?? "heuristic",
+            calibration_provenance: item.calibrationProvenance ?? null,
+            paper_standard: item.calibrationProvenance?.paper_standard ?? null,
+            calibration_scale_cm_per_px: null,
+            user_verified: false,
+            calibration_method: item.calibrationMethod ?? null,
+            calibration_confidence: null,
           },
           display_order: displayOrder++,
         });

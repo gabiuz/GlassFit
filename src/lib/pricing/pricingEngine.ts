@@ -63,8 +63,11 @@ export function calculateParametricBOM(
   components: ComponentPricingInput[],
   options: CalculateBOMOptions
 ): CalculatedBOMResult {
-  const widthM = Math.max(0.1, options.widthMm / 1000);
-  const heightM = Math.max(0.1, options.heightMm / 1000);
+  if (!Number.isFinite(options.widthMm) || options.widthMm <= 0 || !Number.isFinite(options.heightMm) || options.heightMm <= 0) {
+    throw new Error("Quotation dimensions must be positive finite millimeter values.");
+  }
+  const widthM = options.widthMm / 1000;
+  const heightM = options.heightMm / 1000;
   const panelCount = Math.max(1, options.panelCount ?? (options.widthMm >= 2400 ? 3 : 2));
   const hasSill = options.hasSill ?? true;
 
@@ -209,8 +212,8 @@ export function calculateParametricBOM(
   const glassDesc = glazingItems[0]?.description || "6mm Tinted Bronze Float Glass";
 
   const frozenDetails: FrozenPricingDetails = {
-    width_m: round4(widthM),
-    height_m: round4(heightM),
+    width_m: widthM,
+    height_m: heightM,
     panel_count: panelCount,
     has_sill: hasSill,
     finish_type: finishType,
@@ -276,8 +279,8 @@ export function calculateParametricBOM(
   };
 
   return {
-    widthM: round4(widthM),
-    heightM: round4(heightM),
+    widthM,
+    heightM,
     panelCount,
     hasSill,
     finishType,
@@ -858,7 +861,11 @@ export function calculateOverlayPricing(overlay: PlacedOverlay): {
 } {
   const quantity = Math.max(1, overlay.configuration.quantity ?? 1);
 
-  if (overlay.bomResult && overlay.unitPrice !== undefined && overlay.totalPrice !== undefined) {
+  const widthMm = (Number(overlay.configuration.widthCm) || 120) * 10;
+  const heightMm = (Number(overlay.configuration.heightCm) || 120) * 10;
+  if (overlay.bomResult && overlay.unitPrice !== undefined && overlay.totalPrice !== undefined &&
+      Math.abs(overlay.bomResult.widthM * 1000 - widthMm) < 1e-6 &&
+      Math.abs(overlay.bomResult.heightM * 1000 - heightMm) < 1e-6) {
     return {
       bomResult: overlay.bomResult,
       unitPrice: overlay.unitPrice,
@@ -866,8 +873,6 @@ export function calculateOverlayPricing(overlay: PlacedOverlay): {
     };
   }
 
-  const widthMm = Math.round((Number(overlay.configuration.widthCm) || 120) * 10);
-  const heightMm = Math.round((Number(overlay.configuration.heightCm) || 120) * 10);
   const panelCount = overlay.configuration.panelCount ?? (widthMm >= 2400 ? 3 : 2);
   const hasSill = overlay.configuration.includeSill ?? true;
   const finishType = overlay.configuration.aluminumFinish === "white" ? "PowderCoatedWhite" : "Analok";
@@ -876,7 +881,7 @@ export function calculateOverlayPricing(overlay: PlacedOverlay): {
     : "6mm_bronze";
   const structuralWaiver = overlay.configuration.structuralWaiver ?? false;
 
-  const bomResult = calculateStandardSeries798({
+  const options: Parameters<typeof calculateStandardSeries798>[0] = {
     widthMm,
     heightMm,
     panelCount,
@@ -884,7 +889,11 @@ export function calculateOverlayPricing(overlay: PlacedOverlay): {
     finishType,
     glassType,
     structuralWaiver,
-  });
+  };
+  const definition = overlay.variationRenderRecipe?.structuralDefinition;
+  const bomResult = definition
+    ? calculateBOMFromStructuralDefinition(definition, options)
+    : calculateStandardSeries798(options);
 
   const unitPrice = bomResult.finalQuotation;
   const totalPrice = unitPrice * quantity;

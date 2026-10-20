@@ -36,6 +36,7 @@ export function ProductAwareWorkspacePage({
     setComparisonOverlays,
     setFinalSnapshotDataUrl,
     transitionWorkspaceProduct,
+    updateSessionCalibration,
     resetVisualizationSession,
   } = useVisualizationSession();
 
@@ -118,6 +119,7 @@ export function ProductAwareWorkspacePage({
           onSnapshotChange={setFinalSnapshotDataUrl}
           onPlacedOverlaysChange={setPlacedOverlays}
           onComparisonOverlaysChange={setComparisonOverlays}
+          onCalibrationChange={updateSessionCalibration}
           onProductSelect={(
             nextProductId,
             mode,

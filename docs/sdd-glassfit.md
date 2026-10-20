@@ -153,3 +153,18 @@ The shared identity module normalizes names before Auth or profile mutation. Set
 - [x] Dependency failure modes and circuit breaker behaviors are established
 - [x] No flowcharts, decision trees, or box diagrams use code blocks with arrows or box-drawing characters
 - [x] AGENTS hard bans applied; VOICE polish pass completed without em-dashes
+
+
+## MS53 Reference Selection Reconciliation
+
+SDD-C2 and SDD-C3 (IMP-MS53 / QAD-TC68): POST /analyze-image returns Pydantic-ranked candidate boundaries, evidence components, rejection reasons, selection outcome, and workspace-coordinate dimensions. Localization does not set metric scale or homography. The TypeScript adapter validates new fields and prevents legacy calibrated defaults; reviewed reference commitment replaces stale geometry and synchronizes response aliases. MS54 owns projective geometry and MS55 owns plane eligibility.
+
+
+SDD-C3, SDD-C4, SDD-C5 (IMP-MS54 / QAD-TC69): the detector returns oriented-source-to-workspace mapping and coordinate image identity without a metric matrix. After review, the client recomputes a versioned paper-plane-mm-v1 workspace_pixels_to_plane_mm transform from final workspace corners and explicit physical edge correspondence. The shared metric evaluator owns projection, rectangular-fit rejection, horizon checks, and independent width/height sensitivity diagnostics. Active fit, picker callouts, and calibration-triggered session recalculation use it. Legacy centimeter matrices and scalar fields cannot establish valid metric status. Product fabrication guardrails remain separate from unrounded physical readings. This contract supersedes earlier scalar calibration requirements; provisional quality gates require MS57 freezing.
+
+
+SDD-C3 and SDD-C5 (IMP-MS55 / QAD-TC70): CalibrationMetadata.placementReview stores plane-placement-v1, assessment, riskReasons, and targetPlaneId. Product configurations bind targetPlaneId per opening. The shared plane eligibility evaluator gates geometry consumers, record creation, recalculation, quotation review, and session restoration. Person proximity alone is advisory. Manual dimensions remain independent; image identity mismatch invalidates photo eligibility. No database migration is required.
+
+SDD-C4, SDD-C5, SDD-C7 (IMP-MS56 / QAD-TC71): `measurementRecord.ts` validates MS54 geometry and MS55 placement into versioned provenance, including canonical image identity, opening corners, target plane, calibration/measurement revisions, unrounded millimeter dimensions, edge spans, and sensitivity. Model parameters and pricing consume the same unrounded values. Session hydration revalidates drafts; server quotation draft validation reproduces the measurement. Store `calibration_provenance` beside `dimension_source` in existing `pricing_details` JSONB and `calibrationProvenance` in frozen canonical item JSON. No schema or RLS change.
+
+SDD-C3, SDD-C4, SDD-C5, SDD-C7 (IMP-MS57 / QAD-TC72): `scripts/ms57/` is an offline validation adapter. It probes the production detector using oriented original private images, evaluates the shared production geometry/plane contracts, records source/data hashes and dirty state, and reports automatic versus reviewed/corrected metrics independently. Freeze development thresholds before the single-use held-out cycle. No runtime route, public dataset, dependency, database mutation or accuracy badge is added. Browser and physical downstream parity remain separately evidenced acceptance gates.

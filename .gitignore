@@ -13,6 +13,9 @@
 # testing
 /coverage
 
+# IMP-MS57 private captures, annotations and benchmark evidence
+/tests/private/ms57/
+
 # next.js
 /.next/
 /out/
