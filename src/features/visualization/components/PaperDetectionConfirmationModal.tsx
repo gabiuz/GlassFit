@@ -152,6 +152,7 @@ export function PaperDetectionConfirmationModal({
   const [manualMode, setManualMode] = useState(Boolean(initialCorners?.length === 4 && status === "verified_calibrated"));
   const [hasBoundarySeed, setHasBoundarySeed] = useState(Boolean(initialCorners?.length === 4));
   const [adjustedIndices, setAdjustedIndices] = useState<number[]>([]);
+  const [nextManualCorner, setNextManualCorner] = useState<number | null>(null);
   const [selectedStandard, setSelectedStandard] = useState<FiducialPaperStandard>(paperStandard);
 
   const userSelectedStandardRef = useRef(false);
@@ -308,7 +309,7 @@ export function PaperDetectionConfirmationModal({
   }, [onCancel]);
 
   const getCanvasCoordinates = useCallback(
-    (clientX: number, clientY: number): Point2D | null => {
+    (clientX: number, clientY: number, pointerType?: string): Point2D | null => {
       const svg = svgRef.current;
       if (!svg) return null;
       const rect = svg.getBoundingClientRect();
@@ -319,7 +320,7 @@ export function PaperDetectionConfirmationModal({
         canvasWidth,
         canvasHeight,
         offsetCssPx:
-          activeCornerDrag?.pointerType === "touch" ? TOUCH_PROXY_OFFSET_CSS_PX : 0,
+          (pointerType ?? activeCornerDrag?.pointerType) === "touch" ? TOUCH_PROXY_OFFSET_CSS_PX : 0,
       });
     },
     [activeCornerDrag?.pointerType, canvasWidth, canvasHeight],
@@ -332,7 +333,7 @@ export function PaperDetectionConfirmationModal({
     if (activeCornerDrag !== null || !e.isPrimary || e.button !== 0) return;
     e.stopPropagation();
     e.preventDefault();
-    const coord = getCanvasCoordinates(e.clientX, e.clientY);
+    const coord = getCanvasCoordinates(e.clientX, e.clientY, e.pointerType);
     if (coord) {
       dragOffsetRef.current = {
         x: points[index].x - coord.x,
@@ -347,6 +348,7 @@ export function PaperDetectionConfirmationModal({
       contactX: e.clientX,
       contactY: e.clientY,
     });
+    svgRef.current?.setPointerCapture(e.pointerId);
     setHasUserAdjusted(true);
     setManualMode(true);
     setCandidateId(null);
@@ -436,6 +438,7 @@ export function PaperDetectionConfirmationModal({
     setManualMode(true);
     setHasUserAdjusted(true);
     setAdjustedIndices([]);
+    setNextManualCorner(0);
     dragOffsetRef.current = null;
     setActiveDragIndex(null);
     setActiveCornerDrag(null);
@@ -452,6 +455,7 @@ export function PaperDetectionConfirmationModal({
     setHasBoundarySeed(true);
     setHasUserAdjusted(false);
     setAdjustedIndices([]);
+    setNextManualCorner(null);
   };
 
   const handleTapToSnap = useCallback(
@@ -534,19 +538,31 @@ export function PaperDetectionConfirmationModal({
     if (activeCornerDrag !== null || !e.isPrimary || e.button !== 0) return;
     const coord = getCanvasCoordinates(e.clientX, e.clientY);
     if (!coord) return;
+    if (nextManualCorner !== null) {
+      const index = nextManualCorner;
+      setPoints((previous) => {
+        const next = [...previous] as [Point2D, Point2D, Point2D, Point2D];
+        next[index] = coord;
+        return next;
+      });
+      setAdjustedIndices((indices) => [...indices, index]);
+      setNextManualCorner(index === 3 ? null : index + 1);
+      if (index === 3) setHasBoundarySeed(true);
+      return;
+    }
     handleTapToSnap(coord.x, coord.y);
   };
 
   const boundaryReviewed = Boolean(candidateId) ||
     (manualMode && (hasBoundarySeed || adjustedIndices.length === 4));
-  const canConfirm = formatConfirmed && samePlane && boundaryReviewed && orientationConfirmed;
+  const canConfirm = formatConfirmed && samePlane && boundaryReviewed && orientationConfirmed && nextManualCorner === null;
 
   // Convexity check
   const isValidQuad = isValidQuadrilateral(points);
 
   // Live scale preview
   const liveScale = (() => {
-    if (!isValidQuad || !formatConfirmed || !boundaryReviewed) return null;
+    if (!isValidQuad || !formatConfirmed || !boundaryReviewed || nextManualCorner !== null) return null;
     try {
       return computeScaleFromPaperCorners(points, selectedStandard);
     } catch {
@@ -642,7 +658,6 @@ export function PaperDetectionConfirmationModal({
   const dims = CANONICAL_PAPER_DIMENSIONS_MM[selectedStandard];
   const curWidthMm = firstEdge === "short" ? dims.shortMm : dims.longMm;
   const curHeightMm = firstEdge === "short" ? dims.longMm : dims.shortMm;
-  const curOrient = firstEdge === "short" ? "Portrait" : "Landscape";
 
   return (
     <div
@@ -679,8 +694,14 @@ export function PaperDetectionConfirmationModal({
                 <span className="font-medium">Drag corner pins to align | Tap sheet to re-snap</span>
               </div>
 
+              {nextManualCorner !== null && (
+                <div role="status" className="absolute bottom-3 left-1/2 z-20 -translate-x-1/2 rounded-full border border-green/40 bg-white/95 px-3 py-1.5 text-xs font-semibold text-black shadow-md whitespace-nowrap">
+                  Tap corner {nextManualCorner + 1} of 4: {CORNER_NAMES[nextManualCorner].split(": ")[1]}
+                </div>
+              )}
+
               {/* Non-convex warning overlay banner */}
-              {!isValidQuad && (
+              {!isValidQuad && nextManualCorner === null && (
                 <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 bg-rose-600/90 text-white text-xs px-3.5 py-1.5 rounded-full shadow-lg backdrop-blur-sm flex items-center gap-1.5 font-medium animate-pulse border border-rose-400/40">
                   <AlertTriangle className="size-4 shrink-0" />
                   <span>Please ensure corner pins form a valid 4-sided rectangle.</span>
@@ -698,14 +719,14 @@ export function PaperDetectionConfirmationModal({
                 onPointerCancel={handleSvgPointerUp}
               >
                 {/* Other candidate outlines */}
-                {activeCandidates
+                {nextManualCorner === null && activeCandidates
                   .filter((c) => c.id !== candidateId && !rejectedIds.includes(c.id))
                   .map((candidate) => (
                     <polygon
                       key={candidate.id}
                       points={candidate.corners.map(([x, y]) => `${x},${y}`).join(" ")}
                       fill="transparent"
-                      stroke="#06a3bd"
+                      stroke="#06e5ff"
                       strokeWidth={2}
                       strokeDasharray="6 4"
                       className="cursor-pointer transition-opacity hover:opacity-100 opacity-60"
@@ -739,7 +760,7 @@ export function PaperDetectionConfirmationModal({
                 )}
 
                 {/* Collinearity straightness guide lines (IMP-MS59) */}
-                {extendedGuides.map((guide, idx) => (
+                {nextManualCorner === null && extendedGuides.map((guide, idx) => (
                   <line
                     key={`guide-ext-${idx}`}
                     x1={guide.start.x}
@@ -755,16 +776,17 @@ export function PaperDetectionConfirmationModal({
                 ))}
 
                 {/* Semi-transparent Polygon Fill & Perimeter */}
-                <polygon
+                {nextManualCorner === null && <polygon
                   points={polygonPointsAttr}
-                  fill={isValidQuad ? "rgba(16, 185, 129, 0.20)" : "rgba(239, 68, 68, 0.20)"}
-                  stroke={isValidQuad ? "#10b981" : "#ef4444"}
+                  fill={isValidQuad ? "rgba(7, 182, 211, 0.16)" : "rgba(239, 68, 68, 0.20)"}
+                  stroke={isValidQuad ? "#07b6d3" : "#ef4444"}
                   strokeWidth={Math.max(2.5, Math.round(canvasWidth * 0.003))}
                   strokeDasharray="none"
-                />
+                />}
 
                 {/* Labeled Corner Handles (1 to 4) */}
                 {points.map((pt, idx) => {
+                  if (nextManualCorner !== null && !adjustedIndices.includes(idx)) return null;
                   const isActive = activeDragIndex === idx;
                   const handleRadius = Math.max(14, Math.round(canvasWidth * 0.016));
 
@@ -781,7 +803,7 @@ export function PaperDetectionConfirmationModal({
                           cy={pt.y}
                           r={handleRadius * 1.9}
                           fill="none"
-                          stroke="#10b981"
+                          stroke="#07b6d3"
                           strokeWidth="2.5"
                           strokeDasharray="4 2"
                           className="animate-spin"
@@ -803,7 +825,7 @@ export function PaperDetectionConfirmationModal({
                         cy={pt.y}
                         r={handleRadius}
                         fill="#ffffff"
-                        stroke={isValidQuad ? "#10b981" : "#ef4444"}
+                        stroke={isValidQuad ? "#07b6d3" : "#ef4444"}
                         strokeWidth={isActive ? "3.5" : "2.5"}
                         style={{ filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.5))" }}
                       />
@@ -813,7 +835,7 @@ export function PaperDetectionConfirmationModal({
                         cx={pt.x}
                         cy={pt.y}
                         r={Math.max(7, Math.round(handleRadius * 0.55))}
-                        fill={isValidQuad ? "#10b981" : "#ef4444"}
+                        fill={isValidQuad ? "#07b6d3" : "#ef4444"}
                       />
 
                       {/* Corner Number & Name Label */}
@@ -965,7 +987,7 @@ export function PaperDetectionConfirmationModal({
         {/* Studio Panel Scrollable Content */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 bg-light/50">
           {/* ── 1. Paper Format ── */}
-          <div className="rounded-2xl bg-white border border-neutral-200 p-4 space-y-3 shadow-xs">
+          <div className="rounded-2xl bg-white border border-blue/70 p-4 space-y-3 shadow-xs">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold uppercase tracking-wider text-green flex items-center gap-2">
                 <span className="size-1.5 rounded-full bg-green" />
@@ -1038,7 +1060,7 @@ export function PaperDetectionConfirmationModal({
                   onClick={() => {
                     userOrientationToggledRef.current = true;
                     setFirstEdge("short");
-                    setOrientationConfirmed(false);
+                    setOrientationConfirmed(true);
                   }}
                   className={`cursor-pointer rounded-xl py-2 px-3 text-xs font-medium border transition-all text-center ${
                     firstEdge === "short"
@@ -1053,7 +1075,7 @@ export function PaperDetectionConfirmationModal({
                   onClick={() => {
                     userOrientationToggledRef.current = true;
                     setFirstEdge("long");
-                    setOrientationConfirmed(false);
+                    setOrientationConfirmed(true);
                   }}
                   className={`cursor-pointer rounded-xl py-2 px-3 text-xs font-medium border transition-all text-center ${
                     firstEdge === "long"
@@ -1065,44 +1087,16 @@ export function PaperDetectionConfirmationModal({
                 </button>
               </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  userOrientationToggledRef.current = true;
-                  setFirstEdge(firstEdge === "short" ? "long" : "short");
-                  setOrientationConfirmed(false);
-                }}
-                className="w-full cursor-pointer py-1.5 px-3 rounded-lg border border-neutral-200 bg-neutral-50 hover:bg-neutral-100 text-neutral-700 text-xs flex items-center justify-center gap-1.5 transition-colors font-medium"
-              >
-                <span>⇄ Swap Orientation ({curOrient}: {curWidthMm}mm W x {curHeightMm}mm H)</span>
-              </button>
-
-              <label className="flex items-start gap-2.5 text-xs text-neutral-700 cursor-pointer pt-1">
-                <input
-                  type="checkbox"
-                  checked={orientationConfirmed}
-                  onChange={(e) => setOrientationConfirmed(e.target.checked)}
-                  className="mt-0.5 size-4 rounded accent-green cursor-pointer"
-                />
-                <span className="leading-snug">
-                  I confirm edge 1 to 2 follows the physical {firstEdge} side of the sheet ({curWidthMm}mm horizontal width)
-                </span>
-              </label>
+              <p className="text-xs text-neutral-600 leading-snug">
+                Select the orientation so edge 1 to 2 follows the physical {firstEdge} side of the sheet ({curWidthMm}mm wide).
+                {orientationConfirmed && <span className="ml-1 font-semibold text-green">Orientation selected.</span>}
+              </p>
             </div>
-
-            <label className="flex items-start gap-2.5 text-xs text-neutral-700 cursor-pointer pt-1">
-              <input
-                type="checkbox"
-                checked={formatConfirmed}
-                onChange={(e) => setFormatConfirmed(e.target.checked)}
-                className="mt-0.5 size-4 rounded accent-green cursor-pointer"
-              />
-              <span className="leading-snug">I confirm the selected paper format</span>
-            </label>
+            {!formatConfirmed && <p className="text-xs text-neutral-600">Select the paper format you used to confirm its physical size.</p>}
           </div>
 
           {/* ── 2. Outline Alignment ── */}
-          <div className="rounded-2xl bg-white border border-neutral-200 p-4 space-y-3 shadow-xs">
+          <div className="rounded-2xl bg-white border border-blue/70 p-4 space-y-3 shadow-xs">
             <div className="flex items-center justify-between flex-wrap gap-1.5">
               <span className="text-xs font-bold uppercase tracking-wider text-green flex items-center gap-2">
                 <span className="size-1.5 rounded-full bg-green" />
@@ -1118,7 +1112,11 @@ export function PaperDetectionConfirmationModal({
 
             {/* Status pills */}
             <div className="flex items-center gap-2 flex-wrap">
-              {isValidQuad ? (
+              {nextManualCorner !== null ? (
+                <span className="inline-flex items-center rounded-full border border-green/30 bg-light px-2.5 py-1 text-xs font-semibold text-black">
+                  Mapping corner {nextManualCorner + 1} of 4
+                </span>
+              ) : isValidQuad ? (
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border bg-emerald-50 text-emerald-700 border-emerald-200">
                   <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
                   Status: Sharp Fit
@@ -1150,7 +1148,9 @@ export function PaperDetectionConfirmationModal({
                   <Sparkles className="size-4 text-green shrink-0 animate-pulse" />
                 )}
                 <span className="truncate leading-tight font-medium">
-                  {isSnapping
+                  {nextManualCorner !== null
+                    ? `Tap corner ${nextManualCorner + 1} on the photo (${CORNER_NAMES[nextManualCorner]}).`
+                    : isSnapping
                     ? "Snapping corners to paper sheet boundary..."
                     : snapNotice
                     ? snapNotice.message
@@ -1201,15 +1201,15 @@ export function PaperDetectionConfirmationModal({
             <button
               type="button"
               onClick={handleResetCorners}
-              className="w-full flex cursor-pointer items-center justify-center gap-2 py-2 px-3 rounded-xl border border-neutral-200 bg-neutral-50 hover:bg-neutral-100 text-xs text-neutral-700 hover:text-black transition-colors font-medium"
+              className="w-full flex cursor-pointer items-center justify-center gap-2 py-2 px-3 rounded-xl border border-green/40 bg-light hover:bg-light/70 text-xs text-black transition-colors font-medium"
             >
               <RotateCcw className="size-3.5 text-neutral-500" />
-              <span>Wrong outline / Map corners</span>
+              <span>{nextManualCorner !== null ? "Restart four-corner mapping" : "Wrong outline / Map corners"}</span>
             </button>
           </div>
 
           {/* ── 3. Wall Plane ── */}
-          <div className="rounded-2xl bg-white border border-neutral-200 p-4 space-y-3 shadow-xs">
+          <div className="rounded-2xl bg-white border border-blue/70 p-4 space-y-3 shadow-xs">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold uppercase tracking-wider text-green flex items-center gap-2">
                 <span className="size-1.5 rounded-full bg-green" />
@@ -1253,15 +1253,14 @@ export function PaperDetectionConfirmationModal({
                 ))}
               </div>
 
-              <label className="flex items-center gap-2 text-xs text-neutral-600 cursor-pointer pt-1">
-                <input
-                  type="checkbox"
-                  checked={boundaryUnsafe}
-                  onChange={(e) => setBoundaryUnsafe(e.target.checked)}
-                  className="accent-green size-3.5 rounded cursor-pointer"
-                />
-                <span>Paper is curled or some corners are hidden</span>
-              </label>
+              <button
+                type="button"
+                aria-pressed={boundaryUnsafe}
+                onClick={() => setBoundaryUnsafe((value) => !value)}
+                className={`w-full rounded-xl border p-2.5 text-left text-xs transition-colors ${boundaryUnsafe ? "border-amber-300 bg-amber-50 text-amber-800" : "border-green/40 bg-light text-black hover:bg-light/70"}`}
+              >
+                Paper is curled or some corners are hidden {boundaryUnsafe ? "(reported)" : "(report issue)"}
+              </button>
 
               {!samePlane && (
                 <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-800 space-y-2 mt-2">
@@ -1290,7 +1289,7 @@ export function PaperDetectionConfirmationModal({
             className="w-full flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-green hover:bg-[#06a3bd] disabled:opacity-40 disabled:cursor-not-allowed text-white py-3.5 px-4 font-semibold text-sm shadow-md transition-all active:scale-[0.99]"
           >
             <Check className="size-4.5" />
-            <span>Looks Right / Confirm & Enter Workspace</span>
+            <span>Confirm & Enter Workspace</span>
           </button>
           <button
             type="button"
