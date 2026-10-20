@@ -23,4 +23,9 @@ describe("MS-02 mobile perspective picker contract", () => {
     assert.match(source, /flex min-h-11 items-center gap-2/);
     assert.match(source, /className="min-h-11 px-4 py-2\.5/);
   });
+
+  it("keeps fit confirmation visual without assigning the paper installation plane", () => {
+    assert.doesNotMatch(source, /samePlane|This opening perimeter is on the reviewed paper installation surface/);
+    assert.match(source, /onConfirm\(normalized\)/);
+  });
 });

@@ -28,9 +28,12 @@ describe("IMP-MS53 / QAD-TC68 reference selection", () => {
       onConfirm: () => {}, onSkip: () => {}, onCancel: () => {},
     }));
     assert.match(markup, /Outline/);
-    assert.match(markup, /I confirm the selected paper format/);
+    assert.match(markup, /Select the paper format you used/);
+    assert.match(markup, /Portrait/);
+    assert.match(markup, /Landscape/);
+    assert.doesNotMatch(markup, /Swap Orientation/);
     assert.match(markup, /same installation surface/);
-    assert.equal((markup.match(/type="checkbox"/g) ?? []).length, 3);
+    assert.doesNotMatch(markup, /type="checkbox"/);
     assert.match(markup, /disabled=""/);
     assert.doesNotMatch(markup, /95%|millimeter-accurate/);
   });
