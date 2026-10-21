@@ -5,6 +5,7 @@ import Image from "next/image";
 import { Camera } from "lucide-react";
 import {
     type ImagePreviewMode,
+    type UploadProgressStage,
     validateImageDecode,
     validateImageFile,
 } from "@/lib/imageApi";
@@ -13,12 +14,24 @@ import type { CalibrationMode } from "@/lib/visualization/types";
 interface UploadImageProps {
     onImageSelected?: (file: File, previewUrl: string) => void;
     mode?: CalibrationMode;
+    uploadStage?: UploadProgressStage | null;
+    retryAttempt?: number;
+    onRetry?: (file: File) => void;
+    errorMessage?: string | null;
 }
 
-export function UploadImage({ onImageSelected, mode = "standard" }: UploadImageProps = {}) {
+export function UploadImage({
+    onImageSelected,
+    mode = "standard",
+    uploadStage,
+    retryAttempt,
+    onRetry,
+    errorMessage,
+}: UploadImageProps = {}) {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [isDragging, setIsDragging] = useState(false);
     const [isValidating, setIsValidating] = useState(false);
+    const [pendingFile, setPendingFile] = useState<File | null>(null);
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const [fileName, setFileName] = useState<string | null>(null);
     const [fileSize, setFileSize] = useState<number | null>(null);
@@ -36,6 +49,7 @@ export function UploadImage({ onImageSelected, mode = "standard" }: UploadImageP
             if (currentUrl) URL.revokeObjectURL(currentUrl);
             return null;
         });
+        setPendingFile(null);
         setFileName(null);
         setFileSize(null);
         setPreviewMode(null);
@@ -50,6 +64,7 @@ export function UploadImage({ onImageSelected, mode = "standard" }: UploadImageP
             return;
         }
 
+        setPendingFile(file);
         setIsValidating(true);
         try {
             const nextPreviewMode = await validateImageDecode(file);
@@ -153,9 +168,21 @@ export function UploadImage({ onImageSelected, mode = "standard" }: UploadImageP
                                         <p className="text-sm text-gray-600">
                                             {fileSize === null ? "" : `${(fileSize / (1024 * 1024)).toFixed(2)} MB`}
                                         </p>
-                                        <p className="mt-3 text-sm font-medium text-cyan-800">
-                                            Photo ready for 3D room analysis
-                                        </p>
+                                        {uploadStage ? (
+                                            <div className="mt-3 flex items-center gap-2 text-sm font-medium text-cyan-800">
+                                                <span className="size-2 rounded-full bg-cyan-500 animate-pulse" />
+                                                <span>
+                                                    {uploadStage === "uploading" && "Uploading photo..."}
+                                                    {uploadStage === "retrying" && `Network drop. Retrying (${retryAttempt || 1}/3)...`}
+                                                    {uploadStage === "processing" && "Optimizing image and analyzing room..."}
+                                                    {uploadStage === "completed" && "Analysis completed!"}
+                                                </span>
+                                            </div>
+                                        ) : (
+                                            <p className="mt-3 text-sm font-medium text-cyan-800">
+                                                Photo ready for 3D room analysis
+                                            </p>
+                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -163,16 +190,30 @@ export function UploadImage({ onImageSelected, mode = "standard" }: UploadImageP
                         {previewMode === "image" && (
                             <p className="text-base text-gray-600 truncate max-w-xs">{fileName}</p>
                         )}
-                        <button
-                            onClick={(event) => {
-                                event.stopPropagation();
-                                handleRemove();
-                            }}
-                            className="px-5 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-3xl text-lg font-normal transition-colors duration-200 cursor-pointer"
-                            type="button"
-                        >
-                            Remove Image
-                        </button>
+                        <div className="flex flex-wrap items-center justify-center gap-4">
+                            {pendingFile && onRetry && (
+                                <button
+                                    onClick={(event) => {
+                                        event.stopPropagation();
+                                        onRetry(pendingFile);
+                                    }}
+                                    className="px-5 py-2.5 bg-cyan-600 hover:bg-cyan-700 text-white rounded-3xl text-lg font-normal transition-colors duration-200 cursor-pointer shadow-sm"
+                                    type="button"
+                                >
+                                    Retry Upload
+                                </button>
+                            )}
+                            <button
+                                onClick={(event) => {
+                                    event.stopPropagation();
+                                    handleRemove();
+                                }}
+                                className="px-5 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-3xl text-lg font-normal transition-colors duration-200 cursor-pointer"
+                                type="button"
+                            >
+                                Remove Image
+                            </button>
+                        </div>
                     </div>
                 ) : (
                     <>
@@ -220,8 +261,8 @@ export function UploadImage({ onImageSelected, mode = "standard" }: UploadImageP
                 />
             </div>
 
-            {error && (
-                <p className="text-red-500 text-lg font-normal">{error}</p>
+            {(error || errorMessage) && (
+                <p className="text-red-500 text-lg font-normal">{error || errorMessage}</p>
             )}
 
             <p className="text-xl text-black font-normal tracking-tight leading-normal">

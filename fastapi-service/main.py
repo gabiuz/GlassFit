@@ -7,7 +7,7 @@ from uuid import uuid4
 
 import cv2
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
@@ -218,6 +218,16 @@ async def analyze_image(
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         _assert_decoded_format(declared_format, original_metadata["source_format"])
 
+        # IMP-MS63: Early workspace WebP generation and normalized BGR loading
+        try:
+            workspace_metadata = prepare_workspace_image(upload_path, workspace_path)
+        except ImagePreparationError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        workspace_bgr = cv2.imread(str(workspace_path))
+        if workspace_bgr is None:
+            raise HTTPException(status_code=500, detail="Failed to load workspace image.")
+
         brightness = analyze_brightness(upload_path)
         lighting = analyze_lighting(upload_path)
         warnings: list[str] = []
@@ -249,12 +259,10 @@ async def analyze_image(
             _YOLO_MODEL_CACHE.clear()
             gc.collect()
 
-        image_bgr = cv2.imread(str(upload_path))
-
-        # IMP-MS34: Depth estimation stage (skippable via ENABLE_DEPTH_ESTIMATION)
-        if ENABLE_DEPTH_ESTIMATION and image_bgr is not None:
+        # IMP-MS63: Depth estimation operates on downscaled workspace array to conserve memory and latency
+        if ENABLE_DEPTH_ESTIMATION and workspace_bgr is not None:
             depth_result = estimate_depth(
-                image_bgr,
+                workspace_bgr,
                 upload_id,
                 output_dir=session_mask_dir,
                 url_prefix=session_mask_url_prefix,
@@ -275,10 +283,10 @@ async def analyze_image(
             depth_module._depth_pipe = None
             gc.collect()
 
-        # IMP-MS34: Scene detection stage (skippable via ENABLE_SCENE_DETECTION)
-        if ENABLE_SCENE_DETECTION and image_bgr is not None:
+        # IMP-MS63: Scene detection stage on workspace array
+        if ENABLE_SCENE_DETECTION and workspace_bgr is not None:
             scene_result = detect_scene_regions(
-                image_bgr,
+                workspace_bgr,
                 upload_id,
                 depth_array_normalized=depth_array_for_scene,
                 output_dir=session_mask_dir,
@@ -305,11 +313,6 @@ async def analyze_image(
             scene_module._scene_processor = None
             scene_module._scene_model = None
             gc.collect()
-
-        try:
-            workspace_metadata = prepare_workspace_image(upload_path, workspace_path)
-        except ImagePreparationError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
         _map_artifacts_to_workspace(
             session_mask_dir=session_mask_dir,
@@ -365,7 +368,8 @@ async def analyze_image(
 
         if calibration_mode == "paper_fiducial":
             try:
-                paper_result = detect_paper_fiducial(image_bgr, paper_standard, seed_point=seed_point)
+                # IMP-MS63: Run paper detection directly on downscaled workspace BGR
+                paper_result = detect_paper_fiducial(workspace_bgr, paper_standard, seed_point=seed_point)
             except Exception as exc:
                 warnings.append(f"Paper fiducial detection error: {exc}")
                 paper_result.status = "manual_pin_required"
@@ -375,12 +379,8 @@ async def analyze_image(
         work_w = workspace_metadata["width"]
         work_h = workspace_metadata["height"]
         scale_x, scale_y = work_w / orig_w, work_h / orig_h
-        def workspace_corners(corners: list[tuple[float, float]]) -> list[tuple[float, float]]:
-            return [(x * scale_x, y * scale_y) for x, y in corners]
-        if paper_result.detected_corners:
-            paper_result.detected_corners = workspace_corners(paper_result.detected_corners)
-        for candidate in paper_result.candidates:
-            candidate.corners = workspace_corners(candidate.corners)
+
+        # Corners are already in workspace pixel space because detection executed on workspace_bgr
         paper_result.coordinate_space = "workspace"
         paper_result.coordinate_image_id = session_id
         paper_result.oriented_source_to_workspace = (
@@ -437,6 +437,68 @@ async def analyze_image(
             raw_upload_path.unlink()
         if upload_path.exists():
             upload_path.unlink()
+
+
+@app.post("/snap-paper")
+async def snap_paper(request: Request) -> dict:
+    """IMP-MS63: Lightweight paper fiducial snapping using cached session workspace WebP."""
+    content_type = request.headers.get("content-type", "")
+    if "application/json" in content_type:
+        try:
+            body = await request.json()
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail="Invalid JSON body.") from exc
+        session_id = body.get("session_id")
+        seed_x = body.get("seed_x")
+        seed_y = body.get("seed_y")
+        paper_standard = body.get("paper_standard")
+    else:
+        form = await request.form()
+        session_id = form.get("session_id")
+        seed_x = form.get("seed_x")
+        seed_y = form.get("seed_y")
+        paper_standard = form.get("paper_standard")
+
+    if not session_id or not isinstance(session_id, str):
+        raise HTTPException(status_code=422, detail="session_id is required.")
+
+    if seed_x is None or seed_y is None:
+        raise HTTPException(status_code=422, detail="Both seed_x and seed_y must be provided.")
+
+    try:
+        sx = float(seed_x)
+        sy = float(seed_y)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=422, detail="Seed coordinates must be valid numbers.")
+
+    import math
+    if not (math.isfinite(sx) and math.isfinite(sy)):
+        raise HTTPException(status_code=422, detail="Seed coordinates must be finite real numbers.")
+
+    clamped_x = max(0.0, min(1.0, sx))
+    clamped_y = max(0.0, min(1.0, sy))
+
+    session_dir = SESSION_DIR / session_id
+    workspace_path = session_dir / "workspace.webp"
+    if not workspace_path.exists():
+        raise HTTPException(status_code=404, detail="Visualization session expired or not found.")
+
+    image_bgr = cv2.imread(str(workspace_path))
+    if image_bgr is None:
+        raise HTTPException(status_code=500, detail="Could not read workspace image.")
+
+    h, w = image_bgr.shape[:2]
+    from paper_calibration import detect_paper_fiducial
+    result = detect_paper_fiducial(
+        image_bgr,
+        str(paper_standard) if paper_standard else None,
+        seed_point=(clamped_x, clamped_y),
+    )
+    result.coordinate_space = "workspace"
+    result.coordinate_image_id = session_id
+    result.image_width = w
+    result.image_height = h
+    return result.to_dict()
 
 
 def cleanup_expired_sessions() -> None:

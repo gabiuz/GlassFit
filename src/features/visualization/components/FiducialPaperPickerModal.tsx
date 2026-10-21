@@ -32,6 +32,8 @@ import { requestClickGuidedPaperDetection } from "@/lib/visualization/paperRefer
 
 export interface FiducialPaperPickerModalProps {
   isOpen?: boolean;
+  sessionId?: string;
+  localBlobUrl?: string;
   backgroundImageUrl: string;
   canvasWidth: number;
   canvasHeight: number;
@@ -96,6 +98,8 @@ function createDefaultPaperCorners(
  */
 export function FiducialPaperPickerModal({
   isOpen = true,
+  sessionId,
+  localBlobUrl,
   backgroundImageUrl,
   canvasWidth,
   canvasHeight,
@@ -130,8 +134,11 @@ export function FiducialPaperPickerModal({
   const lastSnappedRef = useRef<boolean>(false);
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
+  const effectiveImageUrl = localBlobUrl || backgroundImageUrl;
+
   useEffect(() => {
-    if (!backgroundImageUrl || canvasWidth <= 0 || canvasHeight <= 0) return;
+    const srcToLoad = localBlobUrl || backgroundImageUrl;
+    if (!srcToLoad || canvasWidth <= 0 || canvasHeight <= 0) return;
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.onload = () => {
@@ -148,8 +155,8 @@ export function FiducialPaperPickerModal({
         // Tainted canvas or draw failure handled gracefully
       }
     };
-    img.src = backgroundImageUrl;
-  }, [backgroundImageUrl, canvasWidth, canvasHeight]);
+    img.src = srcToLoad;
+  }, [localBlobUrl, backgroundImageUrl, canvasWidth, canvasHeight]);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -342,10 +349,11 @@ export function FiducialPaperPickerModal({
 
       try {
         const res = await requestClickGuidedPaperDetection(
-          backgroundImageUrl,
+          sessionId || effectiveImageUrl,
           seedPoint,
           selectedStandard,
           ac.signal,
+          sessionId,
         );
 
         if (res.outcome === "candidate_found" && res.candidate) {
@@ -373,7 +381,7 @@ export function FiducialPaperPickerModal({
         setIsSnapping(false);
       }
     },
-    [backgroundImageUrl, canvasHeight, canvasWidth, selectedStandard],
+    [effectiveImageUrl, sessionId, canvasHeight, canvasWidth, selectedStandard],
   );
 
   const handleSvgPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
@@ -548,7 +556,7 @@ export function FiducialPaperPickerModal({
           >
             {/* Background Room Photo */}
             <img
-              src={backgroundImageUrl}
+              src={effectiveImageUrl}
               alt="Room photo with taped paper"
               className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none"
             />
@@ -769,7 +777,7 @@ export function FiducialPaperPickerModal({
             style={{ left: loupeParams.loupeX, top: loupeParams.loupeY }}
           >
             <img
-              src={backgroundImageUrl}
+              src={effectiveImageUrl}
               alt="Magnified corner view"
               className="absolute max-w-none pointer-events-none select-none"
               style={{

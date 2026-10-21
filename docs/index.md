@@ -5,7 +5,7 @@
 **Version:** 1.0 (Capstone Production Release)  
 **Owner:** Reynard John B. Rabanal (Lead Product / Systems Architect) & GlassFit Capstone Team (PUP CCIS)  
 **Status:** Locked  
-**Last reconciled:** October 21, 2026 (Implemented IMP-MS62 mode separation; QAD-TC77 browser acceptance pending)
+**Last reconciled:** October 21, 2026 (Implemented IMP-MS63 resilient HEIC ingestion, downscaled paper detection, and /snap-paper; QAD-TC78 verification)
 
 ---
 
@@ -59,6 +59,7 @@ GlassFit is a responsive, web-based photo-simulation and consultation-support pl
 | IMP-MS60 | Perspective Unwarping Aspect Ratio Matcher, Standard Auto-Suggestion, and Model Sizing Parity | `docs/implementation/ms60.md` | Implemented | October 19, 2026 | GlassFit Capstone Team |
 | IMP-MS61 | Empirical Real-World Accuracy Benchmark and Comparative Release Protocol | `docs/implementation/ms61.md` | Implemented | October 19, 2026 | GlassFit Capstone Team |
 | IMP-MS62 | Separate Automatic Detection from Paper Reference Calibration | `docs/implementation/ms62.md` | Implemented; browser acceptance pending | October 21, 2026 | GlassFit Capstone Team |
+| IMP-MS63 | Resilient HEIC Space Image Ingestion, Network-Tolerant Conversion, and Low-Latency Paper Detection Pipeline | `docs/implementation/ms63.md` | Implemented | October 21, 2026 | GlassFit Capstone Team |
 
 ---
 
@@ -67,6 +68,7 @@ GlassFit is a responsive, web-based photo-simulation and consultation-support pl
 | Business Metric (`BRD-M#`) | Product Feature (`PRD-F#`) | System Component (`SDD-C#`) | Data Entity (`ERD-E#`) | Test Case (`QAD-TC#`) | Status |
 |---|---|---|---|---|---|
 | BRD-M1, BRD-M5 | PRD-F3, PRD-F4, PRD-F5, PRD-F6, PRD-F10 | SDD-C2, SDD-C3, SDD-C4, SDD-C5 | No schema change; existing session state and immutable quotation snapshots retained | QAD-TC77.1 through QAD-TC77.12 | IMP-MS62 implemented; browser acceptance pending |
+| BRD-M1, BRD-M4, BRD-M6 (Mobile Intake Resilience & Latency) | PRD-F3, PRD-F4, PRD-F10 | SDD-C2, SDD-C3 | N/A (Client Blob Buffering & Temporary Session Files) | QAD-TC78.1 through QAD-TC78.8 | Implemented |
 | BRD-M1 (Compress Intake Duration) | PRD-F13 (Signed Booking Link & Messaging Handoff) | SDD-C8 (Signed Booking Link & Messaging Handoff) | ERD-E15 (signed_booking_links), ERD-E16 (booking_requests) | QAD-TC13 | Verified |
 | BRD-M2 (Reduce Design Revisions) | PRD-F5 (Parametric 3D Assembly), PRD-F6 (Visualization Workspace) | SDD-C4 (Parametric 3D Assembly Engine), SDD-C5 (Visualization Canvas) | ERD-E4 (product_templates), ERD-E5 (product_parameters), ERD-E6 (product_components), ERD-E7 (structural_rules) | QAD-TC5, QAD-TC6, QAD-TC16, QAD-TC17 | Verified |
 | BRD-M3 (Elevate Conversion to Ocular) | PRD-F9 (Compositing & Snapshot), PRD-F13 (Signed Booking Link) | SDD-C6 (Canvas Compositor), SDD-C8 (Signed Booking Link) | ERD-E10 (visualization_snapshots), ERD-E15 (signed_booking_links) | QAD-TC9, QAD-TC13 | Verified |
@@ -110,6 +112,7 @@ MS57 traceability: BRD-M1, BRD-M5, BRD-M6 -> PRD-F3, PRD-F4, PRD-F5, PRD-F6, PRD
 
 | Revision Date | Target Document | Author | Nature of Revision | Pull Request Ref |
 |---|---|---|---|---|
+| October 21, 2026 | `docs/implementation/ms63.md`, `src/lib/imageApi.ts`, `fastapi-service/main.py`, `src/features/visualization/` | GlassFit Capstone Team | Implemented resilient HEIC space image ingestion, exponential backoff retry, early WebP downscaled paper detection, session-bound /snap-paper endpoint, local blob buffering, and registered QAD-TC78 | Pending |
 | October 21, 2026 | MS62 implementation and tests | GlassFit Capstone Team | Implemented mode isolation, legacy restoration, and paper skip recovery; automated evidence in MS62 section 9, browser acceptance pending | Pending |
 | October 21, 2026 | `docs/implementation/ms62.md`, PRD, SDD, DSD, QAD, milestones, and index | GlassFit Capstone Team | Specified paper-free Automatic Detection, exclusive paper-mode localization/review, request-authoritative mapping, legacy session policy, and QAD-TC77; documentation only | Pending |
 | September 9, 2026 | `docs/brd-glassfit.md` | Reynard John B. Rabanal | Initial production baseline reconciling PUP CCIS Chapters 1-3 manuscript, SME fabricator economic data, and business metrics | PR #1 |
@@ -164,3 +167,5 @@ MS55 traceability: BRD-M5, BRD-M6 -> PRD-F3, PRD-F4, PRD-F6, PRD-F10 -> SDD-C3, 
 MS56 traceability: IMP-MS56 / BRD-M2, BRD-M5, BRD-M6 -> PRD-F5, PRD-F6, PRD-F10, PRD-F11 -> SDD-C4, SDD-C5, SDD-C7 -> DSD-UI4, DSD-UI7 -> ERD-E11, ERD-E13, ERD-E14 -> QAD-TC71. Implemented on October 19, 2026; MS57 physical validation and browser acceptance remain pending. See [MS56](implementation/ms56.md).
 
 MS58 traceability: BRD-M1, BRD-M5, BRD-M6 -> PRD-F3, PRD-F4 -> SDD-C2, SDD-C3 -> DSD-UI3 -> QAD-TC73. Single-click paper seed localization constrains candidate selection and extracts localized paper boundaries on tap; integrates with confirmation gateway and manual loupe fallbacks. See [MS58](implementation/ms58.md).
+ 
+MS63 traceability: BRD-M1, BRD-M4, BRD-M6 -> PRD-F3, PRD-F4, PRD-F10 -> SDD-C2, SDD-C3 -> QAD-TC78.1 through QAD-TC78.8. Implemented client-side exponential backoff retry across network drops, early WebP downscaled paper detection, session-bound /snap-paper endpoint, and local blob URL buffering. See [MS63](implementation/ms63.md).

@@ -1,13 +1,15 @@
 "use client";
 
 import React from "react";
-import { Loader2 } from "lucide-react";
+import type { UploadProgressStage } from "@/lib/imageApi";
 
 interface ImageLoadingModalProps {
   isOpen: boolean;
   onCancel: () => void;
   onPlaceProduct?: () => void;
   isLoading?: boolean;
+  stage?: UploadProgressStage | null;
+  attempt?: number;
 }
 
 export function ImageLoadingModal({
@@ -15,8 +17,24 @@ export function ImageLoadingModal({
   onCancel,
   onPlaceProduct,
   isLoading = true,
+  stage,
+  attempt,
 }: ImageLoadingModalProps) {
   if (!isOpen) return null;
+
+  let title = "Loading";
+  let subtitle = "Please wait while we prepare your image...";
+
+  if (stage === "uploading") {
+    title = "Uploading Photo";
+    subtitle = "Transmitting image to analysis service...";
+  } else if (stage === "retrying") {
+    title = "Connection Unstable";
+    subtitle = `Network drop detected. Retrying attempt ${attempt ?? 1} of 3...`;
+  } else if (stage === "processing") {
+    title = "Analyzing Space";
+    subtitle = "Optimizing lighting, perspective, and room geometry...";
+  }
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
@@ -49,10 +67,10 @@ export function ImageLoadingModal({
         {/* Text Labels */}
         <div className="flex flex-col gap-1 items-center justify-center">
           <h2 className="text-[#0f1422] text-xl sm:text-2xl font-medium tracking-[-0.38px]">
-            Loading
+            {title}
           </h2>
           <p className="text-[#0f1422] text-base sm:text-xl font-normal tracking-[-0.38px]">
-            Please wait while we prepare your image...
+            {subtitle}
           </p>
         </div>
 

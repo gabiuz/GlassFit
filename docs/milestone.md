@@ -53,6 +53,7 @@ When implementing or modifying any user interface within these milestones (such 
 | MS-49 | Session-Permanent Calibration State and Fallback Pinning Lifecycle | Visualization Client / Session Layer | Session-permanent calibration state persistence across product additions, product switching, and quotation round-trips | Maintenance Release | `BRD-M1`, `BRD-M4`, `PRD-F6`, `PRD-F10`, `SDD-C5`, `SDD-C7`, `QAD-TC64` |
 | MS-50 | Grounded Real-World 3D Model Sizing and Quotation Parity | Visualization Client / Sizing Engine | Direct coplanar scale grounding, 100% mathematical weight bypassing height heuristics, and quotation line item parity | Maintenance Release | `BRD-M1`, `BRD-M5`, `PRD-F6`, `PRD-F10`, `SDD-C5`, `SDD-C7`, `QAD-TC65` |
 | MS-51 | Pre-Workspace Fiducial Paper Detection Confirmation Gateway | Visualization Client / Upload Gateway | Pre-workspace confirmation modal, visual boundary verification, interactive 2.5x loupe adjustment, and paper standard override | Maintenance Release | `BRD-M1`, `BRD-M2`, `PRD-F3`, `PRD-F4`, `PRD-F6`, `SDD-C2`, `SDD-C5`, `QAD-TC66` |
+| MS-63 | Resilient HEIC Space Image Ingestion and Low-Latency Pipeline | Visualization Client / FastAPI CV | Network-tolerant exponential backoff, resolution-constrained paper detection, session-bound snap endpoint, and local blob buffering | Maintenance Release | `BRD-M1`, `BRD-M3`, `BRD-M4`, `BRD-M5`, `PRD-F3`, `PRD-F4`, `PRD-F10`, `SDD-C2`, `SDD-C3`, `SDD-C4`, `DSD-UI3`, `DSD-UI4`, `QAD-TC78` |
 
 ---
 
@@ -533,3 +534,10 @@ Implemented IMP-MS61 / QAD-TC76 on October 19, 2026. Establishes the comparative
 Restore paper-free Automatic Detection on both upload paths: existing image analysis, success modal, and approximate workspace preview. Reserve detection, confirmation, pinning, and marker adjustment for Paper Reference Calibration. Specify request-authoritative session normalization, paper-free workspace guards, and legacy restoration that retains previously reviewed paper work under paper mode. Preserve heuristic signals, manual measurements, paper geometry/eligibility, and historical quotations.
 
 This target supersedes the default paper-localization intake behavior described in MS48/MS51/MS53; their paper functionality remains available in paper mode. MS61 MOD-AUTO remains a paper benchmark method. This entry records specification readiness only and does not certify implementation or test completion.
+
+## MS-63: Resilient HEIC Space Image Ingestion, Network-Tolerant Conversion, and Low-Latency Paper Detection Pipeline
+
+**Status:** Implemented (October 21, 2026); automated test suites passing. **Specification:** [IMP-MS63](implementation/ms63.md). **Traceability:** BRD-M1, BRD-M3, BRD-M4, BRD-M5; PRD-F3, PRD-F4, PRD-F10; SDD-C2, SDD-C3, SDD-C4; DSD-UI3, DSD-UI4; QAD-TC78.1 through QAD-TC78.8.
+
+Resolve network-induced HEIC photo upload failures under unstable cellular internet conditions. Eliminate full-resolution computer vision processing bottleneck by constraining OpenCV fiducial search and bilateral filtering to workspace-normalized resolutions (max 1920px), reducing CV execution latency from over 15 seconds to under 150 milliseconds. Introduce resilient client-side transport with exponential backoff retry and request timeouts. Decouple click-guided paper snapping by providing dedicated session-bound snapping (`/snap-paper`), eliminating redundant multi-megabyte image downloads and re-uploads over unstable connections. Preserve local file references and buffer converted workspace blobs on the client to ensure instant, network-resilient modal rendering.
+

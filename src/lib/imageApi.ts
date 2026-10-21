@@ -152,10 +152,18 @@ export interface ImageAnalysisResponse {
   warnings?: string[];
 }
 
+export type UploadProgressStage =
+  | "validating"
+  | "uploading"
+  | "retrying"
+  | "processing"
+  | "completed";
+
 export interface SpaceImageSession {
   sessionId: string;
   originalFileName: string;
   workspaceImage: WorkspaceImage;
+  localBlobUrl?: string;
   brightness: BrightnessAnalysis;
   lighting: LightingAnalysis;
   objects: DetectedObject[];
@@ -168,6 +176,13 @@ export interface SpaceImageSession {
   paper_calibration?: PaperCalibrationResult;
   calibrationMeta?: CalibrationMetadata;
   warnings: string[];
+}
+
+export interface AnalyzeImageOptions extends CalibrationIntakeOptions {
+  onProgress?: (stage: UploadProgressStage, attempt?: number) => void;
+  maxRetries?: number;
+  timeoutMs?: number;
+  initialDelayMs?: number;
 }
 
 export function getImageApiBaseUrl() {
@@ -225,9 +240,63 @@ export async function validateImageDecode(file: File): Promise<ImagePreviewMode>
   }
 }
 
+function combineAbortSignals(signal1?: AbortSignal, signal2?: AbortSignal): AbortSignal | undefined {
+  if (!signal1) return signal2;
+  if (!signal2) return signal1;
+  if (typeof AbortSignal.any === "function") {
+    return AbortSignal.any([signal1, signal2]);
+  }
+  const controller = new AbortController();
+  const onAbort = () => controller.abort(signal1.aborted ? signal1.reason : signal2.reason);
+  if (signal1.aborted || signal2.aborted) {
+    onAbort();
+    return controller.signal;
+  }
+  signal1.addEventListener("abort", onAbort, { once: true });
+  signal2.addEventListener("abort", onAbort, { once: true });
+  return controller.signal;
+}
+
+export async function snapPaperReference(
+  sessionId: string,
+  seedPoint: Point2D,
+  paperStandard?: FiducialPaperStandard,
+  signal?: AbortSignal,
+): Promise<PaperCalibrationResult> {
+  const formData = new FormData();
+  formData.append("session_id", sessionId);
+  formData.append("seed_x", String(seedPoint.x));
+  formData.append("seed_y", String(seedPoint.y));
+  if (paperStandard) {
+    formData.append("paper_standard", paperStandard);
+  }
+
+  const apiBaseUrl = getImageApiBaseUrl();
+  const response = await fetch(`${apiBaseUrl}/snap-paper`, {
+    method: "POST",
+    body: formData,
+    signal,
+  });
+
+  if (!response.ok) {
+    let message = "Paper fiducial snap failed.";
+    try {
+      const errorBody = (await response.json()) as { detail?: string };
+      if (errorBody.detail) {
+        message = errorBody.detail;
+      }
+    } catch {
+      // Keep default message
+    }
+    throw new Error(message);
+  }
+
+  return (await response.json()) as PaperCalibrationResult;
+}
+
 export async function analyzeImage(
   file: File,
-  calibrationOptions?: CalibrationIntakeOptions,
+  calibrationOptions?: AnalyzeImageOptions,
   signal?: AbortSignal,
 ): Promise<SpaceImageSession> {
   const formData = new FormData();
@@ -246,34 +315,113 @@ export async function analyzeImage(
   }
 
   const apiBaseUrl = getImageApiBaseUrl();
-  const response = await fetch(`${apiBaseUrl}/analyze-image`, {
-    method: "POST",
-    body: formData,
-    signal,
-  });
+  const maxAttempts = calibrationOptions?.maxRetries ?? 3;
+  const timeoutMs = calibrationOptions?.timeoutMs ?? (isHeicFile(file) ? 60000 : 30000);
+  let backoffDelay = calibrationOptions?.initialDelayMs ?? 1000;
 
-  if (!response.ok) {
-    let message = "Image analysis failed.";
+  let lastError: unknown = null;
+  let response: Response | null = null;
 
-    try {
-      const errorBody = (await response.json()) as { detail?: string };
-      if (errorBody.detail) {
-        message = errorBody.detail;
-      }
-    } catch {
-      // Keep the generic message when the service returns non-JSON errors.
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    if (signal?.aborted) {
+      throw signal.reason || new Error("Operation aborted");
     }
 
-    throw new Error(message);
+    if (attempt === 1) {
+      calibrationOptions?.onProgress?.("uploading", 1);
+    } else {
+      calibrationOptions?.onProgress?.("retrying", attempt - 1);
+    }
+
+    const timeoutController = new AbortController();
+    const timerId = setTimeout(() => {
+      timeoutController.abort(new Error("Request timed out."));
+    }, timeoutMs);
+
+    const combinedSignal = combineAbortSignals(signal, timeoutController.signal);
+
+    try {
+      response = await fetch(`${apiBaseUrl}/analyze-image`, {
+        method: "POST",
+        body: formData,
+        signal: combinedSignal,
+      });
+      clearTimeout(timerId);
+
+      if (response.ok) {
+        calibrationOptions?.onProgress?.("processing");
+        break;
+      }
+
+      if (response.status >= 400 && response.status < 500) {
+        let message = "Image analysis failed.";
+        try {
+          const errorBody = (await response.json()) as { detail?: string };
+          if (errorBody.detail) {
+            message = errorBody.detail;
+          }
+        } catch {
+          // Keep generic message
+        }
+        throw new Error(message);
+      }
+
+      lastError = new Error(`Server temporarily unavailable (HTTP ${response.status}).`);
+    } catch (err) {
+      clearTimeout(timerId);
+      if (signal?.aborted) {
+        throw signal.reason || err;
+      }
+      if (err instanceof Error && response && response.status >= 400 && response.status < 500) {
+        throw err;
+      }
+      lastError = err;
+    }
+
+    if (attempt < maxAttempts) {
+      const jitter = 1 + (Math.random() * 0.4 - 0.2);
+      const sleepTime = Math.round(backoffDelay * jitter);
+      await new Promise((resolve) => setTimeout(resolve, sleepTime));
+      backoffDelay *= 2;
+    }
+  }
+
+  if (!response || !response.ok) {
+    if (lastError instanceof Error && !lastError.message.includes("Server") && !lastError.message.includes("fetch") && !lastError.message.includes("Network")) {
+      // Non-network specific error
+    }
+    throw new Error("Network connection unstable. Please check your internet connection and try again.");
   }
 
   const payload = (await response.json()) as ImageAnalysisResponse;
+  calibrationOptions?.onProgress?.("completed");
+
   const session = toSpaceImageSession(payload, file.name, apiBaseUrl, mode);
+
+  if (typeof URL !== "undefined" && typeof URL.createObjectURL === "function") {
+    try {
+      if (!isHeicFile(file)) {
+        session.localBlobUrl = URL.createObjectURL(file);
+      } else {
+        const wsRes = await fetch(session.workspaceImage.url, { signal });
+        if (wsRes.ok) {
+          const wsBlob = await wsRes.blob();
+          session.localBlobUrl = URL.createObjectURL(wsBlob);
+        }
+      }
+    } catch {
+      // Graceful fallback to remote workspace image URL
+    }
+  }
+
   if (!session.calibrationMeta) {
     session.calibrationMeta = {
-      mode, paperStandard: session.paperCalibration?.paper_standard ?? calibrationOptions?.paperStandard ?? null,
+      mode,
+      paperStandard: session.paperCalibration?.paper_standard ?? calibrationOptions?.paperStandard ?? null,
       status: mode === "standard" ? "heuristic_fallback" : session.paperCalibration?.status ?? "manual_pin_required",
-      confidence: 0, homographyMatrix: null, detectedCorners: session.paperCalibration?.detected_corners ?? null,
+      confidence: 0,
+      homographyMatrix: null,
+      detectedCorners: session.paperCalibration?.detected_corners ?? null,
       paperStandardConfirmed: session.paperCalibration?.paper_standard_confirmed ?? false,
       user_verified: false,
       verified_corners: null,

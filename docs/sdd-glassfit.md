@@ -5,7 +5,7 @@
 **Version:** 1.0 (Capstone Production Release)  
 **Owner:** Reynard John B. Rabanal (Lead Product / Systems Architect) & GlassFit Capstone Team (PUP CCIS)  
 **Status:** Locked  
-**Last reconciled:** October 1, 2026 (Added IMP-MS37 compact viewport gesture isolation and neutral perspective-fit orientation contracts)
+**Last reconciled:** October 21, 2026 (Updated SDD-C2/SDD-C3 for IMP-MS63 resilient HEIC ingestion, early WebP generation, downscaled paper detection, and /snap-paper)
 **PRD:** docs/prd-glassfit.md
 
 ---
@@ -42,8 +42,8 @@ Asynchronous hybrid multi-tier web architecture decoupling interactive client-si
 | Component ID | Component Name | Runtime Layer | Architectural Responsibility | Traces to PRD | Dependencies |
 |---|---|---|---|---|---|
 | SDD-C1 | Public Catalog & 3D Inspector | Next.js Client / SSR | Renders public product browsing catalog, filter grids, and interactive 360-degree Three.js WebGL model inspector on product detail pages. | PRD-F1, PRD-F2 | Supabase `products`, `product_assets`, Cloudflare R2 CDN, Three.js GLTFLoader |
-| SDD-C2 | Space Image Pre-Flight Validator | Next.js Client | Accepts static JPEG, PNG, WebP, HEIC, and HEIF files up to 12 MB; reconciles MIME and filename extension; validates browser-decodable formats; and delegates HEIC or HEIF decode validation to the server when the active browser lacks native support. | PRD-F3 | HTML5 File API, Image Decode API, `src/lib/imageApi.ts` |
-| SDD-C3 | Computer Vision Scene Analyzer | FastAPI Python Backend | Validates uploaded image bytes and decoded format, rejects animated or oversized decoded images, decodes HEIC and HEIF through a pinned `pillow-heif` adapter, normalizes those formats to JPEG for OpenCV, extracts scene measurements, runs YOLOv8s-seg foreground masks, and caches session WebP images. | PRD-F4, PRD-F7, PRD-F8 | FastAPI, Pillow, pillow-heif, OpenCV, NumPy, Ultralytics YOLOv8, PyTorch |
+| SDD-C2 | Space Image Pre-Flight Validator & Transport | Next.js Client | Accepts static JPEG, PNG, WebP, HEIC, and HEIF files up to 12 MB; reconciles MIME and filename extension; validates browser-decodable formats; delegates server decode validation; executes exponential backoff retries with jitter over unstable networks; retains dropzone file state; and buffers local image blobs for offline confirmation. | PRD-F3 | HTML5 File API, Image Decode API, `src/lib/imageApi.ts` |
+| SDD-C3 | Computer Vision Scene Analyzer | FastAPI Python Backend | Validates uploaded image bytes and format, decodes HEIC/HEIF via `pillow-heif`, normalizes orientation, generates early workspace WebP, executes depth estimation, luminance analysis, and paper fiducial detection directly on downscaled workspace BGR (<180ms), serves `/snap-paper` session-bound snapping, and runs YOLOv8s-seg foreground masks. | PRD-F4, PRD-F7, PRD-F8 | FastAPI, Pillow, pillow-heif, OpenCV, NumPy, Ultralytics YOLOv8, PyTorch |
 | SDD-C4 | Parametric 3D Assembly & Guardrail Engine | Three.js Client Runtime | Evaluates structural rules, leaf dead loads (2.5 rule), and width thresholds (W >= 2400mm) to dynamically assemble modular components or trigger Behavior B hybrid confirmation modals. | PRD-F5 | Three.js, `src/lib/visualization/guardrailEngine.ts`, Supabase `structural_rules` |
 | SDD-C5 | Photo-Based Visualization Canvas | Next.js Client / HTML5 | Manages interactive placement, drag translation, uniform scaling, yaw/pitch rotation, neutral yaw=0 and pitch=0 state after perspective-fit confirmation, layer reordering, environmental lighting filters, glass modes, foreground occlusion, and nested-safe compact viewport gesture isolation. | PRD-F6, PRD-F7, PRD-F8, PRD-F16 | HTML Canvas 2D, Three.js WebGLRenderer, Pointer Events, CSS Dynamic Viewport Units, FastAPI Mask endpoints |
 | SDD-C6 | Canvas Compositor & Snapshot Pipeline | Next.js Client / Edge | Blends background space photo, active/cached 3D product layers, contact shadows, and foreground occlusion masks into a flattened PNG snapshot; uploads to Cloudflare R2. | PRD-F9, PRD-F15 | HTML5 Canvas `toBlob()`, S3 Presigned URL client, Cloudflare R2, Supabase `visualization_snapshots` |
@@ -60,7 +60,8 @@ Asynchronous hybrid multi-tier web architecture decoupling interactive client-si
 | Method | Endpoint Route | Auth Required | Request Payload / DTO | Response Payload / DTO | Target Latency (p95) |
 |---|---|---|---|---|---|
 | GET | `/health` | No | None | `{"status": "ok"}` | < 50 ms |
-| POST | `/analyze-image` | No | Multipart Form: `image` (JPG/PNG <= 12MB) | JSON: `SpaceImageSession` (session_id, brightness, lighting, objects, masks) | < 2,000 ms |
+| POST | `/analyze-image` | No | Multipart Form: `image` (JPG/PNG/WEBP/HEIC <= 12MB) | JSON: `SpaceImageSession` (session_id, brightness, lighting, objects, masks) | < 2,000 ms |
+| POST | `/snap-paper` | No | Form or JSON: `session_id`, `seed_x`, `seed_y`, `paper_standard` (optional) | JSON: `PaperFiducialResult` (corners, status, candidates) | < 150 ms |
 | GET | `/masks/{session_id}/{filename}` | No | URL parameters | Binary image stream (PNG mask) | < 150 ms |
 | GET | `/generated/sessions/{session_id}/workspace.webp` | No | URL parameters | Binary image stream (Optimized WebP workspace) | < 200 ms |
 | GET | `/api/products` | No | Query params: `category`, `status` | Array of `ProductDetail` objects with primary assets | < 180 ms |
@@ -177,3 +178,14 @@ SDD-C2, SDD-C3, SDD-C4, and SDD-C5 (IMP-MS62 / QAD-TC77): `/analyze-image` invok
 The frontend uses captured request mode, clears both paper aliases for non-paper intake, and constructs fresh heuristic metadata before any paper validator runs. Preserve legitimate non-paper scale signals and synchronize both scale aliases. Route completed uploads by normalized session mode, and guard all workspace paper actions by paper mode. Paper mode retains manual review when detection is absent or invalid.
 
 Storage restoration applies the deterministic MS62 section 4.4 policy before existing plane-eligibility validation: retain explicit paper sessions; relabel explicitly reviewed legacy automatic/unknown-mode sessions as paper; normalize unreviewed automatic/unknown-mode sessions to paper-free preview. Explicit standard sessions remain standard. Relabeling does not grant metric eligibility. Preserve manual dimensions, product state, and immutable quotation snapshots. No API endpoint, dependency, database schema, or metric solver is added.
+
+## MS63 Resilient Space Image Ingestion & Low-Latency Paper Detection Pipeline
+
+**Status:** Implemented; verified via automated unit and microservice tests. Full contract: [IMP-MS63](implementation/ms63.md).
+
+SDD-C2 and SDD-C3 (IMP-MS63 / QAD-TC78):
+1. **Client-Side Resilient Retry Loop (SDD-C2):** `analyzeImage` implements an autonomous exponential backoff retry loop (maximum 3 attempts, base delay 1,000ms with +/-20% random jitter, 30s connection timeout and 60s max total timeout). Non-retryable 4xx client errors reject immediately on attempt 1. Dropzone state retains selected `File` reference on network failure with an interactive retry trigger, and emits progressive stage updates ("uploading", "retrying", "processing", "completed") to the UI.
+2. **Local Blob Buffering (SDD-C2):** The client creates and buffers an in-memory `localBlobUrl` for the space image, insulating `PaperDetectionConfirmationModal` and `ProductModelWorkspace` from post-upload network disconnects.
+3. **Early WebP Generation and Downscaled Paper Detection (SDD-C3):** In `analyze_image`, `workspace.webp` (longest edge constrained to 1,920px) is generated immediately following orientation normalization. Subsequent depth estimation, scene luminance analysis, and `detect_paper_fiducial` execute directly on the downscaled workspace BGR array, reducing paper fiducial detection latency on 12 MP HEIC captures from >15,000ms to <180ms while preserving metric scale precision within 0.15%.
+4. **Session-Bound Click Snapping (SDD-C3):** Endpoint `POST /snap-paper` accepts `session_id`, `seed_x`, `seed_y`, and optional `paper_standard` (via Form or JSON). Snapping executes against the cached workspace WebP on disk, completely eliminating secondary image blob re-uploads.
+

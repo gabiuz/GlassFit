@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test:ms63": "npx tsx --test tests/unit/heicResilientIngestion.test.ts",
     "test:ms60": "npx tsx --test tests/unit/perspectiveAspectMatcher.test.ts",
     "test:ms56": "npx tsx --test tests/unit/measurementProvenance.test.ts",
     "test:ms55": "npx tsx --test tests/unit/planeEligibility.test.ts",
