@@ -439,8 +439,9 @@ export function ProductFilter({ isMobile = false }: { isMobile?: boolean }) {
   const renderAluminumFinishContent = () => (
     <div className="flex w-full flex-col gap-4">
       <div>
-        <p className="text-[12px] leading-[1.4] tracking-[-0.228px] text-[#c3c3c3] pl-6 lg:pl-12.5 mb-1">
-          Anodized Finish
+        <p className="text-[12px] leading-[1.4] tracking-[-0.228px] pl-6 lg:pl-12.5 mb-1">
+          <span className="font-medium text-neutral-700">Anodized Finish</span>{" "}
+          <span className="text-[#c3c3c3] font-normal">(Select all that apply)</span>
         </p>
         <div className="flex flex-col pl-6 lg:pl-12.5">
           {anodizedFinish.map((item) => {
@@ -495,8 +496,9 @@ export function ProductFilter({ isMobile = false }: { isMobile?: boolean }) {
       </div>
 
       <div>
-        <p className="text-[12px] leading-[1.4] tracking-[-0.228px] text-[#c3c3c3] pl-6 lg:pl-12.5 mb-1">
-          Powder-Coated Finish
+        <p className="text-[12px] leading-[1.4] tracking-[-0.228px] pl-6 lg:pl-12.5 mb-1">
+          <span className="font-medium text-neutral-700">Powder-Coated Finish</span>{" "}
+          <span className="text-[#c3c3c3] font-normal">(Select all that apply)</span>
         </p>
         <div className="flex flex-col pl-6 lg:pl-12.5">
           {powderCoatedFinish.map((item) => {
@@ -551,8 +553,9 @@ export function ProductFilter({ isMobile = false }: { isMobile?: boolean }) {
       </div>
 
       <div className="flex w-full flex-col gap-0.75 items-start pl-6 lg:pl-12.5">
-        <p className="text-[12px] leading-[1.4] tracking-[-0.228px] text-[#c3c3c3] mb-1.5">
-          Profile
+        <p className="text-[12px] leading-[1.4] tracking-[-0.228px] mb-1.5">
+          <span className="font-medium text-neutral-700">Profile</span>{" "}
+          <span className="text-[#c3c3c3] font-normal">(Select all that apply)</span>
         </p>
         <div className="flex flex-col gap-1.25 w-full">
           {[aluminumProfiles.slice(0, 2), aluminumProfiles.slice(2)].map(
@@ -595,8 +598,9 @@ export function ProductFilter({ isMobile = false }: { isMobile?: boolean }) {
   const renderGlassFinishContent = () => (
     <div className="flex w-full flex-col gap-4">
       <div>
-        <p className="text-[12px] leading-[1.4] tracking-[-0.228px] text-[#c3c3c3] pl-6 lg:pl-12.5 mb-1">
-          Tint
+        <p className="text-[12px] leading-[1.4] tracking-[-0.228px] pl-6 lg:pl-12.5 mb-1">
+          <span className="font-medium text-neutral-700">Tint</span>{" "}
+          <span className="text-[#c3c3c3] font-normal">(Select all that apply)</span>
         </p>
         <div className="flex flex-col pl-6 lg:pl-12.5">
           {glassFinish.map((item) => {
@@ -651,8 +655,9 @@ export function ProductFilter({ isMobile = false }: { isMobile?: boolean }) {
       </div>
 
       <div className="flex w-full flex-col gap-0.75 items-start pl-6 lg:pl-12.5">
-        <p className="text-[12px] leading-[1.4] tracking-[-0.228px] text-[#c3c3c3] mb-1.5">
-          Profile
+        <p className="text-[12px] leading-[1.4] tracking-[-0.228px] mb-1.5">
+          <span className="font-medium text-neutral-700">Profile</span>{" "}
+          <span className="text-[#c3c3c3] font-normal">(Select all that apply)</span>
         </p>
         <div className="flex flex-col gap-1.25 w-full">
           {[glassProfiles.slice(0, 2), glassProfiles.slice(2)].map(
@@ -691,8 +696,9 @@ export function ProductFilter({ isMobile = false }: { isMobile?: boolean }) {
       </div>
 
       <div className="flex w-full flex-col gap-0.75 items-start pl-6 lg:pl-12.5">
-        <p className="text-[12px] leading-[1.4] tracking-[-0.228px] text-[#c3c3c3] mb-1.5">
-          Glass Thickness
+        <p className="text-[12px] leading-[1.4] tracking-[-0.228px] mb-1.5">
+          <span className="font-medium text-neutral-700">Glass Thickness</span>{" "}
+          <span className="text-[#c3c3c3] font-normal">(Select all that apply)</span>
         </p>
         <div className="flex gap-1.25 w-full flex-wrap">
           {thickness.map((p) => {
