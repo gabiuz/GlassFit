@@ -12,6 +12,14 @@ export function FilterChips() {
   // Build list of active filters
   const chips: { type: string; value?: string; label: string }[] = [];
 
+  // Search query
+  if (filters.searchQuery.trim().length > 0) {
+    chips.push({
+      type: "searchQuery",
+      label: `Search: "${filters.searchQuery.trim()}"`,
+    });
+  }
+
   // Price range
   if (filters.range[0] !== MIN_PRICE || filters.range[1] !== MAX_PRICE) {
     chips.push({
@@ -20,8 +28,8 @@ export function FilterChips() {
     });
   }
 
-  // Category (if different from default "Doors")
-  if (filters.selectedCategory !== "Doors") {
+  // Category (if different from default "All")
+  if (filters.selectedCategory !== "All") {
     chips.push({
       type: "category",
       label: `Category: ${filters.selectedCategory}`,

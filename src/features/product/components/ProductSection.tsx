@@ -1,6 +1,6 @@
 "use client";
-import React from "react";
-import { ProductFilterProvider, useProductFilter } from "./ProductFilterContext";
+import React, { useContext } from "react";
+import { ProductFilterContext, ProductFilterProvider, useProductFilter } from "./ProductFilterContext";
 import { ProductFilter } from "./ProductFilter";
 import { ProductCard } from "./ProductCard";
 import { MobileFilterBar } from "./MobileFilterBar";
@@ -9,12 +9,12 @@ import { FilterChips } from "./FilterChips";
 import type { CatalogProduct } from "@/lib/products/types";
 
 interface ProductSectionProps {
-  initialProducts: CatalogProduct[];
+  initialProducts?: CatalogProduct[];
   fetchError: string | null;
 }
 
-function ProductSectionContent({ fetchError }: { fetchError: string | null }) {
-  const { filteredProducts, resetFilters, allProducts } = useProductFilter();
+export function ProductSectionContent({ fetchError }: { fetchError: string | null }) {
+  const { filteredProducts, resetFilters, allProducts, filters } = useProductFilter();
 
   // Error state
   if (fetchError) {
@@ -25,7 +25,7 @@ function ProductSectionContent({ fetchError }: { fetchError: string | null }) {
     );
   }
 
-  // Empty state — all products returned from DB, no active records
+  // Empty state: all products returned from DB, no active records
   if (allProducts.length === 0) {
     return (
       <section className="p-4 md:p-6 lg:p-10 flex flex-col items-center justify-center py-24">
@@ -59,7 +59,9 @@ function ProductSectionContent({ fetchError }: { fetchError: string | null }) {
         ) : (
           <div className="w-full flex flex-col items-center justify-center py-16 px-4 text-center">
             <p className="text-lg text-neutral-400 font-normal">
-              No products match your selected filters.
+              {filters.searchQuery.trim().length > 0
+                ? `No products match "${filters.searchQuery.trim()}" with your selected filters.`
+                : "No products match your selected filters."}
             </p>
             <button
               type="button"
@@ -79,8 +81,14 @@ function ProductSectionContent({ fetchError }: { fetchError: string | null }) {
 }
 
 export function ProductSection({ initialProducts, fetchError }: ProductSectionProps) {
+  const existingContext = useContext(ProductFilterContext);
+
+  if (existingContext) {
+    return <ProductSectionContent fetchError={fetchError} />;
+  }
+
   return (
-    <ProductFilterProvider initialProducts={initialProducts}>
+    <ProductFilterProvider initialProducts={initialProducts ?? []}>
       <ProductSectionContent fetchError={fetchError} />
     </ProductFilterProvider>
   );
