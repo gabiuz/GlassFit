@@ -5,7 +5,7 @@
 **Version:** 1.3 (Capstone Production Release)
 **Owner:** Jedia Nicole I. Sagun (Quality Assurance Lead) & GlassFit Capstone Team (PUP CCIS)
 **Status:** Locked
-**Last reconciled:** October 19, 2026 (Added QAD-TC75 and QAD-TC76 for comparative fiducial accuracy benchmark and empirical release gates)
+**Last reconciled:** October 21, 2026 (MS62 implementation evidence recorded; QAD-TC77 browser acceptance pending)
 **PRD:** docs/prd-glassfit.md
 
 ---
@@ -23,8 +23,11 @@
 
 ## 2. Traceable Test Catalog
 
+**MS62 precedence (implemented; browser acceptance pending):** QAD-TC77 supersedes earlier intake-mode expectations in QAD-TC60/63/66/68 that default or `auto_detect` uploads localize paper or open paper review. Automatic Detection is the default paper-free success-modal flow; retain `standard` as a legacy paper-free API mode. Execute existing paper-specific detection, review, seed, and suggestion regressions with `paper_fiducial`, preserving their other assertions and existing supersession notes. MS61 `MOD-AUTO` remains automatic paper localization in the benchmark, not automatic user intake. Existing physical accuracy gates remain separate and are not certified by MS62.
+
 | Test ID | Traces to PRD | Test Scenario Description | Preconditions | Execution Steps | Expected Result | Severity |
 |---|---|---|---|---|---|---|
+| QAD-TC77 | PRD-F3, PRD-F4, PRD-F5, PRD-F6, PRD-F10 | Automatic Detection and Paper Reference Calibration isolation | Both upload entry paths, API, and restored workspace sessions | Execute QAD-TC77.1 through QAD-TC77.12 below | Automatic flow is paper-free; paper-mode functionality and legitimate prior work retained under the explicit restoration policy | P0 |
 | QAD-TC1 | PRD-F1 | Public catalog rendering and category filtering | Unauthenticated user on homepage | 1. Navigate to `/product`<br>2. Click category filter 'Window'<br>3. Verify displayed cards | Only products categorized under 'Window' are displayed; cards show image, name, and base price | P1 |
 | QAD-TC2 | PRD-F2 | Interactive 3D model inspector orbit and inspection | Product detail page loaded | 1. Open product page<br>2. Drag on 3D canvas to orbit<br>3. Pinch or scroll to zoom | 3D GLB model rotates smoothly in 360 degrees; texture maps load without WebGL context loss | P1 |
 | QAD-TC3 | PRD-F3 | Space image upload and client-side pre-flight validation | Visualization workspace open | 1. Attempt upload of a 13 MB file<br>2. Attempt upload of a .pdf file<br>3. Upload a valid 4 MB JPG image | Over-limit and invalid files trigger clear validation feedback; the valid image renders on the preview canvas immediately | P0 |
@@ -332,4 +335,28 @@ Traces to IMP-MS61, PRD-F3, PRD-F4, PRD-F5, PRD-F6, PRD-F10, SDD-C2, SDD-C3, SDD
 | Maximum Relative Error (E_rel, max) | <= 7.0% | <= 5.0% | <= 6.0% | No accepted planar measurement deviates by more than 5.0% on width or height. |
 | Mean Time to Confirmation (MTTC) | < 3.0 s | < 6.0 s | > 35.0 s | 1 tap delivers full manual accuracy with an 80%+ reduction in interaction time. |
 | Coplanar Safety (MS55 Invariant) | 0 false promotions | 0 false promotions | 0 false promotions | Non-coplanar or handheld paper must never be promoted to trusted metric status. |
+
+
+## QAD-TC77: Automatic Detection and Paper Reference Calibration Isolation (IMP-MS62)
+
+**Status:** Implemented with automated evidence; browser acceptance pending. Traces to IMP-MS62, PRD-F3, PRD-F4, PRD-F5, PRD-F6, PRD-F10, SDD-C2, SDD-C3, SDD-C4, SDD-C5, DSD-UI3, DSD-UI4, DSD-UI7, BRD-M1, BRD-M5. See [MS62 implementation contract](implementation/ms62.md) for exact response fields, request-mode authority, restoration policy, affected files, and execution commands.
+
+The implementation adds `npm run test:ms62` with existing test tooling. Run it alongside the specified MS53/MS55/MS56/MS58/MS60/MS61 regressions and `python -m pytest tests/test_paper_calibration.py -q` from `fastapi-service`. Run lint, typecheck, build, and the CV health check. Browser acceptance must cover both upload entry paths at desktop and mobile widths. Detector spies must prove zero calls for automatic/standard requests; a response-only check is insufficient. Preserve paper regression assertions by moving their endpoint fixtures to paper mode.
+
+Automated results are recorded in [MS62 section 9](implementation/ms62.md#9-implementation-evidence-october-21-2026); browser acceptance remains pending. Execute upload cases on both product-specific and direct visualization entry paths. Section references in this table refer to IMP-MS62.
+
+| ID | Scenario and execution | Required outcome | Severity |
+|---|---|---|---|
+| QAD-TC77.1 | Automatic upload without paper, then activate success action | Success modal followed by existing workspace; no paper dialog, selector, Pin Paper, or Adjust Marker | P0 |
+| QAD-TC77.2 | Automatic upload with visible paper | Same flow; both client paper aliases absent; automatic heuristic metadata | P0 |
+| QAD-TC77.3 | Paper upload with visible paper; also blank/ambiguous image and detector failure | Detector invoked; review opens with evidence or manual recovery; confirm/skip retain behavior | P0 |
+| QAD-TC77.4 | API automatic, standard, and omitted mode, with/without valid extra paper/seed fields; spy on detector | Zero calls; exact section 4.1 contract; invalid seed validation unchanged | P0 |
+| QAD-TC77.5 | Non-paper object anchors with depth correction and EXIF; separately no anchors/no EXIF and optional model unavailability | Existing values and both scale aliases preserved; no fabricated EXIF/scene anchors or forced paper fallback | P1 |
+| QAD-TC77.6 | Paper click-guided snap, candidate selection, manual corners, standard change, and skip | Review, geometry/plane gates, and recovery preserved; no new accuracy claim | P0 |
+| QAD-TC77.7 | Automatic request receives paper-mode metadata, candidates, verified claims, or missing metadata | Request mode wins; paper fields and stale metric evidence cleared; non-paper analysis retained | P0 |
+| QAD-TC77.8 | Paper request receives missing/contradictory mode or malformed evidence | Remains paper mode; manual review/skip available; response cannot auto-verify | P0 |
+| QAD-TC77.9 | Restore each section 4.4 row twice, including both aliases and invalid reviewed geometry | Idempotent restoration; automatic has no paper prompts; reviewed legacy work becomes paper mode subject to existing validators | P0 |
+| QAD-TC77.10 | Automatic/paper sessions add/change products, reload, and return from quotation | Mode and valid user work persist; no automatic paper prompt or stale eligibility; manual tape precedence retained | P0 |
+| QAD-TC77.11 | Cancel/retry, replace pending request, and change selector state while response is pending | Cancelled/replaced response ignored; captured request mode controls result, never later selector state | P1 |
+| QAD-TC77.12 | Inspect selectors, guidance, success modal, and workspace at desktop/mobile widths | Exactly two existing visible modes; automatic copy paper-free; styling, keyboard/focus behavior, and paper guidance preserved | P1 |
 

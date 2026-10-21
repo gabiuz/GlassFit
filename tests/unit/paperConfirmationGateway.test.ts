@@ -195,7 +195,7 @@ describe("IMP-MS51 / QAD-TC66: Pre-Workspace Fiducial Paper Detection Confirmati
   describe("6. False-Positive Dismissal & Fallback Handling (QAD-TC66.5 & QAD-TC66.6)", () => {
     it("emits status: heuristic_fallback and user_verified: false when user clicks Skip Calibration", () => {
       const fallbackMeta: CalibrationMetadata = {
-        mode: "standard",
+        mode: "paper_fiducial",
         paperStandard: null,
         status: "heuristic_fallback",
         confidence: 0.75,

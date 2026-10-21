@@ -137,11 +137,7 @@ export function DirectVisualizationPage({
   };
 
   const isPaperFiducialSession =
-    calibrationMode !== "standard" ||
-    pendingSession?.calibrationMeta?.mode === "paper_fiducial" ||
-    Boolean(pendingSession?.paperCalibration?.detected_corners) ||
-    Boolean(pendingSession?.calibrationMeta?.detectedCorners) ||
-    pendingSession?.calibrationMeta?.status === "manual_pin_required";
+    pendingSession?.calibrationMeta?.mode === "paper_fiducial";
 
   return (
     <main className="flex min-h-screen flex-col">

@@ -103,6 +103,10 @@ def test_endpoint_returns_workspace_coordinates_without_metric_promotion(monkeyp
     monkeypatch.setattr(main, "ENABLE_DEPTH_ESTIMATION", False)
     monkeypatch.setattr(main, "ENABLE_SCENE_DETECTION", False)
     monkeypatch.setattr(main, "analyze_objects", lambda *args, **kwargs: {"objects": [], "mode": "none", "model": None, "warning": None})
+    import paper_calibration
+    from unittest.mock import Mock
+    detector = Mock(wraps=paper_calibration.detect_paper_fiducial)
+    monkeypatch.setattr(paper_calibration, "detect_paper_fiducial", detector)
     image = scene(size=2048)
     ok, encoded = cv2.imencode(".png",image)
     assert ok
@@ -113,7 +117,15 @@ def test_endpoint_returns_workspace_coordinates_without_metric_promotion(monkeyp
         files={"image":("room.png",io.BytesIO(encoded.tobytes()),"image/png")})
     assert response.status_code == 200, response.text
     payload = response.json()
+    assert detector.call_count == (1 if mode == "paper_fiducial" else 0)
     paper = payload["paper_calibration"]
+    if mode != "paper_fiducial":
+        assert paper["status"] == "not_requested"
+        assert paper["candidates"] == []
+        assert paper["paper_standard"] is None
+        assert paper["detected_corners"] is None
+        assert paper["confidence"] == 0
+        assert payload["calibration_meta"]["status"] == "heuristic_fallback"
     assert paper["coordinate_space"] == "workspace"
     assert paper["image_width"] == payload["workspace_image"]["width"]
     assert paper["geometry_contract_version"] == "paper-plane-mm-v1"
@@ -125,7 +137,7 @@ def test_endpoint_returns_workspace_coordinates_without_metric_promotion(monkeyp
     assert paper["homography_matrix"] is None
     assert paper["scale_cm_per_px"] is None
     assert payload["calibration_meta"]["status"] not in {"calibrated","verified_calibrated"}
-    if mode != "standard":
+    if mode == "paper_fiducial":
         assert paper["candidates"]
         ratio = paper["image_width"] / 2048
         np.testing.assert_allclose(paper["candidates"][0]["corners"][0], [300*ratio,250*ratio],atol=4)
@@ -305,7 +317,7 @@ def test_qad_tc73_5_boundary_clamping_and_non_finite_safety(monkeypatch):
     # 2. Clamped negative coordinate (seed_x = -0.5) clamps safely without crashing
     resp_clamp = client.post(
         "/analyze-image",
-        data={"calibration_mode": "auto_detect", "seed_x": "-0.5", "seed_y": "0.5"},
+        data={"calibration_mode": "paper_fiducial", "seed_x": "-0.5", "seed_y": "0.5"},
         files={"image": ("room.png", io.BytesIO(encoded.tobytes()), "image/png")},
     )
     assert resp_clamp.status_code == 200
@@ -423,7 +435,7 @@ def test_qad_tc75_endpoint_returns_suggested_standard(monkeypatch):
 
     resp = client.post(
         "/analyze-image",
-        data={"calibration_mode": "auto_detect"},
+        data={"calibration_mode": "paper_fiducial"},
         files={"image": ("room.png", io.BytesIO(encoded.tobytes()), "image/png")},
     )
     assert resp.status_code == 200
@@ -435,3 +447,38 @@ def test_qad_tc75_endpoint_returns_suggested_standard(monkeypatch):
 
 
 
+
+
+@pytest.mark.parametrize("mode", [None, "auto_detect", "standard", "paper_fiducial"])
+@pytest.mark.parametrize("extra_fields", [False, True])
+def test_qad_tc77_detector_isolation_and_error_recovery(monkeypatch, mode, extra_fields):
+    import main
+    import paper_calibration
+    from unittest.mock import Mock
+    monkeypatch.setattr(main, "ENABLE_DEPTH_ESTIMATION", False)
+    monkeypatch.setattr(main, "ENABLE_SCENE_DETECTION", False)
+    monkeypatch.setattr(main, "analyze_objects", lambda *args, **kwargs: {"objects": [], "mode": "none", "model": None, "warning": None})
+    detector = Mock(side_effect=RuntimeError("detector unavailable"))
+    monkeypatch.setattr(paper_calibration, "detect_paper_fiducial", detector)
+    data = {} if mode is None else {"calibration_mode": mode}
+    if extra_fields:
+        data.update(paper_standard="a4", seed_x="0.5", seed_y="0.5")
+    ok, encoded = cv2.imencode(".png", scene(size=800))
+    assert ok
+    response = TestClient(app).post("/analyze-image", data=data,
+        files={"image": ("room.png", io.BytesIO(encoded.tobytes()), "image/png")})
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    paper = payload["paper_calibration"]
+    assert detector.call_count == (1 if mode == "paper_fiducial" else 0)
+    assert payload["calibration_meta"]["mode"] == (mode or "auto_detect")
+    assert paper["status"] == ("manual_pin_required" if mode == "paper_fiducial" else "not_requested")
+    assert paper["candidates"] == []
+    assert paper["detection_outcome"] == "not_found"
+    for field in ["paper_standard", "suggested_paper_standard", "unwarped_aspect_ratio", "selected_candidate_id", "reference_source", "detected_corners", "scale_cm_per_px", "homography_matrix"]:
+        assert paper[field] is None
+    assert paper["confidence"] == 0
+    assert paper["aspect_ratio_match_confidence"] == 0
+    assert paper["paper_standard_confirmed"] is False
+    if mode != "paper_fiducial":
+        assert payload["calibration_meta"]["status"] == "heuristic_fallback"

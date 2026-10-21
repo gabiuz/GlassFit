@@ -9,6 +9,7 @@ export const MIN_PRICE = 0;
 export const MAX_PRICE = 100000;
 
 export interface FilterState {
+  searchQuery: string;
   range: [number, number];
   selectedCategory: string;
   anodized: string[];
@@ -22,6 +23,7 @@ export interface FilterState {
 }
 
 const initialFilterState: FilterState = {
+  searchQuery: "",
   range: [MIN_PRICE, MAX_PRICE],
   selectedCategory: "All",
   anodized: [],
@@ -51,7 +53,7 @@ interface ProductFilterContextProps {
   allProducts: CatalogProduct[];
 }
 
-const ProductFilterContext = createContext<ProductFilterContextProps | undefined>(undefined);
+export const ProductFilterContext = createContext<ProductFilterContextProps | undefined>(undefined);
 
 export function useProductFilter() {
   const context = useContext(ProductFilterContext);
@@ -65,7 +67,7 @@ export function useProductFilter() {
  * Maps the database product_type to the display category label used in the filter UI.
  * These labels must match the categoryOptions defined in ProductFilter.tsx.
  */
-function productTypeToCategory(type: CatalogProduct["type"]): string {
+export function productTypeToCategory(type: CatalogProduct["type"]): string {
   switch (type) {
     case "Window":
       return "Windows";
@@ -84,8 +86,31 @@ function productTypeToCategory(type: CatalogProduct["type"]): string {
   }
 }
 
-function filterProductList(products: CatalogProduct[], state: FilterState): CatalogProduct[] {
+export function filterProductList(products: CatalogProduct[], state: FilterState): CatalogProduct[] {
+  const terms = state.searchQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
+
   return products.filter((product) => {
+    // 0. Search Query (name, type, description, category, and id)
+    if (terms.length > 0) {
+      const category = productTypeToCategory(product.type).toLowerCase();
+      const name = product.name.toLowerCase();
+      const type = product.type.toLowerCase();
+      const desc = (product.description ?? "").toLowerCase();
+      const id = product.id.toLowerCase();
+
+      const matchesAllTerms = terms.every((term) =>
+        name.includes(term) ||
+        type.includes(term) ||
+        desc.includes(term) ||
+        category.includes(term) ||
+        id.includes(term)
+      );
+
+      if (!matchesAllTerms) {
+        return false;
+      }
+    }
+
     // 1. Price Range
     if (product.basePrice > 0) {
       if (product.basePrice < state.range[0] || product.basePrice > state.range[1]) {
@@ -106,8 +131,11 @@ function filterProductList(products: CatalogProduct[], state: FilterState): Cata
   });
 }
 
-function calculateActiveFilters(state: FilterState): number {
+export function calculateActiveFilters(state: FilterState): number {
   let count = 0;
+  if (state.searchQuery.trim().length > 0) {
+    count++;
+  }
   if (state.range[0] !== MIN_PRICE || state.range[1] !== MAX_PRICE) {
     count++;
   }
@@ -168,13 +196,20 @@ export function ProductFilterProvider({ children, initialProducts }: ProductFilt
   };
 
   const resetDraftFilters = () => {
-    setDraftFilters(initialFilterState);
+    setDraftFilters((prev) => ({
+      ...initialFilterState,
+      searchQuery: prev.searchQuery,
+    }));
   };
 
   const removeChipFilter = (type: string, value?: string) => {
     setFilters((prev) => {
       const next = { ...prev };
       switch (type) {
+        case "searchQuery":
+        case "search":
+          next.searchQuery = "";
+          break;
         case "range":
           next.range = [MIN_PRICE, MAX_PRICE];
           break;

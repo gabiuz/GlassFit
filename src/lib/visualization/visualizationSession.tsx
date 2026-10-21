@@ -9,7 +9,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { SpaceImageSession } from "@/lib/imageApi";
+import { normalizeNonPaperSession, type SpaceImageSession } from "@/lib/imageApi";
 import type {
   ActiveOverlay,
   PlacedOverlay,
@@ -590,6 +590,17 @@ export function readStoredVisualizationSession(): VisualizationSessionState {
           ? parsed.finalSnapshotDataUrl
           : null,
     };
+    // IMP-MS62: preserve explicit review, but never infer it from detector confidence.
+    const image = restored.spaceImageSession;
+    if (image) {
+      const meta = image.calibrationMeta;
+      const reviewed = meta?.user_verified === true || meta?.status === "verified_calibrated";
+      if (meta && (meta.mode === "paper_fiducial" || (meta.mode !== "standard" && reviewed))) {
+        restored.spaceImageSession = { ...image, calibrationMeta: { ...meta, mode: "paper_fiducial" } };
+      } else {
+        restored.spaceImageSession = normalizeNonPaperSession(image, meta?.mode === "standard" ? "standard" : "auto_detect");
+      }
+    }
     return validateSessionPlaneEligibility(restored);
   } catch {
     return initialState;
