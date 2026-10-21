@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { resolveSafeRedirectPath } from "@/lib/auth/redirectPath";
 
 export async function GET(request: NextRequest) {
     const requestUrl = new URL(request.url);
     const code = requestUrl.searchParams.get("code");
-    const next = requestUrl.searchParams.get("next") ?? "/";
+    const next = resolveSafeRedirectPath(requestUrl.searchParams, "/");
     // OAuth callbacks pass type=oauth so we can skip the "confirmed" login banner.
     // Email confirmation links do NOT include this param.
     const type = requestUrl.searchParams.get("type");
@@ -27,12 +28,12 @@ export async function GET(request: NextRequest) {
         );
     }
 
-    // OAuth login/signup: user is already authenticated — go directly to destination.
+    // OAuth login/signup: user is already authenticated: go directly to destination.
     if (type === "oauth") {
         return NextResponse.redirect(new URL(next, request.url));
     }
 
-    // Email confirmation: user still needs to log in — show the success banner.
+    // Email confirmation: user still needs to log in: show the success banner.
     if (next === "/") {
         return NextResponse.redirect(new URL("/login?confirmed=1", request.url));
     }

@@ -7,7 +7,8 @@ import {
     upsertProductParameters,
     upsertStructuralRules,
     UpsertParameterInput,
-    UpsertRuleInput
+    UpsertRuleInput,
+    RuleType
 } from "@/lib/admin/products/parameterMutations";
 
 export type ParametersAndRulesSectionProps = {
@@ -62,7 +63,7 @@ export function ParametersAndRulesSection({ templateId, modelStrategy, productTy
                 parameter_type: "Number",
                 minimum_value: 500,
                 default_value: 1200,
-                maximum_value: 3600,
+                maximum_value: null,
                 step_value: 1,
                 unit: "mm",
                 affects_structure: true,
@@ -74,7 +75,7 @@ export function ParametersAndRulesSection({ templateId, modelStrategy, productTy
                 parameter_type: "Number",
                 minimum_value: 500,
                 default_value: 1200,
-                maximum_value: 3000,
+                maximum_value: null,
                 step_value: 1,
                 unit: "mm",
                 affects_structure: true,
@@ -97,7 +98,7 @@ export function ParametersAndRulesSection({ templateId, modelStrategy, productTy
                 rulesList.push({
                     rule_name: "2-Panel Wide Window (1 Center Mullion)",
                     priority: 1,
-                    condition_data: { parameter_key: "width", operator: ">=", value: 1800 },
+                    condition_data: { rule_type: "when_then", parameter_key: "width", operator: ">=", value: 1800 },
                     action_data: { target_type: "component", target_key: defaultCenterKey, action_type: "set_quantity", value: 1 }
                 });
             }
@@ -106,7 +107,7 @@ export function ParametersAndRulesSection({ templateId, modelStrategy, productTy
                 rulesList.push({
                     rule_name: "2-Panel Glass Infill (2 Glass Panels)",
                     priority: 2,
-                    condition_data: { parameter_key: "width", operator: ">=", value: 1800 },
+                    condition_data: { rule_type: "when_then", parameter_key: "width", operator: ">=", value: 1800 },
                     action_data: { target_type: "component", target_key: defaultGlassKey, action_type: "set_quantity", value: 2 }
                 });
             }
@@ -115,7 +116,7 @@ export function ParametersAndRulesSection({ templateId, modelStrategy, productTy
                 rulesList.push({
                     rule_name: "3-Panel Extra Wide Window (2 Center Mullions)",
                     priority: 3,
-                    condition_data: { parameter_key: "width", operator: ">=", value: 2600 },
+                    condition_data: { rule_type: "when_then", parameter_key: "width", operator: ">=", value: 2600 },
                     action_data: { target_type: "component", target_key: defaultCenterKey, action_type: "set_quantity", value: 2 }
                 });
             }
@@ -124,7 +125,7 @@ export function ParametersAndRulesSection({ templateId, modelStrategy, productTy
                 rulesList.push({
                     rule_name: "3-Panel Glass Infill (3 Glass Panels)",
                     priority: 4,
-                    condition_data: { parameter_key: "width", operator: ">=", value: 2600 },
+                    condition_data: { rule_type: "when_then", parameter_key: "width", operator: ">=", value: 2600 },
                     action_data: { target_type: "component", target_key: defaultGlassKey, action_type: "set_quantity", value: 3 }
                 });
             }
@@ -200,7 +201,7 @@ export function ParametersAndRulesSection({ templateId, modelStrategy, productTy
                 parameter_type: "Number",
                 minimum_value: 0,
                 default_value: 0,
-                maximum_value: 100,
+                maximum_value: null,
                 step_value: 1,
                 unit: "mm",
                 affects_structure: true,
@@ -226,13 +227,23 @@ export function ParametersAndRulesSection({ templateId, modelStrategy, productTy
 
     const addRule = () => {
         const fallbackTarget = componentKeys[0]?.key || "frame-center";
-        const newRules = [
+        const newRules: UpsertRuleInput[] = [
             ...rules,
             {
                 rule_name: `Rule ${rules.length + 1}`,
                 priority: rules.length + 1,
-                condition_data: { parameter_key: parameters[0]?.parameter_key || "width", operator: ">=", value: 0 },
-                action_data: { target_type: "component", target_key: fallbackTarget, action_type: "set_quantity", value: 1 }
+                condition_data: { 
+                    rule_type: "when_then",
+                    parameter_key: parameters[0]?.parameter_key || "width", 
+                    operator: ">=", 
+                    value: 0 
+                },
+                action_data: { 
+                    target_type: "component", 
+                    target_key: fallbackTarget, 
+                    action_type: "set_quantity", 
+                    value: 1 
+                }
             }
         ];
         setRules(newRules);
@@ -392,14 +403,23 @@ export function ParametersAndRulesSection({ templateId, modelStrategy, productTy
                                     className="border border-neutral-200 rounded-[8px] px-3 py-1.5 text-sm focus:border-[#07b6d3] outline-none"
                                 />
                             </div>
-                            <div className="flex flex-col gap-1 w-24">
+                            <div className="flex flex-col gap-1 w-28">
                                 <label className="text-xs font-medium text-neutral-600">Max</label>
-                                <input 
-                                    type="number" 
-                                    value={param.maximum_value || 1000} 
-                                    onChange={(e) => updateParameter(index, { maximum_value: parseFloat(e.target.value) })}
-                                    className="border border-neutral-200 rounded-[8px] px-3 py-1.5 text-sm focus:border-[#07b6d3] outline-none"
-                                />
+                                {param.parameter_key === "width" || param.parameter_key === "height" ? (
+                                    <div className="flex items-center h-[38px] px-2.5 rounded-[8px] bg-neutral-100 border border-neutral-200 text-xs text-neutral-500 font-medium">
+                                        No Max (Open)
+                                    </div>
+                                ) : (
+                                    <input 
+                                        type="number" 
+                                        placeholder="No Max"
+                                        value={param.maximum_value ?? ""} 
+                                        onChange={(e) => updateParameter(index, { 
+                                            maximum_value: e.target.value === "" ? null : parseFloat(e.target.value) 
+                                        })}
+                                        className="border border-neutral-200 rounded-[8px] px-3 py-1.5 text-sm focus:border-[#07b6d3] outline-none"
+                                    />
+                                )}
                             </div>
                             <div className="flex flex-col gap-1 w-20">
                                 <label className="text-xs font-medium text-neutral-600">Step</label>
@@ -439,90 +459,209 @@ export function ParametersAndRulesSection({ templateId, modelStrategy, productTy
                             No rules defined. Components will use their base quantity.
                         </div>
                     )}
-                    {rules.map((rule, index) => (
-                        <div key={index} className="flex flex-col gap-4 bg-[#fcfcfc] border border-neutral-200 p-4 rounded-[12px]">
-                            <div className="flex items-center justify-between">
-                                <input 
-                                    type="text" 
-                                    value={rule.rule_name}
-                                    onChange={(e) => updateRule(index, { rule_name: e.target.value })}
-                                    className="font-medium bg-transparent outline-none text-[#0f1422] focus:border-b border-[#07b6d3]"
-                                />
-                                <button onClick={() => removeRule(index)} className="p-1 text-neutral-400 hover:text-red-500 transition-colors">
-                                    <X className="size-4" />
-                                </button>
-                            </div>
-                            
-                            <div className="flex flex-wrap items-center gap-3 bg-white p-3 rounded-[8px] border border-neutral-100 shadow-sm">
-                                <span className="text-sm font-semibold text-neutral-500 w-12">WHEN</span>
-                                <select 
-                                    className="border border-neutral-200 rounded-md px-2 py-1.5 text-sm outline-none focus:border-[#07b6d3]"
-                                    value={rule.condition_data.parameter_key}
-                                    onChange={(e) => updateRule(index, { condition_data: { ...rule.condition_data, parameter_key: e.target.value } })}
-                                >
-                                    <option value="">Select Param...</option>
-                                    {parameters.map(p => (
-                                        <option key={p.parameter_key} value={p.parameter_key}>{p.parameter_name}</option>
-                                    ))}
-                                </select>
-                                <select 
-                                    className="border border-neutral-200 rounded-md px-2 py-1.5 text-sm outline-none focus:border-[#07b6d3] w-20"
-                                    value={rule.condition_data.operator}
-                                    onChange={(e) => updateRule(index, { condition_data: { ...rule.condition_data, operator: e.target.value } })}
-                                >
-                                    <option value=">=">&gt;=</option>
-                                    <option value="<=">&lt;=</option>
-                                    <option value="==">==</option>
-                                    <option value=">">&gt;</option>
-                                    <option value="<">&lt;</option>
-                                </select>
-                                <input 
-                                    type="number" 
-                                    className="border border-neutral-200 rounded-md px-2 py-1.5 text-sm outline-none focus:border-[#07b6d3] w-24"
-                                    value={rule.condition_data.value}
-                                    onChange={(e) => updateRule(index, { condition_data: { ...rule.condition_data, value: parseFloat(e.target.value) } })}
-                                />
-                            </div>
+                    {rules.map((rule, index) => {
+                        const isLoop = rule.condition_data.rule_type === "loop";
+                        return (
+                            <div key={index} className="flex flex-col gap-4 bg-[#fcfcfc] border border-neutral-200 p-4 rounded-[12px]">
+                                <div className="flex items-center justify-between">
+                                    <input 
+                                        type="text" 
+                                        value={rule.rule_name}
+                                        onChange={(e) => updateRule(index, { rule_name: e.target.value })}
+                                        className="font-medium bg-transparent outline-none text-[#0f1422] focus:border-b border-[#07b6d3]"
+                                    />
+                                    <button onClick={() => removeRule(index)} className="p-1 text-neutral-400 hover:text-red-500 transition-colors">
+                                        <X className="size-4" />
+                                    </button>
+                                </div>
 
-                            <div className="flex flex-wrap items-center gap-3 bg-white p-3 rounded-[8px] border border-neutral-100 shadow-sm">
-                                <span className="text-sm font-semibold text-neutral-500 w-12">THEN</span>
-                                <select 
-                                    className="border border-neutral-200 rounded-md px-2 py-1.5 text-sm outline-none focus:border-[#07b6d3]"
-                                    value={rule.action_data.target_type}
-                                    onChange={(e) => updateRule(index, { action_data: { ...rule.action_data, target_type: e.target.value } })}
-                                >
-                                    <option value="component">Component</option>
-                                    <option value="parameter">Parameter</option>
-                                </select>
-                                <select 
-                                    className="border border-neutral-200 rounded-md px-2 py-1.5 text-sm outline-none focus:border-[#07b6d3]"
-                                    value={rule.action_data.target_key}
-                                    onChange={(e) => updateRule(index, { action_data: { ...rule.action_data, target_key: e.target.value } })}
-                                >
-                                    <option value="">Select Target...</option>
-                                    {rule.action_data.target_type === "component" 
-                                        ? componentKeys.map(c => <option key={c.key} value={c.key}>{c.name}</option>)
-                                        : parameters.map(p => <option key={p.parameter_key} value={p.parameter_key}>{p.parameter_name}</option>)
-                                    }
-                                </select>
-                                <select 
-                                    className="border border-neutral-200 rounded-md px-2 py-1.5 text-sm outline-none focus:border-[#07b6d3]"
-                                    value={rule.action_data.action_type}
-                                    onChange={(e) => updateRule(index, { action_data: { ...rule.action_data, action_type: e.target.value } })}
-                                >
-                                    <option value="set_quantity">Set Quantity</option>
-                                    <option value="add_quantity">Add to Quantity</option>
-                                    <option value="set_visibility">Set Visibility (1 or 0)</option>
-                                </select>
-                                <input 
-                                    type="number" 
-                                    className="border border-neutral-200 rounded-md px-2 py-1.5 text-sm outline-none focus:border-[#07b6d3] w-24"
-                                    value={rule.action_data.value}
-                                    onChange={(e) => updateRule(index, { action_data: { ...rule.action_data, value: parseFloat(e.target.value) } })}
-                                />
+                                {/* Rule Type Selector */}
+                                <div className="flex items-center gap-2">
+                                    <span className="text-xs font-medium text-neutral-500">Rule Type:</span>
+                                    <div className="inline-flex rounded-lg border border-neutral-200 p-0.5 bg-neutral-50">
+                                        <button
+                                            type="button"
+                                            onClick={() => updateRule(index, { 
+                                                condition_data: { 
+                                                    ...rule.condition_data, 
+                                                    rule_type: "when_then",
+                                                    operator: rule.condition_data.operator || ">=",
+                                                    value: rule.condition_data.value ?? 1800
+                                                } 
+                                            })}
+                                            className={`text-xs px-2.5 py-1 rounded-md font-medium transition-colors ${
+                                                !isLoop
+                                                    ? "bg-white text-[#0f1422] shadow-xs"
+                                                    : "text-neutral-500 hover:text-neutral-900"
+                                            }`}
+                                        >
+                                            Threshold (WHEN / THEN)
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => updateRule(index, { 
+                                                condition_data: { 
+                                                    ...rule.condition_data, 
+                                                    rule_type: "loop",
+                                                    step_value: rule.condition_data.step_value || 500,
+                                                    start_value: rule.condition_data.start_value ?? 1000
+                                                },
+                                                action_data: {
+                                                    ...rule.action_data,
+                                                    action_type: rule.action_data.action_type || "add_quantity",
+                                                    value: rule.action_data.value || 1
+                                                }
+                                            })}
+                                            className={`text-xs px-2.5 py-1 rounded-md font-medium transition-colors ${
+                                                isLoop
+                                                    ? "bg-white text-[#0f1422] shadow-xs"
+                                                    : "text-neutral-500 hover:text-neutral-900"
+                                            }`}
+                                        >
+                                            Step Loop (FOR EVERY ... ADD ...)
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {isLoop ? (
+                                    <div className="flex flex-col gap-3">
+                                        {/* Loop Condition Row */}
+                                        <div className="flex flex-wrap items-center gap-2 bg-white p-3 rounded-[8px] border border-neutral-100 shadow-sm text-sm">
+                                            <span className="font-semibold text-[#07b6d3]">FOR EVERY</span>
+                                            <input 
+                                                type="number"
+                                                min="1"
+                                                placeholder="500"
+                                                className="border border-neutral-200 rounded-md px-2 py-1.5 text-sm outline-none focus:border-[#07b6d3] w-20 text-center font-mono"
+                                                value={rule.condition_data.step_value ?? 500}
+                                                onChange={(e) => updateRule(index, { condition_data: { ...rule.condition_data, step_value: parseFloat(e.target.value) || 0 } })}
+                                            />
+                                            <span className="text-neutral-600">mm added to</span>
+                                            <select 
+                                                className="border border-neutral-200 rounded-md px-2 py-1.5 text-sm outline-none focus:border-[#07b6d3]"
+                                                value={rule.condition_data.parameter_key}
+                                                onChange={(e) => updateRule(index, { condition_data: { ...rule.condition_data, parameter_key: e.target.value } })}
+                                            >
+                                                <option value="">Select Param...</option>
+                                                {parameters.map(p => (
+                                                    <option key={p.parameter_key} value={p.parameter_key}>{p.parameter_name}</option>
+                                                ))}
+                                            </select>
+                                            <span className="text-neutral-600">above</span>
+                                            <input 
+                                                type="number"
+                                                placeholder="1000"
+                                                className="border border-neutral-200 rounded-md px-2 py-1.5 text-sm outline-none focus:border-[#07b6d3] w-24 text-center font-mono"
+                                                value={rule.condition_data.start_value ?? 0}
+                                                onChange={(e) => updateRule(index, { condition_data: { ...rule.condition_data, start_value: parseFloat(e.target.value) || 0 } })}
+                                            />
+                                            <span className="text-neutral-500 text-xs">mm</span>
+                                        </div>
+
+                                        {/* Loop Action Row */}
+                                        <div className="flex flex-wrap items-center gap-2 bg-white p-3 rounded-[8px] border border-neutral-100 shadow-sm text-sm">
+                                            <span className="font-semibold text-emerald-600">THEN</span>
+                                            <select 
+                                                className="border border-neutral-200 rounded-md px-2 py-1.5 text-sm outline-none focus:border-[#07b6d3]"
+                                                value={rule.action_data.action_type}
+                                                onChange={(e) => updateRule(index, { action_data: { ...rule.action_data, action_type: e.target.value } })}
+                                            >
+                                                <option value="add_quantity">Add to Quantity</option>
+                                                <option value="set_quantity">Set Quantity</option>
+                                            </select>
+                                            <input 
+                                                type="number" 
+                                                min="1"
+                                                className="border border-neutral-200 rounded-md px-2 py-1.5 text-sm outline-none focus:border-[#07b6d3] w-20 text-center font-mono"
+                                                value={rule.action_data.value ?? 1}
+                                                onChange={(e) => updateRule(index, { action_data: { ...rule.action_data, value: parseFloat(e.target.value) || 0 } })}
+                                            />
+                                            <span className="text-neutral-600">of component</span>
+                                            <select 
+                                                className="border border-neutral-200 rounded-md px-2 py-1.5 text-sm outline-none focus:border-[#07b6d3]"
+                                                value={rule.action_data.target_key}
+                                                onChange={(e) => updateRule(index, { action_data: { ...rule.action_data, target_key: e.target.value } })}
+                                            >
+                                                <option value="">Select Target...</option>
+                                                {componentKeys.map(c => <option key={c.key} value={c.key}>{c.name}</option>)}
+                                            </select>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <div className="flex flex-wrap items-center gap-3 bg-white p-3 rounded-[8px] border border-neutral-100 shadow-sm">
+                                            <span className="text-sm font-semibold text-neutral-500 w-12">WHEN</span>
+                                            <select 
+                                                className="border border-neutral-200 rounded-md px-2 py-1.5 text-sm outline-none focus:border-[#07b6d3]"
+                                                value={rule.condition_data.parameter_key}
+                                                onChange={(e) => updateRule(index, { condition_data: { ...rule.condition_data, parameter_key: e.target.value } })}
+                                            >
+                                                <option value="">Select Param...</option>
+                                                {parameters.map(p => (
+                                                    <option key={p.parameter_key} value={p.parameter_key}>{p.parameter_name}</option>
+                                                ))}
+                                            </select>
+                                            <select 
+                                                className="border border-neutral-200 rounded-md px-2 py-1.5 text-sm outline-none focus:border-[#07b6d3] w-20"
+                                                value={rule.condition_data.operator || ">="}
+                                                onChange={(e) => updateRule(index, { condition_data: { ...rule.condition_data, operator: e.target.value } })}
+                                            >
+                                                <option value=">=">&gt;=</option>
+                                                <option value="<=">&lt;=</option>
+                                                <option value="==">==</option>
+                                                <option value=">">&gt;</option>
+                                                <option value="<">&lt;</option>
+                                            </select>
+                                            <input 
+                                                type="number" 
+                                                className="border border-neutral-200 rounded-md px-2 py-1.5 text-sm outline-none focus:border-[#07b6d3] w-24"
+                                                value={rule.condition_data.value ?? 0}
+                                                onChange={(e) => updateRule(index, { condition_data: { ...rule.condition_data, value: parseFloat(e.target.value) || 0 } })}
+                                            />
+                                        </div>
+
+                                        <div className="flex flex-wrap items-center gap-3 bg-white p-3 rounded-[8px] border border-neutral-100 shadow-sm">
+                                            <span className="text-sm font-semibold text-neutral-500 w-12">THEN</span>
+                                            <select 
+                                                className="border border-neutral-200 rounded-md px-2 py-1.5 text-sm outline-none focus:border-[#07b6d3]"
+                                                value={rule.action_data.target_type}
+                                                onChange={(e) => updateRule(index, { action_data: { ...rule.action_data, target_type: e.target.value } })}
+                                            >
+                                                <option value="component">Component</option>
+                                                <option value="parameter">Parameter</option>
+                                            </select>
+                                            <select 
+                                                className="border border-neutral-200 rounded-md px-2 py-1.5 text-sm outline-none focus:border-[#07b6d3]"
+                                                value={rule.action_data.target_key}
+                                                onChange={(e) => updateRule(index, { action_data: { ...rule.action_data, target_key: e.target.value } })}
+                                            >
+                                                <option value="">Select Target...</option>
+                                                {rule.action_data.target_type === "component" 
+                                                    ? componentKeys.map(c => <option key={c.key} value={c.key}>{c.name}</option>)
+                                                    : parameters.map(p => <option key={p.parameter_key} value={p.parameter_key}>{p.parameter_name}</option>)
+                                                }
+                                            </select>
+                                            <select 
+                                                className="border border-neutral-200 rounded-md px-2 py-1.5 text-sm outline-none focus:border-[#07b6d3]"
+                                                value={rule.action_data.action_type}
+                                                onChange={(e) => updateRule(index, { action_data: { ...rule.action_data, action_type: e.target.value } })}
+                                            >
+                                                <option value="set_quantity">Set Quantity</option>
+                                                <option value="add_quantity">Add to Quantity</option>
+                                                <option value="set_visibility">Set Visibility (1 or 0)</option>
+                                            </select>
+                                            <input 
+                                                type="number" 
+                                                className="border border-neutral-200 rounded-md px-2 py-1.5 text-sm outline-none focus:border-[#07b6d3] w-24"
+                                                value={rule.action_data.value ?? 0}
+                                                onChange={(e) => updateRule(index, { action_data: { ...rule.action_data, value: parseFloat(e.target.value) || 0 } })}
+                                            />
+                                        </div>
+                                    </>
+                                )}
                             </div>
-                        </div>
-                    ))}
+                        );
+                    })}
 
                     <button onClick={addRule} className="flex items-center gap-2 text-sm text-[#07b6d3] font-medium hover:text-[#06a2bc] px-2 py-1 self-start transition-colors">
                         <Plus className="size-4" /> Add Rule

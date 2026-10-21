@@ -7,6 +7,7 @@
  */
 
 import { z } from "zod";
+import { MeasurementRecordSchema } from "@/lib/visualization/measurementRecord";
 import { QuotationDocumentDraftV1Schema, QuotationDocumentSnapshotV1Schema } from "@/lib/pricing/quotationDocument";
 
 // ----------------------------------------------------------------------------
@@ -56,6 +57,8 @@ export const ItemizedProductQuotationInputSchema = z.object({
   totalPrice: z.number().nonnegative(),
   imageUrl: z.string().optional(),
   bomResult: z.unknown().optional(),
+  dimensionSource: z.string().optional(),
+  calibrationProvenance: MeasurementRecordSchema.nullable().optional(),
 });
 export type ItemizedProductQuotationInput = z.infer<typeof ItemizedProductQuotationInputSchema>;
 

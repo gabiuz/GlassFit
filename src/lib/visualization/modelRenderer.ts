@@ -30,6 +30,11 @@ export type LoadedModelResult = {
   capabilities: ProductMaterialCapabilities;
 };
 
+export type PreparedProductModel = LoadedModelResult & {
+  group: THREE.Group;
+  sharedGeometry: boolean;
+};
+
 // Cache the environment map globally so we only download the HDR once
 let cachedEnvironmentMap: THREE.Texture | null = null;
 let isEnvironmentLoading = false;
@@ -205,7 +210,20 @@ export class ProductModelRenderer {
     presentation: ModelPresentationOptions,
   ): Promise<LoadedModelResult | undefined> {
     const loadVersion = (this.modelLoadVersion += 1);
+    const prepared = await this.prepareModel(definition, values, presentation);
+    if (loadVersion !== this.modelLoadVersion) {
+      this.releasePreparedModel(prepared);
+      return;
+    }
+    this.commitPreparedModel(prepared);
+    return { capabilities: prepared.capabilities };
+  }
 
+  async prepareModel(
+    definition: ProductStructuralDefinition,
+    values: Record<string, unknown>,
+    presentation: ModelPresentationOptions,
+  ): Promise<PreparedProductModel> {
     const group =
       definition.template.modelStrategy === "Fixed"
         ? await this.loadFixedModel(definition, presentation)
@@ -226,18 +244,23 @@ export class ProductModelRenderer {
       console.warn("Failed to load environment map", e);
     }
 
-    if (loadVersion !== this.modelLoadVersion) {
-      return;
-    }
+    return { group, capabilities, sharedGeometry: definition.template.modelStrategy !== "Fixed" };
+  }
 
+  commitPreparedModel(prepared: PreparedProductModel) {
+    this.modelLoadVersion += 1;
     while (this.modelGroup.children.length > 0) {
       const child = this.modelGroup.children[0];
       this.modelGroup.remove(child);
+      releaseModelGroup(child, child.userData.sharedGeometry === true);
     }
+    prepared.group.userData.sharedGeometry = prepared.sharedGeometry;
+    this.modelGroup.add(prepared.group);
+    this.materialCapabilities = prepared.capabilities;
+  }
 
-    this.modelGroup.add(group);
-    this.materialCapabilities = capabilities;
-    return { capabilities };
+  releasePreparedModel(prepared: PreparedProductModel) {
+    releaseModelGroup(prepared.group, prepared.sharedGeometry);
   }
 
   updatePresentation(
@@ -459,9 +482,20 @@ export class ProductModelRenderer {
   }
 
   dispose() {
-    disposeOwnedModelMaterials(this.modelGroup);
+    for (const child of [...this.modelGroup.children]) {
+      releaseModelGroup(child, child.userData.sharedGeometry === true);
+    }
     this.renderer.dispose();
   }
+}
+
+function releaseModelGroup(root: THREE.Object3D, sharedGeometry: boolean) {
+  root.traverse((object) => {
+    if (!(object instanceof THREE.Mesh)) return;
+    if (!sharedGeometry || object.userData.sharedCachedGeometry !== true) object.geometry.dispose();
+    const materials = Array.isArray(object.material) ? object.material : [object.material];
+    for (const material of materials) material.dispose();
+  });
 }
 
 function disposeOwnedModelMaterials(root: THREE.Object3D) {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, Suspense } from "react";
-import { Loader2, Play, CheckCircle2, ChevronRight, ChevronDown, Check, EyeOff, AlertTriangle, Calculator, ShieldAlert, Sparkles } from "lucide-react";
+import { Loader2, Play, CheckCircle2, AlertTriangle, Calculator, ShieldAlert, Sparkles } from "lucide-react";
 import { fetchDraftStructuralDefinition } from "@/lib/admin/products/validationMutations";
 import { ProductStructuralDefinition, ResolvedStructure } from "@/lib/visualization/types";
 import { ComponentModelCache, preloadComponentModels } from "@/lib/visualization/componentModelCache";
@@ -227,7 +227,7 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
         definition.parameters.forEach(p => {
             tests[0].params[p.parameterKey] = Number(p.defaultValue);
             tests[3].params[p.parameterKey] = p.minimumValue !== null ? Number(p.minimumValue) : Number(p.defaultValue);
-            tests[4].params[p.parameterKey] = p.maximumValue !== null ? Number(p.maximumValue) : Number(p.defaultValue);
+            tests[4].params[p.parameterKey] = p.maximumValue !== null ? Number(p.maximumValue) : 10000;
         });
 
         const results = tests.map(test => {
@@ -367,27 +367,43 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
                             <Calculator className="size-3.5 text-[#07b6d3]" />
                         </h3>
                         <div className="flex flex-col gap-3.5">
-                            {definition.parameters.map(p => (
-                                <div key={p.parameterKey} className="flex flex-col gap-1.5">
-                                    <div className="flex justify-between items-center text-xs">
-                                        <label className="font-medium text-neutral-700">{p.parameterName}</label>
-                                        <span className="font-mono text-[#07b6d3] font-semibold">{parameters[p.parameterKey]} {p.unit}</span>
+                            {definition.parameters.map(p => {
+                                const isUnconstrained = p.maximumValue === null || p.maximumValue === undefined;
+                                const sliderMax = isUnconstrained ? 10000 : (p.maximumValue ?? 3600);
+                                const sliderMin = p.minimumValue ?? 500;
+                                const currentVal = parameters[p.parameterKey] ?? (typeof p.defaultValue === "number" ? p.defaultValue : sliderMin);
+
+                                return (
+                                    <div key={p.parameterKey} className="flex flex-col gap-1.5">
+                                        <div className="flex justify-between items-center text-xs">
+                                            <label className="font-medium text-neutral-700">{p.parameterName}</label>
+                                            <div className="flex items-center gap-1.5">
+                                                <input
+                                                    type="number"
+                                                    min={sliderMin}
+                                                    value={currentVal}
+                                                    onChange={(e) => handleParameterChange(p.parameterKey, parseFloat(e.target.value) || sliderMin)}
+                                                    className="w-20 text-right font-mono text-[#07b6d3] font-semibold border border-neutral-200 rounded px-1.5 py-0.5 text-xs focus:border-[#07b6d3] outline-none"
+                                                />
+                                                <span className="text-neutral-400 font-mono text-xs">{p.unit}</span>
+                                            </div>
+                                        </div>
+                                        <input 
+                                            type="range"
+                                            min={sliderMin}
+                                            max={sliderMax}
+                                            step={p.stepValue ?? 10}
+                                            value={currentVal}
+                                            onChange={(e) => handleParameterChange(p.parameterKey, parseFloat(e.target.value))}
+                                            className="w-full accent-[#07b6d3] cursor-pointer"
+                                        />
+                                        <div className="flex justify-between text-[10px] text-neutral-400 font-mono">
+                                            <span>{sliderMin}mm</span>
+                                            <span>{isUnconstrained ? "10,000mm (Open)" : `${sliderMax}mm`}</span>
+                                        </div>
                                     </div>
-                                    <input 
-                                        type="range"
-                                        min={p.minimumValue ?? 600}
-                                        max={p.maximumValue ?? 3600}
-                                        step={p.stepValue ?? 10}
-                                        value={parameters[p.parameterKey]}
-                                        onChange={(e) => handleParameterChange(p.parameterKey, parseFloat(e.target.value))}
-                                        className="w-full accent-[#07b6d3] cursor-pointer"
-                                    />
-                                    <div className="flex justify-between text-[10px] text-neutral-400 font-mono">
-                                        <span>{p.minimumValue ?? 600}mm</span>
-                                        <span>{p.maximumValue ?? 3600}mm</span>
-                                    </div>
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     </div>
 

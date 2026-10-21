@@ -5,7 +5,7 @@
 **Version:** 1.0 (Capstone Production Release)  
 **Owner:** Reynard John B. Rabanal (Lead Product / Systems Architect) & GlassFit Capstone Team (PUP CCIS)  
 **Status:** Locked  
-**Last reconciled:** October 1, 2026 (Added IMP-MS39 rotation stepper and IMP-MS40 neutral perspective-fit orientation traceability)
+**Last reconciled:** October 21, 2026 (Implemented IMP-MS63 resilient HEIC ingestion, downscaled paper detection, and /snap-paper; QAD-TC78 verification)
 
 ---
 
@@ -43,6 +43,23 @@ GlassFit is a responsive, web-based photo-simulation and consultation-support pl
 | IMP-MS38 | Quotation Preview and Browser-Saved PDF Reliability | `docs/implementation/ms38.md` | Ready for Implementation | October 1, 2026 | GlassFit Capstone Team |
 | IMP-MS39 | Discrete Yaw and Pitch Degree Stepper Controls | `docs/implementation/ms39.md` | Implemented | October 1, 2026 | GlassFit Capstone Team |
 | IMP-MS40 | Reset Yaw and Pitch to Zero After Perspective Fit Placement | `docs/implementation/ms40.md` | Ready for Implementation | October 1, 2026 | GlassFit Capstone Team |
+| IMP-MS42 | Context-Aware Obstruction Soft-Warning Tooltips | `docs/implementation/ms42.md` | Implemented | October 1, 2026 | GlassFit Capstone Team |
+| IMP-MS43 | Unconstrained Dimension Parameters and Incremental Step-Loop Structural Rules | `docs/implementation/ms43.md` | Implemented | October 1, 2026 | GlassFit Capstone Team |
+| IMP-MS44 | Seamless Cross-Product Switching in the Visualization Workspace | `docs/implementation/ms44.md` | Implemented, pending manual QA | October 2, 2026 | GlassFit Capstone Team |
+| IMP-MS47 | Interactive Fiducial Pin Fallback and Precision Dimension Grounding | `docs/implementation/ms47.md` | Implemented | October 19, 2026 | GlassFit Capstone Team |
+| IMP-MS48 | Autonomous Multi-Standard Paper Fiducial Detection and Resilient Scale Engine | `docs/implementation/ms48.md` | Implemented | October 19, 2026 | GlassFit Capstone Team |
+| IMP-MS49 | Session-Permanent Calibration State and Fallback Pinning Lifecycle | `docs/implementation/ms49.md` | Implemented | October 19, 2026 | GlassFit Capstone Team |
+| IMP-MS53 | Reliable Automatic Paper Detection and Reference Selection | `docs/implementation/ms53.md` | Implemented, pending MS57 real-photo validation | October 19, 2026 | GlassFit Capstone Team |
+| IMP-MS54 | Perspective-Correct Metric Measurement and Coordinate Integrity | `docs/implementation/ms54.md` | Implemented, pending MS57 real-photo validation | October 19, 2026 | GlassFit Capstone Team |
+| IMP-MS50 | Grounded Real-World 3D Model Sizing and Quotation Parity | `docs/implementation/ms50.md` | Implemented | October 19, 2026 | GlassFit Capstone Team |
+| IMP-MS56 | Consistent Model Dimensions, Calibration Revisions, and Quotation Provenance | `docs/implementation/ms56.md` | Implemented, pending MS57 physical and browser validation | October 19, 2026 | GlassFit Capstone Team |
+| IMP-MS57 | Real-World Measurement Benchmark and Release Gates | `docs/implementation/ms57.md` | Tooling implemented; physical evidence and release acceptance pending | October 19, 2026 | GlassFit Capstone Team |
+| IMP-MS58 | Click-Guided Interactive Paper Localization and Seed-Constrained Selection | `docs/implementation/ms58.md` | Implemented | October 19, 2026 | GlassFit Capstone Team |
+| IMP-MS59 | Sub-Pixel Edge Snapping, Magnetic Loupe Alignment, and Corner Refinement | `docs/implementation/ms59.md` | Implemented | October 19, 2026 | GlassFit Capstone Team |
+| IMP-MS60 | Perspective Unwarping Aspect Ratio Matcher, Standard Auto-Suggestion, and Model Sizing Parity | `docs/implementation/ms60.md` | Implemented | October 19, 2026 | GlassFit Capstone Team |
+| IMP-MS61 | Empirical Real-World Accuracy Benchmark and Comparative Release Protocol | `docs/implementation/ms61.md` | Implemented | October 19, 2026 | GlassFit Capstone Team |
+| IMP-MS62 | Separate Automatic Detection from Paper Reference Calibration | `docs/implementation/ms62.md` | Implemented; browser acceptance pending | October 21, 2026 | GlassFit Capstone Team |
+| IMP-MS63 | Resilient HEIC Space Image Ingestion, Network-Tolerant Conversion, and Low-Latency Paper Detection Pipeline | `docs/implementation/ms63.md` | Implemented | October 21, 2026 | GlassFit Capstone Team |
 
 ---
 
@@ -50,6 +67,8 @@ GlassFit is a responsive, web-based photo-simulation and consultation-support pl
 
 | Business Metric (`BRD-M#`) | Product Feature (`PRD-F#`) | System Component (`SDD-C#`) | Data Entity (`ERD-E#`) | Test Case (`QAD-TC#`) | Status |
 |---|---|---|---|---|---|
+| BRD-M1, BRD-M5 | PRD-F3, PRD-F4, PRD-F5, PRD-F6, PRD-F10 | SDD-C2, SDD-C3, SDD-C4, SDD-C5 | No schema change; existing session state and immutable quotation snapshots retained | QAD-TC77.1 through QAD-TC77.12 | IMP-MS62 implemented; browser acceptance pending |
+| BRD-M1, BRD-M4, BRD-M6 (Mobile Intake Resilience & Latency) | PRD-F3, PRD-F4, PRD-F10 | SDD-C2, SDD-C3 | N/A (Client Blob Buffering & Temporary Session Files) | QAD-TC78.1 through QAD-TC78.8 | Implemented |
 | BRD-M1 (Compress Intake Duration) | PRD-F13 (Signed Booking Link & Messaging Handoff) | SDD-C8 (Signed Booking Link & Messaging Handoff) | ERD-E15 (signed_booking_links), ERD-E16 (booking_requests) | QAD-TC13 | Verified |
 | BRD-M2 (Reduce Design Revisions) | PRD-F5 (Parametric 3D Assembly), PRD-F6 (Visualization Workspace) | SDD-C4 (Parametric 3D Assembly Engine), SDD-C5 (Visualization Canvas) | ERD-E4 (product_templates), ERD-E5 (product_parameters), ERD-E6 (product_components), ERD-E7 (structural_rules) | QAD-TC5, QAD-TC6, QAD-TC16, QAD-TC17 | Verified |
 | BRD-M3 (Elevate Conversion to Ocular) | PRD-F9 (Compositing & Snapshot), PRD-F13 (Signed Booking Link) | SDD-C6 (Canvas Compositor), SDD-C8 (Signed Booking Link) | ERD-E10 (visualization_snapshots), ERD-E15 (signed_booking_links) | QAD-TC9, QAD-TC13 | Verified |
@@ -66,8 +85,15 @@ GlassFit is a responsive, web-based photo-simulation and consultation-support pl
 | BRD-M3, BRD-M5 (Quotation Reliability & PDF Integrity) | PRD-F10, PRD-F11 (Quotation Preview & Consultation PDF) | SDD-C7 (Quotation Engine & PDF Generator) | ERD-E13 (quotation_estimates), ERD-E14 (quotation_items) | QAD-TC53 | Ready for Implementation |
 | BRD-M4 (Achieve High Usability) | PRD-F6 (Photo-Based Visualization Workspace) | SDD-C5 (Visualization Canvas) | N/A (Transient Presentation State) | QAD-TC54 | Implemented |
 | BRD-M4 (Achieve High Usability) | PRD-F6 (Photo-Based Visualization Workspace) | SDD-C5 (Visualization Canvas) | N/A (Transient Presentation State) | QAD-TC55 | Ready for Implementation |
+| BRD-M2, BRD-M4 (Parametric Scalability & Catalog Flexibility) | PRD-F5, PRD-F14 | SDD-C4, SDD-C9 | ERD-E4, ERD-E5, ERD-E6, ERD-E7 | QAD-TC58 | Implemented |
+| BRD-M2, BRD-M4 (Cross-Product Workspace Continuity) | PRD-F6 | SDD-C4, SDD-C5, SDD-C6 | ERD-E4, ERD-E5, ERD-E6, ERD-E7 | QAD-TC59 | Implemented, pending manual QA |
+| BRD-M1, BRD-M5, BRD-M6 (Precision Scale & Quotation Grounding) | PRD-F3, PRD-F4, PRD-F6, PRD-F10 | SDD-C2, SDD-C3, SDD-C5, SDD-C7 | ERD-E10, ERD-E14 | QAD-TC60, QAD-TC61, QAD-TC62, QAD-TC63, QAD-TC64 | Implemented |
 
 ---
+
+MS53 traceability: BRD-M1, BRD-M5, BRD-M6 -> PRD-F3, PRD-F4 -> SDD-C2, SDD-C3 -> DSD-UI3 -> QAD-TC68. Localization, actual paper format, and placement evidence are separate contracts. Real-photo release validation remains pending in MS57.
+
+MS57 traceability: BRD-M1, BRD-M5, BRD-M6 -> PRD-F3, PRD-F4, PRD-F5, PRD-F6, PRD-F10 -> SDD-C3, SDD-C4, SDD-C5, SDD-C7 -> QAD-TC72. Offline benchmark tooling exists; missing physical captures and manual browser evidence block release acceptance. No additional database entity or UI surface is introduced.
 
 ## 4. Subsystem Governance & DRI Registry
 
@@ -86,6 +112,9 @@ GlassFit is a responsive, web-based photo-simulation and consultation-support pl
 
 | Revision Date | Target Document | Author | Nature of Revision | Pull Request Ref |
 |---|---|---|---|---|
+| October 21, 2026 | `docs/implementation/ms63.md`, `src/lib/imageApi.ts`, `fastapi-service/main.py`, `src/features/visualization/` | GlassFit Capstone Team | Implemented resilient HEIC space image ingestion, exponential backoff retry, early WebP downscaled paper detection, session-bound /snap-paper endpoint, local blob buffering, and registered QAD-TC78 | Pending |
+| October 21, 2026 | MS62 implementation and tests | GlassFit Capstone Team | Implemented mode isolation, legacy restoration, and paper skip recovery; automated evidence in MS62 section 9, browser acceptance pending | Pending |
+| October 21, 2026 | `docs/implementation/ms62.md`, PRD, SDD, DSD, QAD, milestones, and index | GlassFit Capstone Team | Specified paper-free Automatic Detection, exclusive paper-mode localization/review, request-authoritative mapping, legacy session policy, and QAD-TC77; documentation only | Pending |
 | September 9, 2026 | `docs/brd-glassfit.md` | Reynard John B. Rabanal | Initial production baseline reconciling PUP CCIS Chapters 1-3 manuscript, SME fabricator economic data, and business metrics | PR #1 |
 | September 9, 2026 | `docs/prd-glassfit.md` | Reynard John B. Rabanal | Comprehensive PRD baseline aligning 20 product features with active Next.js and FastAPI implementations | PR #2 |
 | September 9, 2026 | `docs/sdd-glassfit.md` | Reynard John B. Rabanal | Authoritative architectural blueprint documenting Next.js 16, FastAPI CV service, Supabase, and R2 pipeline contracts | PR #3 |
@@ -110,8 +139,15 @@ GlassFit is a responsive, web-based photo-simulation and consultation-support pl
 | October 1, 2026 | `docs/implementation/ms38.md`, `docs/dsd-glassfit.md`, `docs/qad-glassfit.md`, `docs/milestone.md`, `docs/index.md` | GlassFit Capstone Team | Reconciled quotation preview and browser-saved PDF reliability, DSD-UI16, and QAD-TC53 | Pending |
 | October 1, 2026 | `docs/implementation/ms39.md`, `docs/qad-glassfit.md`, `docs/milestone.md`, `docs/index.md` | GlassFit Capstone Team | Registered discrete yaw and pitch stepper controls, reconciled 44px minimum touch targets and narrow-width stacking with DSD-UI15/IMP-MS37, and extended QAD-TC54 verification | Pending |
 | October 1, 2026 | `docs/implementation/ms40.md`, `docs/prd-glassfit.md`, `docs/sdd-glassfit.md`, `docs/qad-glassfit.md`, `docs/milestone.md`, `docs/index.md` | GlassFit Capstone Team | Added the PRD-F6 neutral orientation requirement for perspective-fit confirmation, SDD-C5 state behavior, QAD-TC55, and sequential MS39/MS40 traceability | Pending |
-
-
+| October 1, 2026 | `docs/implementation/ms43.md`, `docs/index.md`, `src/lib/visualization/structuralResolver.ts`, `src/features/admin/products/setup/ParametersAndRulesSection.tsx`, `src/features/admin/products/setup/ValidationWorkspaceSection.tsx` | GlassFit Capstone Team | Implemented unconstrained width/height dimension parameters, incremental step-loop structural rules ("FOR EVERY ... ADD ..."), and QAD-TC58 verification | Pending |
+| October 2, 2026 | `docs/implementation/ms44.md`, `docs/qad-glassfit.md`, `docs/milestone.md`, `docs/index.md` | GlassFit Capstone Team | Implemented staged cross-product workspace switching and registered QAD-TC59; browser acceptance remains pending | Pending |
+| October 19, 2026 | `docs/implementation/ms47.md`, `docs/qad-glassfit.md`, `docs/index.md`, `package.json` | GlassFit Capstone Team | Implemented interactive fiducial pin fallback modal, direct coplanar scale dimension grounding, workspace HUD calibrated badge, and QAD-TC62 verification | Pending |
+| October 19, 2026 | `docs/implementation/ms48.md`, `fastapi-service/paper_calibration.py`, `fastapi-service/main.py`, `docs/qad-glassfit.md`, `docs/index.md` | GlassFit Capstone Team | Implemented autonomous multi-standard paper fiducial detection, adaptive multi-scale edge closing, orientation normalization, and QAD-TC63 verification | Pending |
+| October 19, 2026 | `docs/implementation/ms49.md`, `src/lib/visualization/visualizationSession.tsx`, `src/features/visualization/components/ProductModelWorkspace.tsx`, `docs/qad-glassfit.md`, `docs/index.md` | GlassFit Capstone Team | Implemented session-permanent calibration state persistence, cross-product transition preservation, non-intrusive fallback lifecycle, and QAD-TC64 verification | Pending |
+| October 19, 2026 | `docs/implementation/ms50.md`, `src/lib/visualization/scaleEstimation.ts`, `src/features/visualization/components/MeasurementConfirmationModal.tsx`, `src/features/visualization/components/ProductModelWorkspace.tsx`, `src/lib/pricing/quotationDocument.ts`, `src/lib/booking/bookingActions.ts`, `docs/qad-glassfit.md`, `docs/milestone.md`, `docs/index.md` | GlassFit Capstone Team | Implemented direct coplanar scale dimension grounding, scale-aware initial sizing for added products, perspective quadrilateral fit synchronization, quotation trust badge choice cards, verified physical measurement persistence, and QAD-TC65 verification | Pending |
+| October 19, 2026 | `docs/implementation/ms51.md`, `src/features/visualization/components/PaperDetectionConfirmationModal.tsx`, `docs/qad-glassfit.md`, `docs/milestone.md`, `docs/index.md` | GlassFit Capstone Team | Implemented pre-workspace fiducial paper detection confirmation gateway, interactive 2.5x loupe refinement, convexity validation, non-blocking heuristic fallback, and QAD-TC66 verification | Pending |
+| October 19, 2026 | `docs/implementation/ms52.md`, `src/lib/visualization/scaleEstimation.ts`, `src/features/visualization/components/ProductModelWorkspace.tsx`, `src/features/visualization/components/PerspectivePlanePicker.tsx`, `src/features/visualization/components/MeasurementConfirmationModal.tsx`, `src/lib/visualization/visualizationSession.tsx`, `tests/unit/groundedModelDimensionAccuracy.test.ts`, `docs/qad-glassfit.md`, `docs/milestone.md`, `docs/index.md` | GlassFit Capstone Team | Implemented grounded model dimensioning accuracy, real-time bounding box badges, perspective plane millimeter edge readouts, in-workspace marker re-adjustment hot-rescaling, quotation audit parity, and QAD-TC67 verification | Pending |
+| October 19, 2026 | `docs/implementation/ms58.md`, `fastapi-service/paper_calibration.py`, `fastapi-service/main.py`, `src/lib/imageApi.ts`, `src/lib/visualization/paperReference.ts`, `src/features/visualization/components/PaperDetectionConfirmationModal.tsx`, `src/features/visualization/components/FiducialPaperPickerModal.tsx`, `docs/qad-glassfit.md`, `docs/milestone.md`, `docs/index.md` | GlassFit Capstone Team | Implemented click-guided interactive paper localization, seed-constrained candidate selection, Tier 1/Tier 2 local adaptive ROI segmentation, tap-to-snap UI feedback, and QAD-TC73 verification | Pending |
 
 ---
 
@@ -122,3 +158,14 @@ GlassFit is a responsive, web-based photo-simulation and consultation-support pl
 - [x] Traceability matrix contains no orphaned business metrics or missing test cases
 - [x] Subsystem domains have assigned primary and secondary DRIs
 - [x] AGENTS hard bans applied; VOICE polish pass completed without em-dashes
+
+MS54 traceability: BRD-M5, BRD-M6 -> PRD-F4, PRD-F5, PRD-F6, PRD-F10 -> SDD-C3, SDD-C4, SDD-C5 -> DSD-UI4 -> QAD-TC69. Metric geometry is versioned in session/configuration JSON; no database schema change. Real-photo release validation remains pending in MS57.
+
+
+MS55 traceability: BRD-M5, BRD-M6 -> PRD-F3, PRD-F4, PRD-F6, PRD-F10 -> SDD-C3, SDD-C5 -> DSD-UI3, DSD-UI4, DSD-UI7 -> QAD-TC70. Implemented versioned user placement declarations, per-opening plane assignment, recovery choices, and domain eligibility gates. Real-photo release validation remains MS57.
+
+MS56 traceability: IMP-MS56 / BRD-M2, BRD-M5, BRD-M6 -> PRD-F5, PRD-F6, PRD-F10, PRD-F11 -> SDD-C4, SDD-C5, SDD-C7 -> DSD-UI4, DSD-UI7 -> ERD-E11, ERD-E13, ERD-E14 -> QAD-TC71. Implemented on October 19, 2026; MS57 physical validation and browser acceptance remain pending. See [MS56](implementation/ms56.md).
+
+MS58 traceability: BRD-M1, BRD-M5, BRD-M6 -> PRD-F3, PRD-F4 -> SDD-C2, SDD-C3 -> DSD-UI3 -> QAD-TC73. Single-click paper seed localization constrains candidate selection and extracts localized paper boundaries on tap; integrates with confirmation gateway and manual loupe fallbacks. See [MS58](implementation/ms58.md).
+ 
+MS63 traceability: BRD-M1, BRD-M4, BRD-M6 -> PRD-F3, PRD-F4, PRD-F10 -> SDD-C2, SDD-C3 -> QAD-TC78.1 through QAD-TC78.8. Implemented client-side exponential backoff retry across network drops, early WebP downscaled paper detection, session-bound /snap-paper endpoint, and local blob URL buffering. See [MS63](implementation/ms63.md).

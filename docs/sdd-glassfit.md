@@ -5,7 +5,7 @@
 **Version:** 1.0 (Capstone Production Release)  
 **Owner:** Reynard John B. Rabanal (Lead Product / Systems Architect) & GlassFit Capstone Team (PUP CCIS)  
 **Status:** Locked  
-**Last reconciled:** October 1, 2026 (Added IMP-MS37 compact viewport gesture isolation and neutral perspective-fit orientation contracts)
+**Last reconciled:** October 21, 2026 (Updated SDD-C2/SDD-C3 for IMP-MS63 resilient HEIC ingestion, early WebP generation, downscaled paper detection, and /snap-paper)
 **PRD:** docs/prd-glassfit.md
 
 ---
@@ -42,8 +42,8 @@ Asynchronous hybrid multi-tier web architecture decoupling interactive client-si
 | Component ID | Component Name | Runtime Layer | Architectural Responsibility | Traces to PRD | Dependencies |
 |---|---|---|---|---|---|
 | SDD-C1 | Public Catalog & 3D Inspector | Next.js Client / SSR | Renders public product browsing catalog, filter grids, and interactive 360-degree Three.js WebGL model inspector on product detail pages. | PRD-F1, PRD-F2 | Supabase `products`, `product_assets`, Cloudflare R2 CDN, Three.js GLTFLoader |
-| SDD-C2 | Space Image Pre-Flight Validator | Next.js Client | Accepts static JPEG, PNG, WebP, HEIC, and HEIF files up to 12 MB; reconciles MIME and filename extension; validates browser-decodable formats; and delegates HEIC or HEIF decode validation to the server when the active browser lacks native support. | PRD-F3 | HTML5 File API, Image Decode API, `src/lib/imageApi.ts` |
-| SDD-C3 | Computer Vision Scene Analyzer | FastAPI Python Backend | Validates uploaded image bytes and decoded format, rejects animated or oversized decoded images, decodes HEIC and HEIF through a pinned `pillow-heif` adapter, normalizes those formats to JPEG for OpenCV, extracts scene measurements, runs YOLOv8s-seg foreground masks, and caches session WebP images. | PRD-F4, PRD-F7, PRD-F8 | FastAPI, Pillow, pillow-heif, OpenCV, NumPy, Ultralytics YOLOv8, PyTorch |
+| SDD-C2 | Space Image Pre-Flight Validator & Transport | Next.js Client | Accepts static JPEG, PNG, WebP, HEIC, and HEIF files up to 12 MB; reconciles MIME and filename extension; validates browser-decodable formats; delegates server decode validation; executes exponential backoff retries with jitter over unstable networks; retains dropzone file state; and buffers local image blobs for offline confirmation. | PRD-F3 | HTML5 File API, Image Decode API, `src/lib/imageApi.ts` |
+| SDD-C3 | Computer Vision Scene Analyzer | FastAPI Python Backend | Validates uploaded image bytes and format, decodes HEIC/HEIF via `pillow-heif`, normalizes orientation, generates early workspace WebP, executes depth estimation, luminance analysis, and paper fiducial detection directly on downscaled workspace BGR (<180ms), serves `/snap-paper` session-bound snapping, and runs YOLOv8s-seg foreground masks. | PRD-F4, PRD-F7, PRD-F8 | FastAPI, Pillow, pillow-heif, OpenCV, NumPy, Ultralytics YOLOv8, PyTorch |
 | SDD-C4 | Parametric 3D Assembly & Guardrail Engine | Three.js Client Runtime | Evaluates structural rules, leaf dead loads (2.5 rule), and width thresholds (W >= 2400mm) to dynamically assemble modular components or trigger Behavior B hybrid confirmation modals. | PRD-F5 | Three.js, `src/lib/visualization/guardrailEngine.ts`, Supabase `structural_rules` |
 | SDD-C5 | Photo-Based Visualization Canvas | Next.js Client / HTML5 | Manages interactive placement, drag translation, uniform scaling, yaw/pitch rotation, neutral yaw=0 and pitch=0 state after perspective-fit confirmation, layer reordering, environmental lighting filters, glass modes, foreground occlusion, and nested-safe compact viewport gesture isolation. | PRD-F6, PRD-F7, PRD-F8, PRD-F16 | HTML Canvas 2D, Three.js WebGLRenderer, Pointer Events, CSS Dynamic Viewport Units, FastAPI Mask endpoints |
 | SDD-C6 | Canvas Compositor & Snapshot Pipeline | Next.js Client / Edge | Blends background space photo, active/cached 3D product layers, contact shadows, and foreground occlusion masks into a flattened PNG snapshot; uploads to Cloudflare R2. | PRD-F9, PRD-F15 | HTML5 Canvas `toBlob()`, S3 Presigned URL client, Cloudflare R2, Supabase `visualization_snapshots` |
@@ -60,7 +60,8 @@ Asynchronous hybrid multi-tier web architecture decoupling interactive client-si
 | Method | Endpoint Route | Auth Required | Request Payload / DTO | Response Payload / DTO | Target Latency (p95) |
 |---|---|---|---|---|---|
 | GET | `/health` | No | None | `{"status": "ok"}` | < 50 ms |
-| POST | `/analyze-image` | No | Multipart Form: `image` (JPG/PNG <= 12MB) | JSON: `SpaceImageSession` (session_id, brightness, lighting, objects, masks) | < 2,000 ms |
+| POST | `/analyze-image` | No | Multipart Form: `image` (JPG/PNG/WEBP/HEIC <= 12MB) | JSON: `SpaceImageSession` (session_id, brightness, lighting, objects, masks) | < 2,000 ms |
+| POST | `/snap-paper` | No | Form or JSON: `session_id`, `seed_x`, `seed_y`, `paper_standard` (optional) | JSON: `PaperFiducialResult` (corners, status, candidates) | < 150 ms |
 | GET | `/masks/{session_id}/{filename}` | No | URL parameters | Binary image stream (PNG mask) | < 150 ms |
 | GET | `/generated/sessions/{session_id}/workspace.webp` | No | URL parameters | Binary image stream (Optimized WebP workspace) | < 200 ms |
 | GET | `/api/products` | No | Query params: `category`, `status` | Array of `ProductDetail` objects with primary assets | < 180 ms |
@@ -153,3 +154,38 @@ The shared identity module normalizes names before Auth or profile mutation. Set
 - [x] Dependency failure modes and circuit breaker behaviors are established
 - [x] No flowcharts, decision trees, or box diagrams use code blocks with arrows or box-drawing characters
 - [x] AGENTS hard bans applied; VOICE polish pass completed without em-dashes
+
+
+## MS53 Reference Selection Reconciliation
+
+SDD-C2 and SDD-C3 (IMP-MS53 / QAD-TC68, intake scope superseded by IMP-MS62): paper-mode POST /analyze-image returns Pydantic-ranked candidate boundaries, evidence components, rejection reasons, selection outcome, and workspace-coordinate dimensions. Localization does not set metric scale or homography. The TypeScript adapter validates paper evidence only for paper-mode intake and prevents legacy calibrated defaults; reviewed reference commitment replaces stale geometry and synchronizes response aliases. MS54 owns projective geometry and MS55 owns plane eligibility.
+
+SDD-C3, SDD-C4, SDD-C5 (IMP-MS54 / QAD-TC69): the detector returns oriented-source-to-workspace mapping and coordinate image identity without a metric matrix. After review, the client recomputes a versioned paper-plane-mm-v1 workspace_pixels_to_plane_mm transform from final workspace corners and explicit physical edge correspondence. The shared metric evaluator owns projection, rectangular-fit rejection, horizon checks, and independent width/height sensitivity diagnostics. Active fit, picker callouts, and calibration-triggered session recalculation use it. Legacy centimeter matrices and scalar fields cannot establish valid metric status. Product fabrication guardrails remain separate from unrounded physical readings. This contract supersedes earlier scalar calibration requirements; provisional quality gates require MS57 freezing.
+
+
+SDD-C3 and SDD-C5 (IMP-MS55 / QAD-TC70): CalibrationMetadata.placementReview stores plane-placement-v1, assessment, riskReasons, and targetPlaneId. Product configurations bind targetPlaneId per opening. The shared plane eligibility evaluator gates geometry consumers, record creation, recalculation, quotation review, and session restoration. Person proximity alone is advisory. Manual dimensions remain independent; image identity mismatch invalidates photo eligibility. No database migration is required.
+
+SDD-C4, SDD-C5, SDD-C7 (IMP-MS56 / QAD-TC71): `measurementRecord.ts` validates MS54 geometry and MS55 placement into versioned provenance, including canonical image identity, opening corners, target plane, calibration/measurement revisions, unrounded millimeter dimensions, edge spans, and sensitivity. Model parameters and pricing consume the same unrounded values. Session hydration revalidates drafts; server quotation draft validation reproduces the measurement. Store `calibration_provenance` beside `dimension_source` in existing `pricing_details` JSONB and `calibrationProvenance` in frozen canonical item JSON. No schema or RLS change.
+
+SDD-C3, SDD-C4, SDD-C5, SDD-C7 (IMP-MS57 / QAD-TC72): `scripts/ms57/` is an offline validation adapter. It probes the production detector using oriented original private images, evaluates the shared production geometry/plane contracts, records source/data hashes and dirty state, and reports automatic versus reviewed/corrected metrics independently. Freeze development thresholds before the single-use held-out cycle. No runtime route, public dataset, dependency, database mutation or accuracy badge is added. Browser and physical downstream parity remain separately evidenced acceptance gates.
+
+## MS62 Calibration Mode Contract
+
+**Status:** Implemented; browser acceptance pending. Full contract: [IMP-MS62 sections 4-7](implementation/ms62.md).
+
+SDD-C2, SDD-C3, SDD-C4, and SDD-C5 (IMP-MS62 / QAD-TC77): `/analyze-image` invokes `detect_paper_fiducial` only for `paper_fiducial`. Automatic and legacy standard requests retain non-paper analysis and the empty paper response envelope with `paper_calibration.status="not_requested"` and `calibration_meta.status="heuristic_fallback"`. Existing seed validation remains.
+
+The frontend uses captured request mode, clears both paper aliases for non-paper intake, and constructs fresh heuristic metadata before any paper validator runs. Preserve legitimate non-paper scale signals and synchronize both scale aliases. Route completed uploads by normalized session mode, and guard all workspace paper actions by paper mode. Paper mode retains manual review when detection is absent or invalid.
+
+Storage restoration applies the deterministic MS62 section 4.4 policy before existing plane-eligibility validation: retain explicit paper sessions; relabel explicitly reviewed legacy automatic/unknown-mode sessions as paper; normalize unreviewed automatic/unknown-mode sessions to paper-free preview. Explicit standard sessions remain standard. Relabeling does not grant metric eligibility. Preserve manual dimensions, product state, and immutable quotation snapshots. No API endpoint, dependency, database schema, or metric solver is added.
+
+## MS63 Resilient Space Image Ingestion & Low-Latency Paper Detection Pipeline
+
+**Status:** Implemented; verified via automated unit and microservice tests. Full contract: [IMP-MS63](implementation/ms63.md).
+
+SDD-C2 and SDD-C3 (IMP-MS63 / QAD-TC78):
+1. **Client-Side Resilient Retry Loop (SDD-C2):** `analyzeImage` implements an autonomous exponential backoff retry loop (maximum 3 attempts, base delay 1,000ms with +/-20% random jitter, 30s connection timeout and 60s max total timeout). Non-retryable 4xx client errors reject immediately on attempt 1. Dropzone state retains selected `File` reference on network failure with an interactive retry trigger, and emits progressive stage updates ("uploading", "retrying", "processing", "completed") to the UI.
+2. **Local Blob Buffering (SDD-C2):** The client creates and buffers an in-memory `localBlobUrl` for the space image, insulating `PaperDetectionConfirmationModal` and `ProductModelWorkspace` from post-upload network disconnects.
+3. **Early WebP Generation and Downscaled Paper Detection (SDD-C3):** In `analyze_image`, `workspace.webp` (longest edge constrained to 1,920px) is generated immediately following orientation normalization. Subsequent depth estimation, scene luminance analysis, and `detect_paper_fiducial` execute directly on the downscaled workspace BGR array, reducing paper fiducial detection latency on 12 MP HEIC captures from >15,000ms to <180ms while preserving metric scale precision within 0.15%.
+4. **Session-Bound Click Snapping (SDD-C3):** Endpoint `POST /snap-paper` accepts `session_id`, `seed_x`, `seed_y`, and optional `paper_standard` (via Form or JSON). Snapping executes against the cached workspace WebP on disk, completely eliminating secondary image blob re-uploads.
+

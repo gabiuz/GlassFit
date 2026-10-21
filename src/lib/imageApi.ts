@@ -1,3 +1,4 @@
+import { validatePaperDetection } from "./visualization/paperReference";
 const FALLBACK_API_URL = "http://localhost:8000";
 
 export const ACCEPTED_IMAGE_TYPES = [
@@ -102,7 +103,16 @@ export interface SceneAnalysis {
   error: string | null;
 }
 
-import type { ScaleEstimationSignal } from "@/lib/visualization/types";
+import type {
+  CalibrationIntakeOptions,
+  CalibrationMetadata,
+  CalibrationMode,
+  FiducialPaperStandard,
+  PaperCalibrationResult,
+  PaperCalibrationStatus,
+  Point2D,
+  ScaleEstimationSignal,
+} from "@/lib/visualization/types";
 
 export interface WorkspaceImage {
   url: string;
@@ -123,14 +133,37 @@ export interface ImageAnalysisResponse {
   depth?: DepthAnalysis;
   scene?: SceneAnalysis;
   scale_estimation?: ScaleEstimationSignal;
+  paper_calibration?: PaperCalibrationResult;
+  calibration_meta?: {
+    mode: CalibrationMode;
+    paper_standard: FiducialPaperStandard | null;
+    suggested_paper_standard?: FiducialPaperStandard | null;
+    aspect_ratio_match_confidence?: number;
+    unwarped_aspect_ratio?: number | null;
+    status: PaperCalibrationStatus;
+    confidence: number;
+    homography_matrix?: number[][] | null;
+    detected_corners?: [number, number][] | null;
+    user_verified?: boolean;
+    verified_corners?: [Point2D, Point2D, Point2D, Point2D] | null;
+    verified_scale_cm_per_px?: number | null;
+  };
   warning?: string | null;
   warnings?: string[];
 }
+
+export type UploadProgressStage =
+  | "validating"
+  | "uploading"
+  | "retrying"
+  | "processing"
+  | "completed";
 
 export interface SpaceImageSession {
   sessionId: string;
   originalFileName: string;
   workspaceImage: WorkspaceImage;
+  localBlobUrl?: string;
   brightness: BrightnessAnalysis;
   lighting: LightingAnalysis;
   objects: DetectedObject[];
@@ -139,7 +172,17 @@ export interface SpaceImageSession {
   scene?: SceneAnalysis;
   scaleEstimation?: ScaleEstimationSignal;
   scale_estimation?: ScaleEstimationSignal;
+  paperCalibration?: PaperCalibrationResult;
+  paper_calibration?: PaperCalibrationResult;
+  calibrationMeta?: CalibrationMetadata;
   warnings: string[];
+}
+
+export interface AnalyzeImageOptions extends CalibrationIntakeOptions {
+  onProgress?: (stage: UploadProgressStage, attempt?: number) => void;
+  maxRetries?: number;
+  timeoutMs?: number;
+  initialDelayMs?: number;
 }
 
 export function getImageApiBaseUrl() {
@@ -197,41 +240,211 @@ export async function validateImageDecode(file: File): Promise<ImagePreviewMode>
   }
 }
 
-export async function analyzeImage(file: File): Promise<SpaceImageSession> {
+function combineAbortSignals(signal1?: AbortSignal, signal2?: AbortSignal): AbortSignal | undefined {
+  if (!signal1) return signal2;
+  if (!signal2) return signal1;
+  if (typeof AbortSignal.any === "function") {
+    return AbortSignal.any([signal1, signal2]);
+  }
+  const controller = new AbortController();
+  const onAbort = () => controller.abort(signal1.aborted ? signal1.reason : signal2.reason);
+  if (signal1.aborted || signal2.aborted) {
+    onAbort();
+    return controller.signal;
+  }
+  signal1.addEventListener("abort", onAbort, { once: true });
+  signal2.addEventListener("abort", onAbort, { once: true });
+  return controller.signal;
+}
+
+export async function snapPaperReference(
+  sessionId: string,
+  seedPoint: Point2D,
+  paperStandard?: FiducialPaperStandard,
+  signal?: AbortSignal,
+): Promise<PaperCalibrationResult> {
   const formData = new FormData();
-  formData.append("image", file);
+  formData.append("session_id", sessionId);
+  formData.append("seed_x", String(seedPoint.x));
+  formData.append("seed_y", String(seedPoint.y));
+  if (paperStandard) {
+    formData.append("paper_standard", paperStandard);
+  }
 
   const apiBaseUrl = getImageApiBaseUrl();
-  const response = await fetch(`${apiBaseUrl}/analyze-image`, {
+  const response = await fetch(`${apiBaseUrl}/snap-paper`, {
     method: "POST",
     body: formData,
+    signal,
   });
 
   if (!response.ok) {
-    let message = "Image analysis failed.";
-
+    let message = "Paper fiducial snap failed.";
     try {
       const errorBody = (await response.json()) as { detail?: string };
       if (errorBody.detail) {
         message = errorBody.detail;
       }
     } catch {
-      // Keep the generic message when the service returns non-JSON errors.
+      // Keep default message
     }
-
     throw new Error(message);
   }
 
+  return (await response.json()) as PaperCalibrationResult;
+}
+
+export async function analyzeImage(
+  file: File,
+  calibrationOptions?: AnalyzeImageOptions,
+  signal?: AbortSignal,
+): Promise<SpaceImageSession> {
+  const formData = new FormData();
+  formData.append("image", file);
+
+  const mode = calibrationOptions?.mode ?? "auto_detect";
+  formData.append("calibration_mode", mode);
+
+  if (mode === "paper_fiducial" && calibrationOptions?.paperStandard) {
+    formData.append("paper_standard", calibrationOptions.paperStandard);
+  }
+
+  if (mode === "paper_fiducial" && calibrationOptions?.seedPoint) {
+    formData.append("seed_x", String(calibrationOptions.seedPoint.x));
+    formData.append("seed_y", String(calibrationOptions.seedPoint.y));
+  }
+
+  const apiBaseUrl = getImageApiBaseUrl();
+  const maxAttempts = calibrationOptions?.maxRetries ?? 3;
+  const timeoutMs = calibrationOptions?.timeoutMs ?? (isHeicFile(file) ? 60000 : 30000);
+  let backoffDelay = calibrationOptions?.initialDelayMs ?? 1000;
+
+  let lastError: unknown = null;
+  let response: Response | null = null;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    if (signal?.aborted) {
+      throw signal.reason || new Error("Operation aborted");
+    }
+
+    if (attempt === 1) {
+      calibrationOptions?.onProgress?.("uploading", 1);
+    } else {
+      calibrationOptions?.onProgress?.("retrying", attempt - 1);
+    }
+
+    const timeoutController = new AbortController();
+    const timerId = setTimeout(() => {
+      timeoutController.abort(new Error("Request timed out."));
+    }, timeoutMs);
+
+    const combinedSignal = combineAbortSignals(signal, timeoutController.signal);
+
+    try {
+      response = await fetch(`${apiBaseUrl}/analyze-image`, {
+        method: "POST",
+        body: formData,
+        signal: combinedSignal,
+      });
+      clearTimeout(timerId);
+
+      if (response.ok) {
+        calibrationOptions?.onProgress?.("processing");
+        break;
+      }
+
+      if (response.status >= 400 && response.status < 500) {
+        let message = "Image analysis failed.";
+        try {
+          const errorBody = (await response.json()) as { detail?: string };
+          if (errorBody.detail) {
+            message = errorBody.detail;
+          }
+        } catch {
+          // Keep generic message
+        }
+        throw new Error(message);
+      }
+
+      lastError = new Error(`Server temporarily unavailable (HTTP ${response.status}).`);
+    } catch (err) {
+      clearTimeout(timerId);
+      if (signal?.aborted) {
+        throw signal.reason || err;
+      }
+      if (err instanceof Error && response && response.status >= 400 && response.status < 500) {
+        throw err;
+      }
+      lastError = err;
+    }
+
+    if (attempt < maxAttempts) {
+      const jitter = 1 + (Math.random() * 0.4 - 0.2);
+      const sleepTime = Math.round(backoffDelay * jitter);
+      await new Promise((resolve) => setTimeout(resolve, sleepTime));
+      backoffDelay *= 2;
+    }
+  }
+
+  if (!response || !response.ok) {
+    if (lastError instanceof Error && !lastError.message.includes("Server") && !lastError.message.includes("fetch") && !lastError.message.includes("Network")) {
+      // Non-network specific error
+    }
+    throw new Error("Network connection unstable. Please check your internet connection and try again.");
+  }
+
   const payload = (await response.json()) as ImageAnalysisResponse;
-  return toSpaceImageSession(payload, file.name, apiBaseUrl);
+  calibrationOptions?.onProgress?.("completed");
+
+  const session = toSpaceImageSession(payload, file.name, apiBaseUrl, mode);
+
+  if (typeof URL !== "undefined" && typeof URL.createObjectURL === "function") {
+    try {
+      if (!isHeicFile(file)) {
+        session.localBlobUrl = URL.createObjectURL(file);
+      } else {
+        const wsRes = await fetch(session.workspaceImage.url, { signal });
+        if (wsRes.ok) {
+          const wsBlob = await wsRes.blob();
+          session.localBlobUrl = URL.createObjectURL(wsBlob);
+        }
+      }
+    } catch {
+      // Graceful fallback to remote workspace image URL
+    }
+  }
+
+  if (!session.calibrationMeta) {
+    session.calibrationMeta = {
+      mode,
+      paperStandard: session.paperCalibration?.paper_standard ?? calibrationOptions?.paperStandard ?? null,
+      status: mode === "standard" ? "heuristic_fallback" : session.paperCalibration?.status ?? "manual_pin_required",
+      confidence: 0,
+      homographyMatrix: null,
+      detectedCorners: session.paperCalibration?.detected_corners ?? null,
+      paperStandardConfirmed: session.paperCalibration?.paper_standard_confirmed ?? false,
+      user_verified: false,
+      verified_corners: null,
+      verified_scale_cm_per_px: null,
+    };
+  }
+  return session;
 }
 
 function toSpaceImageSession(
   payload: ImageAnalysisResponse,
   originalFileName: string,
   apiBaseUrl: string,
+  mode: CalibrationMode,
 ): SpaceImageSession {
-  return {
+  const paper = mode === "paper_fiducial"
+    ? validatePaperDetection(payload.paper_calibration, payload.workspace_image.width, payload.workspace_image.height, payload.session_id)
+    : undefined;
+  const metricMethod = payload.scale_estimation?.method ?? "";
+  const signal = payload.scale_estimation && (metricMethod.includes("paper") || metricMethod.includes("calibrat"))
+    ? { ...payload.scale_estimation, best_scale_cm_per_px: null, confidence: 0, method: "none", anchors: [] }
+    : payload.scale_estimation;
+  const session: SpaceImageSession = {
     sessionId: payload.session_id,
     originalFileName,
     workspaceImage: {
@@ -258,9 +471,72 @@ function toSpaceImageSession(
           wall_mask_url: toAbsoluteOptionalApiUrl(payload.scene.wall_mask_url, apiBaseUrl),
         }
       : undefined,
-    scaleEstimation: payload.scale_estimation,
-    scale_estimation: payload.scale_estimation,
+    scaleEstimation: mode === "paper_fiducial" ? signal : payload.scale_estimation,
+    scale_estimation: mode === "paper_fiducial" ? signal : payload.scale_estimation,
+    paperCalibration: paper,
+    paper_calibration: paper,
+    calibrationMeta: paper && payload.calibration_meta
+      ? {
+          mode,
+          paperStandard: paper.paper_standard,
+          suggested_paper_standard: paper.suggested_paper_standard ?? payload.calibration_meta.suggested_paper_standard ?? null,
+          suggestedPaperStandard: paper.suggested_paper_standard ?? payload.calibration_meta.suggested_paper_standard ?? null,
+          aspect_ratio_match_confidence: paper.aspect_ratio_match_confidence ?? payload.calibration_meta.aspect_ratio_match_confidence ?? 0,
+          aspectRatioMatchConfidence: paper.aspect_ratio_match_confidence ?? payload.calibration_meta.aspect_ratio_match_confidence ?? 0,
+          unwarped_aspect_ratio: paper.unwarped_aspect_ratio ?? payload.calibration_meta.unwarped_aspect_ratio ?? null,
+          unwarpedAspectRatio: paper.unwarped_aspect_ratio ?? payload.calibration_meta.unwarped_aspect_ratio ?? null,
+          status: paper.status,
+          confidence: paper.confidence,
+          homographyMatrix: null,
+          detectedCorners: paper.detected_corners,
+          user_verified: false,
+          verified_corners: null,
+          verified_scale_cm_per_px: null,
+          paperStandardConfirmed: paper.paper_standard_confirmed,
+          referenceSource: paper.reference_source ?? undefined,
+          selectedCandidateId: paper.selected_candidate_id ?? undefined,
+        }
+      : undefined,
     warnings: payload.warnings?.length ? payload.warnings : payload.warning ? [payload.warning] : [],
+  };
+  return mode === "paper_fiducial" ? session : normalizeNonPaperSession(session, mode);
+}
+
+/** IMP-MS62 / QAD-TC77: remove paper evidence without changing non-paper analysis. */
+export function normalizeNonPaperSession(
+  session: SpaceImageSession,
+  mode: "auto_detect" | "standard",
+): SpaceImageSession {
+  const previous = session.scaleEstimation ?? session.scale_estimation;
+  const signal = previous && (previous.method.includes("paper") || previous.method.includes("calibrat"))
+    ? {
+        best_scale_cm_per_px: null,
+        confidence: 0,
+        method: "none",
+        anchors: [],
+        exif_focal_length_mm: previous.exif_focal_length_mm,
+        exif_focal_length_35mm: previous.exif_focal_length_35mm,
+        exif_device_model: previous.exif_device_model,
+      }
+    : previous;
+  return {
+    ...session,
+    paperCalibration: undefined,
+    paper_calibration: undefined,
+    scaleEstimation: signal,
+    scale_estimation: signal,
+    calibrationMeta: {
+      mode,
+      status: "heuristic_fallback",
+      paperStandard: null,
+      confidence: 0,
+      homographyMatrix: null,
+      detectedCorners: null,
+      user_verified: false,
+      verified_corners: null,
+      verified_scale_cm_per_px: null,
+      paperStandardConfirmed: false,
+    },
   };
 }
 

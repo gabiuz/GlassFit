@@ -161,3 +161,7 @@ MS30 deployment applies migration `012_identity_name_and_admin_email_workflow.sq
 - [x] Build and deployment pipeline stages document exact commands and success criteria
 - [x] Post-deployment verification smoke tests and rollback triggers are defined
 - [x] AGENTS hard bans applied; VOICE polish pass completed without em-dashes
+
+IMP-MS56 verification: run `npm run test:ms56`, `npm run lint`, `npx tsc --noEmit`, and `npm run build`. QAD-TC71 covers measurement revision propagation and quotation provenance. Verify the CV health endpoint separately; MS57 physical benchmarks and browser acceptance remain release gates.
+
+IMP-MS57 verification: run `npm run test:ms57` and `python -m unittest discover -s fastapi-service/tests -p test_ms57_probe.py`, then follow [private benchmark instructions](../scripts/ms57/README.md). Use `MS57_PYTHON` to select the existing service interpreter; an empty virtual environment is not sufficient. Run the pytest-style detector/API suite from `fastapi-service/` using `python -m pytest tests/test_paper_calibration.py -q`. Record lint, typecheck, production build, actual `/health` and `/analyze-image` outcomes separately from physical release gates. Benchmark reports and photos remain private. No dependency, environment secret, database schema or deployment change is introduced by MS57 tooling.

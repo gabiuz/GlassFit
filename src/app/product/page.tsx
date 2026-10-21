@@ -1,4 +1,9 @@
-import { HeroSection, SearchSection, ProductSection } from "@/features/product";
+import {
+  HeroSection,
+  SearchSection,
+  ProductSection,
+  ProductFilterProvider,
+} from "@/features/product";
 import { getActiveProducts } from "@/lib/products/getActiveProducts";
 import { mapDatabaseProductToCatalog } from "@/lib/products/productRendererAdapter";
 import type { CatalogProduct } from "@/lib/products/types";
@@ -23,10 +28,12 @@ export default async function ProductPage() {
   return (
     <main className="flex flex-col">
       <HeroSection />
-      <div className="flex flex-col gap-6 xl:gap-14 px-4 sm:px-6 py-8 md:px-12 lg:px-24.25 lg:py-17.75">
-        <SearchSection />
-        <ProductSection initialProducts={products} fetchError={fetchError} />
-      </div>
+      <ProductFilterProvider initialProducts={products}>
+        <div className="flex flex-col gap-6 xl:gap-14 px-4 sm:px-6 py-8 md:px-12 lg:px-24.25 lg:py-17.75">
+          <SearchSection />
+          <ProductSection fetchError={fetchError} />
+        </div>
+      </ProductFilterProvider>
     </main>
   );
 }

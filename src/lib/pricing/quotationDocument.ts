@@ -1,5 +1,6 @@
 /** Canonical quotation document domain. Traceability: IMP-MS17, PRD-F10, PRD-F11, SDD-C7. */
 import { z } from "zod";
+import { MeasurementRecordSchema, StoredMeasurementRecordSchema } from "../visualization/measurementRecord";
 import type { CalculatedBOMResult, ItemizedProductQuotation } from "./types";
 
 const MONEY_MAX = 9_999_999_999.99;
@@ -47,6 +48,10 @@ export const QuotationDocumentItemSchema = z.object({
   calculatedSubtotal: money,
   imageSource: z.string().nullable(),
   groups: z.array(QuotationDocumentGroupSchema).min(1),
+  dimensionSource: z.string().optional(),
+  calibrationProvenance: StoredMeasurementRecordSchema.nullable().optional(),
+  calibrationMethod: z.string().nullable().optional(),
+  calibrationConfidence: z.number().nullable().optional(),
 }).superRefine((item, context) => {
   if (Math.round(item.unitPrice * item.quantity * 100) !== Math.round(item.calculatedSubtotal * 100)) {
     context.addIssue({ code: "custom", path: ["calculatedSubtotal"], message: "Item arithmetic mismatch" });
@@ -106,6 +111,16 @@ export const QuotationDocumentDraftV1Schema = z.object({
   items: z.array(QuotationDocumentItemSchema).min(1),
   pricing: snapshotShape.pricing,
 }).superRefine((document, context) => {
+  document.items.forEach((item, index) => {
+    const r = item.calibrationProvenance;
+    if ((item.dimensionSource === "planar_paper_estimate" && (!r || !MeasurementRecordSchema.safeParse(r).success ||
+        Math.abs(item.widthMm - r.width_mm) > 1e-6 || Math.abs(item.heightMm - r.height_mm) > 1e-6)) ||
+        (r && item.dimensionSource !== "planar_paper_estimate") ||
+        item.dimensionSource === "verified_calibrated_visual" || item.dimensionSource === "calibrated_visual") {
+      context.addIssue({ code: "custom", path: ["items", index, "calibrationProvenance"],
+        message: "Review and confirm current measurement evidence before creating a new quotation" });
+    }
+  });
   validateUniqueItemIds(document.items, context);
   const total = document.items.reduce((sum, item) => sum + Math.round(item.calculatedSubtotal * 100), 0);
   if (total !== Math.round(document.pricing.calculatedFinalPrice * 100)) {
@@ -190,6 +205,10 @@ export function createQuotationDocumentSnapshotV1(input: {
     panelCount: item.panelCount, hasSill: item.hasSill, structuralWaiver: item.structuralWaiver,
     finishLabel: item.finishType, glassLabel: item.glassType, quantity: item.quantity, unitPrice: item.unitPrice,
     calculatedSubtotal: item.totalPrice, imageSource: item.imageUrl || null, groups: groupsFromBom(item.bomResult),
+    dimensionSource: item.dimensionSource,
+    calibrationProvenance: item.calibrationProvenance,
+    calibrationMethod: item.calibrationMethod,
+    calibrationConfidence: item.calibrationConfidence,
   }));
   const pricing = sourceItems.reduce((totals, item) => ({
     directMaterialsSubtotal: totals.directMaterialsSubtotal + item.bomResult.directMaterialsSubtotal * item.quantity,
@@ -334,6 +353,7 @@ export function reconstructLegacyQuotationDocument(input: {
   }
   const items = [...grouped.entries()].map(([itemId, rows]) => {
     const details = rows[0].pricing_details ?? {};
+    const storedProvenance = StoredMeasurementRecordSchema.safeParse(details.calibration_provenance);
     const quantity = Math.max(1, Math.round(Number(details.item_quantity) || 1));
     const rawSubtotal = Number(details.item_total_price) || (input.totalEstimatedAmount / grouped.size);
     const unitPrice = Math.round((rawSubtotal / quantity) * 100) / 100;
@@ -350,6 +370,8 @@ export function reconstructLegacyQuotationDocument(input: {
       dimensionsFormatted: String(details.dimensions_formatted || `${Math.round(widthMm / 10)}cm × ${Math.round(heightMm / 10)}cm`),
       widthMm,
       heightMm,
+      dimensionSource: typeof details.dimension_source === "string" ? details.dimension_source : undefined,
+      calibrationProvenance: storedProvenance.success ? storedProvenance.data : undefined,
       panelCount: Math.max(1, Math.round(Number(details.panel_count) || 1)),
       hasSill: details.has_sill !== false,
       structuralWaiver: Boolean(details.structural_waiver),

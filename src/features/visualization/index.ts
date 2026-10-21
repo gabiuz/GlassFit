@@ -10,8 +10,7 @@ export { ProductAwareUploadPage } from "./components/ProductAwareUploadPage";
 export { ProductAwareWorkspacePage } from "./components/ProductAwareWorkspacePage";
 export { StructuralGuardrailModal } from "./components/StructuralGuardrailModal";
 export { DirectVisualizationPage } from "./components/DirectVisualizationPage";
-
-
-
-
+export { CalibrationModeSelector } from "./components/CalibrationModeSelector";
+export { FiducialPaperPickerModal } from "./components/FiducialPaperPickerModal";
+export { PaperDetectionConfirmationModal } from "./components/PaperDetectionConfirmationModal";
 

@@ -26,7 +26,7 @@ export function SearchBar({
       >
         <input
           type="text"
-          value={value}
+          value={value ?? ""}
           onChange={(e) => onChange?.(e.target.value)}
           placeholder={placeholder}
           className="w-full outline-none bg-transparent px-2.5 text-[20px] font-normal leading-[1.4] tracking-[-0.38px] text-[#0f1422] placeholder:text-[#abb7c2]"

@@ -109,7 +109,7 @@ export function buildMeasurementEntries(
       structuralDefinition:
         activeStructuralDefinition?.product.productId === overlay.productId
           ? activeStructuralDefinition
-          : null,
+          : overlay.variationRenderRecipe?.structuralDefinition ?? null,
       overlayConfiguration: config,
       isActiveProduct: false,
       override: {
@@ -120,6 +120,18 @@ export function buildMeasurementEntries(
         acknowledged: false,
       },
       recalculatedTotalPrice: null,
+      dimensionSource:
+        (config.visualParameterValues?.dimension_source as string | undefined) ?? undefined,
+      calibrationMethod:
+        (config.visualParameterValues?.calibration_method as string | undefined) ?? null,
+      calibrationConfidence:
+        (config.visualParameterValues?.calibration_confidence as number | undefined) ?? null,
+      paperStandard:
+        (config.visualParameterValues?.paper_standard as string | undefined) ?? null,
+      calibrationScaleCmPerPx:
+        (config.visualParameterValues?.calibration_scale_cm_per_px as number | undefined) ?? null,
+      userVerified:
+        (config.visualParameterValues?.user_verified as boolean | undefined) ?? null,
     });
   }
 
@@ -188,6 +200,30 @@ export function buildMeasurementEntries(
         acknowledged: false,
       },
       recalculatedTotalPrice: null,
+      dimensionSource:
+        (activeOverlay?.configuration.visualParameterValues?.dimension_source as string | undefined) ??
+        (activeConfiguration?.visualParameterValues?.dimension_source as string | undefined) ??
+        undefined,
+      calibrationMethod:
+        (activeOverlay?.configuration.visualParameterValues?.calibration_method as string | undefined) ??
+        (activeConfiguration?.visualParameterValues?.calibration_method as string | undefined) ??
+        null,
+      calibrationConfidence:
+        (activeOverlay?.configuration.visualParameterValues?.calibration_confidence as number | undefined) ??
+        (activeConfiguration?.visualParameterValues?.calibration_confidence as number | undefined) ??
+        null,
+      paperStandard:
+        (activeOverlay?.configuration.visualParameterValues?.paper_standard as string | undefined) ??
+        (activeConfiguration?.visualParameterValues?.paper_standard as string | undefined) ??
+        null,
+      calibrationScaleCmPerPx:
+        (activeOverlay?.configuration.visualParameterValues?.calibration_scale_cm_per_px as number | undefined) ??
+        (activeConfiguration?.visualParameterValues?.calibration_scale_cm_per_px as number | undefined) ??
+        null,
+      userVerified:
+        (activeOverlay?.configuration.visualParameterValues?.user_verified as boolean | undefined) ??
+        (activeConfiguration?.visualParameterValues?.user_verified as boolean | undefined) ??
+        null,
     });
   }
 
@@ -204,16 +240,56 @@ export function applyMeasurementOverridesToOverlays(
   return currentOverlays.map((overlay) => {
     const matchedEntry = confirmedEntries.find(
       (entry) =>
-        entry.overlayId === overlay.overlayId ||
-        (!entry.isActiveProduct && entry.productId === overlay.productId),
+        entry.overlayId === overlay.overlayId,
     );
 
     if (!matchedEntry) {
       return overlay;
     }
 
-    const { override, recalculatedTotalPrice } = matchedEntry;
-    if (!override.widthOverridden && !override.heightOverridden) {
+    const {
+      override,
+      recalculatedTotalPrice,
+      dimensionSource,
+      calibrationMethod,
+      calibrationConfidence,
+      paperStandard,
+      calibrationScaleCmPerPx,
+      userVerified,
+    } = matchedEntry;
+
+    if (!override?.widthOverridden && !override?.heightOverridden) {
+      if (
+        dimensionSource ||
+        calibrationMethod ||
+        paperStandard ||
+        calibrationScaleCmPerPx !== undefined ||
+        userVerified !== undefined
+      ) {
+        return {
+          ...overlay,
+          configuration: {
+            ...overlay.configuration,
+            visualParameterValues: {
+              ...(overlay.configuration.visualParameterValues ?? {}),
+              ...(dimensionSource ? { dimension_source: dimensionSource } : {}),
+              ...(dimensionSource && dimensionSource !== "planar_paper_estimate"
+                ? { calibration_provenance: null, metric_measurement: null } : {}),
+              ...(calibrationMethod ? { calibration_method: calibrationMethod } : {}),
+              ...(calibrationConfidence !== undefined && calibrationConfidence !== null
+                ? { calibration_confidence: calibrationConfidence }
+                : {}),
+              ...(paperStandard ? { paper_standard: paperStandard } : {}),
+              ...(calibrationScaleCmPerPx !== undefined && calibrationScaleCmPerPx !== null
+                ? { calibration_scale_cm_per_px: calibrationScaleCmPerPx }
+                : {}),
+              ...(userVerified !== undefined && userVerified !== null
+                ? { user_verified: userVerified }
+                : {}),
+            },
+          },
+        };
+      }
       return overlay;
     }
 
@@ -226,11 +302,24 @@ export function applyMeasurementOverridesToOverlays(
 
     const nextVisualValues = {
       ...(overlay.configuration.visualParameterValues ?? {}),
+      ...(dimensionSource ? { dimension_source: dimensionSource } : {}),
+      ...(calibrationMethod ? { calibration_method: calibrationMethod } : {}),
+      ...(calibrationConfidence !== undefined && calibrationConfidence !== null
+        ? { calibration_confidence: calibrationConfidence }
+        : {}),
+      ...(paperStandard ? { paper_standard: paperStandard } : {}),
+      ...(calibrationScaleCmPerPx !== undefined && calibrationScaleCmPerPx !== null
+        ? { calibration_scale_cm_per_px: calibrationScaleCmPerPx }
+        : {}),
+      ...(userVerified !== undefined && userVerified !== null
+        ? { user_verified: userVerified }
+        : {}),
+      dimension_source: "manual_tape", calibration_provenance: null, metric_measurement: null, user_verified: false,
       ...(override.widthOverridden
-        ? { width: Math.round(nextWidthCm * 10) }
+        ? { width: nextWidthCm * 10 }
         : {}),
       ...(override.heightOverridden
-        ? { height: Math.round(nextHeightCm * 10) }
+        ? { height: nextHeightCm * 10 }
         : {}),
     };
 

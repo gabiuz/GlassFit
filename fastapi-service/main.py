@@ -7,7 +7,7 @@ from uuid import uuid4
 
 import cv2
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
@@ -30,6 +30,7 @@ UPLOAD_DIR = GENERATED_DIR / "uploads"
 SESSION_DIR = GENERATED_DIR / "sessions"
 MIME_FORMATS: dict[str, tuple[str, set[str]]] = {
     "image/jpeg": ("jpeg", {".jpg", ".jpeg"}),
+    "image/jpg": ("jpeg", {".jpg", ".jpeg"}),
     "image/png": ("png", {".png"}),
     "image/webp": ("webp", {".webp"}),
     "image/heic": ("heif", {".heic", ".heif"}),
@@ -53,7 +54,8 @@ def _resolve_image_format(
     filename: str | None,
 ) -> tuple[str, str]:
     """Resolve the approved source suffix and declared image format family."""
-    normalized_content_type = (content_type or "").lower().strip()
+    raw_content_type = (content_type or "").split(";")[0]
+    normalized_content_type = raw_content_type.lower().strip()
     extension = Path(filename or "").suffix.lower()
     extension_format = EXTENSION_FORMATS.get(extension)
     if extension_format is None:
@@ -176,7 +178,13 @@ def get_generated_artifact(artifact_path: str) -> FileResponse:
 
 
 @app.post("/analyze-image")
-async def analyze_image(image: UploadFile = File(...)) -> dict:
+async def analyze_image(
+    image: UploadFile = File(...),
+    calibration_mode: str = Form("auto_detect"),
+    paper_standard: str | None = Form(None),
+    seed_x: float | None = Form(None),
+    seed_y: float | None = Form(None),
+) -> dict:
     suffix, declared_format = _resolve_image_format(image.content_type, image.filename)
     is_heif = declared_format == "heif"
 
@@ -210,6 +218,16 @@ async def analyze_image(image: UploadFile = File(...)) -> dict:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         _assert_decoded_format(declared_format, original_metadata["source_format"])
 
+        # IMP-MS63: Early workspace WebP generation and normalized BGR loading
+        try:
+            workspace_metadata = prepare_workspace_image(upload_path, workspace_path)
+        except ImagePreparationError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        workspace_bgr = cv2.imread(str(workspace_path))
+        if workspace_bgr is None:
+            raise HTTPException(status_code=500, detail="Failed to load workspace image.")
+
         brightness = analyze_brightness(upload_path)
         lighting = analyze_lighting(upload_path)
         warnings: list[str] = []
@@ -241,12 +259,10 @@ async def analyze_image(image: UploadFile = File(...)) -> dict:
             _YOLO_MODEL_CACHE.clear()
             gc.collect()
 
-        image_bgr = cv2.imread(str(upload_path))
-
-        # IMP-MS34: Depth estimation stage (skippable via ENABLE_DEPTH_ESTIMATION)
-        if ENABLE_DEPTH_ESTIMATION and image_bgr is not None:
+        # IMP-MS63: Depth estimation operates on downscaled workspace array to conserve memory and latency
+        if ENABLE_DEPTH_ESTIMATION and workspace_bgr is not None:
             depth_result = estimate_depth(
-                image_bgr,
+                workspace_bgr,
                 upload_id,
                 output_dir=session_mask_dir,
                 url_prefix=session_mask_url_prefix,
@@ -267,10 +283,10 @@ async def analyze_image(image: UploadFile = File(...)) -> dict:
             depth_module._depth_pipe = None
             gc.collect()
 
-        # IMP-MS34: Scene detection stage (skippable via ENABLE_SCENE_DETECTION)
-        if ENABLE_SCENE_DETECTION and image_bgr is not None:
+        # IMP-MS63: Scene detection stage on workspace array
+        if ENABLE_SCENE_DETECTION and workspace_bgr is not None:
             scene_result = detect_scene_regions(
-                image_bgr,
+                workspace_bgr,
                 upload_id,
                 depth_array_normalized=depth_array_for_scene,
                 output_dir=session_mask_dir,
@@ -297,11 +313,6 @@ async def analyze_image(image: UploadFile = File(...)) -> dict:
             scene_module._scene_processor = None
             scene_module._scene_model = None
             gc.collect()
-
-        try:
-            workspace_metadata = prepare_workspace_image(upload_path, workspace_path)
-        except ImagePreparationError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
         _map_artifacts_to_workspace(
             session_mask_dir=session_mask_dir,
@@ -337,6 +348,62 @@ async def analyze_image(image: UploadFile = File(...)) -> dict:
                 "exif_device_model": exif_info.device_model,
             }
 
+        # IMP-MS53 / IMP-MS58: localization does not establish a physical scale.
+        from paper_calibration import PaperCalibrationResult, detect_paper_fiducial
+        paper_result = PaperCalibrationResult(
+            status="not_requested", paper_standard=None, detected_corners=None,
+            scale_cm_per_px=None, confidence=0, homography_matrix=None,
+        )
+
+        seed_point = None
+        if seed_x is not None or seed_y is not None:
+            if seed_x is None or seed_y is None:
+                raise HTTPException(status_code=422, detail="Both seed_x and seed_y must be provided.")
+            import math
+            if not (math.isfinite(seed_x) and math.isfinite(seed_y)):
+                raise HTTPException(status_code=422, detail="Seed coordinates must be finite real numbers.")
+            clamped_x = max(0.0, min(1.0, float(seed_x)))
+            clamped_y = max(0.0, min(1.0, float(seed_y)))
+            seed_point = (clamped_x, clamped_y)
+
+        if calibration_mode == "paper_fiducial":
+            try:
+                # IMP-MS63: Run paper detection directly on downscaled workspace BGR
+                paper_result = detect_paper_fiducial(workspace_bgr, paper_standard, seed_point=seed_point)
+            except Exception as exc:
+                warnings.append(f"Paper fiducial detection error: {exc}")
+                paper_result.status = "manual_pin_required"
+
+        orig_w = max(original_metadata["width"], 1)
+        orig_h = max(original_metadata["height"], 1)
+        work_w = workspace_metadata["width"]
+        work_h = workspace_metadata["height"]
+        scale_x, scale_y = work_w / orig_w, work_h / orig_h
+
+        # Corners are already in workspace pixel space because detection executed on workspace_bgr
+        paper_result.coordinate_space = "workspace"
+        paper_result.coordinate_image_id = session_id
+        paper_result.oriented_source_to_workspace = (
+            (scale_x, 0.0, 0.0), (0.0, scale_y, 0.0), (0.0, 0.0, 1.0),
+        )
+        paper_result.image_width, paper_result.image_height = work_w, work_h
+        paper_calibration_dict = paper_result.to_dict()
+        calibration_meta = {
+            "mode": calibration_mode,
+            "paper_standard": paper_result.paper_standard,
+            "status": (paper_result.status if calibration_mode == "paper_fiducial" else "heuristic_fallback"),
+            "confidence": paper_result.confidence,
+            "reference_source": paper_result.reference_source,
+            "selected_candidate_id": paper_result.selected_candidate_id,
+            "suggested_paper_standard": paper_result.suggested_paper_standard,
+            "aspect_ratio_match_confidence": paper_result.aspect_ratio_match_confidence,
+            "unwarped_aspect_ratio": paper_result.unwarped_aspect_ratio,
+            "homography_matrix": None,
+            "detected_corners": paper_result.detected_corners,
+            "user_verified": False,
+            "paper_standard_confirmed": False,
+        }
+
         _append_optional_warning(
             warnings,
             depth_result.get("error") if not depth_result.get("available") else None,
@@ -360,6 +427,8 @@ async def analyze_image(image: UploadFile = File(...)) -> dict:
             "depth": depth_result,
             "scene": scene_result,
             "scale_estimation": scale_estimation_dict,
+            "paper_calibration": paper_calibration_dict,
+            "calibration_meta": calibration_meta,
             "warning": warnings[0] if warnings else None,
             "warnings": warnings,
         }
@@ -368,6 +437,68 @@ async def analyze_image(image: UploadFile = File(...)) -> dict:
             raw_upload_path.unlink()
         if upload_path.exists():
             upload_path.unlink()
+
+
+@app.post("/snap-paper")
+async def snap_paper(request: Request) -> dict:
+    """IMP-MS63: Lightweight paper fiducial snapping using cached session workspace WebP."""
+    content_type = request.headers.get("content-type", "")
+    if "application/json" in content_type:
+        try:
+            body = await request.json()
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail="Invalid JSON body.") from exc
+        session_id = body.get("session_id")
+        seed_x = body.get("seed_x")
+        seed_y = body.get("seed_y")
+        paper_standard = body.get("paper_standard")
+    else:
+        form = await request.form()
+        session_id = form.get("session_id")
+        seed_x = form.get("seed_x")
+        seed_y = form.get("seed_y")
+        paper_standard = form.get("paper_standard")
+
+    if not session_id or not isinstance(session_id, str):
+        raise HTTPException(status_code=422, detail="session_id is required.")
+
+    if seed_x is None or seed_y is None:
+        raise HTTPException(status_code=422, detail="Both seed_x and seed_y must be provided.")
+
+    try:
+        sx = float(seed_x)
+        sy = float(seed_y)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=422, detail="Seed coordinates must be valid numbers.")
+
+    import math
+    if not (math.isfinite(sx) and math.isfinite(sy)):
+        raise HTTPException(status_code=422, detail="Seed coordinates must be finite real numbers.")
+
+    clamped_x = max(0.0, min(1.0, sx))
+    clamped_y = max(0.0, min(1.0, sy))
+
+    session_dir = SESSION_DIR / session_id
+    workspace_path = session_dir / "workspace.webp"
+    if not workspace_path.exists():
+        raise HTTPException(status_code=404, detail="Visualization session expired or not found.")
+
+    image_bgr = cv2.imread(str(workspace_path))
+    if image_bgr is None:
+        raise HTTPException(status_code=500, detail="Could not read workspace image.")
+
+    h, w = image_bgr.shape[:2]
+    from paper_calibration import detect_paper_fiducial
+    result = detect_paper_fiducial(
+        image_bgr,
+        str(paper_standard) if paper_standard else None,
+        seed_point=(clamped_x, clamped_y),
+    )
+    result.coordinate_space = "workspace"
+    result.coordinate_image_id = session_id
+    result.image_width = w
+    result.image_height = h
+    return result.to_dict()
 
 
 def cleanup_expired_sessions() -> None:

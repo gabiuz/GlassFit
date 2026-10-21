@@ -4,6 +4,13 @@ import type { AluminumFinishKey, RrdAluminumFinishKey } from "./colorVariations"
 
 export type JsonObject = Record<string, unknown>;
 
+export interface DuplicateProductProposal {
+  axis: "width" | "height";
+  count: number;
+  pieceMm: number;
+  originalMm: number;
+}
+
 export type ModelStrategy = "Fixed" | "Parametric";
 export type GlassAppearanceMode = "clear" | "frosted" | "opaque" | "reflective" | "outdoor";
 export type GlassColorKey = "clear" | "bronze" | "silver" | "blue";
@@ -245,6 +252,8 @@ export type ManualOcclusionMaskResult = {
 };
 
 export type ProductConfigurationSnapshot = {
+  /** IMP-MS55: explicit opening-plane assignment; absent means approximate. */
+  targetPlaneId?: string | null;
   widthCm: number;
   heightCm: number;
   thicknessMm: number;
@@ -296,6 +305,12 @@ export type MeasurementConfirmationEntry = {
   isActiveProduct: boolean;
   override: MeasurementOverride;
   recalculatedTotalPrice: number | null;
+  dimensionSource?: string;
+  calibrationMethod?: string | null;
+  calibrationConfidence?: number | null;
+  paperStandard?: string | null;
+  calibrationScaleCmPerPx?: number | null;
+  userVerified?: boolean | null;
 };
 
 export type ScaleEstimationAnchor = {
@@ -308,6 +323,7 @@ export type ScaleEstimationAnchor = {
 };
 
 export type ScaleEstimationSignal = {
+  reference_confirmed?: boolean;
   anchors: ScaleEstimationAnchor[];
   best_scale_cm_per_px: number | null;
   confidence: number;
@@ -324,4 +340,111 @@ export type DimensionEstimate = {
   method: string;
 };
 
+export type CalibrationMode = "standard" | "paper_fiducial" | "auto_detect";
+
+export type FiducialPaperStandard = "short" | "a4" | "long";
+
+export interface PaperStandardDimensionsMm {
+  widthMm: number;
+  heightMm: number;
+  label: string;
+}
+
+export const PAPER_STANDARD_METRICS: Record<FiducialPaperStandard, PaperStandardDimensionsMm> = {
+  short: {
+    widthMm: 215.9,
+    heightMm: 279.4,
+    label: 'Short Bond / Letter (8.5" x 11")',
+  },
+  a4: {
+    widthMm: 210.0,
+    heightMm: 297.0,
+    label: 'A4 Standard (8.27" x 11.69")',
+  },
+  long: {
+    widthMm: 215.9,
+    heightMm: 330.2,
+    label: 'Long Bond / Folio (8.5" x 13")',
+  },
+};
+
+export interface CalibrationIntakeOptions {
+  mode: CalibrationMode;
+  paperStandard?: FiducialPaperStandard;
+  seedPoint?: { x: number; y: number };
+}
+
+export type PaperCalibrationStatus =
+  | "calibrated"
+  | "detected"
+  | "manual_pin_required"
+  | "verified_calibrated"
+  | "heuristic_fallback"
+  | "not_requested";
+
+/** IMP-MS53 / QAD-TC68 / IMP-MS58: evidence scores are not measurement probabilities. */
+export type PaperReferenceSource = "auto_detected" | "candidate_selected" | "manual_corners" | "click_guided";
+export interface PaperCandidate {
+  id: string;
+  corners: [number, number][];
+  score: number;
+  score_components: Record<string, number>;
+  rejection_reasons: string[];
+}
+
+export type PaperCandidateRecord = PaperCandidate;
+
+export interface PaperCalibrationResult {
+  geometry_contract_version?: "paper-plane-mm-v1";
+  coordinate_image_id?: string | null;
+  oriented_source_to_workspace?: number[][] | null;
+  metric_reference?: import("./metricGeometry").MetricReference | null;
+  detection_outcome?: "candidate_found" | "ambiguous" | "not_found";
+  candidates?: PaperCandidate[];
+  selected_candidate_id?: string | null;
+  reference_source?: PaperReferenceSource | null;
+  paper_standard_confirmed?: boolean;
+  coordinate_space?: "oriented_source" | "workspace";
+  image_width?: number;
+  image_height?: number;
+  status: "detected" | "manual_pin_required" | "not_requested" | "verified_calibrated" | "calibrated";
+  paper_standard: FiducialPaperStandard | null;
+  suggested_paper_standard?: FiducialPaperStandard | null;
+  aspect_ratio_match_confidence?: number;
+  unwarped_aspect_ratio?: number | null;
+  detected_corners: [number, number][] | null;
+  scale_cm_per_px: number | null;
+  confidence: number;
+  homography_matrix: number[][] | null;
+  user_verified?: boolean;
+  verified_corners?: [Point2D, Point2D, Point2D, Point2D] | null;
+  verified_scale_cm_per_px?: number | null;
+  rejection_reasons?: string[];
+}
+
+export interface CalibrationMetadata {
+  placementReview?: import("./planeEligibility").PlacementReview;
+  metricReference?: import("./metricGeometry").MetricReference | null;
+  referenceSource?: PaperReferenceSource;
+  selectedCandidateId?: string | null;
+  paperStandardConfirmed?: boolean;
+  samePlaneConfirmed?: boolean;
+  mode: CalibrationMode;
+  paperStandard: FiducialPaperStandard | null;
+  suggested_paper_standard?: FiducialPaperStandard | null;
+  suggestedPaperStandard?: FiducialPaperStandard | null;
+  aspect_ratio_match_confidence?: number;
+  aspectRatioMatchConfidence?: number;
+  unwarped_aspect_ratio?: number | null;
+  unwarpedAspectRatio?: number | null;
+  status: PaperCalibrationStatus;
+  confidence: number;
+  homographyMatrix?: number[][] | null;
+  detectedCorners?: [number, number][] | null;
+  user_verified?: boolean;
+  verified_corners?: [Point2D, Point2D, Point2D, Point2D] | null;
+  verified_scale_cm_per_px?: number | null;
+}
+
+export type CalibrationMeta = CalibrationMetadata;
 

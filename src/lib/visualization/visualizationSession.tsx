@@ -9,14 +9,16 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { SpaceImageSession } from "@/lib/imageApi";
+import { normalizeNonPaperSession, type SpaceImageSession } from "@/lib/imageApi";
 import type {
   ActiveOverlay,
   PlacedOverlay,
+  PaperCalibrationResult,
   ProductConfigurationSeed,
   ProductConfigurationSnapshot,
   ProductStructuralDefinition,
   ProductVariationSnapshot,
+  ScaleEstimationSignal,
   VisualizationSessionState,
 } from "./types";
 import {
@@ -30,6 +32,10 @@ import {
 import { variationAssetRegistry } from "./variationAssetRegistry";
 import { variationRenderQueue } from "./variationRenderQueue";
 import { normalizeAluminumFinish } from "./colorVariations";
+import { clearWorkspaceDefinitions } from "./workspaceDefinitionCache";
+import { recalculateMetricConfiguration, recalculateMetricOverlay } from "./scaleEstimation";
+export type { CalibrationMetadata } from "./types";
+import type { CalibrationMetadata } from "./types";
 
 export interface TransitionWorkspaceProductOptions {
   nextProductId: string;
@@ -37,6 +43,7 @@ export interface TransitionWorkspaceProductOptions {
   newPlacedOverlay?: PlacedOverlay;
   targetOverlayId?: string;
   nextConfiguration?: ProductConfigurationSnapshot;
+  nextDefinition?: ProductStructuralDefinition;
   placedOverlays?: PlacedOverlay[];
 }
 
@@ -50,6 +57,10 @@ export type VisualizationSessionContextValue = VisualizationSessionState & {
     productConfiguration?: ProductConfigurationSnapshot,
   ) => void;
   transitionWorkspaceProduct: (options: TransitionWorkspaceProductOptions) => void;
+  updateSessionCalibration: (
+    calibrationMeta: CalibrationMetadata,
+    scaleSignal: ScaleEstimationSignal,
+  ) => void;
   setStructuralDefinition: (definition: ProductStructuralDefinition | null) => void;
   setProductConfiguration: (configuration: ProductConfigurationSnapshot | null) => void;
   setVariationSnapshots: (snapshots: ProductVariationSnapshot[]) => void;
@@ -90,6 +101,7 @@ export function transitionSessionState(
     newPlacedOverlay,
     targetOverlayId,
     nextConfiguration,
+    nextDefinition,
     placedOverlays: explicitPlacedOverlays,
   } = options;
 
@@ -138,12 +150,27 @@ export function transitionSessionState(
   }
 
   const isSameProduct = current.selectedProductId === nextProductId;
+  if (nextDefinition && nextDefinition.product.productId !== nextProductId) {
+    throw new Error("Workspace product definition mismatch.");
+  }
   return {
     ...current,
     selectedProductId: nextProductId,
     pendingProductConfiguration: null,
+    spaceImageSession: current.spaceImageSession
+      ? {
+          ...current.spaceImageSession,
+          calibrationMeta: current.spaceImageSession.calibrationMeta,
+          scaleEstimation:
+            current.spaceImageSession.scaleEstimation ??
+            current.spaceImageSession.scale_estimation,
+          scale_estimation:
+            current.spaceImageSession.scale_estimation ??
+            current.spaceImageSession.scaleEstimation,
+        }
+      : null,
     placedOverlays: updatedPlacedOverlays,
-    structuralDefinition: isSameProduct ? current.structuralDefinition : null,
+    structuralDefinition: nextDefinition ?? (isSameProduct ? current.structuralDefinition : null),
     productConfiguration: nextConfiguration ?? null,
     variationSnapshots: [],
     activeOverlay: null,
@@ -221,6 +248,7 @@ export function VisualizationSessionProvider({
 
   const setPreparedSpaceImage = useCallback(
     (productId: string, session: SpaceImageSession) => {
+      clearWorkspaceDefinitions();
       setState((current) => {
         const nextState = createPreparedSpaceImageState(current, productId, session);
         writeStoredVisualizationSession(nextState);
@@ -290,6 +318,63 @@ export function VisualizationSessionProvider({
     (options: TransitionWorkspaceProductOptions) => {
       setState((current) => {
         const nextState = transitionSessionState(current, options);
+        writeStoredVisualizationSession(nextState);
+        return nextState;
+      });
+    },
+    [],
+  );
+
+  const updateSessionCalibration = useCallback(
+    (calibrationMeta: CalibrationMetadata, scaleSignal: ScaleEstimationSignal) => {
+      setState((current) => {
+        if (!current.spaceImageSession) {
+          return current;
+        }
+
+        const baseSession = current.spaceImageSession;
+        const incoming = calibrationMeta.metricReference;
+        const existing = baseSession.calibrationMeta?.metricReference;
+        if (incoming && (incoming.frame.imageId !== baseSession.sessionId ||
+            incoming.frame.width !== baseSession.workspaceImage.width || incoming.frame.height !== baseSession.workspaceImage.height ||
+            (existing?.planeId === incoming.planeId && incoming.revision < existing.revision))) return current;
+
+        const paper: PaperCalibrationResult | undefined = calibrationMeta.user_verified ? {
+          ...baseSession.paperCalibration,
+          status: "verified_calibrated", paper_standard: calibrationMeta.paperStandard,
+          paper_standard_confirmed: calibrationMeta.paperStandardConfirmed === true,
+          reference_source: calibrationMeta.referenceSource ?? "manual_corners",
+          selected_candidate_id: calibrationMeta.selectedCandidateId ?? null,
+          detected_corners: calibrationMeta.detectedCorners ?? null,
+          scale_cm_per_px: calibrationMeta.verified_scale_cm_per_px ?? null,
+          confidence: 0, homography_matrix: null, metric_reference: calibrationMeta.metricReference ?? null, user_verified: true,
+          verified_corners: calibrationMeta.verified_corners ?? null,
+          verified_scale_cm_per_px: calibrationMeta.verified_scale_cm_per_px ?? null,
+        } : undefined;
+        const updatedSession: SpaceImageSession = {
+          ...baseSession,
+          paperCalibration: paper,
+          paper_calibration: paper,
+          scaleEstimation: scaleSignal,
+          scale_estimation: scaleSignal,
+          calibrationMeta: { ...calibrationMeta },
+        };
+
+        const reference = calibrationMeta.metricReference;
+        const frame = { imageId: updatedSession.sessionId, width: updatedSession.workspaceImage.width,
+          height: updatedSession.workspaceImage.height };
+        const rescaledPlacedOverlays = current.placedOverlays.map(overlay => recalculateMetricOverlay(overlay, reference, frame, calibrationMeta));
+        const rescaledProductConfig = current.productConfiguration
+          ? recalculateMetricConfiguration(current.productConfiguration, reference, frame, calibrationMeta) : null;
+
+        const nextState: VisualizationSessionState = {
+          ...current,
+          spaceImageSession: updatedSession,
+          placedOverlays: rescaledPlacedOverlays,
+          productConfiguration: rescaledProductConfig,
+          comparisonOverlays: current.comparisonOverlays.map(overlay => recalculateMetricOverlay(overlay, reference, frame, calibrationMeta)),
+        };
+
         writeStoredVisualizationSession(nextState);
         return nextState;
       });
@@ -377,6 +462,7 @@ export function VisualizationSessionProvider({
   }, []);
 
   const resetVisualizationSession = useCallback(() => {
+    clearWorkspaceDefinitions();
     if (state.assetSessionId) {
       variationRenderQueue.cancelNamespacePrefix(state.assetSessionId);
       void variationAssetStore.removeSession(state.assetSessionId);
@@ -394,6 +480,7 @@ export function VisualizationSessionProvider({
       clearPendingProductConfiguration,
       selectWorkspaceProduct,
       transitionWorkspaceProduct,
+      updateSessionCalibration,
       setStructuralDefinition,
       setProductConfiguration,
       setVariationSnapshots,
@@ -410,6 +497,7 @@ export function VisualizationSessionProvider({
       clearPendingProductConfiguration,
       selectWorkspaceProduct,
       transitionWorkspaceProduct,
+      updateSessionCalibration,
       setStructuralDefinition,
       setProductConfiguration,
       setVariationSnapshots,
@@ -428,6 +516,23 @@ export function VisualizationSessionProvider({
   );
 }
 
+/** IMP-MS55: stale and legacy persisted readings never inherit metric eligibility. */
+export function validateSessionPlaneEligibility(state: VisualizationSessionState): VisualizationSessionState {
+  const session = state.spaceImageSession;
+  const meta = session?.workspaceImage?.url ? session.calibrationMeta : null;
+  const frame = { imageId: session?.sessionId ?? "", width: session?.workspaceImage.width ?? 0,
+    height: session?.workspaceImage.height ?? 0 };
+  const validate = (configuration: ProductConfigurationSnapshot) =>
+    recalculateMetricConfiguration(configuration, meta?.metricReference, frame, meta);
+  const overlays = (items: PlacedOverlay[]) => items.map(overlay => ({ ...overlay,
+    configuration: validate(overlay.configuration),
+    variationRenderRecipe: overlay.variationRenderRecipe ? { ...overlay.variationRenderRecipe,
+      configuration: validate(overlay.variationRenderRecipe.configuration) } : undefined,
+  }));
+  return { ...state, productConfiguration: state.productConfiguration ? validate(state.productConfiguration) : null,
+    placedOverlays: overlays(state.placedOverlays), comparisonOverlays: overlays(state.comparisonOverlays) };
+}
+
 export function readStoredVisualizationSession(): VisualizationSessionState {
   if (typeof window === "undefined") {
     return initialState;
@@ -440,12 +545,21 @@ export function readStoredVisualizationSession(): VisualizationSessionState {
     }
 
     const parsed = JSON.parse(stored) as Partial<VisualizationSessionState>;
-    return {
+    const restored: VisualizationSessionState = {
       assetSessionId: typeof parsed.assetSessionId === "string" ? parsed.assetSessionId : null,
       selectedProductId: typeof parsed.selectedProductId === "string" ? parsed.selectedProductId : null,
       pendingProductConfiguration: normalizePendingProductConfiguration(parsed.pendingProductConfiguration),
       spaceImageSession: parsed.spaceImageSession && typeof parsed.spaceImageSession === "object"
-        ? parsed.spaceImageSession
+        ? {
+            ...parsed.spaceImageSession,
+            calibrationMeta: parsed.spaceImageSession.calibrationMeta,
+            scaleEstimation:
+              parsed.spaceImageSession.scaleEstimation ??
+              parsed.spaceImageSession.scale_estimation,
+            scale_estimation:
+              parsed.spaceImageSession.scale_estimation ??
+              parsed.spaceImageSession.scaleEstimation,
+          }
         : null,
       workspaceBackgroundDataUrl:
         typeof parsed.workspaceBackgroundDataUrl === "string"
@@ -476,6 +590,18 @@ export function readStoredVisualizationSession(): VisualizationSessionState {
           ? parsed.finalSnapshotDataUrl
           : null,
     };
+    // IMP-MS62: preserve explicit review, but never infer it from detector confidence.
+    const image = restored.spaceImageSession;
+    if (image) {
+      const meta = image.calibrationMeta;
+      const reviewed = meta?.user_verified === true || meta?.status === "verified_calibrated";
+      if (meta && (meta.mode === "paper_fiducial" || (meta.mode !== "standard" && reviewed))) {
+        restored.spaceImageSession = { ...image, calibrationMeta: { ...meta, mode: "paper_fiducial" } };
+      } else {
+        restored.spaceImageSession = normalizeNonPaperSession(image, meta?.mode === "standard" ? "standard" : "auto_detect");
+      }
+    }
+    return validateSessionPlaneEligibility(restored);
   } catch {
     return initialState;
   }
@@ -506,6 +632,13 @@ export function writeStoredVisualizationSession(state: VisualizationSessionState
                     ? ""
                     : state.spaceImageSession.workspaceImage.url,
               },
+              calibrationMeta: state.spaceImageSession.calibrationMeta,
+              scaleEstimation:
+                state.spaceImageSession.scaleEstimation ??
+                state.spaceImageSession.scale_estimation,
+              scale_estimation:
+                state.spaceImageSession.scale_estimation ??
+                state.spaceImageSession.scaleEstimation,
             }
           : null,
         workspaceBackgroundDataUrl: null,
@@ -535,6 +668,13 @@ export function writeStoredVisualizationSession(state: VisualizationSessionState
               ? {
                   ...state.spaceImageSession,
                   workspaceImage: { ...state.spaceImageSession.workspaceImage, url: "" },
+                  calibrationMeta: state.spaceImageSession.calibrationMeta,
+                  scaleEstimation:
+                    state.spaceImageSession.scaleEstimation ??
+                    state.spaceImageSession.scale_estimation,
+                  scale_estimation:
+                    state.spaceImageSession.scale_estimation ??
+                    state.spaceImageSession.scaleEstimation,
                 }
               : null,
             workspaceBackgroundDataUrl: null,
@@ -621,7 +761,18 @@ export function serializeVisualizationSession(state: VisualizationSessionState) 
     assetSessionId: state.assetSessionId,
     selectedProductId: state.selectedProductId,
     pendingProductConfiguration: state.pendingProductConfiguration,
-    spaceImageSession: state.spaceImageSession,
+    spaceImageSession: state.spaceImageSession
+      ? {
+          ...state.spaceImageSession,
+          calibrationMeta: state.spaceImageSession.calibrationMeta,
+          scaleEstimation:
+            state.spaceImageSession.scaleEstimation ??
+            state.spaceImageSession.scale_estimation,
+          scale_estimation:
+            state.spaceImageSession.scale_estimation ??
+            state.spaceImageSession.scaleEstimation,
+        }
+      : null,
     workspaceBackgroundDataUrl: state.workspaceBackgroundDataUrl?.startsWith("data:")
       || state.workspaceBackgroundDataUrl?.startsWith("blob:")
       ? null
@@ -659,3 +810,8 @@ export function useVisualizationSession() {
 
   return context;
 }
+
+export function useOptionalVisualizationSession() {
+  return useContext(VisualizationSessionContext);
+}
+

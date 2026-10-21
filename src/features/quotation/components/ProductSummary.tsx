@@ -1,5 +1,6 @@
 "use client";
 
+import { quotationMeasurement } from "@/lib/visualization/measurementRecord";
 import React, { useMemo } from "react";
 import { useVisualizationSession } from "@/lib/visualization/visualizationSession";
 import type {
@@ -191,8 +192,8 @@ function createProductSummaryItemFromOverlay(
 
   const hasSill = config.includeSill ?? true;
   const structuralWaiver = config.structuralWaiver ?? false;
-  const widthMm = Math.round(widthCm * 10);
-  const heightMm = Math.round(heightCm * 10);
+  const widthMm = (widthCm * 10);
+  const heightMm = (heightCm * 10);
   const panelCount = config.panelCount ?? (widthMm >= 2400 ? 3 : 2);
   const finishType =
     config.aluminumFinish === "white" ? "PowderCoatedWhite" : "Analok";
@@ -266,6 +267,7 @@ function createProductSummaryItemFromOverlay(
     totalPrice,
     imageUrl: item.imageUrl,
     bomResult: bomCalc,
+    ...quotationMeasurement(overlay.configuration),
   };
 
   return { item, quotation };
@@ -288,8 +290,8 @@ function createProductSummaryItem(
   const dimension = formatDimension(widthCm, heightCm, depthCm);
   const material = inferMaterial(definition);
 
-  const widthMm = Math.round(widthCm * 10);
-  const heightMm = Math.round(heightCm * 10);
+  const widthMm = (widthCm * 10);
+  const heightMm = (heightCm * 10);
   const hasSill = configuration?.includeSill ?? true;
   const structuralWaiver = configuration?.structuralWaiver ?? false;
   const panelCount = configuration?.panelCount ?? (widthMm >= 2400 ? 3 : 2);
@@ -381,6 +383,7 @@ function createProductSummaryItem(
     totalPrice,
     imageUrl: item.imageUrl,
     bomResult: bomCalc,
+    ...quotationMeasurement(configuration),
   };
 
   return { item, quotation };
@@ -412,7 +415,7 @@ function getDefaultNumber(
 }
 
 function formatDimension(widthCm: number, heightCm: number, depthCm: number) {
-  const parts = [`W ${Math.round(widthCm)}cm`, `H ${Math.round(heightCm)}cm`];
+  const parts = [`W ${Number(widthCm.toFixed(3))}cm`, `H ${Number(heightCm.toFixed(3))}cm`];
   if (depthCm > 0) {
     parts.push(`D ${Math.round(depthCm)}cm`);
   }

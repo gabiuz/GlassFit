@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="1020" viewBox="0 0 1440 1020" role="img" aria-labelledby="title desc">
+  <title id="title">MS-45 material assignment workspace mockup</title>
+  <desc id="desc">GlassFit Components step with a searchable material picker, selection action bar, and visible material link status.</desc>
+  <defs>
+    <linearGradient id="banner" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#0f1422"/><stop offset="1" stop-color="#1b3441"/></linearGradient>
+    <linearGradient id="canvas" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#f2f4f7"/><stop offset="1" stop-color="#e6edf1"/></linearGradient>
+    <filter id="shadow"><feDropShadow dx="0" dy="12" stdDeviation="18" flood-color="#0f1422" flood-opacity=".16"/></filter>
+    <style>
+      text{font-family:Inter,Arial,sans-serif;fill:#0f1422} .muted{fill:#6b7280} .small{font-size:12px} .tiny{font-size:10px} .label{font-size:13px;font-weight:600} .heading{font-size:22px;font-weight:700} .code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace} .white{fill:#fff} .cyan{fill:#079fba} .amber{fill:#b45309}
+    </style>
+  </defs>
+  <rect width="1440" height="1020" fill="#f8fafb"/>
+  <rect width="1440" height="64" fill="#0f1422"/>
+  <text x="36" y="40" class="white" font-size="23" font-weight="800">GlassFit</text>
+  <text x="1150" y="38" class="white small">Admin workspace</text>
+  <circle cx="1385" cy="32" r="18" fill="#07b6d3"/><text x="1378" y="38" class="white small" font-weight="700">GR</text>
+
+  <text x="42" y="105" class="muted small">Products  /  Series 798 Sliding Window  /  Setup</text>
+  <text x="42" y="140" class="heading">Structural components</text>
+  <text x="42" y="162" class="muted small">Upload parts, inspect their geometry, and link catalog materials.</text>
+  <rect x="42" y="188" width="1356" height="48" rx="12" fill="#fff" stroke="#e5e7eb"/>
+  <text x="67" y="218" class="muted small">1  Basic Info</text><text x="220" y="218" class="muted small">2  Assets</text><text x="345" y="218" class="muted small">3  Strategy</text>
+  <rect x="462" y="195" width="167" height="34" rx="8" fill="#e9f9fb"/><text x="478" y="217" class="cyan small" font-weight="700">4  Components</text>
+  <text x="661" y="218" class="muted small">5  Parameters &amp; Rules</text><text x="861" y="218" class="muted small">6  Validation</text><text x="1001" y="218" class="muted small">7  Review</text>
+
+  <rect x="42" y="260" width="1356" height="92" rx="16" fill="url(#banner)"/>
+  <text x="65" y="291" class="white small" opacity=".68">TOTAL PARTS</text><text x="65" y="323" class="white" font-size="20" font-weight="700">8 components</text>
+  <line x1="300" y1="280" x2="300" y2="333" stroke="#374151"/>
+  <text x="324" y="291" class="white small" opacity=".68">CATALOG LINKED</text><text x="324" y="323" class="white" font-size="20" font-weight="700">5 of 8 linked</text>
+  <line x1="557" y1="280" x2="557" y2="333" stroke="#374151"/>
+  <text x="580" y="291" class="white small" opacity=".68">NEEDS REVIEW</text><text x="580" y="323" class="white" font-size="20" font-weight="700">3 parts</text>
+  <text x="1081" y="294" class="white small" opacity=".68">MATERIAL COST STATUS</text><text x="1081" y="323" class="white small">Links are saved with components</text>
+
+  <rect x="42" y="374" width="1356" height="426" rx="16" fill="#fff" stroke="#e5e7eb"/>
+  <path d="M58 374h741v426H58a16 16 0 0 1-16-16V390a16 16 0 0 1 16-16Z" fill="url(#canvas)"/>
+  <line x1="799" y1="374" x2="799" y2="800" stroke="#e5e7eb"/>
+  <rect x="62" y="393" width="224" height="30" rx="15" fill="#fff" stroke="#e5e7eb"/><text x="79" y="413" class="small muted">Click part to inspect</text>
+  <rect x="569" y="393" width="206" height="30" rx="9" fill="#fff" stroke="#e5e7eb"/><text x="582" y="413" class="small">Assembled</text><text x="683" y="413" class="small muted">Exploded</text>
+  <g transform="translate(232 447)">
+    <path d="M110 0h246l36 31v226l-35 31H109l-37-31V31Z" fill="#aeb9bf" stroke="#71838e" stroke-width="4"/>
+    <path d="M133 32h202l27 21v181l-25 22H132l-28-22V54Z" fill="#d7eef2" stroke="#819ba4" stroke-width="5"/>
+    <path d="M232 35v218M105 145h257" stroke="#869ba6" stroke-width="14"/>
+    <path d="M109 0h246l36 31v11H75V31Z" fill="#07b6d3" opacity=".75" stroke="#0786a1" stroke-width="3"/>
+    <circle cx="192" cy="20" r="9" fill="#fff" stroke="#07b6d3" stroke-width="4"/>
+  </g>
+  <rect x="42" y="758" width="757" height="42" rx="0" fill="#fff"/><text x="62" y="784" class="small muted">8 parts mapped (1 selected)</text><text x="589" y="784" class="cyan small">Select All</text><text x="684" y="784" class="muted small">Clear Selection</text>
+
+  <text x="826" y="408" class="label">Frame Top</text><text x="826" y="428" class="muted tiny code">frame_top</text>
+  <rect x="1283" y="390" width="86" height="29" rx="15" fill="#e9f9fb"/><text x="1297" y="409" class="cyan small">Framing</text>
+  <line x1="800" y1="450" x2="1398" y2="450" stroke="#e5e7eb"/>
+  <text x="826" y="478" class="label">Material Link (Catalog)</text>
+  <rect x="826" y="491" width="543" height="46" rx="8" fill="#fff" stroke="#07b6d3" stroke-width="2"/>
+  <text x="841" y="520" class="small">AL-798-MILL  ·  Aluminum framing profile</text><text x="1340" y="520" class="cyan small">⌄</text>
+  <text x="826" y="562" class="muted small">Base Unit Rate</text><text x="1220" y="562" class="small">PHP 215.00 / m</text>
+  <text x="826" y="588" class="muted small">Cutting Scrap Allowance</text><text x="1275" y="588" class="amber small">+12.0%</text>
+  <line x1="826" y1="603" x2="1369" y2="603" stroke="#e5e7eb"/>
+  <text x="826" y="626" class="cyan small" font-weight="700">Effective Rate</text><text x="1213" y="626" class="cyan small" font-weight="700">PHP 240.80 / m</text>
+  <text x="826" y="684" class="label">Dimension Driver</text>
+  <rect x="826" y="698" width="119" height="35" rx="8" fill="#e9f9fb" stroke="#07b6d3"/><text x="850" y="720" class="cyan small">Width (1D)</text>
+  <rect x="953" y="698" width="119" height="35" rx="8" fill="#fff" stroke="#e5e7eb"/><text x="977" y="720" class="muted small">Height (1D)</text>
+  <rect x="1080" y="698" width="119" height="35" rx="8" fill="#fff" stroke="#e5e7eb"/><text x="1106" y="720" class="muted small">Area (2D)</text>
+  <rect x="1207" y="698" width="162" height="35" rx="8" fill="#fff" stroke="#e5e7eb"/><text x="1234" y="720" class="muted small">Static / Fixed</text>
+
+  <rect x="817" y="545" width="408" height="344" rx="12" fill="#fff" stroke="#d1d5db" filter="url(#shadow)"/>
+  <rect x="833" y="561" width="376" height="40" rx="8" fill="#f8fafb" stroke="#d1d5db"/><text x="849" y="586" class="muted small">⌕  Search code, description, category, finish</text>
+  <text x="838" y="625" class="cyan tiny" font-weight="700">SUGGESTED CATEGORY</text><text x="838" y="647" class="label">Aluminum</text><text x="1176" y="647" class="muted small">⌄</text>
+  <rect x="831" y="659" width="380" height="62" rx="8" fill="#e9f9fb" stroke="#b8eaf2"/>
+  <text x="844" y="681" class="code small" font-weight="700">AL-798-MILL</text><text x="1139" y="681" class="small">PHP 215/m</text><text x="844" y="703" class="muted small">Aluminum framing profile  ·  Mill</text>
+  <line x1="833" y1="732" x2="1209" y2="732" stroke="#e5e7eb"/>
+  <text x="844" y="754" class="code small">AL-798-ANOD</text><text x="1139" y="754" class="small">PHP 260/m</text><text x="844" y="774" class="muted small">Aluminum framing profile  ·  Anodized</text>
+  <line x1="833" y1="789" x2="1209" y2="789" stroke="#e5e7eb"/>
+  <text x="838" y="813" class="muted small">Glass</text><text x="1176" y="813" class="muted small">›</text>
+  <text x="838" y="842" class="muted small">Hardware</text><text x="1176" y="842" class="muted small">›</text>
+  <text x="838" y="871" class="muted small">Consumable</text><text x="1176" y="871" class="muted small">›</text>
+
+  <rect x="42" y="823" width="1356" height="156" rx="12" fill="#fff" stroke="#e5e7eb"/>
+  <text x="62" y="850" class="label">Uploaded Components (8)</text>
+  <rect x="410" y="831" width="128" height="30" rx="8" fill="#fff" stroke="#d1d5db"/><text x="423" y="851" class="small">Select unassigned</text>
+  <text x="782" y="850" class="muted small">1 part selected</text>
+  <rect x="1236" y="830" width="142" height="32" rx="8" fill="#07b6d3"/><text x="1254" y="851" class="white small" font-weight="700">Assign material</text>
+  <rect x="43" y="871" width="1354" height="29" fill="#f9fafb"/>
+  <text x="61" y="890" class="muted tiny">SELECT</text><text x="124" y="890" class="muted tiny">COMPONENT NAME</text><text x="534" y="890" class="muted tiny">DRIVER</text><text x="685" y="890" class="muted tiny">SPAN</text><text x="817" y="890" class="muted tiny">MATERIAL LINK</text><text x="1162" y="890" class="muted tiny">STATUS</text>
+  <rect x="43" y="900" width="1354" height="39" fill="#f1fbfd"/>
+  <rect x="63" y="913" width="14" height="14" rx="2" fill="#07b6d3"/><text x="65" y="925" class="white tiny">✓</text>
+  <text x="124" y="924" class="small" font-weight="700">Frame Top</text><text x="534" y="924" class="small">WIDTH</text><text x="685" y="924" class="small">1.00x</text><text x="817" y="924" class="cyan small">AL-798-MILL  ⌄</text><text x="1162" y="924" class="amber small">Unsaved</text>
+  <rect x="817" y="941" width="309" height="34" fill="#fffbeb"/>
+  <text x="124" y="963" class="small">Frame Bottom</text><text x="534" y="963" class="small">WIDTH</text><text x="685" y="963" class="small">1.00x</text><text x="829" y="963" class="amber small">⚠ Unassigned  ⌄</text><text x="1162" y="963" class="small muted">Ready</text>
+</svg>

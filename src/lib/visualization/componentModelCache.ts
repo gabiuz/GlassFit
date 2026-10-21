@@ -127,6 +127,8 @@ function cloneModel(source: THREE.Object3D) {
       return;
     }
 
+    object.userData.sharedCachedGeometry = true;
+
     if (Array.isArray(object.material)) {
       object.material = object.material.map((material) => material.clone());
     } else {

@@ -1,6 +1,12 @@
 "use client";
 
+import { evaluatePlaneEligibility } from "@/lib/visualization/planeEligibility";
+import { createMeasurementRecord, readMeasurementRecord } from "@/lib/visualization/measurementRecord";
+import { createMetricReference, evaluateMetricOpening } from "@/lib/visualization/metricGeometry";
+import type { PaperReviewResult } from "@/lib/visualization/paperReference";
+
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import {
@@ -10,11 +16,13 @@ import {
   useMotionValue,
   useReducedMotion,
 } from "motion/react";
-import { ChevronDown, RotateCw, FlipHorizontal, RotateCcw, Trash2, MousePointer2, Maximize, Move, Minus, Plus } from "lucide-react";
+import { ChevronDown, RotateCw, FlipHorizontal, RotateCcw, Trash2, MousePointer2, Maximize, Move, Minus, Plus, CheckCircle2, Info, Lock } from "lucide-react";
 import Button from "@/components/shared/Button";
 import { AddProductModal } from "./AddProductModal";
 import { ManualOcclusionPointPicker } from "./ManualOcclusionPointPicker";
 import { PerspectivePlanePicker } from "./PerspectivePlanePicker";
+import { PaperDetectionConfirmationModal } from "./PaperDetectionConfirmationModal";
+import { ObstructionWarningTooltip } from "./ObstructionWarningTooltip";
 import { useNavbarVisibility } from "@/components/shared/NavbarVisibilityContext";
 import { useCompactViewport } from "../hooks/useCompactViewport";
 import { useDocumentScrollLock } from "../hooks/useDocumentScrollLock";
@@ -23,6 +31,7 @@ import { TouchDragProxy } from "./TouchDragProxy";
 import type { CatalogProduct } from "@/lib/products/types";
 import type { SpaceImageSession, LightingAnalysis } from "@/lib/imageApi";
 import { ProductModelRenderer } from "@/lib/visualization/modelRenderer";
+import { getWorkspaceDefinition } from "@/lib/visualization/workspaceDefinitionCache";
 import {
   GlassAppearanceMode,
   GlassColorKey,
@@ -44,6 +53,10 @@ import {
   scaleCornersAlongAxis,
 } from "@/lib/visualization/perspectiveTransform";
 import {
+  findObstructionWarnings,
+  type CanvasBox,
+} from "@/lib/visualization/obstructionWarnings";
+import {
   applyNoiseToCanvas,
   GRAIN_FILTER_SVG_ID,
 } from "@/lib/visualization/noiseGenerator";
@@ -64,6 +77,7 @@ import {
   computeEstimatedDimensions,
   sampleDepthAtPoint,
   getScaleAwareInitialDimensions,
+  recalculateMetricOverlay,
   computePhotoGroundedCm,
 } from "@/lib/visualization/scaleEstimation";
 import {
@@ -77,7 +91,16 @@ import {
   applyMeasurementOverridesToOverlays,
   convertInToCm,
 } from "@/lib/visualization/measurementConfirmation";
-import type { MeasurementConfirmationEntry } from "@/lib/visualization/types";
+import type {
+  FiducialPaperStandard,
+  MeasurementConfirmationEntry,
+  Point2D,
+  ScaleEstimationSignal,
+} from "@/lib/visualization/types";
+import {
+  useOptionalVisualizationSession,
+  type CalibrationMetadata,
+} from "@/lib/visualization/visualizationSession";
 import {
   ALUMINUM_FINISH_OPTIONS,
   GLASS_COLOR_OPTIONS,
@@ -129,12 +152,17 @@ interface ProductModelWorkspaceProps {
   onSnapshotChange?: (dataUrl: string) => void;
   onPlacedOverlaysChange?: (overlays: PlacedOverlay[]) => void;
   onComparisonOverlaysChange?: (overlays: PlacedOverlay[]) => void;
+  onCalibrationChange?: (
+    calibrationMeta: CalibrationMetadata,
+    scaleSignal: ScaleEstimationSignal,
+  ) => void;
   onProductSelect?: (
     productId: string,
     mode: "add" | "change" | "edit",
     newPlacedOverlay?: PlacedOverlay,
     configuration?: ProductConfigurationSnapshot,
     targetOverlayId?: string,
+    nextDefinition?: ProductStructuralDefinition,
   ) => void;
   onBack: () => void;
 }
@@ -205,6 +233,7 @@ export function ProductModelWorkspace({
   onSnapshotChange,
   onPlacedOverlaysChange,
   onComparisonOverlaysChange,
+  onCalibrationChange,
   onProductSelect,
   onBack,
 }: ProductModelWorkspaceProps) {
@@ -223,9 +252,17 @@ export function ProductModelWorkspace({
   const rotationSessionRef = useRef<RotationSession | null>(null);
   const appliedTemplateDefaultsRef = useRef<string | null>(
     initialConfiguration || (seedConfiguration?.widthCm && seedConfiguration.heightCm)
-      ? structuralDefinition?.template.templateId ?? null
+      ? structuralDefinition?.product.productId ?? null
       : null,
   );
+  const switchRequestRef = useRef(0);
+  const pendingSwitchRef = useRef<string | null>(null);
+  const skipPreparedBuildRef = useRef<string | null>(null);
+  const suppressNextConfigurationPublicationRef = useRef(false);
+  const assetSessionRef = useRef(assetSessionId);
+  useEffect(() => { assetSessionRef.current = assetSessionId; }, [assetSessionId]);
+  useEffect(() => () => { switchRequestRef.current += 1; }, []);
+  useEffect(() => { switchRequestRef.current += 1; pendingSwitchRef.current = null; }, [assetSessionId]);
   const dragControls = useDragControls();
   const prefersReducedMotion = useReducedMotion();
   const [zoomLevel, setZoomLevel] = useState(
@@ -272,15 +309,84 @@ export function ProductModelWorkspace({
   const [isMeasurementModalOpen, setIsMeasurementModalOpen] = useState(false);
   const [measurementEntries, setMeasurementEntries] = useState<MeasurementConfirmationEntry[]>([]);
   const pendingComparisonOverlaysRef = useRef<PlacedOverlay[]>([]);
+
+  // Fiducial Paper Calibration and Grounded Scale State (IMP-MS47, IMP-MS49)
+  const sessionContext = useOptionalVisualizationSession();
+  const commitSessionCalibration = onCalibrationChange ?? sessionContext?.updateSessionCalibration;
+
+  const [activeScaleSignal, setActiveScaleSignal] = useState<ScaleEstimationSignal | null>(() => {
+    return (
+      spaceImageSession?.scaleEstimation ??
+      spaceImageSession?.scale_estimation ??
+      sessionContext?.spaceImageSession?.scaleEstimation ??
+      sessionContext?.spaceImageSession?.scale_estimation ??
+      null
+    );
+  });
+  const [activeCalibrationMeta, setActiveCalibrationMeta] = useState<CalibrationMetadata | null>(() => {
+    return (
+      spaceImageSession?.calibrationMeta ??
+      sessionContext?.spaceImageSession?.calibrationMeta ??
+      null
+    );
+  });
+  const [showPaperPinPicker, setShowPaperPinPicker] = useState<boolean>(() => {
+    const meta = spaceImageSession?.calibrationMeta ?? sessionContext?.spaceImageSession?.calibrationMeta;
+    if (meta?.user_verified || meta?.status === "verified_calibrated") {
+      return false;
+    }
+    return meta?.mode === "paper_fiducial" && meta.status === "manual_pin_required";
+  });
+
+  const [prevCalibrationMeta, setPrevCalibrationMeta] = useState(spaceImageSession?.calibrationMeta);
+  if (spaceImageSession?.calibrationMeta !== prevCalibrationMeta) {
+    setPrevCalibrationMeta(spaceImageSession?.calibrationMeta);
+    if (spaceImageSession?.calibrationMeta) {
+      setActiveCalibrationMeta(spaceImageSession.calibrationMeta);
+    }
+  }
+
+  const currentScaleSignal = spaceImageSession?.scaleEstimation ?? spaceImageSession?.scale_estimation;
+  const [prevScaleSignal, setPrevScaleSignal] = useState(currentScaleSignal);
+  if (currentScaleSignal !== prevScaleSignal) {
+    setPrevScaleSignal(currentScaleSignal);
+    if (currentScaleSignal) {
+      setActiveScaleSignal(currentScaleSignal);
+    }
+  }
+
+  const metricFrame = useMemo(() => ({ imageId: spaceImageSession?.sessionId ?? sessionContext?.spaceImageSession?.sessionId ?? "",
+    width: spaceImageSession?.workspaceImage?.width ?? sessionContext?.spaceImageSession?.workspaceImage?.width ?? 0,
+    height: spaceImageSession?.workspaceImage?.height ?? sessionContext?.spaceImageSession?.workspaceImage?.height ?? 0 }), [spaceImageSession, sessionContext?.spaceImageSession]);
+  const referenceEligibility = evaluatePlaneEligibility(activeCalibrationMeta, activeCalibrationMeta?.metricReference?.planeId, null, metricFrame);
+  const metricReference = referenceEligibility.status === "eligible_planar_estimate" ? activeCalibrationMeta?.metricReference ?? null : null;
+  const latestFitIdentityRef = useRef({ imageId: metricFrame.imageId, productId: structuralDefinition?.product.productId });
+  useLayoutEffect(() => {
+    latestFitIdentityRef.current = { imageId: metricFrame.imageId, productId: structuralDefinition?.product.productId };
+  }, [metricFrame.imageId, structuralDefinition?.product.productId]);
+  const isPaperCalibrated = Boolean(activeCalibrationMeta?.mode === "paper_fiducial" && metricReference && activeCalibrationMeta?.samePlaneConfirmed && activeCalibrationMeta?.paperStandardConfirmed);
+  const verifiedScaleCmPerPx =
+    activeCalibrationMeta?.verified_scale_cm_per_px ??
+    spaceImageSession?.calibrationMeta?.verified_scale_cm_per_px ??
+    sessionContext?.spaceImageSession?.calibrationMeta?.verified_scale_cm_per_px ??
+    activeScaleSignal?.best_scale_cm_per_px ??
+    null;
+
   const [widthCm, setWidthCm] = useState(() => {
+    const photoWidthPx = spaceImageSession?.workspaceImage?.width ?? 0;
+    const photoHeightPx = spaceImageSession?.workspaceImage?.height ?? 0;
     const hydratedWidth = hydratedVariation.widthCm;
     if (hydratedWidth) {
       return String(hydratedWidth);
     }
-    const photoWidthPx = spaceImageSession?.workspaceImage?.width ?? 0;
-    const photoHeightPx = spaceImageSession?.workspaceImage?.height ?? 0;
+    const scaleSignal =
+      activeScaleSignal ??
+      spaceImageSession?.scaleEstimation ??
+      spaceImageSession?.scale_estimation ??
+      sessionContext?.spaceImageSession?.scaleEstimation ??
+      null;
     const initialDims = getScaleAwareInitialDimensions(
-      spaceImageSession?.scaleEstimation ?? null,
+      scaleSignal,
       DEFAULT_PRODUCT_WIDTH_CM,
       DEFAULT_PRODUCT_HEIGHT_CM,
       DEFAULT_OVERLAY_WIDTH_PX,
@@ -293,14 +399,20 @@ export function ProductModelWorkspace({
     return String(initialDims.widthCm);
   });
   const [heightCm, setHeightCm] = useState(() => {
+    const photoWidthPx = spaceImageSession?.workspaceImage?.width ?? 0;
+    const photoHeightPx = spaceImageSession?.workspaceImage?.height ?? 0;
     const hydratedHeight = hydratedVariation.heightCm;
     if (hydratedHeight) {
       return String(hydratedHeight);
     }
-    const photoWidthPx = spaceImageSession?.workspaceImage?.width ?? 0;
-    const photoHeightPx = spaceImageSession?.workspaceImage?.height ?? 0;
+    const scaleSignal =
+      activeScaleSignal ??
+      spaceImageSession?.scaleEstimation ??
+      spaceImageSession?.scale_estimation ??
+      sessionContext?.spaceImageSession?.scaleEstimation ??
+      null;
     const initialDims = getScaleAwareInitialDimensions(
-      spaceImageSession?.scaleEstimation ?? null,
+      scaleSignal,
       DEFAULT_PRODUCT_WIDTH_CM,
       DEFAULT_PRODUCT_HEIGHT_CM,
       DEFAULT_OVERLAY_WIDTH_PX,
@@ -331,6 +443,7 @@ export function ProductModelWorkspace({
   const [perspectiveCorners, setPerspectiveCorners] = useState<QuadrilateralCorners | null>(
     initialConfiguration?.perspectiveFitCorners ?? null,
   );
+  const [targetPlaneId, setTargetPlaneId] = useState<string | null>(initialConfiguration?.targetPlaneId ?? null);
   const [showPerspectivePicker, setShowPerspectivePicker] = useState(false);
   const { setNavbarHidden } = useNavbarVisibility();
 
@@ -583,6 +696,111 @@ export function ProductModelWorkspace({
     };
   }, [perspectiveCorners, canvasDisplaySize.width, canvasDisplaySize.height]);
 
+  const [dismissedObstructionKeys, setDismissedObstructionKeys] = useState<Set<string>>(new Set());
+
+  const currentOverlayCanvasBox = useMemo<CanvasBox | null>(() => {
+    if (!selectedProduct || canvasDisplaySize.width <= 0 || canvasDisplaySize.height <= 0) return null;
+
+    if (perspectiveCorners) {
+      const pxCorners = denormalizeCorners(
+        perspectiveCorners,
+        canvasDisplaySize.width,
+        canvasDisplaySize.height,
+      );
+      return {
+        x1: Math.min(...pxCorners.map((p) => p.x)),
+        y1: Math.min(...pxCorners.map((p) => p.y)),
+        x2: Math.max(...pxCorners.map((p) => p.x)),
+        y2: Math.max(...pxCorners.map((p) => p.y)),
+      };
+    }
+
+    const cx = canvasDisplaySize.width / 2 + overlayPosition.x;
+    const cy = canvasDisplaySize.height / 2 + overlayPosition.y;
+    return {
+      x1: cx - overlaySize.width / 2,
+      y1: cy - overlaySize.height / 2,
+      x2: cx + overlaySize.width / 2,
+      y2: cy + overlaySize.height / 2,
+    };
+  }, [
+    selectedProduct,
+    perspectiveCorners,
+    canvasDisplaySize.width,
+    canvasDisplaySize.height,
+    overlayPosition.x,
+    overlayPosition.y,
+    overlaySize.width,
+    overlaySize.height,
+  ]);
+
+  const activeObstructionWarnings = useMemo(() => {
+    if (!currentOverlayCanvasBox || !spaceImageSession?.objects || !spaceImageSession.workspaceImage) {
+      return [];
+    }
+
+    return findObstructionWarnings({
+      overlayBox: currentOverlayCanvasBox,
+      detectedObjects: spaceImageSession.objects,
+      workspaceImage: spaceImageSession.workspaceImage,
+      canvasDisplayWidth: canvasDisplaySize.width,
+      canvasDisplayHeight: canvasDisplaySize.height,
+      dismissedKeys: dismissedObstructionKeys,
+    });
+  }, [
+    currentOverlayCanvasBox,
+    spaceImageSession,
+    canvasDisplaySize.width,
+    canvasDisplaySize.height,
+    dismissedObstructionKeys,
+  ]);
+
+  const primaryObstructionWarning = activeObstructionWarnings[0] ?? null;
+
+  const handleDismissObstruction = useCallback((warningId: string) => {
+    setDismissedObstructionKeys((prev) => new Set([...prev, warningId]));
+  }, []);
+
+  // When overlay moves completely away from an object, un-dismiss it
+  useEffect(() => {
+    if (!currentOverlayCanvasBox || dismissedObstructionKeys.size === 0) return;
+    if (!spaceImageSession?.objects || !spaceImageSession.workspaceImage) return;
+
+    const allCurrentOverlaps = findObstructionWarnings({
+      overlayBox: currentOverlayCanvasBox,
+      detectedObjects: spaceImageSession.objects,
+      workspaceImage: spaceImageSession.workspaceImage,
+      canvasDisplayWidth: canvasDisplaySize.width,
+      canvasDisplayHeight: canvasDisplaySize.height,
+      dismissedKeys: new Set(), // pass empty to see raw overlaps
+    });
+
+    const currentOverlappingObjectIds = new Set(allCurrentOverlaps.map((w) => w.id));
+
+    const syncTimer = window.setTimeout(() => {
+      setDismissedObstructionKeys((prev) => {
+        let changed = false;
+        const next = new Set<string>();
+        for (const key of prev) {
+          if (currentOverlappingObjectIds.has(key)) {
+            next.add(key);
+          } else {
+            changed = true; // Object is no longer overlapping; forget dismissal
+          }
+        }
+        return changed ? next : prev;
+      });
+    }, 0);
+
+    return () => window.clearTimeout(syncTimer);
+  }, [
+    currentOverlayCanvasBox,
+    spaceImageSession,
+    canvasDisplaySize.width,
+    canvasDisplaySize.height,
+    dismissedObstructionKeys.size,
+  ]);
+
   const effectiveLighting = (autoRealism && ambientLight) ? spaceImageSession?.lighting : null;
   const isWindowProduct =
     structuralDefinition?.product.productType === "Window" ||
@@ -672,8 +890,8 @@ export function ProductModelWorkspace({
     const widthValCm = Number(widthCm) || DEFAULT_PRODUCT_WIDTH_CM;
     const heightValCm = Number(heightCm) || DEFAULT_PRODUCT_HEIGHT_CM;
     const thicknessValMm = Number(thicknessMm) || 3;
-    const widthMm = Math.round(widthValCm * 10);
-    const heightMm = Math.round(heightValCm * 10);
+    const widthMm = (widthValCm * 10);
+    const heightMm = (heightValCm * 10);
     const finishType = alumFinish === "white" ? "PowderCoatedWhite" : "Analok";
     const glassType = thicknessValMm >= 6 && glassAppearance === "clear"
       ? "6mm_clear"
@@ -881,6 +1099,12 @@ export function ProductModelWorkspace({
 
   useEffect(() => {
     if (!mvpRendererRef.current || !structuralDefinition) return;
+    const buildKey = `${structuralDefinition.product.productId}:${widthCm}:${heightCm}:${panelCount}:${includeSill}:${alumFinish}:${glassAppearance}:${glassColor}:${glassThicknessMm}`;
+    if (skipPreparedBuildRef.current === buildKey) {
+      skipPreparedBuildRef.current = null;
+      return;
+    }
+    let cancelled = false;
     setMaterialCapabilities(null);
     mvpRendererRef.current.setSize(
       renderFrameSizeRef.current.width,
@@ -904,13 +1128,16 @@ export function ProductModelWorkspace({
         includeSill,
       },
     ).then((result) => {
-      if (!result) return;
+      if (!result || cancelled) return;
       setMaterialCapabilities(result.capabilities);
       // Preserve the last measured outline while resize interactions pause measurement.
       // The revision redraw measures the rebuilt model as soon as measurement resumes.
       setModelRevision((prev) => prev + 1);
       setProductBuildError(null);
+    }).catch((error: unknown) => {
+      if (!cancelled) setProductBuildError(error instanceof Error ? error.message : "Could not build the product model.");
     });
+    return () => { cancelled = true; };
   }, [structuralDefinition, widthCm, heightCm, panelCount, includeSill, glassAppearance, glassColor, glassThicknessMm, alumFinish]);
 
   useEffect(() => {
@@ -1042,8 +1269,8 @@ export function ProductModelWorkspace({
       return;
     }
 
-    const templateId = structuralDefinition.template.templateId;
-    if (appliedTemplateDefaultsRef.current === templateId) {
+    const productId = structuralDefinition.product.productId;
+    if (appliedTemplateDefaultsRef.current === productId) {
       return;
     }
 
@@ -1059,8 +1286,26 @@ export function ProductModelWorkspace({
     setWidthCm(nextWidthCm);
     setHeightCm(nextHeightCm);
     setOverlaySize(getOverlaySizeFromDimensions(nextWidthCm, nextHeightCm));
-    appliedTemplateDefaultsRef.current = templateId;
+    appliedTemplateDefaultsRef.current = productId;
   }, [structuralDefinition, isDoorProduct]);
+
+  const [manualDimensions, setManualDimensions] = useState(initialConfiguration?.visualParameterValues.dimension_source === "manual_tape");
+  const [savedMeasurementEvidence, setSavedMeasurementEvidence] = useState<unknown>(initialConfiguration?.visualParameterValues.calibration_provenance);
+  const activeMeasurementRecord = useMemo(() => {
+    if (manualDimensions || !perspectiveCorners) return null;
+    const current = createMeasurementRecord(activeCalibrationMeta, perspectiveCorners, metricFrame, targetPlaneId);
+    if (current) return current;
+    const saved = readMeasurementRecord(savedMeasurementEvidence);
+    return saved && metricReference && saved.plane_id !== metricReference.planeId && targetPlaneId === saved.plane_id && saved.image_identity === metricFrame.imageId && saved.image_width_px === metricFrame.width && saved.image_height_px === metricFrame.height
+      && JSON.stringify(saved.opening_corners) === JSON.stringify(perspectiveCorners) ? saved : null;
+  }, [manualDimensions, perspectiveCorners, activeCalibrationMeta, metricFrame, targetPlaneId, savedMeasurementEvidence, metricReference]);
+  const manualPhotoComparison = useMemo(() => manualDimensions && perspectiveCorners
+    ? createMeasurementRecord(activeCalibrationMeta, perspectiveCorners, metricFrame, targetPlaneId) : null,
+    [manualDimensions, perspectiveCorners, activeCalibrationMeta, metricFrame, targetPlaneId]);
+  const activeMetricMeasurement = activeMeasurementRecord;
+  const isVerifiedCalibrated = Boolean(activeMeasurementRecord &&
+    Math.abs(Number(widthCm) * 10 - activeMeasurementRecord.width_mm) < 1e-6 &&
+    Math.abs(Number(heightCm) * 10 - activeMeasurementRecord.height_mm) < 1e-6);
 
   const currentConfiguration = useMemo<ProductConfigurationSnapshot>(() => {
     const width = Number(widthCm) || DEFAULT_PRODUCT_WIDTH_CM;
@@ -1088,6 +1333,7 @@ export function ProductModelWorkspace({
       activeOcclusionIds,
       manualOcclusionMaskDataUrl: manualMaskDataUrl,
       manualOcclusionPolygons,
+      targetPlaneId,
       perspectiveFitCorners: perspectiveCorners,
       ambientLight,
       autoShadow,
@@ -1101,9 +1347,26 @@ export function ProductModelWorkspace({
         pane_count: panelCount,
         includeSill,
         include_sill: includeSill,
+        dimension_source: manualDimensions ? "manual_tape" : isVerifiedCalibrated ? "planar_paper_estimate" : "heuristic",
+        calibration_provenance: isVerifiedCalibrated ? activeMeasurementRecord : null,
+        metric_measurement: isVerifiedCalibrated ? activeMetricMeasurement : null,
+        photo_disagreement_mm: manualPhotoComparison ? { width: manualPhotoComparison.width_mm - width * 10,
+          height: manualPhotoComparison.height_mm - height * 10 } : null,
+        metric_eligibility: isVerifiedCalibrated ? "eligible_planar_estimate" : referenceEligibility.status,
+        placement_review: activeCalibrationMeta?.placementReview ?? null,
+        measurement_source: manualDimensions ? "manual_tape" : isVerifiedCalibrated ? "planar_photo_estimate" : "heuristic_preview",
+        calibration_scale_cm_per_px: null,
       },
     };
   }, [
+    isVerifiedCalibrated,
+    manualDimensions,
+    activeMeasurementRecord,
+    manualPhotoComparison,
+    targetPlaneId,
+    activeCalibrationMeta?.placementReview,
+    referenceEligibility.status,
+    activeMetricMeasurement,
     activeOcclusionIds,
     manualMaskDataUrl,
     manualOcclusionPolygons,
@@ -1137,6 +1400,11 @@ export function ProductModelWorkspace({
       return;
     }
 
+    if (suppressNextConfigurationPublicationRef.current) {
+      suppressNextConfigurationPublicationRef.current = false;
+      return;
+    }
+
     onConfigurationChange(currentConfiguration);
   }, [currentConfiguration, onConfigurationChange, structuralDefinition]);
 
@@ -1165,7 +1433,10 @@ export function ProductModelWorkspace({
     setOverlayPosition({ x: 0, y: 0 });
     overlayX.set(0);
     overlayY.set(0);
+    setTargetPlaneId(null);
     setPerspectiveCorners(null);
+    setManualDimensions(false);
+    setSavedMeasurementEvidence(null);
     setZoomLevel(DEFAULT_SCENE_ZOOM);
     setOverlaySize({
       width: Math.round(baseSize.width * defaultScale),
@@ -1173,7 +1444,7 @@ export function ProductModelWorkspace({
     });
     setProjectedModelBounds({ left: 0, top: 0, width: 1, height: 1 });
     setProductInstanceRevision((current) => current + 1);
-  }, [heightCm, overlayX, overlayY, widthCm]);
+  }, [heightCm, overlayX, overlayY, widthCm, setManualDimensions, setSavedMeasurementEvidence]);
 
   const applyProductConfiguration = useCallback(
     (configuration: ProductConfigurationSnapshot) => {
@@ -1208,7 +1479,10 @@ export function ProductModelWorkspace({
       setActiveOcclusionIds(configuration.activeOcclusionIds ?? []);
       setManualMaskDataUrl(configuration.manualOcclusionMaskDataUrl ?? null);
       setManualOcclusionPolygons(configuration.manualOcclusionPolygons ?? []);
+      setTargetPlaneId(configuration.targetPlaneId ?? null);
       setPerspectiveCorners(configuration.perspectiveFitCorners ?? null);
+      setManualDimensions(configuration.visualParameterValues.dimension_source === "manual_tape");
+      setSavedMeasurementEvidence(configuration.visualParameterValues.calibration_provenance);
       setAmbientLight(configuration.ambientLight ?? true);
       setAutoShadow(configuration.autoShadow ?? true);
       setAutoRealism(configuration.autoRealism ?? true);
@@ -1226,7 +1500,7 @@ export function ProductModelWorkspace({
       setIsSnapshotApplied(false);
       setProductInstanceRevision((current) => current + 1);
     },
-    [overlayX, overlayY],
+    [overlayX, overlayY, setManualDimensions, setSavedMeasurementEvidence],
   );
 
   const handleReset = (e: React.MouseEvent) => {
@@ -1240,12 +1514,130 @@ export function ProductModelWorkspace({
   };
 
   const handleOpenAddModal = (title: string) => {
+    if (title === "Change Product" && !selectedProduct) return;
     setModalTitle(title);
     setIsAddModalOpen(true);
   };
 
+  const activateDifferentProduct = async (intent: {
+    requestId: number;
+    productId: string;
+    mode: "add" | "change" | "edit";
+    placedOverlay?: PlacedOverlay;
+    targetOverlay?: PlacedOverlay;
+    targetLayerNumber: number;
+    targetOverlayId: string;
+  }) => {
+    if (!assetSessionId || !onProductSelect) return;
+    const requestId = intent.requestId;
+    if (requestId !== switchRequestRef.current) return;
+    const roomId = assetSessionId;
+    pendingSwitchRef.current = `${intent.mode}:${intent.productId}:${intent.targetOverlayId}`;
+    try {
+      const definition = await getWorkspaceDefinition(roomId, intent.productId);
+      const fallbackWidth = definition.product.productType.toLowerCase().includes("door") ? 900 : 2100;
+      const fallbackHeight = definition.product.productType.toLowerCase().includes("door") ? 2100 : 1500;
+      const defaultW = Math.round(getStructuralDefaultMm(definition, "width", fallbackWidth) / 10);
+      const defaultH = Math.round(getStructuralDefaultMm(definition, "height", fallbackHeight) / 10);
+      const stagedWidthCm = defaultW;
+      const stagedHeightCm = defaultH;
+      const scaleSignal =
+        activeScaleSignal ??
+        spaceImageSession?.scaleEstimation ??
+        spaceImageSession?.scale_estimation ??
+        sessionContext?.spaceImageSession?.scaleEstimation;
+      const targetConfiguration: ProductConfigurationSnapshot = intent.mode === "edit" && intent.targetOverlay
+        ? intent.targetOverlay.configuration
+        : {
+            ...currentConfiguration,
+            widthCm: stagedWidthCm,
+            heightCm: stagedHeightCm,
+            thicknessMm: Number(definition.parameters.find((parameter) => parameter.parameterKey === "thickness")?.defaultValue) || 3,
+            panelCount: Number(definition.parameters.find((parameter) => parameter.parameterKey === "pane_count")?.defaultValue) || 2,
+            includeSill: Boolean(definition.template.baseConfiguration.includeSill ?? true),
+            structuralWaiver: false,
+            aluminumFinish: "white",
+            glassAppearance: "clear",
+            glassColor: "clear",
+            glassThicknessMm: 6,
+            glassType: "regular",
+            quantity: 1,
+            yaw: 0,
+            pitch: 0,
+            rotateAngle: intent.mode === "change" ? currentConfiguration.rotateAngle : 0,
+            isFlipped: intent.mode === "change" ? currentConfiguration.isFlipped : false,
+            zoomLevel: intent.mode === "change" ? currentConfiguration.zoomLevel : DEFAULT_SCENE_ZOOM,
+            positionX: intent.mode === "change" ? currentConfiguration.positionX : 0,
+            positionY: intent.mode === "change" ? currentConfiguration.positionY : 0,
+            targetPlaneId: null,
+            perspectiveFitCorners: null,
+            activeOcclusionIds: [],
+            manualOcclusionMaskDataUrl: null,
+            manualOcclusionPolygons: [],
+            visualParameterValues: {
+              width: Math.round(stagedWidthCm * 10),
+              height: Math.round(stagedHeightCm * 10),
+              thickness: Number(definition.parameters.find((parameter) => parameter.parameterKey === "thickness")?.defaultValue) || 3,
+              pane_count: Number(definition.parameters.find((parameter) => parameter.parameterKey === "pane_count")?.defaultValue) || 2,
+              includeSill: Boolean(definition.template.baseConfiguration.includeSill ?? true),
+              include_sill: Boolean(definition.template.baseConfiguration.includeSill ?? true),
+              dimension_source: "default_heuristic",
+              metric_measurement: null, calibration_provenance: null,
+              paper_standard: activeCalibrationMeta?.paperStandard ?? null,
+              calibration_scale_cm_per_px: verifiedScaleCmPerPx ?? scaleSignal?.best_scale_cm_per_px ?? null,
+              user_verified: Boolean(activeCalibrationMeta?.user_verified),
+            },
+          };
+      const renderer = mvpRendererRef.current;
+      if (!renderer) throw new Error("The product renderer is unavailable.");
+      const prepared = await renderer.prepareModel(definition, {
+        width: targetConfiguration.widthCm * 10,
+        height: targetConfiguration.heightCm * 10,
+        pane_count: targetConfiguration.panelCount,
+        includeSill: targetConfiguration.includeSill,
+        include_sill: targetConfiguration.includeSill,
+      }, {
+        aluminumFinish: normalizeAluminumFinish(targetConfiguration.aluminumFinish),
+        glassAppearance: targetConfiguration.glassAppearance,
+        glassColor: targetConfiguration.glassColor ?? "clear",
+        glassThicknessMm: targetConfiguration.glassThicknessMm ?? 6,
+        includeSill: targetConfiguration.includeSill,
+      });
+      if (requestId !== switchRequestRef.current || roomId !== assetSessionRef.current) {
+        renderer.releasePreparedModel(prepared);
+        return;
+      }
+      skipPreparedBuildRef.current = `${intent.productId}:${targetConfiguration.widthCm}:${targetConfiguration.heightCm}:${targetConfiguration.panelCount}:${targetConfiguration.includeSill}:${normalizeAluminumFinish(targetConfiguration.aluminumFinish)}:${targetConfiguration.glassAppearance}:${targetConfiguration.glassColor}:${targetConfiguration.glassThicknessMm}`;
+      suppressNextConfigurationPublicationRef.current = true;
+      appliedTemplateDefaultsRef.current = intent.productId;
+      renderer.commitPreparedModel(prepared);
+      flushSync(() => {
+        applyProductConfiguration(targetConfiguration);
+        setActiveOverlayId(intent.targetOverlayId);
+        setActiveLayerNumber(intent.targetLayerNumber);
+        setMaterialCapabilities(prepared.capabilities);
+        setModelRevision((previous) => previous + 1);
+        setProductBuildError(null);
+        setIsAddModalOpen(false);
+        setIsGuardrailModalOpen(false);
+        setIsMeasurementModalOpen(false);
+        onProductSelect(intent.productId, intent.mode, intent.placedOverlay, targetConfiguration,
+          intent.mode === "edit" ? intent.targetOverlay?.overlayId : undefined, definition);
+      });
+    } catch (error) {
+      if (requestId === switchRequestRef.current && roomId === assetSessionRef.current) {
+        setProductBuildError(error instanceof Error ? error.message : "Could not switch products. Please try again.");
+      }
+    } finally {
+      if (requestId === switchRequestRef.current) pendingSwitchRef.current = null;
+    }
+  };
+
   const handleSelectProduct = async (product: CatalogProduct) => {
     const mode = modalTitle === "Add Product" ? "add" : "change";
+    if (mode === "change" && !selectedProduct) return;
+    if (pendingSwitchRef.current?.startsWith(`${mode}:${product.id}:`)) return;
+    const requestId = ++switchRequestRef.current;
 
     if (product.id === currentProductId && !selectedProduct) {
       resetProductPlacement();
@@ -1261,17 +1653,31 @@ export function ProductModelWorkspace({
       return;
     }
 
+    // PRD-F6 / QAD-TC59: The direct /visualization entry has no active product
+    // or asset session yet. Its owner creates the session and opens the product route.
+    if (!currentProductId && !structuralDefinition) {
+      onProductSelect(product.id, mode);
+      return;
+    }
+
     let newlyPlacedOverlay: PlacedOverlay | undefined;
     if (mode === "add" && selectedProduct) {
       try {
         newlyPlacedOverlay = await createPlacedOverlay(activeLayerNumber);
-        onPlacedOverlaysChange?.([...placedOverlays, newlyPlacedOverlay]);
       } catch (err) {
-        console.error("Failed to place active product before adding:", err);
+        setProductBuildError("Could not capture the current product. Please try again.");
+        return;
       }
     }
 
     const nextActiveOverlayId = `active-${product.id}-${crypto.randomUUID()}`;
+    if (product.id !== currentProductId) {
+      let maxNum = activeLayerNumber;
+      for (const overlay of placedOverlays) maxNum = Math.max(maxNum, overlay.layerNumber ?? 0);
+      await activateDifferentProduct({ requestId, productId: product.id, mode, placedOverlay: newlyPlacedOverlay,
+        targetLayerNumber: mode === "add" ? maxNum + 1 : activeLayerNumber, targetOverlayId: nextActiveOverlayId });
+      return;
+    }
     setActiveOverlayId(nextActiveOverlayId);
 
     if (mode === "add") {
@@ -1510,6 +1916,8 @@ export function ProductModelWorkspace({
 
   const handleEditPlacedOverlay = useCallback(
     async (overlay: PlacedOverlay) => {
+      if (pendingSwitchRef.current === `edit:${overlay.productId}:${overlay.overlayId}`) return;
+      const requestId = ++switchRequestRef.current;
       const targetIndex = placedOverlays.findIndex(
         (placedOverlay) => placedOverlay.overlayId === overlay.overlayId,
       );
@@ -1525,8 +1933,22 @@ export function ProductModelWorkspace({
         try {
           newlyPlaced = await createPlacedOverlay(currentActiveNum);
         } catch (err) {
-          console.error("Failed to place active product before editing layer:", err);
+          setProductBuildError("Could not capture the current product. Please try again.");
+          return;
         }
+      }
+
+      if (overlay.productId !== currentProductId) {
+        await activateDifferentProduct({
+          requestId,
+          productId: overlay.productId,
+          mode: "edit",
+          placedOverlay: newlyPlaced,
+          targetOverlay: overlay,
+          targetLayerNumber,
+          targetOverlayId: overlay.overlayId,
+        });
+        return;
       }
 
       if (newlyPlaced) {
@@ -1549,15 +1971,6 @@ export function ProductModelWorkspace({
       setIsSnapshotApplied(false);
       applyProductConfiguration(overlay.configuration);
 
-      if (overlay.productId !== currentProductId) {
-        onProductSelect?.(
-          overlay.productId,
-          "edit",
-          newlyPlaced,
-          overlay.configuration,
-          overlay.overlayId,
-        );
-      }
     },
     [
       activeLayerNumber,
@@ -1696,6 +2109,7 @@ export function ProductModelWorkspace({
       setIsMeasurementModalOpen(false);
 
       const activeEntry = confirmedEntries.find((e) => e.isActiveProduct);
+      if (activeEntry?.dimensionSource === "manual_tape") setManualDimensions(true);
       if (activeEntry?.override.widthOverridden) {
         setWidthCm(String(convertInToCm(activeEntry.override.widthIn)));
       }
@@ -1743,6 +2157,7 @@ export function ProductModelWorkspace({
       selectedProduct,
       setHeightCm,
       setWidthCm,
+      setManualDimensions,
     ],
   );
 
@@ -1751,6 +2166,154 @@ export function ProductModelWorkspace({
     setIsSnapshotApplied(false);
     pendingComparisonOverlaysRef.current = [];
   }, []);
+
+  const handlePaperPinConfirm = useCallback(
+    (
+      orderedCorners: [Point2D, Point2D, Point2D, Point2D],
+      scaleResult: PaperReviewResult,
+      selectedStandard?: FiducialPaperStandard,
+    ) => {
+      if (!scaleResult.paperStandardConfirmed || !scaleResult.samePlaneConfirmed ||
+        scaleResult.placementAssessment !== "user_confirmed_same_plane" ||
+        scaleResult.placementRiskReasons?.some(r => r !== "person_nearby")) return;
+      const paperStd = selectedStandard ?? activeCalibrationMeta?.paperStandard ?? "a4";
+      if (!scaleResult.orientationConfirmed || !scaleResult.firstEdge) return;
+      const geometry = createMetricReference(metricFrame, orderedCorners, paperStd, scaleResult.firstEdge,
+        (metricReference?.revision ?? 0) + 1);
+      if (!geometry.valid) return;
+      const updatedSignal: ScaleEstimationSignal = {
+        reference_confirmed: true,
+        best_scale_cm_per_px: scaleResult.scaleCmPerPx,
+        confidence: scaleResult.confidence,
+        method: `paper_fiducial_${paperStd}`,
+        anchors: [
+          {
+            label: `paper_${paperStd}`,
+            bbox_height_px: 0,
+            reference_height_cm: 0,
+            scale_cm_per_px: scaleResult.scaleCmPerPx,
+            confidence: scaleResult.confidence,
+            depth_correction: 1.0,
+          },
+        ],
+        exif_focal_length_mm: activeScaleSignal?.exif_focal_length_mm ?? null,
+        exif_focal_length_35mm: activeScaleSignal?.exif_focal_length_35mm ?? null,
+        exif_device_model: activeScaleSignal?.exif_device_model ?? null,
+      };
+
+      const updatedMeta: CalibrationMetadata = {
+        mode: "paper_fiducial",
+        paperStandard: paperStd,
+        suggested_paper_standard:
+          activeCalibrationMeta?.suggested_paper_standard ??
+          spaceImageSession?.paperCalibration?.suggested_paper_standard ??
+          null,
+        suggestedPaperStandard:
+          activeCalibrationMeta?.suggested_paper_standard ??
+          spaceImageSession?.paperCalibration?.suggested_paper_standard ??
+          null,
+        aspect_ratio_match_confidence:
+          activeCalibrationMeta?.aspect_ratio_match_confidence ??
+          spaceImageSession?.paperCalibration?.aspect_ratio_match_confidence ??
+          0,
+        aspectRatioMatchConfidence:
+          activeCalibrationMeta?.aspect_ratio_match_confidence ??
+          spaceImageSession?.paperCalibration?.aspect_ratio_match_confidence ??
+          0,
+        unwarped_aspect_ratio:
+          activeCalibrationMeta?.unwarped_aspect_ratio ??
+          spaceImageSession?.paperCalibration?.unwarped_aspect_ratio ??
+          null,
+        unwarpedAspectRatio:
+          activeCalibrationMeta?.unwarped_aspect_ratio ??
+          spaceImageSession?.paperCalibration?.unwarped_aspect_ratio ??
+          null,
+        status: "verified_calibrated",
+        confidence: scaleResult.confidence,
+        detectedCorners: orderedCorners.map((pt) => [pt.x, pt.y]),
+        homographyMatrix: null,
+        metricReference: geometry.reference,
+        referenceSource: scaleResult.referenceSource,
+        selectedCandidateId: scaleResult.selectedCandidateId,
+        paperStandardConfirmed: true,
+        samePlaneConfirmed: true,
+        placementReview: { version: "plane-placement-v1", assessment: "user_confirmed_same_plane",
+          riskReasons: scaleResult.placementRiskReasons ?? [], targetPlaneId: geometry.reference.planeId },
+        user_verified: true,
+        verified_corners: orderedCorners,
+        verified_scale_cm_per_px: scaleResult.scaleCmPerPx,
+      };
+
+      setActiveScaleSignal(updatedSignal);
+      setActiveCalibrationMeta(updatedMeta);
+      commitSessionCalibration?.(updatedMeta, updatedSignal);
+      onCalibrationChange?.(updatedMeta, updatedSignal);
+
+      const photoWidthPx = spaceImageSession?.workspaceImage?.width ?? 0;
+      const photoHeightPx = spaceImageSession?.workspaceImage?.height ?? 0;
+
+      if (perspectiveCorners && !manualDimensions && targetPlaneId === geometry.reference.planeId) {
+        const measurement = evaluateMetricOpening(geometry.reference,
+          denormalizeCorners(perspectiveCorners, photoWidthPx, photoHeightPx), metricFrame);
+        if (measurement.valid) {
+          setWidthCm(String(measurement.widthMm / 10));
+          setHeightCm(String(measurement.heightMm / 10));
+          setOverlaySize(getOverlaySizeFromDimensions(String(measurement.widthMm / 10), String(measurement.heightMm / 10)));
+        }
+      }
+      setModelRevision((prev) => prev + 1);
+      if (placedOverlays && onPlacedOverlaysChange) {
+        onPlacedOverlaysChange(placedOverlays.map(overlay => recalculateMetricOverlay(overlay, geometry.reference, metricFrame, updatedMeta)));
+      }
+
+      setShowPaperPinPicker(false);
+    },
+    [
+      manualDimensions,
+      activeCalibrationMeta?.paperStandard,
+      activeCalibrationMeta?.suggested_paper_standard,
+      activeCalibrationMeta?.aspect_ratio_match_confidence,
+      activeCalibrationMeta?.unwarped_aspect_ratio,
+      activeScaleSignal,
+      metricFrame,
+      targetPlaneId,
+      metricReference,
+      commitSessionCalibration,
+      onCalibrationChange,
+      onPlacedOverlaysChange,
+      perspectiveCorners,
+      placedOverlays,
+      setModelRevision,
+      spaceImageSession?.paperCalibration?.suggested_paper_standard,
+      spaceImageSession?.paperCalibration?.aspect_ratio_match_confidence,
+      spaceImageSession?.paperCalibration?.unwarped_aspect_ratio,
+      spaceImageSession?.workspaceImage,
+    ],
+  );
+
+  const handlePaperPinSkip = useCallback((review?: PaperReviewResult) => {
+    const updatedMeta: CalibrationMetadata = {
+      mode: "paper_fiducial", paperStandard: null, status: "heuristic_fallback", confidence: 0,
+      homographyMatrix: null, detectedCorners: null, user_verified: false,
+      verified_corners: null, verified_scale_cm_per_px: null, paperStandardConfirmed: false,
+      samePlaneConfirmed: false, selectedCandidateId: null,
+      placementReview: { version: "plane-placement-v1", assessment: review?.placementAssessment ?? "unknown",
+        riskReasons: review?.placementRiskReasons ?? [], targetPlaneId: null },
+    };
+    setActiveCalibrationMeta(updatedMeta);
+    const signalToCommit: ScaleEstimationSignal = {
+      reference_confirmed: false, best_scale_cm_per_px: null, confidence: 0,
+      method: "heuristic_fallback", anchors: [], exif_focal_length_mm: null,
+      exif_focal_length_35mm: null, exif_device_model: null,
+    };
+    setActiveScaleSignal(signalToCommit);
+    commitSessionCalibration?.(updatedMeta, signalToCommit);
+    onCalibrationChange?.(updatedMeta, signalToCommit);
+    if (placedOverlays && onPlacedOverlaysChange) {
+      onPlacedOverlaysChange(placedOverlays.map(overlay => recalculateMetricOverlay(overlay, null, metricFrame, updatedMeta)));
+    }
+    setShowPaperPinPicker(false);
+  }, [commitSessionCalibration, onCalibrationChange, placedOverlays, onPlacedOverlaysChange, metricFrame]);
 
   const applySceneZoom = useCallback((nextZoomLevel: number) => {
     setZoomLevel((currentZoomLevel) => {
@@ -1802,6 +2365,7 @@ export function ProductModelWorkspace({
   );
 
   const handleWidthCmChange = (value: string) => {
+    setManualDimensions(false);
     const prevW = Number(widthCm) || 120;
     setWidthCm(value);
     setOverlaySize(getOverlaySizeFromDimensions(value, heightCm));
@@ -1821,6 +2385,7 @@ export function ProductModelWorkspace({
   };
 
   const handleHeightCmChange = (value: string) => {
+    setManualDimensions(false);
     const prevH = Number(heightCm) || 120;
     setHeightCm(value);
     setOverlaySize(getOverlaySizeFromDimensions(widthCm, value));
@@ -2110,6 +2675,17 @@ export function ProductModelWorkspace({
     [rotateAngle],
   );
 
+  const updateMetricPerspectiveCorners = useCallback((corners: QuadrilateralCorners) => {
+    setPerspectiveCorners(corners);
+    if (!metricReference || manualDimensions || targetPlaneId !== metricReference.planeId) return;
+    const measurement = evaluateMetricOpening(metricReference,
+      denormalizeCorners(corners, metricFrame.width, metricFrame.height), metricFrame);
+    if (!measurement.valid) return;
+    setWidthCm(String(measurement.widthMm / 10));
+    setHeightCm(String(measurement.heightMm / 10));
+    setOverlaySize(getOverlaySizeFromDimensions(String(measurement.widthMm / 10), String(measurement.heightMm / 10)));
+  }, [metricReference, metricFrame, targetPlaneId, manualDimensions]);
+
   const startPerspectiveResize = useCallback(
     (
       event: React.PointerEvent,
@@ -2153,6 +2729,7 @@ export function ProductModelWorkspace({
           const initialSpan = currentW * 0.35;
           const scaleRatio = Math.max(0.15, 1 + dominantDelta / initialSpan);
           const nextCorners = scaleCornersAlongAxis(session.startCorners, scaleRatio, "scale");
+          if (metricReference) { updateMetricPerspectiveCorners(nextCorners); return; }
           setPerspectiveCorners(nextCorners);
           const nextW = Math.max(20, Math.round(session.startWidthCm * scaleRatio));
           const nextH = Math.max(20, Math.round(session.startHeightCm * scaleRatio));
@@ -2166,6 +2743,7 @@ export function ProductModelWorkspace({
           const initialSpan = currentW * 0.30;
           const widthRatio = Math.max(0.15, 1 + dx / initialSpan);
           const nextCorners = scaleCornersAlongAxis(session.startCorners, widthRatio, "width");
+          if (metricReference) { updateMetricPerspectiveCorners(nextCorners); return; }
           setPerspectiveCorners(nextCorners);
           const nextW = Math.max(20, Math.round(session.startWidthCm * widthRatio));
           setWidthCm(String(nextW));
@@ -2177,6 +2755,7 @@ export function ProductModelWorkspace({
           const initialSpan = currentH * 0.30;
           const heightRatio = Math.max(0.15, 1 + dy / initialSpan);
           const nextCorners = scaleCornersAlongAxis(session.startCorners, heightRatio, "height");
+          if (metricReference) { updateMetricPerspectiveCorners(nextCorners); return; }
           setPerspectiveCorners(nextCorners);
           const nextH = Math.max(20, Math.round(session.startHeightCm * heightRatio));
           setHeightCm(String(nextH));
@@ -2198,7 +2777,7 @@ export function ProductModelWorkspace({
       window.addEventListener("pointerup", handleEnd);
       window.addEventListener("pointercancel", handleEnd);
     },
-    [perspectiveCorners, widthCm, heightCm, canvasDisplaySize.width, canvasDisplaySize.height],
+    [perspectiveCorners, widthCm, heightCm, canvasDisplaySize.width, canvasDisplaySize.height, metricReference, updateMetricPerspectiveCorners],
   );
 
   const startPerspectiveMove = useCallback(
@@ -2226,7 +2805,7 @@ export function ProductModelWorkspace({
           y: clampNumber(p.y + normDy, -0.2, 1.2),
         })) as QuadrilateralCorners;
 
-        setPerspectiveCorners(nextCorners);
+        updateMetricPerspectiveCorners(nextCorners);
       };
 
       const handleEnd = () => {
@@ -2240,7 +2819,7 @@ export function ProductModelWorkspace({
       window.addEventListener("pointerup", handleEnd);
       window.addEventListener("pointercancel", handleEnd);
     },
-    [perspectiveCorners, isUsingTransformHandle, canvasDisplaySize.width, canvasDisplaySize.height],
+    [perspectiveCorners, isUsingTransformHandle, canvasDisplaySize.width, canvasDisplaySize.height, updateMetricPerspectiveCorners],
   );
 
   return (
@@ -2361,7 +2940,8 @@ export function ProductModelWorkspace({
               <button
                 type="button"
                 onClick={() => handleOpenAddModal("Change Product")}
-                className="bg-green hover:bg-[#06a3bd] text-white px-4 py-2 rounded-[10px] text-sm font-normal transition-colors cursor-pointer whitespace-nowrap"
+                disabled={!selectedProduct}
+                className="bg-green hover:bg-[#06a3bd] text-white px-4 py-2 rounded-[10px] text-sm font-normal transition-colors cursor-pointer whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Change Product
               </button>
@@ -2555,6 +3135,42 @@ export function ProductModelWorkspace({
                 draggable={false}
                 className="w-full h-full object-cover select-none"
               />
+
+              {/* ── Calibration Scale HUD Indicator (IMP-MS47, IMP-MS52) ── */}
+              <div className="absolute top-3 left-3 z-30 flex items-center gap-2 select-none pointer-events-auto">
+                {isPaperCalibrated ? (
+                  <div className="flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-600 dark:text-emerald-400 backdrop-blur-md shadow-xs">
+                    <CheckCircle2 className="size-3.5 text-emerald-500 shrink-0" />
+                    <span>
+                      {manualDimensions ? "Manual tape measurement" : isVerifiedCalibrated ? "Photo estimate: paper calibrated" : "Reference reviewed: fit the opening"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowPaperPinPicker(true)}
+                      className="ml-1 cursor-pointer underline underline-offset-2 hover:text-emerald-700 dark:hover:text-emerald-300 font-semibold text-[11px]"
+                    >
+                      Adjust Marker
+                    </button>
+                  </div>
+                ) : (
+                  <div
+                    title={activeCalibrationMeta?.mode === "paper_fiducial" ? "Review a flat paper reference and fit the installation perimeter." : "Approximate preview. Confirm dimensions with manual tape measurements."}
+                    className="flex items-center gap-2 rounded-full border border-neutral-500/20 bg-neutral-900/60 px-3 py-1.5 text-xs text-white/90 backdrop-blur-md shadow-xs"
+                  >
+                    <Info className="size-3.5 text-neutral-300 shrink-0" />
+                    <span>{manualDimensions ? "Manual tape measurement" : "Heuristic Scale: Ballpark Preview"}</span>
+                    {activeCalibrationMeta?.mode === "paper_fiducial" && (
+                      <button
+                        type="button"
+                        onClick={() => setShowPaperPinPicker(true)}
+                        className="ml-1 cursor-pointer underline underline-offset-2 text-[#07b6d3] hover:text-[#069bb5] font-medium text-[11px]"
+                      >
+                        Pin Paper
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
 
               {nonActivePlacedOverlays.map((overlay) => {
                 const layerNum = overlay.layerNumber ?? 1;
@@ -3072,12 +3688,45 @@ export function ProductModelWorkspace({
                             <div onPointerDown={startOverlayDrag} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 size-6 rounded-full bg-[#07b6d3] flex items-center justify-center shadow-md cursor-grab active:cursor-grabbing z-20 pointer-events-auto">
                               <div className="size-2 bg-white rounded-full" />
                             </div>
+
+                            {/* Live Dimension Callouts and Plane Estimate (IMP-MS52) */}
+                            {isVerifiedCalibrated && (
+                              <>
+                                {/* Width Callout: Top Center */}
+                                <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-[calc(100%+8px)] z-30 flex items-center gap-1.5 bg-emerald-900/80 text-emerald-100 border border-emerald-400/50 px-2.5 py-0.5 rounded-full text-xs font-mono font-medium shadow-sm backdrop-blur-xs pointer-events-none select-none whitespace-nowrap">
+                                  <Lock className="size-3 text-emerald-400 shrink-0" />
+                                  <span>{Math.round(Number(widthCm) * 10).toLocaleString()} mm</span>
+                                  <span className="hidden sm:inline"> ({Number(widthCm).toFixed(1)} cm)</span>
+                                </div>
+
+                                {/* Height Callout: Left Center */}
+                                <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-[calc(100%+8px)] z-30 flex items-center gap-1.5 bg-emerald-900/80 text-emerald-100 border border-emerald-400/50 px-2.5 py-0.5 rounded-full text-xs font-mono font-medium shadow-sm backdrop-blur-xs pointer-events-none select-none whitespace-nowrap">
+                                  <Lock className="size-3 text-emerald-400 shrink-0" />
+                                  <span>{Math.round(Number(heightCm) * 10).toLocaleString()} mm</span>
+                                  <span className="hidden sm:inline"> ({Number(heightCm).toFixed(1)} cm)</span>
+                                </div>
+
+                                {/* Plane estimate label at the top right */}
+                                <div className="absolute -top-7 right-0 z-30 flex items-center gap-1 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded text-[10px] font-medium tracking-wide uppercase shadow-sm pointer-events-none select-none whitespace-nowrap">
+                                  <span>Perspective estimate</span>
+                                </div>
+                              </>
+                            )}
                           </div>
                         </div>
                       </motion.div>
                     </div>
                   )}
                 </div>
+              )}
+
+              {selectedProduct && isEditingProduct && primaryObstructionWarning && (
+                <ObstructionWarningTooltip
+                  warning={primaryObstructionWarning}
+                  canvasWidth={canvasDisplaySize.width}
+                  canvasHeight={canvasDisplaySize.height}
+                  onDismiss={handleDismissObstruction}
+                />
               )}
             </div>
           </div>
@@ -3095,7 +3744,7 @@ export function ProductModelWorkspace({
                 <span>Tap Circle Rotate</span>
               </>
             ) : (
-              <span>Choose Add Product or Change Product to place a model.</span>
+              <span>Choose Add Product to place your first model.</span>
             )}
           </div>
 
@@ -3637,7 +4286,7 @@ export function ProductModelWorkspace({
             <div className="w-full rounded-[20px] border border-[#c3c3c3]/60 bg-white p-6 text-center shadow-xs">
               <p className="text-lg font-medium text-[#0f1422]">Your space is ready</p>
               <p className="mt-2 text-sm leading-6 text-black/65">
-                Select Add Product or Change Product above to choose from the GlassFit catalog.
+                Select Add Product above to choose your first model from the GlassFit catalog.
               </p>
             </div>
           )}
@@ -3715,16 +4364,68 @@ export function ProductModelWorkspace({
         onClose={() => setIsGuardrailModalOpen(false)}
       />
 
-      {/* ── Measurement Confirmation Modal (MS-08) ── */}
+      {/* ── Measurement Confirmation Modal (MS-08, IMP-MS47, IMP-MS50) ── */}
       {isMeasurementModalOpen && (
         <MeasurementConfirmationModal
           isOpen={isMeasurementModalOpen}
           entries={measurementEntries}
+          calibrationMeta={activeCalibrationMeta}
+          scaleSignal={activeScaleSignal ?? spaceImageSession?.scaleEstimation}
           onConfirmAll={handleMeasurementConfirmAll}
           onCancel={handleMeasurementModalCancel}
         />
       )}
 
+      {/* ── Interactive Fiducial Paper Corner Picker Modal (IMP-MS47, IMP-MS51, IMP-MS52) ── */}
+      {activeCalibrationMeta?.mode === "paper_fiducial" && showPaperPinPicker && (
+        <PaperDetectionConfirmationModal
+          isOpen={showPaperPinPicker}
+          sessionId={spaceImageSession?.sessionId}
+          localBlobUrl={spaceImageSession?.localBlobUrl}
+          backgroundImageUrl={bgImage}
+          canvasWidth={spaceImageSession?.workspaceImage.width || canvasDisplaySize.width}
+          canvasHeight={spaceImageSession?.workspaceImage.height || canvasDisplaySize.height}
+          paperStandard={activeCalibrationMeta?.paperStandard ?? "a4"}
+          confidence={activeCalibrationMeta?.confidence ?? 0}
+          status={activeCalibrationMeta?.status}
+          candidates={spaceImageSession?.paperCalibration?.candidates}
+          selectedCandidateId={activeCalibrationMeta?.selectedCandidateId}
+          paperStandardConfirmed={activeCalibrationMeta?.paperStandardConfirmed}
+          suggestedPaperStandard={
+            spaceImageSession?.paperCalibration?.suggested_paper_standard ??
+            activeCalibrationMeta?.suggested_paper_standard ??
+            null
+          }
+          aspectRatioMatchConfidence={
+            spaceImageSession?.paperCalibration?.aspect_ratio_match_confidence ??
+            activeCalibrationMeta?.aspect_ratio_match_confidence ??
+            0
+          }
+          unwarpedAspectRatio={
+            spaceImageSession?.paperCalibration?.unwarped_aspect_ratio ??
+            activeCalibrationMeta?.unwarped_aspect_ratio ??
+            null
+          }
+          initialCorners={
+            activeCalibrationMeta?.verified_corners ??
+            (activeCalibrationMeta?.detectedCorners
+              ? activeCalibrationMeta.detectedCorners.map((c) => ({ x: c[0], y: c[1] }))
+              : spaceImageSession?.calibrationMeta?.verified_corners ??
+                (spaceImageSession?.calibrationMeta?.detectedCorners
+                  ? spaceImageSession.calibrationMeta.detectedCorners.map((c) => ({ x: c[0], y: c[1] }))
+                  : sessionContext?.spaceImageSession?.calibrationMeta?.verified_corners ??
+                    (sessionContext?.spaceImageSession?.calibrationMeta?.detectedCorners
+                      ? sessionContext.spaceImageSession.calibrationMeta.detectedCorners.map((c) => ({ x: c[0], y: c[1] }))
+                      : null)))
+          }
+          onConfirm={(corners, scaleResult, paperStandard) =>
+            handlePaperPinConfirm(corners, scaleResult, paperStandard)
+          }
+          onSkip={handlePaperPinSkip}
+          onRetake={onBack}
+          onCancel={() => setShowPaperPinPicker(false)}
+        />
+      )}
 
       {/* Point-based Manual Occlusion Modal (MS-03) */}
       {showOcclusionPointPicker && (
@@ -3743,7 +4444,7 @@ export function ProductModelWorkspace({
         />
       )}
 
-      {/* ── Perspective Plane Picker Modal (MS-02) ── */}
+      {/* ── Perspective Plane Picker Modal (MS-02, IMP-MS52) ── */}
       {showPerspectivePicker && (
         <PerspectivePlanePicker
           backgroundImageUrl={bgImage}
@@ -3751,6 +4452,7 @@ export function ProductModelWorkspace({
           canvasHeight={aspectHeight}
           initialCorners={perspectiveCorners}
           openingType={isDoorProduct ? "door" : "window"}
+          isVerifiedCalibrated={isVerifiedCalibrated}
           onConfirm={async (corners) => {
             const photoWidth =
               spaceImageSession?.workspaceImage.width ||
@@ -3759,6 +4461,8 @@ export function ProductModelWorkspace({
               spaceImageSession?.workspaceImage.height ||
               canvasRef.current?.clientHeight || canvasDisplaySize.height;
             const photoCorners = denormalizeCorners(corners, photoWidth, photoHeight);
+            const fitImageId = metricFrame.imageId;
+            const fitProductId = structuralDefinition?.product.productId;
             const { widthRatio, heightRatio } = estimateDimensionsFromCorners(photoCorners);
             if (heightRatio > 0 && widthRatio > 0) {
               const quadCenterX = (corners[0].x + corners[1].x + corners[2].x + corners[3].x) / 4;
@@ -3773,11 +4477,15 @@ export function ProductModelWorkspace({
                 }
               }
 
+              if (fitImageId !== latestFitIdentityRef.current.imageId || fitProductId !== latestFitIdentityRef.current.productId) return;
+              setTargetPlaneId(null);
+              setManualDimensions(false);
+              setSavedMeasurementEvidence(null);
               const templateDefaultH = Number(
                 structuralDefinition?.parameters?.find((p) => p.parameterKey === "height")?.defaultValue
               ) || null;
 
-              const scaleSignal = spaceImageSession?.scaleEstimation || spaceImageSession?.scale_estimation;
+              const scaleSignal = activeScaleSignal || spaceImageSession?.scaleEstimation || spaceImageSession?.scale_estimation;
 
               const estimate = computeEstimatedDimensions(
                 widthRatio,
