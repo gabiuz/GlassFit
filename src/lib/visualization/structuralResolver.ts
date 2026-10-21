@@ -283,3 +283,49 @@ function toNumber(value: unknown, fallback: number) {
 
   return fallback;
 }
+
+export function selectDuplicateProductProposal(
+  definition: ProductStructuralDefinition,
+  raw: Record<string, unknown>,
+): { proposal: import("./types").DuplicateProductProposal | null; reason?: string } {
+  const rule = definition.rules?.find(
+    (r) => r.actionData?.action_type === "duplicate_product",
+  );
+  if (!rule || !rule.actionData || !rule.conditionData) {
+    return { proposal: null };
+  }
+  const axis = (rule.actionData.split_axis as "width" | "height") || "width";
+  const rawVal = raw[axis];
+  if (typeof rawVal !== "number") {
+    return { proposal: null };
+  }
+  const param = definition.parameters?.find((p) => p.parameterKey === axis);
+  const unit = param?.unit ?? definition.template.measurementUnit;
+  const valueMm = toMillimeters(rawVal, unit);
+  const maxPerInstance = Number(rule.actionData.max_per_instance ?? 0);
+  const conditionVal = Number(rule.conditionData.value ?? 0);
+
+  if (valueMm <= conditionVal || valueMm <= maxPerInstance) {
+    return { proposal: null };
+  }
+
+  const count = Math.ceil(valueMm / maxPerInstance);
+  if (count < 2 || count > 10) {
+    return { proposal: null, reason: "Piece count must be between 2 and 10 pieces." };
+  }
+  const pieceMm = valueMm / count;
+  const step = param?.stepValue ?? 1;
+  const stepMm = toMillimeters(step, unit);
+  if (stepMm > 0 && Math.abs(pieceMm % stepMm) > 1e-4) {
+    return { proposal: null, reason: "Piece dimension does not match step precision." };
+  }
+
+  return {
+    proposal: {
+      axis,
+      count,
+      pieceMm,
+      originalMm: valueMm,
+    },
+  };
+}

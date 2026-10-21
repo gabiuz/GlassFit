@@ -5,7 +5,7 @@
 **Version:** 1.3 (Capstone Production Release)
 **Owner:** Jedia Nicole I. Sagun (Quality Assurance Lead) & GlassFit Capstone Team (PUP CCIS)
 **Status:** Locked
-**Last reconciled:** October 21, 2026 (MS62 implementation evidence recorded; QAD-TC77 browser acceptance pending)
+**Last reconciled:** October 21, 2026 (MS63 implementation evidence recorded; QAD-TC78 verified)
 **PRD:** docs/prd-glassfit.md
 
 ---
@@ -28,6 +28,7 @@
 | Test ID | Traces to PRD | Test Scenario Description | Preconditions | Execution Steps | Expected Result | Severity |
 |---|---|---|---|---|---|---|
 | QAD-TC77 | PRD-F3, PRD-F4, PRD-F5, PRD-F6, PRD-F10 | Automatic Detection and Paper Reference Calibration isolation | Both upload entry paths, API, and restored workspace sessions | Execute QAD-TC77.1 through QAD-TC77.12 below | Automatic flow is paper-free; paper-mode functionality and legitimate prior work retained under the explicit restoration policy | P0 |
+| QAD-TC78 | PRD-F3, PRD-F4, PRD-F10 | Resilient HEIC space image ingestion, exponential backoff retry, and low-latency paper detection pipeline | Space photo upload in visualization workspace with simulated network instability and 12 MP HEIC files | Execute QAD-TC78.1 through QAD-TC78.8 below | Automated retry succeeds across network drops; paper detection executes on downscaled workspace array in <180ms; click-guided snapping uses session endpoint without redundant blob re-upload | P0 |
 | QAD-TC1 | PRD-F1 | Public catalog rendering and category filtering | Unauthenticated user on homepage | 1. Navigate to `/product`<br>2. Click category filter 'Window'<br>3. Verify displayed cards | Only products categorized under 'Window' are displayed; cards show image, name, and base price | P1 |
 | QAD-TC2 | PRD-F2 | Interactive 3D model inspector orbit and inspection | Product detail page loaded | 1. Open product page<br>2. Drag on 3D canvas to orbit<br>3. Pinch or scroll to zoom | 3D GLB model rotates smoothly in 360 degrees; texture maps load without WebGL context loss | P1 |
 | QAD-TC3 | PRD-F3 | Space image upload and client-side pre-flight validation | Visualization workspace open | 1. Attempt upload of a 13 MB file<br>2. Attempt upload of a .pdf file<br>3. Upload a valid 4 MB JPG image | Over-limit and invalid files trigger clear validation feedback; the valid image renders on the preview canvas immediately | P0 |
@@ -359,4 +360,23 @@ Automated results are recorded in [MS62 section 9](implementation/ms62.md#9-impl
 | QAD-TC77.10 | Automatic/paper sessions add/change products, reload, and return from quotation | Mode and valid user work persist; no automatic paper prompt or stale eligibility; manual tape precedence retained | P0 |
 | QAD-TC77.11 | Cancel/retry, replace pending request, and change selector state while response is pending | Cancelled/replaced response ignored; captured request mode controls result, never later selector state | P1 |
 | QAD-TC77.12 | Inspect selectors, guidance, success modal, and workspace at desktop/mobile widths | Exactly two existing visible modes; automatic copy paper-free; styling, keyboard/focus behavior, and paper guidance preserved | P1 |
+
+
+## QAD-TC78: Resilient HEIC Space Image Ingestion, Network-Tolerant Conversion, and Low-Latency Paper Detection Pipeline (IMP-MS63)
+
+**Status:** Implemented with automated unit and service tests. Traces to IMP-MS63, PRD-F3, PRD-F4, PRD-F10, SDD-C2, SDD-C3, BRD-M1, BRD-M4, BRD-M6. See [MS63 implementation specification](implementation/ms63.md) for detailed contracts, latency benchmarks, retry parameters, and execution commands.
+
+The implementation adds client test suite `npm run test:ms63` and FastAPI CV service test suite `pytest fastapi-service/tests/test_heic_resilience.py`. Run them alongside `test:ms35`, `test:ms53`, `test:ms58`, `test:ms59`, `test:ms60`, and `test:ms62`.
+
+| ID | Scenario and execution | Required outcome | Severity |
+|---|---|---|---|
+| QAD-TC78.1 | Network failure auto-retry on unstable connection | Exponential backoff executes up to 3 retries; succeeds without user re-picking file | P0 |
+| QAD-TC78.2 | Downscaled paper detection latency on 12 MP iPhone HEIC capture | Processing time drops from >15,000ms to <180ms on normalized 1920px image | P0 |
+| QAD-TC78.3 | Server-side early WebP generation | `workspace.webp` generated immediately after HEIC orientation normalization | P0 |
+| QAD-TC78.4 | Elimination of redundant image blob fetch during click-guided snapping | Reuses existing server session ID via `POST /snap-paper`; zero secondary image blob uploads over wire | P0 |
+| QAD-TC78.5 | Client blob buffering and offline modal rendering | Background renders from cached local blob URL; zero image load errors during network drop | P0 |
+| QAD-TC78.6 | Metric scale precision invariance across downscaling | Scale factor (`scale_cm_per_px`) differs by less than 0.15% after coordinate remapping | P0 |
+| QAD-TC78.7 | Mobile Safari native HEIC decode | Client pre-flight on Safari 17+ (iOS / macOS) renders native image preview immediately; bypasses file-card fallback | P1 |
+| QAD-TC78.8 | Non-Safari HEIC progress communication | Dropzone HUD feedback on Chrome/Firefox during HEIC processing displays progressive stages: "uploading", "retrying", "processing", "completed" | P1 |
+
 

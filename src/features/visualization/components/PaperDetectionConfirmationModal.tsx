@@ -50,6 +50,8 @@ export interface PaperDetectionConfirmationModalProps {
   aspectRatioMatchConfidence?: number;
   unwarpedAspectRatio?: number | null;
   isOpen?: boolean;
+  sessionId?: string;
+  localBlobUrl?: string;
   backgroundImageUrl: string;
   canvasWidth: number;
   canvasHeight: number;
@@ -119,6 +121,8 @@ function createDefaultPaperCorners(
  */
 export function PaperDetectionConfirmationModal({
   isOpen = true,
+  sessionId,
+  localBlobUrl,
   backgroundImageUrl,
   canvasWidth,
   canvasHeight,
@@ -232,8 +236,11 @@ export function PaperDetectionConfirmationModal({
   const lastSnappedRef = useRef<boolean>(false);
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
+  const effectiveImageUrl = localBlobUrl || backgroundImageUrl;
+
   useEffect(() => {
-    if (!backgroundImageUrl || canvasWidth <= 0 || canvasHeight <= 0) return;
+    const srcToLoad = localBlobUrl || backgroundImageUrl;
+    if (!srcToLoad || canvasWidth <= 0 || canvasHeight <= 0) return;
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.onload = () => {
@@ -250,8 +257,8 @@ export function PaperDetectionConfirmationModal({
         // Tainted canvas or draw failure handled gracefully
       }
     };
-    img.src = backgroundImageUrl;
-  }, [backgroundImageUrl, canvasWidth, canvasHeight]);
+    img.src = srcToLoad;
+  }, [localBlobUrl, backgroundImageUrl, canvasWidth, canvasHeight]);
 
   const dialogRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -495,10 +502,11 @@ export function PaperDetectionConfirmationModal({
 
       try {
         const res = await requestClickGuidedPaperDetection(
-          backgroundImageUrl,
+          sessionId || effectiveImageUrl,
           seedPoint,
           selectedStandard,
           ac.signal,
+          sessionId,
         );
 
         if (res.outcome === "candidate_found" && res.candidate) {
@@ -531,7 +539,7 @@ export function PaperDetectionConfirmationModal({
         setIsSnapping(false);
       }
     },
-    [activeCandidates, backgroundImageUrl, canvasHeight, canvasWidth, selectedStandard],
+    [activeCandidates, effectiveImageUrl, sessionId, canvasHeight, canvasWidth, selectedStandard],
   );
 
   const handleSvgPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
@@ -683,7 +691,7 @@ export function PaperDetectionConfirmationModal({
             >
               {/* Background Room Photo */}
               <img
-                src={backgroundImageUrl}
+                src={effectiveImageUrl}
                 alt="Uploaded room space"
                 className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none"
               />
@@ -896,7 +904,7 @@ export function PaperDetectionConfirmationModal({
           >
             {/* Magnified Image View */}
             <img
-              src={backgroundImageUrl}
+              src={effectiveImageUrl}
               alt="Magnified corner view"
               className="absolute max-w-none pointer-events-none select-none"
               style={{

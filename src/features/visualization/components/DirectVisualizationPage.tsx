@@ -11,7 +11,7 @@ import { ImageSuccessModal } from "./ImageSuccessModal";
 import { PaperDetectionConfirmationModal } from "./PaperDetectionConfirmationModal";
 import { ProductModelWorkspace } from "./ProductModelWorkspace";
 import { UploadImage } from "./UploadImage";
-import { analyzeImage, type SpaceImageSession } from "@/lib/imageApi";
+import { analyzeImage, type SpaceImageSession, type UploadProgressStage } from "@/lib/imageApi";
 import type { CatalogProduct } from "@/lib/products/types";
 import {
   type CalibrationMode,
@@ -37,6 +37,8 @@ export function DirectVisualizationPage({
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [status, setStatus] = useState<UploadStatus>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [uploadStage, setUploadStage] = useState<UploadProgressStage | null>(null);
+  const [retryAttempt, setRetryAttempt] = useState<number>(0);
 
   const [calibrationMode, setCalibrationMode] = useState<CalibrationMode>("auto_detect");
   const [paperStandard, setPaperStandard] = useState<FiducialPaperStandard>("short");
@@ -48,12 +50,21 @@ export function DirectVisualizationPage({
     setPendingFile(file);
     setPendingSession(null);
     setStatus("analyzing");
+    setUploadStage("uploading");
+    setRetryAttempt(0);
     setErrorMessage(null);
 
     try {
       const session = await analyzeImage(file, {
         mode: calibrationMode,
         paperStandard: calibrationMode === "paper_fiducial" ? paperStandard : undefined,
+        onProgress: (stage, attempt) => {
+          if (requestIdRef.current !== requestId) return;
+          setUploadStage(stage);
+          if (attempt !== undefined) {
+            setRetryAttempt(attempt);
+          }
+        },
       });
       if (requestIdRef.current !== requestId) return;
 
@@ -67,6 +78,10 @@ export function DirectVisualizationPage({
       setErrorMessage(
         error instanceof Error ? error.message : "Unable to analyze the image.",
       );
+    } finally {
+      if (requestIdRef.current === requestId) {
+        setUploadStage(null);
+      }
     }
   };
 
@@ -162,6 +177,10 @@ export function DirectVisualizationPage({
             />
             <UploadImage
               mode={calibrationMode}
+              uploadStage={uploadStage}
+              retryAttempt={retryAttempt}
+              onRetry={(file) => void runAnalysis(file)}
+              errorMessage={errorMessage}
               onImageSelected={(file) => void runAnalysis(file)}
             />
             <GuideLine mode={calibrationMode} />
@@ -173,11 +192,15 @@ export function DirectVisualizationPage({
         isOpen={status === "analyzing"}
         onCancel={handleCancelModal}
         isLoading
+        stage={uploadStage}
+        attempt={retryAttempt}
       />
 
       {status === "ready" && isPaperFiducialSession && pendingSession && (
         <PaperDetectionConfirmationModal
           isOpen={status === "ready"}
+          sessionId={pendingSession.sessionId}
+          localBlobUrl={pendingSession.localBlobUrl}
           backgroundImageUrl={pendingSession.workspaceImage.url}
           canvasWidth={pendingSession.workspaceImage.width}
           canvasHeight={pendingSession.workspaceImage.height}

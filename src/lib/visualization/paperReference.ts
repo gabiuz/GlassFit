@@ -133,7 +133,33 @@ export async function requestClickGuidedPaperDetection(
   seedPoint: { x: number; y: number },
   paperStandard?: FiducialPaperStandard | "auto",
   signal?: AbortSignal,
+  sessionId?: string,
 ): Promise<ClickGuidedDetectionResponse> {
+  const standard = paperStandard === "auto" || !paperStandard ? undefined : paperStandard;
+
+  const resolvedSessionId =
+    sessionId ||
+    (typeof imageSource === "string" &&
+    !imageSource.startsWith("http://") &&
+    !imageSource.startsWith("https://") &&
+    !imageSource.startsWith("blob:") &&
+    !imageSource.startsWith("data:") &&
+    !imageSource.includes("/")
+      ? imageSource
+      : undefined);
+
+  if (resolvedSessionId) {
+    const { snapPaperReference } = await import("../imageApi");
+    const paperCalib = await snapPaperReference(resolvedSessionId, seedPoint, standard, signal);
+    const outcome = paperCalib?.detection_outcome ?? "not_found";
+    const selected = paperCalib?.candidates?.find((c) => c.id === paperCalib.selected_candidate_id) ?? null;
+    return {
+      outcome,
+      candidate: selected,
+      rejectionReasons: paperCalib?.rejection_reasons ?? (outcome === "not_found" ? ["seed_point_outside_valid_boundary"] : []),
+    };
+  }
+
   const { analyzeImage } = await import("../imageApi");
   let file: File;
   if (typeof imageSource === "string") {
@@ -146,7 +172,6 @@ export async function requestClickGuidedPaperDetection(
     file = buildCompatibleImageFile(imageSource);
   }
 
-  const standard = paperStandard === "auto" || !paperStandard ? undefined : paperStandard;
   const session = await analyzeImage(
     file,
     { mode: "paper_fiducial", paperStandard: standard, seedPoint },

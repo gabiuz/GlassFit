@@ -1,0 +1,144 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1120" viewBox="0 0 1600 1120" role="img" aria-labelledby="title desc">
+  <title id="title">GlassFit one-screen material mapping workflow mockup</title>
+  <desc id="desc">After upload, an admin selects all unlinked framing parts on the left, chooses a catalog material on the right, and assigns it to all four parts with one action. Existing links remain untouched.</desc>
+  <defs>
+    <linearGradient id="navy" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#0f1422"/><stop offset="1" stop-color="#1c3441"/></linearGradient>
+    <filter id="soft"><feDropShadow dx="0" dy="5" stdDeviation="12" flood-color="#0f1422" flood-opacity=".08"/></filter>
+    <style>
+      text{font-family:Inter,Arial,sans-serif;fill:#0f1422}.white{fill:#fff}.muted{fill:#667085}.cyan{fill:#078ca5}.amber{fill:#a95b0c}.green{fill:#12804c}.small{font-size:13px}.tiny{font-size:11px}.label{font-size:14px;font-weight:650}.heading{font-size:25px;font-weight:750}.code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+    </style>
+  </defs>
+  <rect width="1600" height="1120" fill="#f7f9fb"/>
+  <rect width="1600" height="64" fill="#0f1422"/>
+  <text x="40" y="41" class="white" font-size="23" font-weight="800">GlassFit</text>
+  <text x="1282" y="38" class="white small">Admin workspace</text>
+  <circle cx="1550" cy="32" r="18" fill="#07b6d3"/><text x="1542" y="37" class="white tiny" font-weight="700">GR</text>
+
+  <text x="42" y="102" class="muted small">Products  /  Series 798 Sliding Window  /  Components</text>
+  <text x="42" y="143" class="heading">Map materials to uploaded parts</text>
+  <text x="42" y="168" class="muted small">Assign parts in groups, then return to the 3D inspector only when a part needs detailed configuration.</text>
+  <rect x="1403" y="110" width="154" height="38" rx="9" fill="#fff" stroke="#d0d5dd"/>
+  <text x="1422" y="134" class="small">↗  Preview in 3D</text>
+
+  <rect x="42" y="195" width="1515" height="66" rx="13" fill="#fff" stroke="#e4e7ec"/>
+  <circle cx="77" cy="228" r="14" fill="#dcfce7"/><text x="72" y="234" class="green small" font-weight="800">✓</text>
+  <text x="100" y="233" class="small" font-weight="700">Upload parts</text>
+  <line x1="275" y1="228" x2="434" y2="228" stroke="#d0d5dd" stroke-width="2"/>
+  <circle cx="463" cy="228" r="14" fill="#07b6d3"/><text x="459" y="233" class="white small" font-weight="800">2</text>
+  <text x="487" y="233" class="cyan small" font-weight="700">Map materials</text>
+  <line x1="663" y1="228" x2="833" y2="228" stroke="#d0d5dd" stroke-width="2"/>
+  <circle cx="862" cy="228" r="14" fill="#f2f4f7"/><text x="858" y="233" class="muted small" font-weight="800">3</text>
+  <text x="886" y="233" class="muted small" font-weight="700">Review &amp; save</text>
+  <text x="1314" y="233" class="muted small">Step 2 of 3</text>
+
+  <rect x="42" y="282" width="1515" height="94" rx="15" fill="url(#navy)"/>
+  <text x="66" y="310" class="white tiny" opacity=".7">MATERIAL MAPPING PROGRESS</text>
+  <text x="66" y="345" class="white" font-size="23" font-weight="750">6 of 10 parts linked</text>
+  <rect x="445" y="325" width="578" height="10" rx="5" fill="#445260"/>
+  <rect x="445" y="325" width="347" height="10" rx="5" fill="#07b6d3"/>
+  <text x="1045" y="335" class="white small">4 parts need a material</text>
+  <rect x="1355" y="309" width="174" height="39" rx="9" fill="#fff" opacity=".12" stroke="#fff"/>
+  <text x="1382" y="334" class="white small" font-weight="700">Review &amp; save  →</text>
+
+  <rect x="42" y="398" width="1515" height="625" rx="16" fill="#fff" stroke="#e4e7ec" filter="url(#soft)"/>
+  <rect x="42" y="398" width="926" height="625" rx="16" fill="#fff"/>
+  <line x1="968" y1="398" x2="968" y2="1023" stroke="#e4e7ec"/>
+
+  <text x="68" y="435" class="label">Parts to map</text>
+  <text x="68" y="457" class="muted small">Choose the parts that use the same physical material.</text>
+  <rect x="757" y="415" width="184" height="36" rx="8" fill="#e9f9fb" stroke="#b4e5ed"/>
+  <text x="775" y="438" class="cyan small" font-weight="700">Select unlinked parts</text>
+  <line x1="43" y1="474" x2="967" y2="474" stroke="#e4e7ec"/>
+
+  <rect x="68" y="492" width="112" height="33" rx="16" fill="#0f1422"/>
+  <text x="94" y="513" class="white small" font-weight="700">All  10</text>
+  <rect x="188" y="492" width="139" height="33" rx="16" fill="#e9f9fb"/>
+  <text x="211" y="513" class="cyan small" font-weight="700">Framing  6</text>
+  <rect x="335" y="492" width="124" height="33" rx="16" fill="#f2f4f7"/>
+  <text x="359" y="513" class="muted small">Glazing  2</text>
+  <rect x="467" y="492" width="132" height="33" rx="16" fill="#f2f4f7"/>
+  <text x="489" y="513" class="muted small">Hardware  2</text>
+  <text x="773" y="513" class="muted small">Show: All parts  ⌄</text>
+
+  <rect x="68" y="545" width="873" height="49" rx="10" fill="#f8fafb"/>
+  <text x="88" y="576" class="label">Framing</text>
+  <rect x="174" y="558" width="90" height="24" rx="12" fill="#fffbeb"/>
+  <text x="188" y="574" class="amber tiny" font-weight="700">4 unlinked</text>
+  <text x="633" y="576" class="muted small">6 parts</text>
+  <text x="741" y="576" class="cyan small" font-weight="700">Select 4 unlinked</text>
+  <text x="918" y="575" class="muted small">⌃</text>
+
+  <rect x="68" y="604" width="873" height="64" rx="10" fill="#f1fbfd" stroke="#b6e8f0"/>
+  <rect x="88" y="624" width="21" height="21" rx="5" fill="#07b6d3"/><text x="93" y="640" class="white small" font-weight="800">✓</text>
+  <text x="126" y="630" class="label">Frame Top</text><text x="126" y="650" class="muted tiny code">frame_top · WIDTH · 1.00x</text>
+  <rect x="756" y="622" width="150" height="27" rx="13" fill="#fffbeb"/><text x="782" y="640" class="amber small">Unassigned</text>
+
+  <rect x="68" y="675" width="873" height="64" rx="10" fill="#f1fbfd" stroke="#b6e8f0"/>
+  <rect x="88" y="695" width="21" height="21" rx="5" fill="#07b6d3"/><text x="93" y="711" class="white small" font-weight="800">✓</text>
+  <text x="126" y="701" class="label">Frame Bottom</text><text x="126" y="721" class="muted tiny code">frame_bottom · WIDTH · 1.00x</text>
+  <rect x="756" y="693" width="150" height="27" rx="13" fill="#fffbeb"/><text x="782" y="711" class="amber small">Unassigned</text>
+
+  <rect x="68" y="746" width="873" height="64" rx="10" fill="#f1fbfd" stroke="#b6e8f0"/>
+  <rect x="88" y="766" width="21" height="21" rx="5" fill="#07b6d3"/><text x="93" y="782" class="white small" font-weight="800">✓</text>
+  <text x="126" y="772" class="label">Frame Left</text><text x="126" y="792" class="muted tiny code">frame_left · HEIGHT · 1.00x</text>
+  <rect x="756" y="764" width="150" height="27" rx="13" fill="#fffbeb"/><text x="782" y="782" class="amber small">Unassigned</text>
+
+  <rect x="68" y="817" width="873" height="64" rx="10" fill="#f1fbfd" stroke="#b6e8f0"/>
+  <rect x="88" y="837" width="21" height="21" rx="5" fill="#07b6d3"/><text x="93" y="853" class="white small" font-weight="800">✓</text>
+  <text x="126" y="843" class="label">Frame Right</text><text x="126" y="863" class="muted tiny code">frame_right · HEIGHT · 1.00x</text>
+  <rect x="756" y="835" width="150" height="27" rx="13" fill="#fffbeb"/><text x="782" y="853" class="amber small">Unassigned</text>
+
+  <rect x="68" y="888" width="873" height="64" rx="10" fill="#fff" stroke="#e4e7ec"/>
+  <rect x="88" y="908" width="21" height="21" rx="5" fill="#fff" stroke="#98a2b3" stroke-width="2"/>
+  <text x="126" y="914" class="label">Interlocker A</text><text x="126" y="934" class="muted tiny code">interlocker_a · HEIGHT · 1.00x</text>
+  <rect x="719" y="906" width="187" height="27" rx="13" fill="#f2f4f7"/><text x="738" y="924" class="muted small">Linked: AL-798-ANOD</text>
+  <text x="79" y="986" class="muted small">Linked rows stay unselected. Select one deliberately if it needs a replacement.</text>
+
+  <text x="998" y="435" class="label">Choose one catalog material</text>
+  <text x="998" y="457" class="muted small">Search and compare before assigning to selected parts.</text>
+  <line x1="969" y1="474" x2="1556" y2="474" stroke="#e4e7ec"/>
+  <rect x="998" y="493" width="530" height="43" rx="9" fill="#fff" stroke="#cfd7df"/>
+  <text x="1014" y="520" class="muted small">⌕  798</text><text x="1486" y="520" class="muted small">×</text>
+  <rect x="998" y="551" width="123" height="32" rx="16" fill="#e9f9fb"/><text x="1015" y="572" class="cyan small" font-weight="700">Aluminum</text>
+  <rect x="1130" y="551" width="83" height="32" rx="16" fill="#f2f4f7"/><text x="1151" y="572" class="muted small">Glass</text>
+  <rect x="1222" y="551" width="110" height="32" rx="16" fill="#f2f4f7"/><text x="1240" y="572" class="muted small">Hardware</text>
+  <rect x="1351" y="551" width="176" height="32" rx="8" fill="#fff" stroke="#d0d5dd"/><text x="1365" y="572" class="small">All finishes  ⌄</text>
+  <text x="998" y="615" class="muted tiny">3 MATCHES  ·  SORTED BY MATERIAL CODE</text>
+
+  <rect x="998" y="631" width="530" height="94" rx="12" fill="#e9f9fb" stroke="#07b6d3" stroke-width="2"/>
+  <circle cx="1024" cy="655" r="9" fill="#07b6d3"/><circle cx="1024" cy="655" r="4" fill="#fff"/>
+  <text x="1044" y="661" class="code label">AL-798-MILL</text>
+  <text x="1044" y="685" class="small">Aluminum framing profile</text>
+  <text x="1044" y="709" class="muted tiny">Mill finish · PHP 215.00 / m · 12% scrap</text>
+  <text x="1431" y="662" class="cyan small" font-weight="700">Selected</text>
+
+  <rect x="998" y="737" width="530" height="91" rx="12" fill="#fff" stroke="#e4e7ec"/>
+  <circle cx="1024" cy="761" r="9" fill="#fff" stroke="#98a2b3" stroke-width="2"/>
+  <text x="1044" y="767" class="code label">AL-798-ANOD</text>
+  <text x="1044" y="791" class="small">Aluminum framing profile</text>
+  <text x="1044" y="815" class="muted tiny">Anodized · PHP 260.00 / m · 12% scrap</text>
+
+  <rect x="998" y="840" width="530" height="89" rx="12" fill="#fff" stroke="#e4e7ec"/>
+  <circle cx="1024" cy="865" r="9" fill="#fff" stroke="#98a2b3" stroke-width="2"/>
+  <text x="1044" y="871" class="code label">AL-798-WHITE</text>
+  <text x="1044" y="895" class="small">Aluminum framing profile</text>
+  <text x="1044" y="918" class="muted tiny">Powder coated white · PHP 298.00 / m</text>
+
+  <rect x="969" y="944" width="587" height="79" rx="0" fill="#f8fafb"/>
+  <line x1="969" y1="944" x2="1556" y2="944" stroke="#e4e7ec"/>
+  <text x="997" y="970" class="label">4 target parts</text>
+  <text x="997" y="992" class="muted tiny">Existing links are untouched. Changes remain unsaved.</text>
+  <rect x="1288" y="961" width="241" height="44" rx="9" fill="#07b6d3"/>
+  <text x="1308" y="989" class="white small" font-weight="750">Assign to 4 parts  →</text>
+
+  <text x="42" y="1067" class="muted small">Workflow:</text>
+  <circle cx="133" cy="1063" r="13" fill="#e9f9fb"/><text x="129" y="1068" class="cyan small" font-weight="700">1</text><text x="153" y="1068" class="small">Upload</text>
+  <line x1="222" y1="1063" x2="268" y2="1063" stroke="#98a2b3"/>
+  <circle cx="288" cy="1063" r="13" fill="#e9f9fb"/><text x="284" y="1068" class="cyan small" font-weight="700">2</text><text x="308" y="1068" class="small">Select unlinked parts</text>
+  <line x1="485" y1="1063" x2="531" y2="1063" stroke="#98a2b3"/>
+  <circle cx="551" cy="1063" r="13" fill="#e9f9fb"/><text x="547" y="1068" class="cyan small" font-weight="700">3</text><text x="571" y="1068" class="small">Choose material</text>
+  <line x1="711" y1="1063" x2="757" y2="1063" stroke="#98a2b3"/>
+  <circle cx="777" cy="1063" r="13" fill="#e9f9fb"/><text x="773" y="1068" class="cyan small" font-weight="700">4</text><text x="797" y="1068" class="small">Assign once</text>
+  <line x1="914" y1="1063" x2="960" y2="1063" stroke="#98a2b3"/>
+  <circle cx="980" cy="1063" r="13" fill="#e9f9fb"/><text x="976" y="1068" class="cyan small" font-weight="700">5</text><text x="1000" y="1068" class="small">Review remaining and save</text>
+</svg>

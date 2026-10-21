@@ -4380,6 +4380,8 @@ export function ProductModelWorkspace({
       {activeCalibrationMeta?.mode === "paper_fiducial" && showPaperPinPicker && (
         <PaperDetectionConfirmationModal
           isOpen={showPaperPinPicker}
+          sessionId={spaceImageSession?.sessionId}
+          localBlobUrl={spaceImageSession?.localBlobUrl}
           backgroundImageUrl={bgImage}
           canvasWidth={spaceImageSession?.workspaceImage.width || canvasDisplaySize.width}
           canvasHeight={spaceImageSession?.workspaceImage.height || canvasDisplaySize.height}

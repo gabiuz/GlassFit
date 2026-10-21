@@ -4,6 +4,13 @@ import type { AluminumFinishKey, RrdAluminumFinishKey } from "./colorVariations"
 
 export type JsonObject = Record<string, unknown>;
 
+export interface DuplicateProductProposal {
+  axis: "width" | "height";
+  count: number;
+  pieceMm: number;
+  originalMm: number;
+}
+
 export type ModelStrategy = "Fixed" | "Parametric";
 export type GlassAppearanceMode = "clear" | "frosted" | "opaque" | "reflective" | "outdoor";
 export type GlassColorKey = "clear" | "bronze" | "silver" | "blue";
