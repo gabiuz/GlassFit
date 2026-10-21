@@ -167,8 +167,7 @@ The quotation document preview is shared by customer booking, administrator book
 
 ## MS53 Reference Selection Reconciliation
 
-DSD-UI3 (IMP-MS53 / QAD-TC68): default upload requests automatic boundary localization. Reuse the paper confirmation dialog for detected or alternative outlines and explicit actual-format and same-plane declarations. Keep corner handles, mobile magnifier, outline rejection, approximate preview, focus containment, and focus restoration. Evidence scores must not be labeled as physical accuracy or a guaranteed percentage match.
-
+DSD-UI3 (IMP-MS53 / QAD-TC68, intake scope superseded by IMP-MS62): Paper Reference Calibration requests automatic paper boundary localization; default Automatic Detection uses the paper-free success-modal flow. In paper mode, reuse the paper confirmation dialog for detected or alternative outlines and explicit actual-format and same-plane declarations. Keep corner handles, mobile magnifier, outline rejection, approximate preview, focus containment, and focus restoration. Evidence scores must not be labeled as physical accuracy or a guaranteed percentage match.
 
 DSD-UI3 and DSD-UI4 (IMP-MS54 / QAD-TC69): reuse the paper review dialog with numbered corners, a swap-sides action, and explicit confirmation that edge 1 to 2 is the physical short or long edge. Picker callouts convert image-content coordinates to workspace pixels before metric projection. Invalid metric geometry presents an actionable review/retake message and disables measurement confirmation. Preview defaults remain approximate until the installation perimeter is fitted. Show perspective plane estimate wording with no fixed accuracy badge; MS57 validation is pending.
 
@@ -176,3 +175,11 @@ DSD-UI3 and DSD-UI4 (IMP-MS54 / QAD-TC69): reuse the paper review dialog with nu
 DSD-UI3, DSD-UI4, DSD-UI7 (IMP-MS55 / QAD-TC70): reuse paper review for explicit same-plane, held/offset, and unsure answers with curled/hidden-corner reporting. Offer Retake photo, Continue Approximate Preview, and guidance to enter both tape dimensions at Finish & Quote. Perspective fitting requires an explicit opening-surface assignment for metric labels. Missing assignment remains an approximate fit; show photo estimate wording with no fixed accuracy guarantee.
 
 DSD-UI4, DSD-UI7 (IMP-MS56 / QAD-TC71): reuse the opening picker plane declaration and workspace/measurement controls. Eligible photo labels read "Photo estimate: paper calibrated"; tape sources read "Manual tape measurement"; missing evidence reads approximate. Reviewed paper boundaries and user-declared placement do not certify physical accuracy. Preserve fractional centimeter values in model controls; display rounding never changes underlying geometry or quotation dimensions.
+
+## MS62 Calibration Mode Interaction
+
+**Status:** Implemented; browser acceptance pending. See [IMP-MS62](implementation/ms62.md).
+
+DSD-UI3, DSD-UI4, and DSD-UI7 (IMP-MS62 / QAD-TC77): reuse the existing two-mode selector, labels, layout, tokens, and default Automatic Detection selection. Its description becomes "Upload a space photo and enter the workspace with an approximate preview. No paper reference required." Keep "Requires no markers." Both upload entry paths show `ImageSuccessModal` for automatic requests, followed by their existing workspace entry action.
+
+Automatic upload guidance and workspace controls must not request paper or expose paper confirmation, Pin Paper, Adjust Marker, or paper-specific tooltips. Preserve approximate/manual tape wording, measurement confirmation, keyboard navigation, focus behavior, cancellation, and retry. Paper Reference Calibration keeps its paper standard selection, review dialog, manual recovery when detection fails, skip action, and voluntary workspace paper adjustment. No new screen, dialog, or visual style is introduced.

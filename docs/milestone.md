@@ -525,3 +525,11 @@ Implemented IMP-MS60 / QAD-TC75 on October 19, 2026. Computes frontal-rectified 
 ## MS61: Empirical Real-World Accuracy Benchmark and Comparative Release Protocol
 
 Implemented IMP-MS61 / QAD-TC76 on October 19, 2026. Establishes the comparative fiducial accuracy benchmark suite contrasting Full-Automatic (MOD-AUTO), Click-Guided Snap (MOD-CLICK), and Manual Pinning (MOD-MANUAL). Implements centroid seed generation, 25%/50%/75% perturbation robustness simulations, corner RMSE calculation with cyclic and winding invariance, per-axis error tracking against physical tape ground truth, and statistical release gate evaluation in both TypeScript (`scripts/ms57/comparator.ts`) and Python (`scripts/ms57/comparator.py`, `scripts/ms57/run_benchmark.py`). Validated via `tests/unit/clickGuidedBenchmark.test.ts`. See [implementation specification](implementation/ms61.md).
+
+## MS62: Separate Automatic Detection from Paper Reference Calibration
+
+**Status:** Implemented (October 21, 2026); browser acceptance pending. **Specification:** [IMP-MS62](implementation/ms62.md). **Traceability:** BRD-M1, BRD-M5; PRD-F3, PRD-F4, PRD-F5, PRD-F6, PRD-F10; SDD-C2, SDD-C3, SDD-C4, SDD-C5; DSD-UI3, DSD-UI4, DSD-UI7; QAD-TC77.1 through QAD-TC77.12. No database schema change.
+
+Restore paper-free Automatic Detection on both upload paths: existing image analysis, success modal, and approximate workspace preview. Reserve detection, confirmation, pinning, and marker adjustment for Paper Reference Calibration. Specify request-authoritative session normalization, paper-free workspace guards, and legacy restoration that retains previously reviewed paper work under paper mode. Preserve heuristic signals, manual measurements, paper geometry/eligibility, and historical quotations.
+
+This target supersedes the default paper-localization intake behavior described in MS48/MS51/MS53; their paper functionality remains available in paper mode. MS61 MOD-AUTO remains a paper benchmark method. This entry records specification readiness only and does not certify implementation or test completion.

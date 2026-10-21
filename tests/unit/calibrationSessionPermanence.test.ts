@@ -534,3 +534,39 @@ describe("IMP-MS49: Session-Permanent Calibration State and Fallback Pinning Lif
     });
   });
 });
+
+
+it("QAD-TC77: automatic restoration clears stale paper scale and preserves manual dimensions and assets", () => {
+  const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  const configuration = { ...sampleOverlay.configuration, widthCm: 123.45, heightCm: 98.76,
+    visualParameterValues: { dimension_source: "manual_tape" } };
+  const stored = JSON.stringify({ ...initialState, assetSessionId: "keep-assets",
+    selectedProductId: sampleOverlay.productId,
+    productConfiguration: configuration,
+    placedOverlays: [{ ...sampleOverlay, configuration }],
+    spaceImageSession: { ...mockSpaceImageSession,
+      calibrationMeta: { ...calibratedMeta, mode: "auto_detect" },
+      scaleEstimation: calibratedScaleSignal,
+      scale_estimation: calibratedScaleSignal,
+    },
+  });
+  try {
+    Object.defineProperty(globalThis, "window", { configurable: true,
+      value: { sessionStorage: { getItem: () => stored } } });
+    const restored = readStoredVisualizationSession();
+    assert.equal(restored.assetSessionId, "keep-assets");
+    assert.equal(restored.selectedProductId, sampleOverlay.productId);
+    assert.equal(restored.spaceImageSession?.calibrationMeta?.mode, "auto_detect");
+    assert.equal(restored.spaceImageSession?.calibrationMeta?.homographyMatrix, null);
+    assert.equal(restored.spaceImageSession?.scaleEstimation?.method, "none");
+    assert.equal(restored.spaceImageSession?.scaleEstimation?.exif_device_model, "iPhone 15 Pro");
+    for (const item of [restored.productConfiguration, restored.placedOverlays[0].configuration]) {
+      assert.equal(item?.widthCm, 123.45);
+      assert.equal(item?.heightCm, 98.76);
+      assert.equal(item?.visualParameterValues.dimension_source, "manual_tape");
+    }
+  } finally {
+    if (originalWindow) Object.defineProperty(globalThis, "window", originalWindow);
+    else Reflect.deleteProperty(globalThis, "window");
+  }
+});

@@ -335,7 +335,7 @@ export function ProductModelWorkspace({
     if (meta?.user_verified || meta?.status === "verified_calibrated") {
       return false;
     }
-    return meta?.status === "manual_pin_required";
+    return meta?.mode === "paper_fiducial" && meta.status === "manual_pin_required";
   });
 
   const [prevCalibrationMeta, setPrevCalibrationMeta] = useState(spaceImageSession?.calibrationMeta);
@@ -364,7 +364,7 @@ export function ProductModelWorkspace({
   useLayoutEffect(() => {
     latestFitIdentityRef.current = { imageId: metricFrame.imageId, productId: structuralDefinition?.product.productId };
   }, [metricFrame.imageId, structuralDefinition?.product.productId]);
-  const isPaperCalibrated = Boolean(metricReference && activeCalibrationMeta?.samePlaneConfirmed && activeCalibrationMeta?.paperStandardConfirmed);
+  const isPaperCalibrated = Boolean(activeCalibrationMeta?.mode === "paper_fiducial" && metricReference && activeCalibrationMeta?.samePlaneConfirmed && activeCalibrationMeta?.paperStandardConfirmed);
   const verifiedScaleCmPerPx =
     activeCalibrationMeta?.verified_scale_cm_per_px ??
     spaceImageSession?.calibrationMeta?.verified_scale_cm_per_px ??
@@ -2293,7 +2293,7 @@ export function ProductModelWorkspace({
 
   const handlePaperPinSkip = useCallback((review?: PaperReviewResult) => {
     const updatedMeta: CalibrationMetadata = {
-      mode: "standard", paperStandard: null, status: "heuristic_fallback", confidence: 0,
+      mode: "paper_fiducial", paperStandard: null, status: "heuristic_fallback", confidence: 0,
       homographyMatrix: null, detectedCorners: null, user_verified: false,
       verified_corners: null, verified_scale_cm_per_px: null, paperStandardConfirmed: false,
       samePlaneConfirmed: false, selectedCandidateId: null,
@@ -3154,7 +3154,7 @@ export function ProductModelWorkspace({
                   </div>
                 ) : (
                   <div
-                    title="Review a flat paper reference and fit the installation perimeter."
+                    title={activeCalibrationMeta?.mode === "paper_fiducial" ? "Review a flat paper reference and fit the installation perimeter." : "Approximate preview. Confirm dimensions with manual tape measurements."}
                     className="flex items-center gap-2 rounded-full border border-neutral-500/20 bg-neutral-900/60 px-3 py-1.5 text-xs text-white/90 backdrop-blur-md shadow-xs"
                   >
                     <Info className="size-3.5 text-neutral-300 shrink-0" />
@@ -4377,7 +4377,7 @@ export function ProductModelWorkspace({
       )}
 
       {/* ── Interactive Fiducial Paper Corner Picker Modal (IMP-MS47, IMP-MS51, IMP-MS52) ── */}
-      {showPaperPinPicker && (
+      {activeCalibrationMeta?.mode === "paper_fiducial" && showPaperPinPicker && (
         <PaperDetectionConfirmationModal
           isOpen={showPaperPinPicker}
           backgroundImageUrl={bgImage}
