@@ -275,7 +275,7 @@ export function skipPaperReference(session: SpaceImageSession, review?: PaperRev
     exif_focal_length_mm: null, exif_focal_length_35mm: null, exif_device_model: null };
   return { ...session, paperCalibration: undefined, paper_calibration: undefined,
     scaleEstimation: signal, scale_estimation: signal,
-    calibrationMeta: { mode: "standard", paperStandard: null, status: "heuristic_fallback", confidence: 0,
+    calibrationMeta: { mode: "paper_fiducial", paperStandard: null, status: "heuristic_fallback", confidence: 0,
       homographyMatrix: null, detectedCorners: null, user_verified: false,
       verified_corners: null, verified_scale_cm_per_px: null, paperStandardConfirmed: false,
       samePlaneConfirmed: false, selectedCandidateId: null,

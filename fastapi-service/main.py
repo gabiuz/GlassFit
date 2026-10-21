@@ -363,7 +363,7 @@ async def analyze_image(
             clamped_y = max(0.0, min(1.0, float(seed_y)))
             seed_point = (clamped_x, clamped_y)
 
-        if calibration_mode in {"auto_detect", "paper_fiducial"}:
+        if calibration_mode == "paper_fiducial":
             try:
                 paper_result = detect_paper_fiducial(image_bgr, paper_standard, seed_point=seed_point)
             except Exception as exc:
@@ -391,13 +391,17 @@ async def analyze_image(
         calibration_meta = {
             "mode": calibration_mode,
             "paper_standard": paper_result.paper_standard,
-            "status": (paper_result.status if calibration_mode != "standard" else "heuristic_fallback"),
+            "status": (paper_result.status if calibration_mode == "paper_fiducial" else "heuristic_fallback"),
             "confidence": paper_result.confidence,
             "reference_source": paper_result.reference_source,
             "selected_candidate_id": paper_result.selected_candidate_id,
             "suggested_paper_standard": paper_result.suggested_paper_standard,
             "aspect_ratio_match_confidence": paper_result.aspect_ratio_match_confidence,
             "unwarped_aspect_ratio": paper_result.unwarped_aspect_ratio,
+            "homography_matrix": None,
+            "detected_corners": paper_result.detected_corners,
+            "user_verified": False,
+            "paper_standard_confirmed": False,
         }
 
         _append_optional_warning(

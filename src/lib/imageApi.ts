@@ -240,7 +240,7 @@ export async function analyzeImage(
     formData.append("paper_standard", calibrationOptions.paperStandard);
   }
 
-  if (calibrationOptions?.seedPoint) {
+  if (mode === "paper_fiducial" && calibrationOptions?.seedPoint) {
     formData.append("seed_x", String(calibrationOptions.seedPoint.x));
     formData.append("seed_y", String(calibrationOptions.seedPoint.y));
   }
@@ -268,13 +268,16 @@ export async function analyzeImage(
   }
 
   const payload = (await response.json()) as ImageAnalysisResponse;
-  const session = toSpaceImageSession(payload, file.name, apiBaseUrl);
+  const session = toSpaceImageSession(payload, file.name, apiBaseUrl, mode);
   if (!session.calibrationMeta) {
     session.calibrationMeta = {
       mode, paperStandard: session.paperCalibration?.paper_standard ?? calibrationOptions?.paperStandard ?? null,
       status: mode === "standard" ? "heuristic_fallback" : session.paperCalibration?.status ?? "manual_pin_required",
       confidence: 0, homographyMatrix: null, detectedCorners: session.paperCalibration?.detected_corners ?? null,
       paperStandardConfirmed: session.paperCalibration?.paper_standard_confirmed ?? false,
+      user_verified: false,
+      verified_corners: null,
+      verified_scale_cm_per_px: null,
     };
   }
   return session;
@@ -284,13 +287,16 @@ function toSpaceImageSession(
   payload: ImageAnalysisResponse,
   originalFileName: string,
   apiBaseUrl: string,
+  mode: CalibrationMode,
 ): SpaceImageSession {
-  const paper = validatePaperDetection(payload.paper_calibration, payload.workspace_image.width, payload.workspace_image.height, payload.session_id);
+  const paper = mode === "paper_fiducial"
+    ? validatePaperDetection(payload.paper_calibration, payload.workspace_image.width, payload.workspace_image.height, payload.session_id)
+    : undefined;
   const metricMethod = payload.scale_estimation?.method ?? "";
   const signal = payload.scale_estimation && (metricMethod.includes("paper") || metricMethod.includes("calibrat"))
     ? { ...payload.scale_estimation, best_scale_cm_per_px: null, confidence: 0, method: "none", anchors: [] }
     : payload.scale_estimation;
-  return {
+  const session: SpaceImageSession = {
     sessionId: payload.session_id,
     originalFileName,
     workspaceImage: {
@@ -317,13 +323,13 @@ function toSpaceImageSession(
           wall_mask_url: toAbsoluteOptionalApiUrl(payload.scene.wall_mask_url, apiBaseUrl),
         }
       : undefined,
-    scaleEstimation: signal,
-    scale_estimation: signal,
+    scaleEstimation: mode === "paper_fiducial" ? signal : payload.scale_estimation,
+    scale_estimation: mode === "paper_fiducial" ? signal : payload.scale_estimation,
     paperCalibration: paper,
     paper_calibration: paper,
-    calibrationMeta: payload.calibration_meta
+    calibrationMeta: paper && payload.calibration_meta
       ? {
-          mode: payload.calibration_meta.mode,
+          mode,
           paperStandard: paper.paper_standard,
           suggested_paper_standard: paper.suggested_paper_standard ?? payload.calibration_meta.suggested_paper_standard ?? null,
           suggestedPaperStandard: paper.suggested_paper_standard ?? payload.calibration_meta.suggested_paper_standard ?? null,
@@ -331,7 +337,7 @@ function toSpaceImageSession(
           aspectRatioMatchConfidence: paper.aspect_ratio_match_confidence ?? payload.calibration_meta.aspect_ratio_match_confidence ?? 0,
           unwarped_aspect_ratio: paper.unwarped_aspect_ratio ?? payload.calibration_meta.unwarped_aspect_ratio ?? null,
           unwarpedAspectRatio: paper.unwarped_aspect_ratio ?? payload.calibration_meta.unwarped_aspect_ratio ?? null,
-          status: payload.calibration_meta.mode === "standard" ? "heuristic_fallback" : paper.status,
+          status: paper.status,
           confidence: paper.confidence,
           homographyMatrix: null,
           detectedCorners: paper.detected_corners,
@@ -344,6 +350,45 @@ function toSpaceImageSession(
         }
       : undefined,
     warnings: payload.warnings?.length ? payload.warnings : payload.warning ? [payload.warning] : [],
+  };
+  return mode === "paper_fiducial" ? session : normalizeNonPaperSession(session, mode);
+}
+
+/** IMP-MS62 / QAD-TC77: remove paper evidence without changing non-paper analysis. */
+export function normalizeNonPaperSession(
+  session: SpaceImageSession,
+  mode: "auto_detect" | "standard",
+): SpaceImageSession {
+  const previous = session.scaleEstimation ?? session.scale_estimation;
+  const signal = previous && (previous.method.includes("paper") || previous.method.includes("calibrat"))
+    ? {
+        best_scale_cm_per_px: null,
+        confidence: 0,
+        method: "none",
+        anchors: [],
+        exif_focal_length_mm: previous.exif_focal_length_mm,
+        exif_focal_length_35mm: previous.exif_focal_length_35mm,
+        exif_device_model: previous.exif_device_model,
+      }
+    : previous;
+  return {
+    ...session,
+    paperCalibration: undefined,
+    paper_calibration: undefined,
+    scaleEstimation: signal,
+    scale_estimation: signal,
+    calibrationMeta: {
+      mode,
+      status: "heuristic_fallback",
+      paperStandard: null,
+      confidence: 0,
+      homographyMatrix: null,
+      detectedCorners: null,
+      user_verified: false,
+      verified_corners: null,
+      verified_scale_cm_per_px: null,
+      paperStandardConfirmed: false,
+    },
   };
 }
 
