@@ -203,6 +203,12 @@ function createProductSummaryItemFromOverlay(
       : "6mm_bronze";
 
   const itemId = overlay.overlayId || `overlay-${index}`;
+  const addonPrice = config.addonPrice ?? 0;
+  const addonName = config.addonName ?? null;
+  const selectedAddon = (config.selectedAddon as "none" | "screen" | "grill") ?? (config.addonProductId ? "screen" : undefined);
+  const addonProductId = config.addonProductId ?? null;
+  const addonAluminumFinish = config.addonAluminumFinish;
+  const baseUnitPrice = unitPrice - addonPrice;
 
   const item: ProductItem = {
     itemId,
@@ -213,6 +219,7 @@ function createProductSummaryItemFromOverlay(
       dimension,
       !hasSill ? "Flush Base (No Sill)" : null,
       panelCount > 2 ? `${panelCount}-Panel` : null,
+      addonName && selectedAddon && selectedAddon !== "none" ? `Add-on: ${addonName}` : null,
     ]
       .filter(Boolean)
       .join(" | "),
@@ -235,6 +242,12 @@ function createProductSummaryItemFromOverlay(
       dimension,
       hasSill,
       structuralWaiver,
+      selectedAddon,
+      addonProductId,
+      addonName,
+      addonPrice: addonPrice > 0 ? addonPrice : undefined,
+      addonAluminumFinish,
+      baseUnitPrice,
       bomGroups: {
         framingAmount: bomCalc.effectiveFramingCost,
         glazingAmount: bomCalc.effectiveGlazingCost,
@@ -267,6 +280,12 @@ function createProductSummaryItemFromOverlay(
     totalPrice,
     imageUrl: item.imageUrl,
     bomResult: bomCalc,
+    selectedAddon,
+    addonProductId,
+    addonName,
+    addonPrice: addonPrice > 0 ? addonPrice : undefined,
+    baseUnitPrice,
+    addonAluminumFinish,
     ...quotationMeasurement(overlay.configuration),
   };
 
@@ -313,10 +332,17 @@ function createProductSummaryItem(
     structuralWaiver,
   });
 
-  const unitPrice =
+  const addonPrice = configuration?.addonPrice ?? 0;
+  const addonName = configuration?.addonName ?? null;
+  const selectedAddon = (configuration?.selectedAddon as "none" | "screen" | "grill") ?? (configuration?.addonProductId ? "screen" : undefined);
+  const addonProductId = configuration?.addonProductId ?? null;
+  const addonAluminumFinish = configuration?.addonAluminumFinish;
+
+  const baseUnitPrice =
     bomCalc.finalQuotation > 0
       ? bomCalc.finalQuotation
       : definition.product.basePrice ?? 0;
+  const unitPrice = baseUnitPrice + addonPrice;
   const qty = configuration?.quantity ?? 1;
   const totalPrice = unitPrice * qty;
   const itemId = definition.product.productId;
@@ -331,6 +357,7 @@ function createProductSummaryItem(
       dimension,
       !hasSill ? "Flush Base (No Sill)" : null,
       panelCount > 2 ? `${panelCount}-Panel` : null,
+      addonName && selectedAddon && selectedAddon !== "none" ? `Add-on: ${addonName}` : null,
     ]
       .filter(Boolean)
       .join(" | "),
@@ -352,6 +379,12 @@ function createProductSummaryItem(
       dimension,
       hasSill,
       structuralWaiver,
+      selectedAddon,
+      addonProductId,
+      addonName,
+      addonPrice: addonPrice > 0 ? addonPrice : undefined,
+      addonAluminumFinish,
+      baseUnitPrice,
       bomGroups: {
         framingAmount: bomCalc.effectiveFramingCost,
         glazingAmount: bomCalc.effectiveGlazingCost,
@@ -383,6 +416,12 @@ function createProductSummaryItem(
     totalPrice,
     imageUrl: item.imageUrl,
     bomResult: bomCalc,
+    selectedAddon,
+    addonProductId,
+    addonName,
+    addonPrice: addonPrice > 0 ? addonPrice : undefined,
+    baseUnitPrice,
+    addonAluminumFinish,
     ...quotationMeasurement(configuration),
   };
 

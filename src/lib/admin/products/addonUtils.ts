@@ -28,25 +28,43 @@ export function computeAddonReconciliation(
   const toUpsert: AddonReconciliationResult["toUpsert"] = [];
   const toDeleteTypes: AddonType[] = [];
 
-  if (config.hasScreen && config.screenAddonProductId) {
-    toUpsert.push({
-      parent_product_id: parentProductId,
-      addon_product_id: config.screenAddonProductId,
-      addon_type: "screen",
-      is_default_enabled: false,
-      display_order: 1,
+  const screenIds = config.screenAddonProductIds && config.screenAddonProductIds.length > 0
+    ? config.screenAddonProductIds
+    : config.screenAddonProductId
+      ? [config.screenAddonProductId]
+      : [];
+
+  if (config.hasScreen && screenIds.length > 0) {
+    screenIds.forEach((screenId, idx) => {
+      toUpsert.push({
+        parent_product_id: parentProductId,
+        addon_product_id: screenId,
+        addon_type: "screen",
+        is_default_enabled: idx === 0,
+        display_order: idx + 1,
+      });
     });
   } else if (existingTypes.has("screen")) {
     toDeleteTypes.push("screen");
   }
 
-  if (config.hasGrill && config.grillAddonProductId) {
-    toUpsert.push({
-      parent_product_id: parentProductId,
-      addon_product_id: config.grillAddonProductId,
-      addon_type: "grill",
-      is_default_enabled: false,
-      display_order: 2,
+  const grillIds = config.grillAddonProductIds && config.grillAddonProductIds.length > 0
+    ? config.grillAddonProductIds
+    : config.grillAddonProductId
+      ? [config.grillAddonProductId]
+      : [];
+
+  const grillBaseOrder = screenIds.length > 0 ? screenIds.length + 1 : 2;
+
+  if (config.hasGrill && grillIds.length > 0) {
+    grillIds.forEach((grillId, idx) => {
+      toUpsert.push({
+        parent_product_id: parentProductId,
+        addon_product_id: grillId,
+        addon_type: "grill",
+        is_default_enabled: idx === 0,
+        display_order: grillBaseOrder + idx,
+      });
     });
   } else if (existingTypes.has("grill")) {
     toDeleteTypes.push("grill");

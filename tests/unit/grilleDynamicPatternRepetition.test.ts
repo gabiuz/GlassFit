@@ -253,12 +253,47 @@ describe("Grille Dynamic Pattern Repetition & Constant Bar Cross-Sections", () =
     // Scale along Y should remain 1 (no profile height distortion)
     assert.strictEqual(topFrame.scale.y, 1);
 
-    // Middle bars must exist and have repeating pattern
+    // Middle bars must exist and dynamically repeat the uploaded pattern
     const middlePattern = grillAssembly.getObjectByName("lab_grill_middle_bars") as THREE.Group;
     assert.ok(middlePattern, "Must contain lab_grill_middle_bars");
     const vCount = middlePattern.userData.verticalBarCount as number;
-    // 1744 / 230 -> 8 columns -> 7 vertical bars
-    assert.strictEqual(vCount, 7, "1800mm width must produce 7 repeating vertical bars");
+    // 1744mm inner width with 1144mm source width dynamically repeats into 2 panel columns
+    assert.strictEqual(vCount, 2, "1800mm width must produce 2 repeating panel columns of uploaded middle bars");
+    assert.strictEqual(middlePattern.children.length, 3, "Must contain 2 tiled panel wrapper groups plus 1 intermediate seam divider bar");
+    assert.ok(middlePattern.getObjectByName("lab_grill_middle_bars_0_0"), "Must contain first tile");
+    assert.ok(middlePattern.getObjectByName("lab_grill_middle_bars_1_0"), "Must contain second tile");
+    assert.ok(middlePattern.getObjectByName("lab_grill_middle_bars_Seam_V_1"), "Must contain intermediate seam divider bar");
+
+    // Natural dimensions (1200mm x 1200mm) mounts exactly 1 panel with scale 1.0 (author visual fidelity)
+    const grillNatural = buildGrillAssembly(
+      mockComponents,
+      1200,
+      1200,
+      mockCache,
+      { activeAddon: "grill" },
+    );
+    const naturalMid = grillNatural.getObjectByName("lab_grill_middle_bars") as THREE.Group;
+    assert.ok(naturalMid, "Must contain natural lab_grill_middle_bars");
+    assert.strictEqual(naturalMid.userData.verticalBarCount, 1, "1200mm width must produce 1 panel column");
+    const tile0 = naturalMid.getObjectByName("lab_grill_middle_bars_0_0") as THREE.Group;
+    assert.ok(tile0, "Must contain single natural tile");
+    assert.strictEqual(Number(tile0.scale.x.toFixed(2)), 1, "Scale X must be 1.0 at natural dimensions");
+    assert.strictEqual(Number(tile0.scale.y.toFixed(2)), 1, "Scale Y must be 1.0 at natural dimensions");
+
+    // Procedural fallback when no middle bars component is uploaded
+    const frameOnlyComps = mockComponents.filter((c) => c.componentId !== "comp-middle");
+    const grillProceduralFallback = buildGrillAssembly(
+      frameOnlyComps,
+      targetWidthMm,
+      targetHeightMm,
+      mockCache,
+      { activeAddon: "grill" },
+    );
+    assert.strictEqual(
+      grillProceduralFallback.userData.verticalBarCount,
+      7,
+      "Procedural fallback must generate 7 vertical bars at 1800mm aperture",
+    );
   });
 
   // --------------------------------------------------------------------------
@@ -300,7 +335,7 @@ describe("Grille Dynamic Pattern Repetition & Constant Bar Cross-Sections", () =
     };
 
     const mockCache: ComponentModelCache = {
-      getClone: (_id: string) => new THREE.Mesh(new THREE.BoxGeometry(1.144, 1.144, 0.014)),
+      getClone: () => new THREE.Mesh(new THREE.BoxGeometry(1.144, 1.144, 0.014)),
       getSourceSizeMeters: () => new THREE.Vector3(1.144, 1.144, 0.014),
     };
 
@@ -320,5 +355,144 @@ describe("Grille Dynamic Pattern Repetition & Constant Bar Cross-Sections", () =
 
     const middlePattern = built.group.getObjectByName("lab_grill_middle_bars");
     assert.ok(middlePattern, "Must contain lab_grill_middle_bars repeating pattern");
+  });
+
+  // --------------------------------------------------------------------------
+  // Test 6: Arbitrary Admin-Uploaded Center Component Fidelity & Dynamic Tiling
+  // --------------------------------------------------------------------------
+  it("mounts arbitrary admin uploaded center model (e.g. horizontal louvers/bars) dynamically without hardcoding", () => {
+    // Custom center component representing Pic 1 (Window Grill Middle Bars with center divider and horizontal bars)
+    const customCenterMesh = new THREE.Group();
+    customCenterMesh.name = "Custom_Louver_Grill_Mesh";
+    const centerMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
+    const centerDivider = new THREE.Mesh(new THREE.BoxGeometry(0.014, 1.144, 0.016), centerMat);
+    centerDivider.name = "Vertical_Center_Divider";
+    customCenterMesh.add(centerDivider);
+
+    const customAddonDefinition: ProductStructuralDefinition = {
+      product: {
+        productId: "p-custom-grill",
+        productName: "Horizontal Bars Security Grille",
+        productType: "Other",
+        isAddon: true,
+        addonType: "grill",
+      },
+      template: {
+        templateId: "t-custom-grill",
+        templateName: "Custom Grille Template",
+        modelStrategy: "Parametric",
+        measurementUnit: "mm",
+        baseConfiguration: {
+          is_addon: true,
+          addon_type: "grill",
+        },
+      },
+      parameters: [],
+      rules: [],
+      components: [
+        {
+          componentId: "comp-top",
+          componentKey: "grill_frame_top",
+          componentName: "Grill Frame Top",
+          componentType: "Model",
+          baseQuantity: 1,
+          componentData: {},
+          dimensionBinding: "WIDTH",
+          model: { assetId: "a-t", r2ObjectKey: "", url: "", fileName: "Grill_Frame_Top.glb", sourceDimensionsMm: null },
+        },
+        {
+          componentId: "comp-bottom",
+          componentKey: "grill_frame_bottom",
+          componentName: "Grill Frame Bottom",
+          componentType: "Model",
+          baseQuantity: 1,
+          componentData: {},
+          dimensionBinding: "WIDTH",
+          model: { assetId: "a-b", r2ObjectKey: "", url: "", fileName: "Grill_Frame_Bottom.glb", sourceDimensionsMm: null },
+        },
+        {
+          componentId: "comp-left",
+          componentKey: "grill_frame_left",
+          componentName: "Grill Frame Left",
+          componentType: "Model",
+          baseQuantity: 1,
+          componentData: {},
+          dimensionBinding: "HEIGHT",
+          model: { assetId: "a-l", r2ObjectKey: "", url: "", fileName: "Grill_Frame_Left.glb", sourceDimensionsMm: null },
+        },
+        {
+          componentId: "comp-right",
+          componentKey: "grill_frame_right",
+          componentName: "Grill Frame Right",
+          componentType: "Model",
+          baseQuantity: 1,
+          componentData: {},
+          dimensionBinding: "HEIGHT",
+          model: { assetId: "a-r", r2ObjectKey: "", url: "", fileName: "Grill_Frame_Right.glb", sourceDimensionsMm: null },
+        },
+        {
+          componentId: "comp-custom-center",
+          componentKey: "window_grill_middle_bars",
+          componentName: "Window Grill Middle Bars",
+          componentType: "Model",
+          baseQuantity: 1,
+          componentData: {},
+          dimensionBinding: "AREA",
+          model: { assetId: "a-c", r2ObjectKey: "", url: "", fileName: "Window_Grill_Middle_Bars.glb", sourceDimensionsMm: null },
+        },
+      ],
+    };
+
+    const customCache: ComponentModelCache = {
+      getClone: (id: string) => {
+        if (id === "comp-custom-center") {
+          return customCenterMesh.clone(true);
+        }
+        return new THREE.Mesh(new THREE.BoxGeometry(0.028, 1.2, 0.025));
+      },
+      getSourceSizeMeters: (id: string) => {
+        if (id.includes("top") || id.includes("bottom")) {
+          return new THREE.Vector3(1.144, 0.028, 0.025);
+        }
+        if (id.includes("left") || id.includes("right")) {
+          return new THREE.Vector3(0.028, 1.2, 0.025);
+        }
+        return new THREE.Vector3(1.144, 1.144, 0.016);
+      },
+    };
+
+    // 1. Validation Workspace check at default 1200mm x 1200mm (natural dimensions, exactly Pic 1)
+    const resolved1200: ResolvedStructure = {
+      resolvedValues: { width: 1200, height: 1200 },
+      numericValuesMm: { width: 1200, height: 1200 },
+      componentQuantities: {},
+      appliedRuleIds: [],
+    };
+    const built1200 = buildParametricProduct(customAddonDefinition, resolved1200, customCache, {});
+
+    // Must preserve the admin's uploaded middle bars component
+    const centerGroup1200 = built1200.group.getObjectByName("window_grill_middle_bars") as THREE.Group;
+    assert.ok(centerGroup1200, "Must contain window_grill_middle_bars uploaded component");
+    assert.strictEqual(centerGroup1200.userData.verticalBarCount, 1, "Must contain 1 panel at natural dimensions");
+
+    // Must contain the actual uploaded sub-mesh (Vertical_Center_Divider), NOT the hardcoded brick pattern
+    const divider1200 = centerGroup1200.getObjectByName("Vertical_Center_Divider");
+    assert.ok(divider1200, "Must contain author's uploaded Vertical_Center_Divider mesh");
+    const brickBar = built1200.group.getObjectByName("Grill_Bar_H_0_1");
+    assert.strictEqual(brickBar, undefined, "Must NOT generate hardcoded brick tie bars when custom center is uploaded");
+
+    // 2. Dynamic repetition when scaled to 2400mm width
+    const resolved2400: ResolvedStructure = {
+      resolvedValues: { width: 2400, height: 1200 },
+      numericValuesMm: { width: 2400, height: 1200 },
+      componentQuantities: {},
+      appliedRuleIds: [],
+    };
+    const built2400 = buildParametricProduct(customAddonDefinition, resolved2400, customCache, {});
+    const centerGroup2400 = built2400.group.getObjectByName("window_grill_middle_bars") as THREE.Group;
+    assert.ok(centerGroup2400, "Must contain window_grill_middle_bars at 2400mm");
+    assert.strictEqual(centerGroup2400.userData.verticalBarCount, 2, "Must dynamically tile 2 panels across 2400mm width");
+    assert.strictEqual(centerGroup2400.children.length, 3, "Must have 2 panel wrapper children plus 1 intermediate seam divider bar");
+    assert.ok(centerGroup2400.getObjectByName("window_grill_middle_bars_Seam_V_1"), "Must contain intermediate seam divider bar");
   });
 });

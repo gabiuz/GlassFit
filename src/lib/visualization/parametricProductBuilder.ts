@@ -47,6 +47,7 @@ export interface ParametricProductBuilderOptions {
   includeSill?: boolean;
   alumFinish?: string;
   activeAddon?: "screen" | "grill" | "none" | null;
+  addonProductId?: string | null;
   addonAluminumFinish?: string;
   addonConfig?: AddonGeometryConfig;
 }
@@ -543,7 +544,9 @@ function buildAddonAttachment(
 
   const addonFinish = options.addonAluminumFinish ?? options.alumFinish ?? "analok";
   const frameMat = createMaterialPalette(addonFinish).framing;
-  const matchingAddon = definition.compatibleAddons?.find((a) => a.addonType === addonType);
+  const matchingAddon = definition.compatibleAddons?.find((a) =>
+    options.addonProductId ? a.addonProductId === options.addonProductId : a.addonType === addonType
+  );
 
   // Modular security grill add-on: use dedicated assembly with dynamic pattern repetition
   if (addonType === "grill") {
@@ -729,26 +732,38 @@ export function buildGrillAssembly(
     return assembly;
   }
 
-  // 1. Identify middle bars and perimeter frame components
+  // 1. Identify perimeter frame rails and middle/center components
+  const topComp = components.find((c) => (c.componentKey + " " + c.componentName).toLowerCase().includes("top"));
+  const bottomComp = components.find((c) => (c.componentKey + " " + c.componentName).toLowerCase().includes("bottom"));
+  const leftComp = components.find((c) => (c.componentKey + " " + c.componentName).toLowerCase().includes("left"));
+  const rightComp = components.find((c) => (c.componentKey + " " + c.componentName).toLowerCase().includes("right"));
+
+  const perimeterComps = new Set([topComp, bottomComp, leftComp, rightComp].filter(Boolean));
+
   let middleBarsComp = components.find((c) => {
+    if (perimeterComps.has(c)) return false;
     const key = (c.componentKey + " " + c.componentName).toLowerCase();
     return (
       key.includes("middle") ||
       key.includes("bar") ||
       key.includes("infill") ||
+      key.includes("center") ||
       key.includes("grid") ||
       key.includes("lattice") ||
       key.includes("picket") ||
+      key.includes("pattern") ||
+      key.includes("panel") ||
+      key.includes("slat") ||
+      key.includes("louver") ||
       c.dimensionBinding === "AREA"
     );
   });
 
-  const topComp = components.find((c) => c !== middleBarsComp && (c.componentKey + " " + c.componentName).toLowerCase().includes("top"));
-  const bottomComp = components.find((c) => c !== middleBarsComp && (c.componentKey + " " + c.componentName).toLowerCase().includes("bottom"));
-  const leftComp = components.find((c) => c !== middleBarsComp && (c.componentKey + " " + c.componentName).toLowerCase().includes("left"));
-  const rightComp = components.find((c) => c !== middleBarsComp && (c.componentKey + " " + c.componentName).toLowerCase().includes("right"));
+  if (!middleBarsComp) {
+    middleBarsComp = components.find((c) => !perimeterComps.has(c));
+  }
 
-  if (!middleBarsComp && components.length === 1 && !topComp && !bottomComp && !leftComp && !rightComp) {
+  if (!middleBarsComp && components.length === 1) {
     middleBarsComp = components[0];
   }
 
@@ -915,48 +930,219 @@ export function buildGrillAssembly(
     }
   }
 
-  // 7. Middle Bars Pattern Repetition
-  let barMat: THREE.Material | undefined = undefined;
+  // 7. Middle Bars Pattern Repetition (Dynamic uploaded center with procedural fallback)
+  let middleMounted = false;
+  const middleAssembly = new THREE.Group();
+  middleAssembly.name = middleBarsComp?.componentKey || "Grill_Middle_Bars_Assembly";
+  if (middleBarsComp) {
+    middleAssembly.userData.componentKey = middleBarsComp.componentKey;
+    middleAssembly.userData.componentName = middleBarsComp.componentName;
+  }
+
   if (middleBarsComp) {
     try {
       const middleClone = cache.getClone(middleBarsComp.componentId);
       if (middleClone) {
-        middleClone.traverse((child) => {
-          if (!barMat && child instanceof THREE.Mesh && child.material) {
-            barMat = Array.isArray(child.material) ? child.material[0] : child.material;
+        let sourceSize: THREE.Vector3 | null = null;
+        try {
+          sourceSize = cache.getSourceSizeMeters(middleBarsComp.componentId);
+        } catch {
+          // ignore cache measurement error
+        }
+
+        if (!sourceSize || sourceSize.x <= 0.005 || sourceSize.y <= 0.005) {
+          recenterChildAtOrigin(middleClone);
+          const bbox = new THREE.Box3().setFromObject(middleClone);
+          const computedSize = new THREE.Vector3();
+          bbox.getSize(computedSize);
+          sourceSize = computedSize;
+        }
+
+        const sourceW = sourceSize.x > 0.005 ? sourceSize.x : innerWidthM;
+        const sourceH = sourceSize.y > 0.005 ? sourceSize.y : innerHeightM;
+
+        // Dynamic Pattern Repetition across aperture
+        const numCols = Math.max(1, Math.round(innerWidthM / sourceW));
+        const numRows = Math.max(1, Math.round(innerHeightM / sourceH));
+
+        const colSpan = innerWidthM / numCols;
+        const rowSpan = innerHeightM / numRows;
+        const scaleX = sourceW > 0.001 ? colSpan / sourceW : 1;
+        const scaleY = sourceH > 0.001 ? rowSpan / sourceH : 1;
+
+        for (let c = 0; c < numCols; c++) {
+          const posX = -innerWidthM / 2 + (c + 0.5) * colSpan;
+          for (let r = 0; r < numRows; r++) {
+            const posY = -innerHeightM / 2 + (r + 0.5) * rowSpan;
+
+            let tileClone: THREE.Object3D;
+            if (c === 0 && r === 0) {
+              tileClone = middleClone;
+            } else {
+              try {
+                tileClone = cache.getClone(middleBarsComp.componentId);
+              } catch {
+                tileClone = middleClone.clone(true);
+              }
+            }
+
+            recenterChildAtOrigin(tileClone);
+
+            tileClone.traverse((child) => {
+              if (child instanceof THREE.Mesh) {
+                if (!child.material) {
+                  child.material = resolvedFrameMat;
+                }
+                child.userData.preserveMaterial = true;
+                child.userData.presentationCategory = "Framing";
+                child.renderOrder = 0;
+                child.castShadow = true;
+                child.receiveShadow = true;
+              }
+            });
+
+            const tileWrapper = new THREE.Group();
+            tileWrapper.name = `${middleBarsComp.componentKey || "Grill_Middle_Bars"}_${c}_${r}`;
+            tileWrapper.userData.componentKey = middleBarsComp.componentKey;
+            tileWrapper.userData.componentName = middleBarsComp.componentName;
+            tileWrapper.userData.isAddon = true;
+            tileWrapper.userData.addonType = "grill";
+            tileWrapper.userData.presentationCategory = "Framing";
+            tileWrapper.userData.preserveMaterial = true;
+            tileWrapper.position.set(posX, posY, zOffset);
+            tileWrapper.scale.set(scaleX, scaleY, 1);
+            tileWrapper.add(tileClone);
+            middleAssembly.add(tileWrapper);
           }
-        });
+        }
+
+        // Mount intermediate vertical seam bars between repeated columns to eliminate double gaps
+        if (numCols > 1) {
+          const barDepth = sourceSize.z > 0.005 ? sourceSize.z : 0.016;
+          const barWidth = (options.addonConfig?.grillBarWidthMm ?? 14) * 0.001;
+
+          let barMat: THREE.Material | undefined = undefined;
+          middleClone.traverse((child) => {
+            if (!barMat && child instanceof THREE.Mesh && child.material) {
+              barMat = Array.isArray(child.material) ? child.material[0] : child.material;
+            }
+          });
+          if (!barMat || options.addonAluminumFinish) {
+            barMat = resolvedFrameMat;
+          }
+
+          const vSeamGeo = new THREE.BoxGeometry(barWidth, innerHeightM, barDepth);
+          for (let c = 1; c < numCols; c++) {
+            const seamX = -innerWidthM / 2 + c * colSpan;
+            const seamMesh = new THREE.Mesh(vSeamGeo, barMat);
+            seamMesh.name = `${middleBarsComp.componentKey || "Grill_Middle_Bars"}_Seam_V_${c}`;
+            seamMesh.userData.componentKey = middleBarsComp.componentKey;
+            seamMesh.userData.componentName = middleBarsComp.componentName;
+            seamMesh.userData.isAddon = true;
+            seamMesh.userData.addonType = "grill";
+            seamMesh.userData.presentationCategory = "Framing";
+            seamMesh.userData.preserveMaterial = true;
+            seamMesh.position.set(seamX, 0, zOffset);
+            seamMesh.castShadow = true;
+            seamMesh.receiveShadow = true;
+            seamMesh.renderOrder = 0;
+            middleAssembly.add(seamMesh);
+          }
+        }
+
+        // Mount intermediate horizontal seam bars between repeated rows to eliminate vertical gaps
+        if (numRows > 1) {
+          const barDepth = sourceSize.z > 0.005 ? sourceSize.z : 0.016;
+          const barWidth = (options.addonConfig?.grillBarWidthMm ?? 14) * 0.001;
+
+          let barMat: THREE.Material | undefined = undefined;
+          middleClone.traverse((child) => {
+            if (!barMat && child instanceof THREE.Mesh && child.material) {
+              barMat = Array.isArray(child.material) ? child.material[0] : child.material;
+            }
+          });
+          if (!barMat || options.addonAluminumFinish) {
+            barMat = resolvedFrameMat;
+          }
+
+          const hSeamGeo = new THREE.BoxGeometry(innerWidthM, barWidth, barDepth);
+          for (let r = 1; r < numRows; r++) {
+            const seamY = -innerHeightM / 2 + r * rowSpan;
+            const seamMesh = new THREE.Mesh(hSeamGeo, barMat);
+            seamMesh.name = `${middleBarsComp.componentKey || "Grill_Middle_Bars"}_Seam_H_${r}`;
+            seamMesh.userData.componentKey = middleBarsComp.componentKey;
+            seamMesh.userData.componentName = middleBarsComp.componentName;
+            seamMesh.userData.isAddon = true;
+            seamMesh.userData.addonType = "grill";
+            seamMesh.userData.presentationCategory = "Framing";
+            seamMesh.userData.preserveMaterial = true;
+            seamMesh.position.set(0, seamY, zOffset);
+            seamMesh.castShadow = true;
+            seamMesh.receiveShadow = true;
+            seamMesh.renderOrder = 0;
+            middleAssembly.add(seamMesh);
+          }
+        }
+
+        middleAssembly.userData.verticalBarCount = numCols;
+        middleAssembly.userData.horizontalBarCount = numRows;
+        middleAssembly.userData.isAddon = true;
+        middleAssembly.userData.addonType = "grill";
+        assembly.add(middleAssembly);
+        middleMounted = true;
       }
-    } catch {
-      // Fallback
+    } catch (err) {
+      console.warn("Could not mount uploaded middle bars component:", err);
     }
   }
 
-  if (!barMat || options.addonAluminumFinish) {
-    barMat = resolvedFrameMat;
-  }
+  // Fallback: If no middle bars component was uploaded or mounting failed, generate procedurally
+  if (!middleMounted) {
+    let barMat: THREE.Material | undefined = undefined;
+    if (middleBarsComp) {
+      try {
+        const middleClone = cache.getClone(middleBarsComp.componentId);
+        if (middleClone) {
+          middleClone.traverse((child) => {
+            if (!barMat && child instanceof THREE.Mesh && child.material) {
+              barMat = Array.isArray(child.material) ? child.material[0] : child.material;
+            }
+          });
+        }
+      } catch {
+        // Fallback
+      }
+    }
 
-  const patternGroup = buildDynamicGrillPatternGroup(
-    innerWidthM,
-    innerHeightM,
-    {
-      ...options.addonConfig,
-      zOffsetMm: zOffset * 1000,
-      grillBarWidthMm: options.addonConfig?.grillBarWidthMm ?? 14,
-      nominalBarPitchMm: options.addonConfig?.nominalBarPitchMm ?? 230,
-      nominalRowPitchMm: options.addonConfig?.nominalRowPitchMm ?? 191,
-    },
-    barMat,
-  );
-  if (middleBarsComp) {
-    patternGroup.name = middleBarsComp.componentKey || "Grill_Middle_Bars_Assembly";
-    patternGroup.userData.componentKey = middleBarsComp.componentKey;
-    patternGroup.userData.componentName = middleBarsComp.componentName;
-  }
+    if (!barMat || options.addonAluminumFinish) {
+      barMat = resolvedFrameMat;
+    }
 
-  assembly.add(patternGroup);
-  assembly.userData.verticalBarCount = patternGroup.userData.verticalBarCount;
-  assembly.userData.horizontalBarCount = patternGroup.userData.horizontalBarCount;
+    const patternGroup = buildDynamicGrillPatternGroup(
+      innerWidthM,
+      innerHeightM,
+      {
+        ...options.addonConfig,
+        zOffsetMm: zOffset * 1000,
+        grillBarWidthMm: options.addonConfig?.grillBarWidthMm ?? 14,
+        nominalBarPitchMm: options.addonConfig?.nominalBarPitchMm ?? 230,
+        nominalRowPitchMm: options.addonConfig?.nominalRowPitchMm ?? 191,
+      },
+      barMat,
+    );
+    if (middleBarsComp) {
+      patternGroup.name = middleBarsComp.componentKey || "Grill_Middle_Bars_Assembly";
+      patternGroup.userData.componentKey = middleBarsComp.componentKey;
+      patternGroup.userData.componentName = middleBarsComp.componentName;
+    }
+
+    assembly.add(patternGroup);
+    assembly.userData.verticalBarCount = patternGroup.userData.verticalBarCount;
+    assembly.userData.horizontalBarCount = patternGroup.userData.horizontalBarCount;
+  } else {
+    assembly.userData.verticalBarCount = middleAssembly.userData.verticalBarCount;
+    assembly.userData.horizontalBarCount = middleAssembly.userData.horizontalBarCount;
+  }
 
   // 8. Enforce Material Flags and Depth Order
   assembly.traverse((child) => {

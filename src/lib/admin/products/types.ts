@@ -83,7 +83,9 @@ export interface CompatibleAddonBinding {
 
 export interface HostProductAddonConfig {
   hasScreen: boolean;
-  screenAddonProductId: string | null;
+  screenAddonProductId?: string | null;
+  screenAddonProductIds?: string[];
   hasGrill: boolean;
-  grillAddonProductId: string | null;
+  grillAddonProductId?: string | null;
+  grillAddonProductIds?: string[];
 }

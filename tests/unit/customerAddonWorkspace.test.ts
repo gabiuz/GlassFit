@@ -1019,5 +1019,121 @@ describe("IMP-MS69 / QAD-TC84: Customer Workspace Modular Add-on Selection & Quo
     const repeatX2400 = (meshMaterial2400 as THREE.MeshStandardMaterial).userData.repeatX;
     assert.ok(repeatX2400 > repeatX1200, `Repeat count at 2400mm (${repeatX2400}) must exceed 1200mm (${repeatX1200}) to retain tight spacing`);
   });
+
+  // --------------------------------------------------------------------------
+  // QAD-TC84.17: Multi-addon selection distinguishes specific template variants
+  // --------------------------------------------------------------------------
+  it("QAD-TC84.17: Multi-addon support allows selecting between different compatible templates for the same add-on type", () => {
+    const multiAddonDef: ProductStructuralDefinition = {
+      ...mockStructuralDefinition,
+      compatibleAddons: [
+        {
+          id: "bind-screen-1",
+          parentProductId: mockStructuralDefinition.product.productId,
+          addonProductId: "addon-screen-fiberglass",
+          addonType: "screen",
+          isDefaultEnabled: true,
+          displayOrder: 1,
+          addonProduct: {
+            productId: "addon-screen-fiberglass",
+            productName: "Fiberglass Insect Screen",
+            basePrice: 1600,
+            status: "Active",
+          },
+          components: [],
+        },
+        {
+          id: "bind-screen-2",
+          parentProductId: mockStructuralDefinition.product.productId,
+          addonProductId: "addon-screen-stainless",
+          addonType: "screen",
+          isDefaultEnabled: false,
+          displayOrder: 2,
+          addonProduct: {
+            productId: "addon-screen-stainless",
+            productName: "Stainless Security Wire Screen",
+            basePrice: 2800,
+            status: "Active",
+          },
+          components: [],
+        },
+        {
+          id: "bind-grill-1",
+          parentProductId: mockStructuralDefinition.product.productId,
+          addonProductId: "addon-grill-horizontal",
+          addonType: "grill",
+          isDefaultEnabled: false,
+          displayOrder: 3,
+          addonProduct: {
+            productId: "addon-grill-horizontal",
+            productName: "Modern Horizontal Bar Grille",
+            basePrice: 3100,
+            status: "Active",
+          },
+          components: [],
+        },
+        {
+          id: "bind-grill-2",
+          parentProductId: mockStructuralDefinition.product.productId,
+          addonProductId: "addon-grill-diamond",
+          addonType: "grill",
+          isDefaultEnabled: false,
+          displayOrder: 4,
+          addonProduct: {
+            productId: "addon-grill-diamond",
+            productName: "Colonial Diamond Security Grille",
+            basePrice: 4200,
+            status: "Active",
+          },
+          components: [],
+        },
+      ],
+    };
+
+    // 1. Filter screens and grilles
+    const screens = multiAddonDef.compatibleAddons?.filter((a) => a.addonType === "screen") ?? [];
+    const grills = multiAddonDef.compatibleAddons?.filter((a) => a.addonType === "grill") ?? [];
+
+    assert.equal(screens.length, 2, "Must contain 2 compatible screen add-ons");
+    assert.equal(grills.length, 2, "Must contain 2 compatible grill add-ons");
+
+    // 2. Build model with first screen option using top-level dummyCache
+
+    const builtScreen1 = buildParametricProduct(
+      multiAddonDef,
+      {
+        resolvedValues: { width: 1200, height: 1200 },
+        numericValuesMm: { width: 1200, height: 1200 },
+        componentQuantities: { "glass-panel": 1 },
+        appliedRuleIds: [],
+      },
+      dummyCache,
+      {
+        activeAddon: "screen",
+        addonProductId: "addon-screen-fiberglass",
+      },
+    );
+    const screen1Node = builtScreen1.group.getObjectByName("Addon_Screen_Assembly");
+    assert.ok(screen1Node, "Screen 1 assembly must be mounted");
+
+    // 3. Build model with second screen option
+    const builtScreen2 = buildParametricProduct(
+      multiAddonDef,
+      {
+        resolvedValues: { width: 1200, height: 1200 },
+        numericValuesMm: { width: 1200, height: 1200 },
+        componentQuantities: { "glass-panel": 1 },
+        appliedRuleIds: [],
+      },
+      dummyCache,
+      {
+        activeAddon: "screen",
+        addonProductId: "addon-screen-stainless",
+      },
+    );
+    const screen2Node = builtScreen2.group.getObjectByName("Addon_Screen_Assembly");
+    assert.ok(screen2Node, "Screen 2 assembly must be mounted");
+  });
 });
+
 

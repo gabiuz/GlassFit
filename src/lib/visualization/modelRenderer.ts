@@ -28,6 +28,7 @@ export type ModelPresentationOptions = {
   glassThicknessMm: GlassThicknessMm;
   includeSill: boolean;
   activeAddon?: "screen" | "grill" | "none" | null;
+  addonProductId?: string | null;
   addonAluminumFinish?: string;
   addonConfig?: AddonGeometryConfig;
 };
@@ -375,6 +376,7 @@ export class ProductModelRenderer {
       includeSill: presentation.includeSill,
       alumFinish: presentation.aluminumFinish,
       activeAddon: presentation.activeAddon,
+      addonProductId: presentation.addonProductId,
       addonAluminumFinish: presentation.addonAluminumFinish,
       addonConfig: presentation.addonConfig,
     });

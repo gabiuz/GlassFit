@@ -314,4 +314,44 @@ describe("IMP-MS67: Add-on Product Catalog Architecture and Product Inheritance 
       checkAddonDeletionConstraint(0);
     });
   });
+
+  // --------------------------------------------------------------------------
+  // QAD-TC82.9: Host product binds multiple screen templates and multiple grille templates
+  // --------------------------------------------------------------------------
+  it("QAD-TC82.9: Host window product binds multiple screen templates and multiple grille templates simultaneously", () => {
+    const parentId = "11111111-1111-4111-8111-111111111111";
+    const screen1 = "22222222-2222-4222-8222-222222222222";
+    const screen2 = "33333333-3333-4333-8333-333333333333";
+    const grill1 = "44444444-4444-4444-8444-444444444444";
+    const grill2 = "55555555-5555-4555-8555-555555555555";
+    const existingTypes = new Set<string>();
+
+    const config: HostProductAddonConfig = {
+      hasScreen: true,
+      screenAddonProductIds: [screen1, screen2],
+      hasGrill: true,
+      grillAddonProductIds: [grill1, grill2],
+    };
+
+    const reconciliation = computeAddonReconciliation(parentId, existingTypes, config);
+
+    assert.strictEqual(reconciliation.toUpsert.length, 4);
+    assert.strictEqual(reconciliation.toDeleteTypes.length, 0);
+
+    const screenUpserts = reconciliation.toUpsert.filter((u) => u.addon_type === "screen");
+    const grillUpserts = reconciliation.toUpsert.filter((u) => u.addon_type === "grill");
+
+    assert.strictEqual(screenUpserts.length, 2);
+    assert.strictEqual(screenUpserts[0].addon_product_id, screen1);
+    assert.strictEqual(screenUpserts[0].display_order, 1);
+    assert.strictEqual(screenUpserts[1].addon_product_id, screen2);
+    assert.strictEqual(screenUpserts[1].display_order, 2);
+
+    assert.strictEqual(grillUpserts.length, 2);
+    assert.strictEqual(grillUpserts[0].addon_product_id, grill1);
+    assert.strictEqual(grillUpserts[0].display_order, 3);
+    assert.strictEqual(grillUpserts[1].addon_product_id, grill2);
+    assert.strictEqual(grillUpserts[1].display_order, 4);
+  });
 });
+

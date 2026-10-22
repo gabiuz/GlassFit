@@ -19,9 +19,9 @@ export function AddonInheritanceSection({ productId, isAddon = false }: AddonInh
   const [screens, setScreens] = useState<AvailableAddonProduct[]>([]);
   const [grills, setGrills] = useState<AvailableAddonProduct[]>([]);
   const [hasScreen, setHasScreen] = useState(false);
-  const [screenProductId, setScreenProductId] = useState<string>("");
+  const [selectedScreenProductIds, setSelectedScreenProductIds] = useState<string[]>([]);
   const [hasGrill, setHasGrill] = useState(false);
-  const [grillProductId, setGrillProductId] = useState<string>("");
+  const [selectedGrillProductIds, setSelectedGrillProductIds] = useState<string[]>([]);
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -47,20 +47,22 @@ export function AddonInheritanceSection({ productId, isAddon = false }: AddonInh
       setScreens(availableScreens);
       setGrills(availableGrills);
 
-      const screenBinding = bindings.find((b) => b.addonType === "screen");
-      if (screenBinding) {
+      const screenBindings = bindings.filter((b) => b.addonType === "screen");
+      if (screenBindings.length > 0) {
         setHasScreen(true);
-        setScreenProductId(screenBinding.addonProductId);
-      } else if (availableScreens.length > 0) {
-        setScreenProductId(availableScreens[0].productId);
+        setSelectedScreenProductIds(screenBindings.map((b) => b.addonProductId));
+      } else {
+        setHasScreen(false);
+        setSelectedScreenProductIds(availableScreens.length > 0 ? [availableScreens[0].productId] : []);
       }
 
-      const grillBinding = bindings.find((b) => b.addonType === "grill");
-      if (grillBinding) {
+      const grillBindings = bindings.filter((b) => b.addonType === "grill");
+      if (grillBindings.length > 0) {
         setHasGrill(true);
-        setGrillProductId(grillBinding.addonProductId);
-      } else if (availableGrills.length > 0) {
-        setGrillProductId(availableGrills[0].productId);
+        setSelectedGrillProductIds(grillBindings.map((b) => b.addonProductId));
+      } else {
+        setHasGrill(false);
+        setSelectedGrillProductIds(availableGrills.length > 0 ? [availableGrills[0].productId] : []);
       }
     } catch (err: unknown) {
       console.error("Failed to load add-on configuration:", err);
@@ -75,19 +77,47 @@ export function AddonInheritanceSection({ productId, isAddon = false }: AddonInh
     loadData();
   }, [loadData]);
 
+  const toggleScreenSelection = (id: string) => {
+    setSelectedScreenProductIds((prev) =>
+      prev.includes(id) ? prev.filter((pId) => pId !== id) : [...prev, id]
+    );
+  };
+
+  const toggleAllScreens = () => {
+    if (selectedScreenProductIds.length === screens.length) {
+      setSelectedScreenProductIds([]);
+    } else {
+      setSelectedScreenProductIds(screens.map((s) => s.productId));
+    }
+  };
+
+  const toggleGrillSelection = (id: string) => {
+    setSelectedGrillProductIds((prev) =>
+      prev.includes(id) ? prev.filter((pId) => pId !== id) : [...prev, id]
+    );
+  };
+
+  const toggleAllGrills = () => {
+    if (selectedGrillProductIds.length === grills.length) {
+      setSelectedGrillProductIds([]);
+    } else {
+      setSelectedGrillProductIds(grills.map((g) => g.productId));
+    }
+  };
+
   const handleSave = async () => {
     if (!productId || productId === "draft") {
       setErrorMsg("A saved product draft is required before configuring add-on attachments.");
       return;
     }
 
-    if (hasScreen && !screenProductId) {
-      setErrorMsg("Please select an insect screen template or uncheck the option.");
+    if (hasScreen && selectedScreenProductIds.length === 0) {
+      setErrorMsg("Please select at least one insect screen template or uncheck the screen option.");
       return;
     }
 
-    if (hasGrill && !grillProductId) {
-      setErrorMsg("Please select a security grille template or uncheck the option.");
+    if (hasGrill && selectedGrillProductIds.length === 0) {
+      setErrorMsg("Please select at least one security grille template or uncheck the grille option.");
       return;
     }
 
@@ -98,9 +128,11 @@ export function AddonInheritanceSection({ productId, isAddon = false }: AddonInh
 
       await saveProductAddonInheritance(productId, {
         hasScreen,
-        screenAddonProductId: hasScreen ? screenProductId : null,
+        screenAddonProductId: selectedScreenProductIds[0] ?? null,
+        screenAddonProductIds: hasScreen ? selectedScreenProductIds : [],
         hasGrill,
-        grillAddonProductId: hasGrill ? grillProductId : null,
+        grillAddonProductId: selectedGrillProductIds[0] ?? null,
+        grillAddonProductIds: hasGrill ? selectedGrillProductIds : [],
       });
 
       setSaveStatus("saved");
@@ -138,9 +170,6 @@ export function AddonInheritanceSection({ productId, isAddon = false }: AddonInh
     );
   }
 
-  const selectedScreen = screens.find((s) => s.productId === screenProductId);
-  const selectedGrill = grills.find((g) => g.productId === grillProductId);
-
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
@@ -150,7 +179,7 @@ export function AddonInheritanceSection({ productId, isAddon = false }: AddonInh
         </h3>
         <p className="text-sm text-neutral-600">
           Enable modular add-ons that customers can toggle during 3D visualization and quotation.
-          Customers can choose either the screen or grill, but not both simultaneously.
+          If multiple screen mesh or grille options are selected, customers can choose which style they want in the workspace.
         </p>
       </div>
 
@@ -161,7 +190,7 @@ export function AddonInheritanceSection({ productId, isAddon = false }: AddonInh
           <span className="font-semibold">Interactive Mutual Exclusion Notice:</span>
           <span>
             In the customer visualization workspace, customers will see a toggle similar to the sill option.
-            Enabling the screen will automatically disable the grill, and vice versa.
+            Enabling the screen will automatically disable the grill, and vice versa. Selecting multiple add-on options allows customers to choose from multiple screen or grille variations.
           </span>
         </div>
       </div>
@@ -187,9 +216,10 @@ export function AddonInheritanceSection({ productId, isAddon = false }: AddonInh
                 type="checkbox"
                 checked={hasScreen}
                 onChange={(e) => {
-                  setHasScreen(e.target.checked);
-                  if (e.target.checked && !screenProductId && screens.length > 0) {
-                    setScreenProductId(screens[0].productId);
+                  const checked = e.target.checked;
+                  setHasScreen(checked);
+                  if (checked && selectedScreenProductIds.length === 0 && screens.length > 0) {
+                    setSelectedScreenProductIds([screens[0].productId]);
                   }
                 }}
                 className="size-4 rounded text-[#07b6d3] focus:ring-[#07b6d3]"
@@ -198,52 +228,86 @@ export function AddonInheritanceSection({ productId, isAddon = false }: AddonInh
                 Enable Insect Screen Attachment
               </span>
             </label>
-            <span className="text-xs px-2.5 py-0.5 rounded-full bg-teal-100 text-teal-800 font-medium border border-teal-200">
-              Screen
-            </span>
+            <div className="flex items-center gap-2">
+              {hasScreen && selectedScreenProductIds.length > 0 && (
+                <span className="text-[11px] text-teal-700 bg-teal-100/70 font-semibold px-2 py-0.5 rounded-md">
+                  {selectedScreenProductIds.length} of {screens.length} selected
+                </span>
+              )}
+              <span className="text-xs px-2.5 py-0.5 rounded-full bg-teal-100 text-teal-800 font-medium border border-teal-200">
+                Screen
+              </span>
+            </div>
           </div>
 
           {hasScreen && (
             <div className="flex flex-col gap-3 pt-3 border-t border-teal-200/60 text-sm">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-medium text-neutral-700">
-                  Select Screen Product Template
-                </label>
-                {screens.length === 0 ? (
-                  <p className="text-xs text-amber-700 bg-amber-50 p-2.5 rounded-md border border-amber-200">
-                    No active screen add-on templates found. Create and publish an insect screen accessory first.
-                  </p>
-                ) : (
-                  <select
-                    value={screenProductId}
-                    onChange={(e) => setScreenProductId(e.target.value)}
-                    className="w-full border border-neutral-300 rounded-[8px] px-3 py-2 text-sm text-black bg-white focus:outline-none focus:border-[#07b6d3]"
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-neutral-700">
+                  Select Compatible Screen / Mesh Templates
+                </span>
+                {screens.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={toggleAllScreens}
+                    className="text-xs text-[#07b6d3] hover:underline font-medium cursor-pointer"
                   >
-                    {screens.map((s) => (
-                      <option key={s.productId} value={s.productId}>
-                        {s.productName} (₱{s.basePrice.toFixed(2)})
-                      </option>
-                    ))}
-                  </select>
+                    {selectedScreenProductIds.length === screens.length ? "Deselect All" : "Select All"}
+                  </button>
                 )}
               </div>
 
-              {selectedScreen && (
-                <div className="flex flex-col gap-1 text-xs text-neutral-600 bg-white p-3 rounded-[8px] border border-neutral-200">
-                  <div className="flex justify-between">
-                    <span className="font-medium text-neutral-800">Add-on Item:</span>
-                    <span>{selectedScreen.productName}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="font-medium text-neutral-800">Base Surcharge:</span>
-                    <span>₱{selectedScreen.basePrice.toFixed(2)}</span>
-                  </div>
-                  {selectedScreen.description && (
-                    <div className="mt-1 pt-1 border-t border-neutral-100 text-neutral-500">
-                      {selectedScreen.description}
-                    </div>
-                  )}
+              {screens.length === 0 ? (
+                <p className="text-xs text-amber-700 bg-amber-50 p-2.5 rounded-md border border-amber-200">
+                  No active screen add-on templates found. Create and publish an insect screen accessory first.
+                </p>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {screens.map((screen) => {
+                    const isSelected = selectedScreenProductIds.includes(screen.productId);
+                    return (
+                      <div
+                        key={screen.productId}
+                        onClick={() => toggleScreenSelection(screen.productId)}
+                        className={cn(
+                          "flex items-start justify-between p-3 rounded-[10px] border cursor-pointer transition-all select-none",
+                          isSelected
+                            ? "bg-white border-teal-400 shadow-xs ring-1 ring-teal-300/50"
+                            : "bg-white/80 border-neutral-200 hover:border-neutral-300 opacity-75 hover:opacity-100"
+                        )}
+                      >
+                        <div className="flex items-start gap-3">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleScreenSelection(screen.productId)}
+                            onClick={(e) => e.stopPropagation()}
+                            className="size-4 mt-0.5 rounded text-[#07b6d3] focus:ring-[#07b6d3] cursor-pointer"
+                          />
+                          <div className="flex flex-col">
+                            <span className="text-xs font-semibold text-neutral-900">
+                              {screen.productName}
+                            </span>
+                            {screen.description && (
+                              <span className="text-[11px] text-neutral-500 line-clamp-1 mt-0.5">
+                                {screen.description}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <span className="text-xs font-medium text-neutral-700 shrink-0 ml-2">
+                          ₱{screen.basePrice.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
+              )}
+
+              {selectedScreenProductIds.length === 0 && (
+                <p className="text-xs text-red-500 bg-red-50 p-2 rounded-md">
+                  Please select at least one screen template or disable screen attachment.
+                </p>
               )}
             </div>
           )}
@@ -262,9 +326,10 @@ export function AddonInheritanceSection({ productId, isAddon = false }: AddonInh
                 type="checkbox"
                 checked={hasGrill}
                 onChange={(e) => {
-                  setHasGrill(e.target.checked);
-                  if (e.target.checked && !grillProductId && grills.length > 0) {
-                    setGrillProductId(grills[0].productId);
+                  const checked = e.target.checked;
+                  setHasGrill(checked);
+                  if (checked && selectedGrillProductIds.length === 0 && grills.length > 0) {
+                    setSelectedGrillProductIds([grills[0].productId]);
                   }
                 }}
                 className="size-4 rounded text-[#07b6d3] focus:ring-[#07b6d3]"
@@ -273,52 +338,86 @@ export function AddonInheritanceSection({ productId, isAddon = false }: AddonInh
                 Enable Security Grille Attachment
               </span>
             </label>
-            <span className="text-xs px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 font-medium border border-amber-200">
-              Grille
-            </span>
+            <div className="flex items-center gap-2">
+              {hasGrill && selectedGrillProductIds.length > 0 && (
+                <span className="text-[11px] text-amber-800 bg-amber-100/70 font-semibold px-2 py-0.5 rounded-md">
+                  {selectedGrillProductIds.length} of {grills.length} selected
+                </span>
+              )}
+              <span className="text-xs px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 font-medium border border-amber-200">
+                Grille
+              </span>
+            </div>
           </div>
 
           {hasGrill && (
             <div className="flex flex-col gap-3 pt-3 border-t border-amber-200/60 text-sm">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-medium text-neutral-700">
-                  Select Grille Product Template
-                </label>
-                {grills.length === 0 ? (
-                  <p className="text-xs text-amber-700 bg-amber-50 p-2.5 rounded-md border border-amber-200">
-                    No active security grille templates found. Create and publish a grille accessory first.
-                  </p>
-                ) : (
-                  <select
-                    value={grillProductId}
-                    onChange={(e) => setGrillProductId(e.target.value)}
-                    className="w-full border border-neutral-300 rounded-[8px] px-3 py-2 text-sm text-black bg-white focus:outline-none focus:border-[#07b6d3]"
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-neutral-700">
+                  Select Compatible Security Grille Templates
+                </span>
+                {grills.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={toggleAllGrills}
+                    className="text-xs text-[#07b6d3] hover:underline font-medium cursor-pointer"
                   >
-                    {grills.map((g) => (
-                      <option key={g.productId} value={g.productId}>
-                        {g.productName} (₱{g.basePrice.toFixed(2)})
-                      </option>
-                    ))}
-                  </select>
+                    {selectedGrillProductIds.length === grills.length ? "Deselect All" : "Select All"}
+                  </button>
                 )}
               </div>
 
-              {selectedGrill && (
-                <div className="flex flex-col gap-1 text-xs text-neutral-600 bg-white p-3 rounded-[8px] border border-neutral-200">
-                  <div className="flex justify-between">
-                    <span className="font-medium text-neutral-800">Add-on Item:</span>
-                    <span>{selectedGrill.productName}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="font-medium text-neutral-800">Base Surcharge:</span>
-                    <span>₱{selectedGrill.basePrice.toFixed(2)}</span>
-                  </div>
-                  {selectedGrill.description && (
-                    <div className="mt-1 pt-1 border-t border-neutral-100 text-neutral-500">
-                      {selectedGrill.description}
-                    </div>
-                  )}
+              {grills.length === 0 ? (
+                <p className="text-xs text-amber-700 bg-amber-50 p-2.5 rounded-md border border-amber-200">
+                  No active security grille templates found. Create and publish a grille accessory first.
+                </p>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {grills.map((grill) => {
+                    const isSelected = selectedGrillProductIds.includes(grill.productId);
+                    return (
+                      <div
+                        key={grill.productId}
+                        onClick={() => toggleGrillSelection(grill.productId)}
+                        className={cn(
+                          "flex items-start justify-between p-3 rounded-[10px] border cursor-pointer transition-all select-none",
+                          isSelected
+                            ? "bg-white border-amber-400 shadow-xs ring-1 ring-amber-300/50"
+                            : "bg-white/80 border-neutral-200 hover:border-neutral-300 opacity-75 hover:opacity-100"
+                        )}
+                      >
+                        <div className="flex items-start gap-3">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleGrillSelection(grill.productId)}
+                            onClick={(e) => e.stopPropagation()}
+                            className="size-4 mt-0.5 rounded text-[#07b6d3] focus:ring-[#07b6d3] cursor-pointer"
+                          />
+                          <div className="flex flex-col">
+                            <span className="text-xs font-semibold text-neutral-900">
+                              {grill.productName}
+                            </span>
+                            {grill.description && (
+                              <span className="text-[11px] text-neutral-500 line-clamp-1 mt-0.5">
+                                {grill.description}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <span className="text-xs font-medium text-neutral-700 shrink-0 ml-2">
+                          ₱{grill.basePrice.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
+              )}
+
+              {selectedGrillProductIds.length === 0 && (
+                <p className="text-xs text-red-500 bg-red-50 p-2 rounded-md">
+                  Please select at least one security grille template or disable grille attachment.
+                </p>
               )}
             </div>
           )}

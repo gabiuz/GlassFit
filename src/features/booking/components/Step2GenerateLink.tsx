@@ -18,6 +18,7 @@ interface Step2GenerateLinkProps {
   fileName?: string;
   dateFormatted?: string;
   expiresFormatted?: string;
+  addonSummary?: string | null;
 }
 
 export function Step2GenerateLink({
@@ -34,6 +35,7 @@ export function Step2GenerateLink({
   fileName = "Livingroom.jpeg",
   dateFormatted = "May 21, 2026 · 3:42 PM",
   expiresFormatted = "June 3, 2026",
+  addonSummary = null,
 }: Step2GenerateLinkProps) {
   const [copied, setCopied] = useState(false);
 
@@ -106,6 +108,13 @@ export function Step2GenerateLink({
 
             <span className="text-[#c3c3c3] whitespace-nowrap">Customer</span>
             <span className="text-[#0f1422] whitespace-nowrap">{customerName}</span>
+
+            {addonSummary && (
+              <>
+                <span className="text-[#c3c3c3] whitespace-nowrap">Add-on Attachment</span>
+                <span className="text-[#0f1422] md:whitespace-nowrap font-medium text-[#07b6d3]">{addonSummary}</span>
+              </>
+            )}
           </div>
         </div>
 

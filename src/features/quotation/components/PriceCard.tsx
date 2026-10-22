@@ -16,6 +16,12 @@ export type ProductDetailsData = {
   dimension: string;
   hasSill?: boolean;
   structuralWaiver?: boolean;
+  selectedAddon?: "screen" | "grill" | "none" | null;
+  addonProductId?: string | null;
+  addonName?: string | null;
+  addonPrice?: number | null;
+  addonAluminumFinish?: string | null;
+  baseUnitPrice?: number | null;
   bomGroups?: {
     framingAmount: number;
     glazingAmount: number;
@@ -123,7 +129,7 @@ export function PriceCard({
             ) : null}
           </div>
           <div className="flex flex-col gap-2 items-start min-w-0">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               {itemIndex !== undefined && totalItems !== undefined && totalItems > 1 && (
                 <span className="bg-[#07b6d3]/15 text-[#078da4] text-xs font-semibold px-2.5 py-0.5 rounded-full border border-[#07b6d3]/30">
                   Item {itemIndex} of {totalItems}
@@ -132,6 +138,11 @@ export function PriceCard({
               <span className="text-[#c3c3c3] text-sm font-normal tracking-[-0.266px] leading-[1.4] whitespace-nowrap">
                 {productId}
               </span>
+              {details.addonName && details.selectedAddon && details.selectedAddon !== "none" && (
+                <span className="bg-[#07b6d3]/15 text-[#078da4] text-xs font-semibold px-2.5 py-0.5 rounded-full border border-[#07b6d3]/30">
+                  + {details.addonName} {typeof details.addonPrice === "number" && details.addonPrice > 0 ? `(+₱${details.addonPrice.toLocaleString("en-PH", { minimumFractionDigits: 2 })})` : ""}
+                </span>
+              )}
             </div>
             <h2 className="text-green text-2xl md:text-3.5xl font-medium tracking-[-0.608px] leading-[1.2] truncate max-w-full">
               {productName}
@@ -155,6 +166,11 @@ export function PriceCard({
             <span className="text-[#c3c3c3] text-[24px] font-medium tracking-[-0.456px] leading-[1.2]">
               {formattedUnitPrice}
             </span>
+            {details.selectedAddon && details.selectedAddon !== "none" && typeof details.addonPrice === "number" && details.addonPrice > 0 && (
+              <span className="text-[11px] text-neutral-400 text-left md:text-right">
+                Base: {new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: 0 }).format(details.baseUnitPrice ?? (unitPrice - details.addonPrice)).replace("PHP", "Php")} + Add-on: {new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: 0 }).format(details.addonPrice).replace("PHP", "Php")}
+              </span>
+            )}
           </div>
           <button
             type="button"
@@ -242,6 +258,14 @@ export function PriceCard({
                   </span>
                   <span className="text-black text-sm font-normal">
                     {details.dimension}
+                  </span>
+                  <span className="text-[#c3c3c3] text-sm font-normal">
+                    Add-on Attachment
+                  </span>
+                  <span className="text-black text-sm font-normal">
+                    {details.addonName && details.selectedAddon && details.selectedAddon !== "none"
+                      ? `${details.addonName}${details.addonAluminumFinish ? ` (${details.addonAluminumFinish})` : ""}${typeof details.addonPrice === "number" && details.addonPrice > 0 ? ` (+₱${details.addonPrice.toLocaleString("en-PH", { minimumFractionDigits: 2 })})` : ""}`
+                      : "None"}
                   </span>
                 </div>
 

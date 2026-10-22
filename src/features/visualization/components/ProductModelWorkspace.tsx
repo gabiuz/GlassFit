@@ -18,6 +18,7 @@ import {
 } from "motion/react";
 import { ChevronDown, RotateCw, FlipHorizontal, RotateCcw, Trash2, MousePointer2, Maximize, Move, Minus, Plus, CheckCircle2, Info, Lock } from "lucide-react";
 import Button from "@/components/shared/Button";
+import { cn } from "@/lib/utils";
 import { AddProductModal } from "./AddProductModal";
 import { ManualOcclusionPointPicker } from "./ManualOcclusionPointPicker";
 import { PerspectivePlanePicker } from "./PerspectivePlanePicker";
@@ -402,11 +403,29 @@ export function ProductModelWorkspace({
     ? structuralDefinition.compatibleAddons
     : asyncAddonsList;
 
-  const screenAddon = compatibleAddonsList.find((a) => a.addonType === "screen");
-  const grillAddon = compatibleAddonsList.find((a) => a.addonType === "grill");
-  const hasScreenConfigured = Boolean(screenAddon);
-  const hasGrillConfigured = Boolean(grillAddon);
+  const screenAddons = useMemo(
+    () => compatibleAddonsList.filter((a) => a.addonType === "screen"),
+    [compatibleAddonsList]
+  );
+  const grillAddons = useMemo(
+    () => compatibleAddonsList.filter((a) => a.addonType === "grill"),
+    [compatibleAddonsList]
+  );
+  const hasScreenConfigured = screenAddons.length > 0;
+  const hasGrillConfigured = grillAddons.length > 0;
   const hasCompatibleAddons = hasScreenConfigured || hasGrillConfigured;
+
+  // Track specific chosen add-on product ID
+  const [selectedAddonProductId, setSelectedAddonProductId] = useState<string | null>(() => {
+    if (initialConfiguration?.addonProductId) {
+      return initialConfiguration.addonProductId;
+    }
+    const raw = initialConfiguration?.visualParameterValues?.selected_addon as Record<string, unknown> | undefined;
+    if (raw && typeof raw.addon_product_id === "string") {
+      return raw.addon_product_id;
+    }
+    return null;
+  });
 
   // Reconcile effective add-on selection if active product does not support current choice
   const effectiveSelectedAddon: AddonSelectionType =
@@ -414,6 +433,16 @@ export function ProductModelWorkspace({
     (selectedAddon === "grill" && !hasGrillConfigured && compatibleAddonsList.length > 0)
       ? "none"
       : selectedAddon;
+
+  const activeCompatibleAddon = useMemo(() => {
+    if (effectiveSelectedAddon === "none") return null;
+    const list = effectiveSelectedAddon === "screen" ? screenAddons : grillAddons;
+    if (selectedAddonProductId) {
+      const found = list.find((a) => a.addonProductId === selectedAddonProductId);
+      if (found) return found;
+    }
+    return list[0] ?? null;
+  }, [effectiveSelectedAddon, screenAddons, grillAddons, selectedAddonProductId]);
 
   const pendingComparisonOverlaysRef = useRef<PlacedOverlay[]>([]);
 
@@ -799,6 +828,7 @@ export function ProductModelWorkspace({
       glassThicknessMm: overrides?.glassThicknessMm ?? glassThicknessMm,
       includeSill: overrides?.includeSill ?? includeSill,
       activeAddon: overrides?.activeAddon ?? selectedAddon,
+      addonProductId: overrides?.addonProductId ?? selectedAddonProductId,
       addonAluminumFinish: overrides?.addonAluminumFinish ?? addonAlumFinish,
       addonConfig: {
         finishColor: getFinishHexColor(overrides?.addonAluminumFinish ?? addonAlumFinish),
@@ -845,6 +875,7 @@ export function ProductModelWorkspace({
     glassThicknessMm,
     includeSill,
     selectedAddon,
+    selectedAddonProductId,
     addonAlumFinish,
     getFinishHexColor,
     perspectiveCorners,
@@ -1456,7 +1487,7 @@ export function ProductModelWorkspace({
 
   useEffect(() => {
     if (!mvpRendererRef.current || !structuralDefinition) return;
-    const buildKey = `${structuralDefinition.product.productId}:${widthCm}:${heightCm}:${panelCount}:${includeSill}:${selectedAddon}:${addonAlumFinish}:${alumFinish}:${glassAppearance}:${glassColor}:${glassThicknessMm}`;
+    const buildKey = `${structuralDefinition.product.productId}:${widthCm}:${heightCm}:${panelCount}:${includeSill}:${selectedAddon}:${selectedAddonProductId}:${addonAlumFinish}:${alumFinish}:${glassAppearance}:${glassColor}:${glassThicknessMm}`;
     if (skipPreparedBuildRef.current === buildKey) {
       skipPreparedBuildRef.current = null;
       return;
@@ -1485,6 +1516,7 @@ export function ProductModelWorkspace({
         glassThicknessMm,
         includeSill,
         activeAddon: selectedAddon,
+        addonProductId: selectedAddonProductId,
       },
       {
         selectedMaterials,
@@ -1502,7 +1534,7 @@ export function ProductModelWorkspace({
       if (!cancelled) setProductBuildError(error instanceof Error ? error.message : "Could not build the product model.");
     });
     return () => { cancelled = true; };
-  }, [structuralDefinition, widthCm, heightCm, panelCount, includeSill, selectedAddon, addonAlumFinish, glassAppearance, glassColor, glassThicknessMm, alumFinish, hasExplicitOverrides, selectedMaterials, candidateMaterialsMap]);
+  }, [structuralDefinition, widthCm, heightCm, panelCount, includeSill, selectedAddon, selectedAddonProductId, addonAlumFinish, glassAppearance, glassColor, glassThicknessMm, alumFinish, hasExplicitOverrides, selectedMaterials, candidateMaterialsMap]);
 
   useEffect(() => {
     if (!mvpRendererRef.current) return;
@@ -1709,11 +1741,11 @@ export function ProductModelWorkspace({
       autoRealism,
       positionX: overlayPosition.x,
       positionY: overlayPosition.y,
-      selectedAddon,
-      addonProductId: selectedAddon === "screen" ? (screenAddon?.addonProductId ?? null) : selectedAddon === "grill" ? (grillAddon?.addonProductId ?? null) : null,
-      addonName: addonBOM?.addonName ?? null,
-      addonPrice,
-      addonAluminumFinish: addonAlumFinish,
+      selectedAddon: effectiveSelectedAddon,
+      addonProductId: effectiveSelectedAddon !== "none" ? (activeCompatibleAddon?.addonProductId ?? selectedAddonProductId ?? null) : null,
+      addonName: effectiveSelectedAddon !== "none" ? (activeCompatibleAddon?.addonProduct?.productName ?? addonBOM?.addonName ?? (effectiveSelectedAddon === "screen" ? "Extruded Aluminum Insect Screen" : "Architectural Security Window Grille")) : null,
+      addonPrice: effectiveSelectedAddon !== "none" ? (addonPrice || (addonBOM?.finalAddonPrice ?? 0)) : 0,
+      addonAluminumFinish: effectiveSelectedAddon !== "none" ? addonAlumFinish : undefined,
       baseUnitPrice: realtimePricing.baseUnitPrice,
       visualParameterValues: {
         width: width * 10,
@@ -1723,12 +1755,12 @@ export function ProductModelWorkspace({
         includeSill,
         include_sill: includeSill,
         selected_materials: selectedMaterials,
-        selected_addon: selectedAddon !== "none" ? {
-          type: selectedAddon,
-          addon_product_id: selectedAddon === "screen" ? (screenAddon?.addonProductId ?? null) : (grillAddon?.addonProductId ?? null),
-          addon_name: addonBOM?.addonName ?? null,
+        selected_addon: effectiveSelectedAddon !== "none" ? {
+          type: effectiveSelectedAddon,
+          addon_product_id: activeCompatibleAddon?.addonProductId ?? selectedAddonProductId ?? null,
+          addon_name: activeCompatibleAddon?.addonProduct?.productName ?? addonBOM?.addonName ?? (effectiveSelectedAddon === "screen" ? "Extruded Aluminum Insect Screen" : "Architectural Security Window Grille"),
           finish: addonAlumFinish,
-          price: addonPrice,
+          price: addonPrice || (addonBOM?.finalAddonPrice ?? 0),
         } : null,
         dimension_source: manualDimensions ? "manual_tape" : isVerifiedCalibrated ? "planar_paper_estimate" : "heuristic",
         calibration_provenance: isVerifiedCalibrated ? activeMeasurementRecord : null,
@@ -1764,13 +1796,13 @@ export function ProductModelWorkspace({
     glassType,
     heightCm,
     includeSill,
-    selectedAddon,
+    effectiveSelectedAddon,
+    selectedAddonProductId,
+    activeCompatibleAddon,
     addonAlumFinish,
     addonPrice,
     addonBOM,
     realtimePricing.baseUnitPrice,
-    screenAddon,
-    grillAddon,
     isFlipped,
     overlayPosition.x,
     overlayPosition.y,
@@ -1873,6 +1905,14 @@ export function ProductModelWorkspace({
         }
       } else {
         setSelectedAddon("none");
+      }
+      if (configuration.addonProductId) {
+        setSelectedAddonProductId(configuration.addonProductId);
+      } else if (configuration.visualParameterValues?.selected_addon) {
+        const rawAddon = configuration.visualParameterValues.selected_addon as Record<string, unknown>;
+        if (typeof rawAddon?.addon_product_id === "string") {
+          setSelectedAddonProductId(rawAddon.addon_product_id);
+        }
       }
       if (configuration.addonAluminumFinish) {
         setAddonAlumFinish(configuration.addonAluminumFinish);
@@ -2008,8 +2048,8 @@ export function ProductModelWorkspace({
             panelCount: Number(definition.parameters.find((parameter) => parameter.parameterKey === "pane_count")?.defaultValue) || 2,
             includeSill: Boolean(definition.template.baseConfiguration.includeSill ?? true),
             selectedAddon: intent.mode === "change" ? selectedAddon : "none",
-            addonProductId: intent.mode === "change" ? (selectedAddon === "screen" ? (screenAddon?.addonProductId ?? null) : (grillAddon?.addonProductId ?? null)) : null,
-            addonName: intent.mode === "change" ? (addonBOM?.addonName ?? null) : null,
+            addonProductId: intent.mode === "change" && selectedAddon !== "none" ? (activeCompatibleAddon?.addonProductId ?? null) : null,
+            addonName: intent.mode === "change" && selectedAddon !== "none" ? (activeCompatibleAddon?.addonProduct?.productName ?? addonBOM?.addonName ?? null) : null,
             addonPrice: intent.mode === "change" ? addonPrice : 0,
             addonAluminumFinish: intent.mode === "change" ? (selectedAddon !== "none" ? addonAlumFinish : "analok") : "analok",
             structuralWaiver: false,
@@ -2040,8 +2080,8 @@ export function ProductModelWorkspace({
               include_sill: Boolean(definition.template.baseConfiguration.includeSill ?? true),
               selected_addon: intent.mode === "change" && selectedAddon !== "none" ? {
                 type: selectedAddon,
-                addon_product_id: selectedAddon === "screen" ? (screenAddon?.addonProductId ?? null) : (grillAddon?.addonProductId ?? null),
-                addon_name: addonBOM?.addonName ?? null,
+                addon_product_id: activeCompatibleAddon?.addonProductId ?? null,
+                addon_name: activeCompatibleAddon?.addonProduct?.productName ?? addonBOM?.addonName ?? null,
                 finish: addonAlumFinish,
                 price: addonPrice,
               } : null,
@@ -2136,7 +2176,7 @@ export function ProductModelWorkspace({
       }
     }
 
-    const nextActiveOverlayId = `active-${product.id}-${crypto.randomUUID()}`;
+    const nextActiveOverlayId = `active-${product.id}-${generateSafeUUID()}`;
     if (product.id !== currentProductId) {
       let maxNum = activeLayerNumber;
       for (const overlay of placedOverlays) maxNum = Math.max(maxNum, overlay.layerNumber ?? 0);
@@ -2267,11 +2307,16 @@ export function ProductModelWorkspace({
         ? { ...projectedModelBounds }
         : (mvpCanvasRef.current ? getVisibleModelBounds(mvpCanvasRef.current) ?? undefined : undefined);
       const capturedCanvas = await captureCurrentProductCanvas();
-      const activeImageDataUrl = capturedCanvas.toDataURL("image/png");
+      let activeImageDataUrl = "";
+      try {
+        activeImageDataUrl = capturedCanvas.toDataURL("image/png");
+      } catch (exportErr) {
+        console.warn("[Snapshot] Could not extract data URL from captured canvas:", exportErr);
+      }
       const currentFinish = normalizeAluminumFinish(
         currentConfiguration.aluminumFinish,
       );
-      const uniqueOverlayId = crypto.randomUUID();
+      const uniqueOverlayId = generateSafeUUID();
       const posX = overlayX.get();
       const posY = overlayY.get();
       const prodId = currentProductId ?? structuralDefinition?.product.productId ?? "";
@@ -2313,31 +2358,36 @@ export function ProductModelWorkspace({
       } : undefined;
       const variationAssetRefs = assetSessionId && variationRenderRecipe
         ? await (async () => {
-            const fingerprint = createVariationRenderFingerprint(
-              variationRenderRecipe,
-              currentFinish,
-            );
-            const captured = await captureTransparentCanvasBlob(capturedCanvas);
-            const asset = await variationAssetStore.put({
-              cacheKey: createVariationCacheKey(
-                assetSessionId,
-                uniqueOverlayId,
+            try {
+              const fingerprint = createVariationRenderFingerprint(
+                variationRenderRecipe,
                 currentFinish,
+              );
+              const captured = await captureTransparentCanvasBlob(capturedCanvas);
+              const asset = await variationAssetStore.put({
+                cacheKey: createVariationCacheKey(
+                  assetSessionId,
+                  uniqueOverlayId,
+                  currentFinish,
+                  fingerprint,
+                ),
+                assetSessionId,
+                overlayId: uniqueOverlayId,
+                finish: currentFinish,
                 fingerprint,
-              ),
-              assetSessionId,
-              overlayId: uniqueOverlayId,
-              finish: currentFinish,
-              fingerprint,
-              width: captured.width,
-              height: captured.height,
-              mimeType: captured.mimeType,
-              blob: captured.blob,
-              createdAt: Date.now(),
-              lastAccessedAt: Date.now(),
-              priority: "visible",
-            });
-            return { [currentFinish]: asset };
+                width: captured.width,
+                height: captured.height,
+                mimeType: captured.mimeType,
+                blob: captured.blob,
+                createdAt: Date.now(),
+                lastAccessedAt: Date.now(),
+                priority: "visible",
+              });
+              return { [currentFinish]: asset };
+            } catch (assetErr) {
+              console.warn("[Snapshot] Could not generate or store variation asset ref:", assetErr);
+              return undefined;
+            }
           })()
         : undefined;
 
@@ -2495,6 +2545,7 @@ export function ProductModelWorkspace({
 
   const handleSaveSnapshot = useCallback(async () => {
     setIsCapturingSnapshot(true);
+    setProductBuildError(null);
 
     try {
       const dataUrl = await captureCurrentSnapshot();
@@ -2522,6 +2573,7 @@ export function ProductModelWorkspace({
 
   const handleContinueToComparison = useCallback(async () => {
     setIsCapturingSnapshot(true);
+    setProductBuildError(null);
 
     try {
       await captureCurrentSnapshot();
@@ -2546,6 +2598,13 @@ export function ProductModelWorkspace({
         currentConfiguration,
       );
 
+      if (entries.length === 0) {
+        onPlacedOverlaysChange?.(comparisonOverlays);
+        onComparisonOverlaysChange?.(comparisonOverlays);
+        router.push("/comparison");
+        return;
+      }
+
       setMeasurementEntries(entries);
       setIsMeasurementModalOpen(true);
     } catch (error) {
@@ -2563,8 +2622,11 @@ export function ProductModelWorkspace({
     createPlacedOverlay,
     currentConfiguration,
     heightCm,
+    onComparisonOverlaysChange,
+    onPlacedOverlaysChange,
     placedOverlays,
     realtimePricing.totalPrice,
+    router,
     selectedProduct,
     structuralDefinition,
     widthCm,
@@ -2889,7 +2951,20 @@ export function ProductModelWorkspace({
   const handleAddonSelect = useCallback((type: AddonSelectionType) => {
     // Strict mutual exclusion: selecting screen unselects grill; selecting grill unselects screen; selecting none clears both.
     setSelectedAddon(type);
-  }, []);
+    if (type === "screen") {
+      const isAlreadyScreen = screenAddons.some((a) => a.addonProductId === selectedAddonProductId);
+      if (!isAlreadyScreen && screenAddons.length > 0) {
+        setSelectedAddonProductId(screenAddons[0].addonProductId);
+      }
+    } else if (type === "grill") {
+      const isAlreadyGrill = grillAddons.some((a) => a.addonProductId === selectedAddonProductId);
+      if (!isAlreadyGrill && grillAddons.length > 0) {
+        setSelectedAddonProductId(grillAddons[0].addonProductId);
+      }
+    } else {
+      setSelectedAddonProductId(null);
+    }
+  }, [screenAddons, grillAddons, selectedAddonProductId]);
 
   const handleBaseFinishSelect = useCallback((finishId: string) => {
     const normalizedFinish = normalizeAluminumFinish(finishId);
@@ -3639,6 +3714,7 @@ export function ProductModelWorkspace({
               {/* Background Space Image */}
               <img
                 src={bgImage}
+                crossOrigin="anonymous"
                 alt="Space image background"
                 draggable={false}
                 className="w-full h-full object-cover select-none"
@@ -3850,6 +3926,7 @@ export function ProductModelWorkspace({
                           ) : (
                             <img
                               src={productOverlayImage}
+                              crossOrigin="anonymous"
                               alt="Selected Product Overlay"
                               draggable={false}
                               className="w-full h-full object-cover transition-transform duration-300 select-none pointer-events-none"
@@ -3955,6 +4032,7 @@ export function ProductModelWorkspace({
                       <img
                         key={object.id}
                         src={bgImage}
+                        crossOrigin="anonymous"
                         alt=""
                         aria-hidden="true"
                         className="absolute inset-0 h-full w-full object-contain select-none"
@@ -3973,6 +4051,7 @@ export function ProductModelWorkspace({
                     {manualMaskDataUrl && (
                       <img
                         src={bgImage}
+                        crossOrigin="anonymous"
                         alt=""
                         aria-hidden="true"
                         className="absolute inset-0 h-full w-full object-contain select-none"
@@ -4775,6 +4854,130 @@ export function ProductModelWorkspace({
                               </p>
                             </div>
 
+                            {/* Multiple Screen / Mesh Option Selection */}
+                            {effectiveSelectedAddon === "screen" && screenAddons.length > 1 && (
+                              <div className="flex flex-col gap-2 pt-3 border-t border-neutral-200/60">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[#0f1422] text-sm font-medium">Screen / Mesh Option</span>
+                                  <span className="text-[11px] text-neutral-500">{screenAddons.length} available</span>
+                                </div>
+                                <div className="flex flex-col gap-1.5">
+                                  {screenAddons.map((addon) => {
+                                    const isSelected = activeCompatibleAddon?.addonProductId === addon.addonProductId;
+                                    return (
+                                      <button
+                                        key={addon.addonProductId}
+                                        type="button"
+                                        onClick={() => setSelectedAddonProductId(addon.addonProductId)}
+                                        aria-pressed={isSelected}
+                                        className={cn(
+                                          "flex items-center justify-between p-3 rounded-[10px] border text-left transition-all cursor-pointer",
+                                          isSelected
+                                            ? "border-[#07b6d3] bg-[#07b6d3]/5 ring-1 ring-[#07b6d3]/30"
+                                            : "border-neutral-200 bg-white hover:border-neutral-300"
+                                        )}
+                                      >
+                                        <div className="flex flex-col gap-0.5">
+                                          <span className="text-xs font-semibold text-[#0f1422]">
+                                            {addon.addonProduct?.productName ?? "Insect Screen Attachment"}
+                                          </span>
+                                          {addon.template?.templateName && (
+                                            <span className="text-[11px] text-neutral-500">
+                                              Template: {addon.template.templateName}
+                                            </span>
+                                          )}
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                          {addon.addonProduct?.basePrice ? (
+                                            <span className="text-xs font-medium text-neutral-700">
+                                              ₱{addon.addonProduct.basePrice.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                                            </span>
+                                          ) : null}
+                                          <div
+                                            className={cn(
+                                              "size-4 rounded-full border flex items-center justify-center",
+                                              isSelected ? "border-[#07b6d3] bg-[#07b6d3]" : "border-neutral-300"
+                                            )}
+                                          >
+                                            {isSelected && <div className="size-1.5 rounded-full bg-white" />}
+                                          </div>
+                                        </div>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Multiple Grille Option Selection */}
+                            {effectiveSelectedAddon === "grill" && grillAddons.length > 1 && (
+                              <div className="flex flex-col gap-2 pt-3 border-t border-neutral-200/60">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[#0f1422] text-sm font-medium">Grille Style Option</span>
+                                  <span className="text-[11px] text-neutral-500">{grillAddons.length} available</span>
+                                </div>
+                                <div className="flex flex-col gap-1.5">
+                                  {grillAddons.map((addon) => {
+                                    const isSelected = activeCompatibleAddon?.addonProductId === addon.addonProductId;
+                                    return (
+                                      <button
+                                        key={addon.addonProductId}
+                                        type="button"
+                                        onClick={() => setSelectedAddonProductId(addon.addonProductId)}
+                                        aria-pressed={isSelected}
+                                        className={cn(
+                                          "flex items-center justify-between p-3 rounded-[10px] border text-left transition-all cursor-pointer",
+                                          isSelected
+                                            ? "border-[#07b6d3] bg-[#07b6d3]/5 ring-1 ring-[#07b6d3]/30"
+                                            : "border-neutral-200 bg-white hover:border-neutral-300"
+                                        )}
+                                      >
+                                        <div className="flex flex-col gap-0.5">
+                                          <span className="text-xs font-semibold text-[#0f1422]">
+                                            {addon.addonProduct?.productName ?? "Security Grille Attachment"}
+                                          </span>
+                                          {addon.template?.templateName && (
+                                            <span className="text-[11px] text-neutral-500">
+                                              Template: {addon.template.templateName}
+                                            </span>
+                                          )}
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                          {addon.addonProduct?.basePrice ? (
+                                            <span className="text-xs font-medium text-neutral-700">
+                                              ₱{addon.addonProduct.basePrice.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                                            </span>
+                                          ) : null}
+                                          <div
+                                            className={cn(
+                                              "size-4 rounded-full border flex items-center justify-center",
+                                              isSelected ? "border-[#07b6d3] bg-[#07b6d3]" : "border-neutral-300"
+                                            )}
+                                          >
+                                            {isSelected && <div className="size-1.5 rounded-full bg-white" />}
+                                          </div>
+                                        </div>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Single configured addon label feedback */}
+                            {effectiveSelectedAddon === "screen" && screenAddons.length === 1 && activeCompatibleAddon?.addonProduct?.productName && (
+                              <div className="flex items-center justify-between text-xs text-neutral-600 bg-neutral-50 px-3 py-2 rounded-[8px] border border-neutral-200">
+                                <span className="font-medium text-neutral-800">Attachment:</span>
+                                <span>{activeCompatibleAddon.addonProduct.productName}</span>
+                              </div>
+                            )}
+                            {effectiveSelectedAddon === "grill" && grillAddons.length === 1 && activeCompatibleAddon?.addonProduct?.productName && (
+                              <div className="flex items-center justify-between text-xs text-neutral-600 bg-neutral-50 px-3 py-2 rounded-[8px] border border-neutral-200">
+                                <span className="font-medium text-neutral-800">Attachment:</span>
+                                <span>{activeCompatibleAddon.addonProduct.productName}</span>
+                              </div>
+                            )}
+
                             {/* Independent Add-on Frame Finish */}
                             {selectedAddon !== "none" && (
                               <div className="flex flex-col gap-2 pt-3 border-t border-neutral-200/60">
@@ -4987,43 +5190,57 @@ export function ProductModelWorkspace({
       )}
 
       {/* ── Bottom Step Navigation Bar ── */}
-      <div className={shouldLockMobileEditor ? "hidden" : "bg-[#f5f5f5] w-full rounded-[20px] p-5 flex flex-col sm:flex-row items-center justify-between gap-4 select-none shadow-sm mt-4"}>
-        {/* Back Button */}
-        <button
-          type="button"
-          onClick={onBack}
-          className="w-full sm:w-auto bg-[#0f1422] hover:bg-black text-white font-normal text-base sm:text-[20px] tracking-[-0.38px] leading-[1.4] px-6 py-3.5 rounded-[25px] transition-colors cursor-pointer text-center"
-        >
-          Back
-        </button>
-
-        {/* Action Buttons Right */}
-        <div className="w-full sm:w-auto flex flex-col sm:flex-row items-center gap-3 sm:gap-5">
+      <div className={shouldLockMobileEditor ? "hidden" : "flex flex-col gap-2 mt-4 select-none"}>
+        {productBuildError && (
+          <div className="w-full rounded-[14px] border border-red-200 bg-red-50 p-4 text-sm text-red-700 flex items-center justify-between shadow-xs">
+            <span>{productBuildError}</span>
+            <button
+              type="button"
+              onClick={() => setProductBuildError(null)}
+              className="ml-3 text-red-500 hover:text-red-800 font-semibold text-xs cursor-pointer"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+        <div className="bg-[#f5f5f5] w-full rounded-[20px] p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm">
+          {/* Back Button */}
           <button
             type="button"
-            disabled={isCapturingSnapshot || !selectedProduct}
-            onClick={handleSaveSnapshot}
-            className="w-full sm:w-auto bg-transparent border border-[#0f1422] hover:bg-neutral-100 text-[#0f1422] font-normal text-base sm:text-[20px] tracking-[-0.38px] leading-[1.4] px-6 py-3.5 rounded-[25px] transition-colors cursor-pointer text-center"
+            onClick={onBack}
+            className="w-full sm:w-auto bg-[#0f1422] hover:bg-black text-white font-normal text-base sm:text-[20px] tracking-[-0.38px] leading-[1.4] px-6 py-3.5 rounded-[25px] transition-colors cursor-pointer text-center"
           >
-            Save Snapshot
+            Back
           </button>
-          <Button
-            type="button"
-            disabled={isCapturingSnapshot || !selectedProduct}
-            onClick={handleContinueToComparison}
-            variant="lightGradWhiteText"
-            value="Continue to Comparison"
-            leftIcon={null}
-            rightIcon={
-              <Image
-                src="/right_arrow.svg"
-                width={25}
-                height={25}
-                alt="Arrow right"
-              />
-            }
-            className="w-full sm:w-auto justify-center"
-          />
+
+          {/* Action Buttons Right */}
+          <div className="w-full sm:w-auto flex flex-col sm:flex-row items-center gap-3 sm:gap-5">
+            <button
+              type="button"
+              disabled={isCapturingSnapshot || (!selectedProduct && placedOverlays.length === 0)}
+              onClick={handleSaveSnapshot}
+              className="w-full sm:w-auto bg-transparent border border-[#0f1422] hover:bg-neutral-100 disabled:opacity-50 disabled:cursor-not-allowed text-[#0f1422] font-normal text-base sm:text-[20px] tracking-[-0.38px] leading-[1.4] px-6 py-3.5 rounded-[25px] transition-colors cursor-pointer text-center"
+            >
+              {isCapturingSnapshot ? "Saving Snapshot..." : "Save Snapshot"}
+            </button>
+            <Button
+              type="button"
+              disabled={isCapturingSnapshot || (!selectedProduct && placedOverlays.length === 0)}
+              onClick={handleContinueToComparison}
+              variant="lightGradWhiteText"
+              value={isCapturingSnapshot ? "Preparing Comparison..." : "Continue to Comparison"}
+              leftIcon={null}
+              rightIcon={
+                <Image
+                  src="/right_arrow.svg"
+                  width={25}
+                  height={25}
+                  alt="Arrow right"
+                />
+              }
+              className="w-full sm:w-auto justify-center"
+            />
+          </div>
         </div>
       </div>
 
@@ -5388,23 +5605,31 @@ async function captureWorkspaceCanvas({
 
   if (backgroundImage) {
     for (const object of activeOcclusionObjects) {
-      await drawMaskedBackgroundLayer({
-        outputWidth: canvasBounds.width,
-        outputHeight: canvasBounds.height,
-        context,
-        backgroundImage,
-        maskUrl: object.mask_url,
-      });
+      try {
+        await drawMaskedBackgroundLayer({
+          outputWidth: canvasBounds.width,
+          outputHeight: canvasBounds.height,
+          context,
+          backgroundImage,
+          maskUrl: object.mask_url,
+        });
+      } catch (occlusionErr) {
+        console.warn("[Snapshot] Occlusion layer failed to load, skipping:", occlusionErr);
+      }
     }
 
     if (manualMaskDataUrl) {
-      await drawMaskedBackgroundLayer({
-        outputWidth: canvasBounds.width,
-        outputHeight: canvasBounds.height,
-        context,
-        backgroundImage,
-        maskUrl: manualMaskDataUrl,
-      });
+      try {
+        await drawMaskedBackgroundLayer({
+          outputWidth: canvasBounds.width,
+          outputHeight: canvasBounds.height,
+          context,
+          backgroundImage,
+          maskUrl: manualMaskDataUrl,
+        });
+      } catch (manualMaskErr) {
+        console.warn("[Snapshot] Manual occlusion mask failed to load:", manualMaskErr);
+      }
     }
   }
 
@@ -5461,15 +5686,19 @@ async function drawSnapshotOverlay({
       if (hasGeneratedProduct && generatedCanvas) {
         offCtx.drawImage(generatedCanvas, 0, 0, offscreen.width, offscreen.height);
       } else {
-        const fallbackProductImage = await loadSnapshotImage(fallbackProductImageUrl);
-        drawObjectCoverImage(
-          offCtx,
-          fallbackProductImage,
-          0,
-          0,
-          offscreen.width,
-          offscreen.height,
-        );
+        try {
+          const fallbackProductImage = await loadSnapshotImage(fallbackProductImageUrl);
+          drawObjectCoverImage(
+            offCtx,
+            fallbackProductImage,
+            0,
+            0,
+            offscreen.width,
+            offscreen.height,
+          );
+        } catch (fallbackErr) {
+          console.warn("[Snapshot] Could not draw fallback warped product image:", fallbackErr);
+        }
       }
       offCtx.restore();
 
@@ -5503,15 +5732,19 @@ async function drawSnapshotOverlay({
       height,
     );
   } else {
-    const fallbackProductImage = await loadSnapshotImage(fallbackProductImageUrl);
-    drawObjectCoverImage(
-      context,
-      fallbackProductImage,
-      -width / 2,
-      -height / 2,
-      width,
-      height,
-    );
+    try {
+      const fallbackProductImage = await loadSnapshotImage(fallbackProductImageUrl);
+      drawObjectCoverImage(
+        context,
+        fallbackProductImage,
+        -width / 2,
+        -height / 2,
+        width,
+        height,
+      );
+    } catch (fallbackErr) {
+      console.warn("[Snapshot] Could not draw fallback product image:", fallbackErr);
+    }
   }
 
   context.restore();
@@ -5651,17 +5884,96 @@ function getCanvasImageSourceSize(image: CanvasImageSource) {
   };
 }
 
-function loadSnapshotImage(src: string) {
+function generateSafeUUID(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
+function loadSnapshotImage(src: string, timeoutMs: number = 9000): Promise<HTMLImageElement> {
   return new Promise<HTMLImageElement>((resolve, reject) => {
+    if (!src) {
+      reject(new Error("Unable to load an empty image source for the snapshot."));
+      return;
+    }
+
     const image = new window.Image();
+    let isSettled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const cleanup = () => {
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      image.onload = null;
+      image.onerror = null;
+    };
+
+    const attemptFetchFallback = async () => {
+      try {
+        const response = await fetch(src, { mode: "cors" });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const blob = await response.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        const fallbackImg = new window.Image();
+        fallbackImg.onload = () => {
+          cleanup();
+          resolve(fallbackImg);
+        };
+        fallbackImg.onerror = () => {
+          cleanup();
+          URL.revokeObjectURL(objectUrl);
+          reject(new Error("Unable to load an image for the snapshot."));
+        };
+        fallbackImg.src = objectUrl;
+      } catch {
+        cleanup();
+        reject(new Error("Unable to load an image for the snapshot."));
+      }
+    };
 
     if (/^https?:\/\//i.test(src)) {
       image.crossOrigin = "anonymous";
     }
 
-    image.onload = () => resolve(image);
-    image.onerror = () => reject(new Error("Unable to load an image for the snapshot."));
+    timer = setTimeout(() => {
+      if (!isSettled) {
+        isSettled = true;
+        cleanup();
+        reject(new Error("Image loading timed out for snapshot."));
+      }
+    }, timeoutMs);
+
+    image.onload = () => {
+      if (isSettled) return;
+      isSettled = true;
+      cleanup();
+      resolve(image);
+    };
+
+    image.onerror = () => {
+      if (isSettled) return;
+      if (/^https?:\/\//i.test(src)) {
+        void attemptFetchFallback();
+      } else {
+        isSettled = true;
+        cleanup();
+        reject(new Error("Unable to load an image for the snapshot."));
+      }
+    };
+
     image.src = src;
+    if (image.complete && image.naturalWidth > 0) {
+      isSettled = true;
+      cleanup();
+      resolve(image);
+    }
   });
 }
 

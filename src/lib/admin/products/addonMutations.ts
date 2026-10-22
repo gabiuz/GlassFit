@@ -120,7 +120,7 @@ export async function saveProductAddonInheritance(
   // 1. Fetch existing bindings
   const { data: existing, error: fetchErr } = await supabase
     .from("product_compatible_addons")
-    .select("id, addon_type")
+    .select("id, addon_product_id, addon_type")
     .eq("parent_product_id", parentProductId);
 
   if (fetchErr) {
@@ -129,19 +129,20 @@ export async function saveProductAddonInheritance(
 
   const existingTypes = new Set((existing || []).map((row) => row.addon_type));
   const { toUpsert, toDeleteTypes } = computeAddonReconciliation(parentProductId, existingTypes, config);
+  const desiredAddonProductIds = new Set(toUpsert.map((item) => item.addon_product_id));
 
   // 2. Execute upserts
   for (const item of toUpsert) {
     const { error: upsertErr } = await supabase.from("product_compatible_addons").upsert(
       item,
-      { onConflict: "parent_product_id,addon_type" }
+      { onConflict: "parent_product_id,addon_product_id" }
     );
     if (upsertErr) {
       throw new Error(`Failed to bind ${item.addon_type} add-on: ${upsertErr.message}`);
     }
   }
 
-  // 3. Execute deletes
+  // 3. Execute deletes: remove unselected items and disabled types
   for (const addonType of toDeleteTypes) {
     const { error: delErr } = await supabase
       .from("product_compatible_addons")
@@ -150,6 +151,21 @@ export async function saveProductAddonInheritance(
       .eq("addon_type", addonType);
     if (delErr) {
       throw new Error(`Failed to unbind ${addonType} add-on: ${delErr.message}`);
+    }
+  }
+
+  const unselectedExisting = (existing || []).filter(
+    (row) => !toDeleteTypes.includes(row.addon_type as AddonType) && !desiredAddonProductIds.has(row.addon_product_id)
+  );
+
+  for (const row of unselectedExisting) {
+    const { error: delItemErr } = await supabase
+      .from("product_compatible_addons")
+      .delete()
+      .eq("parent_product_id", parentProductId)
+      .eq("addon_product_id", row.addon_product_id);
+    if (delItemErr) {
+      throw new Error(`Failed to unbind add-on ${row.addon_product_id}: ${delItemErr.message}`);
     }
   }
 

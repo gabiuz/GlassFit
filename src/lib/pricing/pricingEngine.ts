@@ -942,7 +942,8 @@ export function calculateOverlayPricing(overlay: PlacedOverlay): {
     ? calculateBOMFromStructuralDefinition(definition, options)
     : calculateStandardSeries798(options);
 
-  const unitPrice = bomResult.finalQuotation;
+  const addonPrice = Number(overlay.configuration.addonPrice) || 0;
+  const unitPrice = bomResult.finalQuotation + addonPrice;
   const totalPrice = unitPrice * quantity;
 
   return {
