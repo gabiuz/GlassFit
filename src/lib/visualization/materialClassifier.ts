@@ -334,6 +334,11 @@ function getOutdoorTexture(): THREE.Texture {
     return cachedOutdoorTexture;
   }
 
+  if (typeof document === "undefined") {
+    cachedOutdoorTexture = new THREE.Texture();
+    return cachedOutdoorTexture;
+  }
+
   const loader = new THREE.TextureLoader();
   const texture = loader.load("/textures/outdoor-view.jpg", (loadedTexture) => {
     loadedTexture.colorSpace = THREE.SRGBColorSpace;
@@ -792,6 +797,60 @@ export function resolvePBRProperties(rawMaterial: RawMaterial | null): PBRMateri
 
 export function applyPBRToMesh(mesh: THREE.Mesh, rawMaterial: RawMaterial | null): void {
   const pbr = resolvePBRProperties(rawMaterial);
+  const isGlass = classifySceneMesh(mesh) === "Glass" || rawMaterial?.category === "Glass";
+
+  if (isGlass) {
+    mesh.castShadow = false;
+    mesh.receiveShadow = true;
+    mesh.renderOrder = 1;
+
+    // Preserve outdoor view texture if assigned
+    if (mesh.material instanceof THREE.MeshStandardMaterial && mesh.material.map) {
+      mesh.material.color.copy(pbr.color);
+      mesh.material.needsUpdate = true;
+      return;
+    }
+
+    if (mesh.material instanceof THREE.MeshPhysicalMaterial) {
+      mesh.material.color.copy(pbr.color);
+      mesh.material.attenuationColor = pbr.color.clone();
+      mesh.material.transparent = true;
+      mesh.material.transmission = pbr.transmission ?? (mesh.material.transmission > 0 ? mesh.material.transmission : 0.88);
+      if (pbr.opacity !== undefined) {
+        mesh.material.opacity = pbr.opacity;
+      }
+      if (pbr.roughness !== undefined && rawMaterial?.category === "Glass") {
+        mesh.material.roughness = pbr.roughness;
+      }
+      if (pbr.ior !== undefined) {
+        mesh.material.ior = pbr.ior;
+      }
+      mesh.material.needsUpdate = true;
+      return;
+    }
+
+    const oldMat = mesh.material;
+    mesh.material = new THREE.MeshPhysicalMaterial({
+      color: pbr.color,
+      attenuationColor: pbr.color.clone(),
+      metalness: pbr.metalness ?? 0.02,
+      roughness: pbr.roughness ?? 0.03,
+      transmission: pbr.transmission ?? 0.88,
+      opacity: pbr.opacity ?? 0.18,
+      transparent: true,
+      ior: pbr.ior ?? 1.52,
+      clearcoat: 1.0,
+      clearcoatRoughness: 0.04,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    if (Array.isArray(oldMat)) {
+      oldMat.forEach((m) => m.dispose());
+    } else {
+      oldMat.dispose();
+    }
+    return;
+  }
 
   if (mesh.material instanceof THREE.MeshPhysicalMaterial) {
     mesh.material.color.copy(pbr.color);
@@ -838,12 +897,7 @@ export function applyPBRToMesh(mesh: THREE.Mesh, rawMaterial: RawMaterial | null
     });
   }
 
-  if (rawMaterial?.category === "Glass") {
-    mesh.castShadow = false;
-    mesh.receiveShadow = true;
-  } else {
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-  }
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
 }
 

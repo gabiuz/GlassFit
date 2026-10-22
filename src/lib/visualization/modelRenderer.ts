@@ -217,6 +217,7 @@ export class ProductModelRenderer {
     customMaterials?: {
       selectedMaterials: Record<string, string>;
       rawMaterialsMap: Map<string, RawMaterial>;
+      hasExplicitOverrides?: boolean;
     },
   ): Promise<LoadedModelResult | undefined> {
     const loadVersion = (this.modelLoadVersion += 1);
@@ -226,7 +227,11 @@ export class ProductModelRenderer {
       return;
     }
     this.commitPreparedModel(prepared);
-    if (customMaterials?.selectedMaterials && Object.keys(customMaterials.selectedMaterials).length > 0) {
+    if (
+      customMaterials?.hasExplicitOverrides &&
+      customMaterials?.selectedMaterials &&
+      Object.keys(customMaterials.selectedMaterials).length > 0
+    ) {
       this.updateCustomMaterials(customMaterials.selectedMaterials, customMaterials.rawMaterialsMap);
     }
     return { capabilities: prepared.capabilities };

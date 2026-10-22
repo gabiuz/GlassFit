@@ -44,7 +44,10 @@ import { TOUCH_PROXY_OFFSET_CSS_PX } from "../mobileConfiguratorGeometry";
 import { TouchDragProxy } from "./TouchDragProxy";
 import type { CatalogProduct } from "@/lib/products/types";
 import type { SpaceImageSession, LightingAnalysis } from "@/lib/imageApi";
-import { ProductModelRenderer } from "@/lib/visualization/modelRenderer";
+import {
+  ProductModelRenderer,
+  type ModelPresentationOptions,
+} from "@/lib/visualization/modelRenderer";
 import { getWorkspaceDefinition } from "@/lib/visualization/workspaceDefinitionCache";
 import {
   GlassAppearanceMode,
@@ -352,6 +355,7 @@ export function ProductModelWorkspace({
     }
     return {};
   });
+  const [hasExplicitOverrides, setHasExplicitOverrides] = useState<boolean>(false);
   const [isMobileFinishesSheetOpen, setIsMobileFinishesSheetOpen] = useState(false);
   const [isGuardrailModalOpen, setIsGuardrailModalOpen] = useState<boolean>(false);
   const [guardrailValidation, setGuardrailValidation] = useState<EngineeringValidationResult | null>(null);
@@ -779,6 +783,79 @@ export function ProductModelWorkspace({
     return buildMaterialCustomizationGroups(structuralDefinition, selectedMaterials);
   }, [structuralDefinition, selectedMaterials]);
 
+  const getFinishHexColor = useCallback((finishId: string): string => {
+    const option = ALUMINUM_FINISH_OPTIONS.find((o) => o.id === finishId);
+    if (option) return option.previewHex;
+    return resolveSwatchColor(finishId);
+  }, []);
+
+  const applyWorkspacePresentation = useCallback((overrides?: Partial<ModelPresentationOptions>) => {
+    if (!mvpRendererRef.current) return;
+
+    const currentOptions: ModelPresentationOptions = {
+      aluminumFinish: overrides?.aluminumFinish ?? normalizeAluminumFinish(alumFinish),
+      glassAppearance: overrides?.glassAppearance ?? glassAppearance,
+      glassColor: overrides?.glassColor ?? glassColor,
+      glassThicknessMm: overrides?.glassThicknessMm ?? glassThicknessMm,
+      includeSill: overrides?.includeSill ?? includeSill,
+      activeAddon: overrides?.activeAddon ?? selectedAddon,
+      addonAluminumFinish: overrides?.addonAluminumFinish ?? addonAlumFinish,
+      addonConfig: {
+        finishColor: getFinishHexColor(overrides?.addonAluminumFinish ?? addonAlumFinish),
+        zOffsetMm: 18,
+      },
+    };
+
+    // 1. Update 3D scene materials in real time (< 16ms)
+    mvpRendererRef.current.updatePresentation(currentOptions);
+
+    // 2. Immediate 2D canvas blit
+    if (mvpCanvasRef.current) {
+      const isPlanar = Boolean(perspectiveCorners);
+      const sourceCanvas = mvpRendererRef.current.render(yaw, pitch, isPlanar);
+      if (sourceCanvas) {
+        const ctx = mvpCanvasRef.current.getContext("2d");
+        if (ctx) {
+          ctx.clearRect(0, 0, mvpCanvasRef.current.width, mvpCanvasRef.current.height);
+          ctx.drawImage(
+            sourceCanvas,
+            0,
+            0,
+            sourceCanvas.width,
+            sourceCanvas.height,
+            0,
+            0,
+            mvpCanvasRef.current.width,
+            mvpCanvasRef.current.height,
+          );
+        }
+      }
+    }
+
+    // 3. Mark skipPreparedBuildRef to prevent redundant debounced loadModel() rebuilds
+    const nextBuildKey = `${structuralDefinition?.product.productId}:${widthCm}:${heightCm}:${panelCount}:${currentOptions.includeSill}:${currentOptions.activeAddon}:${currentOptions.addonAluminumFinish}:${currentOptions.aluminumFinish}:${currentOptions.glassAppearance}:${currentOptions.glassColor}:${currentOptions.glassThicknessMm}`;
+    skipPreparedBuildRef.current = nextBuildKey;
+
+    // 4. Invalidate model revision for outline measurement and UI updates
+    setModelRevision((prev) => prev + 1);
+  }, [
+    alumFinish,
+    glassAppearance,
+    glassColor,
+    glassThicknessMm,
+    includeSill,
+    selectedAddon,
+    addonAlumFinish,
+    getFinishHexColor,
+    perspectiveCorners,
+    yaw,
+    pitch,
+    structuralDefinition,
+    widthCm,
+    heightCm,
+    panelCount,
+  ]);
+
   const handleSelectMaterialOption = useCallback(
     (group: MaterialCustomizationGroup, option: MaterialCustomizationOption) => {
       if (!structuralDefinition) return;
@@ -789,6 +866,7 @@ export function ProductModelWorkspace({
         structuralDefinition,
       );
       setSelectedMaterials(nextSelections);
+      setHasExplicitOverrides(true);
 
       if (mvpRendererRef.current) {
         mvpRendererRef.current.updateCustomMaterials(nextSelections, candidateMaterialsMap);
@@ -800,6 +878,7 @@ export function ProductModelWorkspace({
 
   const handleSelectPartMaterial = useCallback(
     (componentKey: string, rawMaterialId: string) => {
+      setHasExplicitOverrides(true);
       setSelectedMaterials((prev) => {
         const next = {
           ...prev,
@@ -830,23 +909,10 @@ export function ProductModelWorkspace({
     if (!structuralDefinition) return;
     const defaultSelections = getDefaultMaterialSelections(structuralDefinition);
     setSelectedMaterials(defaultSelections);
+    setHasExplicitOverrides(false);
 
-    if (mvpRendererRef.current) {
-      mvpRendererRef.current.updateCustomMaterials(defaultSelections, candidateMaterialsMap);
-      if (mvpCanvasRef.current) {
-        const isPlanar = Boolean(perspectiveCorners);
-        const sourceCanvas = mvpRendererRef.current.render(yaw, pitch, isPlanar);
-        if (sourceCanvas) {
-          const ctx = mvpCanvasRef.current.getContext("2d");
-          if (ctx) {
-            ctx.clearRect(0, 0, mvpCanvasRef.current.width, mvpCanvasRef.current.height);
-            ctx.drawImage(sourceCanvas, 0, 0, sourceCanvas.width, sourceCanvas.height, 0, 0, mvpCanvasRef.current.width, mvpCanvasRef.current.height);
-          }
-        }
-      }
-      setModelRevision((prev) => prev + 1);
-    }
-  }, [structuralDefinition, candidateMaterialsMap, perspectiveCorners, yaw, pitch]);
+    applyWorkspacePresentation();
+  }, [structuralDefinition, applyWorkspacePresentation]);
 
   useEffect(() => {
     overlayX.set(overlayPosition.x);
@@ -1065,16 +1131,63 @@ export function ProductModelWorkspace({
   const glassControlsDisabled = materialCapabilities?.hasGlass === false;
 
   const handleGlassTypeChange = useCallback((nextType: GlassTypeKey) => {
+    const nextAppearance = mapGlassTypeToAppearanceMode(nextType);
     setGlassType(nextType);
-    setGlassAppearance(mapGlassTypeToAppearanceMode(nextType));
-  }, []);
+    setGlassAppearance(nextAppearance);
+    applyWorkspacePresentation({ glassAppearance: nextAppearance });
+
+    // Synchronize glazing in selectedMaterials if matching glass option exists
+    if (structuralDefinition && materialCustomizationGroups.length > 0) {
+      const glazingGroup = materialCustomizationGroups.find((g) => g.presentationCategory === "Glazing");
+      if (glazingGroup) {
+        const matchedOption = glazingGroup.options.find((opt) =>
+          opt.description.toLowerCase().includes(nextType.toLowerCase())
+        );
+        if (matchedOption) {
+          const nextSelections = applyGroupSelection(
+            glazingGroup,
+            matchedOption,
+            selectedMaterials,
+            structuralDefinition,
+          );
+          setSelectedMaterials(nextSelections);
+        }
+      }
+    }
+  }, [applyWorkspacePresentation, structuralDefinition, materialCustomizationGroups, selectedMaterials]);
 
   const handleAdvancedGlassAppearanceChange = useCallback(
     (appearance: "opaque" | "outdoor") => {
       setGlassType(undefined);
       setGlassAppearance(appearance);
+      applyWorkspacePresentation({ glassAppearance: appearance });
     },
-    [],
+    [applyWorkspacePresentation],
+  );
+
+  const handleFallbackGlassAppearanceChange = useCallback(
+    (mode: GlassAppearanceMode) => {
+      setGlassAppearance(mode);
+      setGlassType(deriveGlassTypeFromAppearance(mode));
+      applyWorkspacePresentation({ glassAppearance: mode });
+    },
+    [applyWorkspacePresentation],
+  );
+
+  const handleGlassColorChange = useCallback(
+    (colorKey: GlassColorKey) => {
+      setGlassColor(colorKey);
+      applyWorkspacePresentation({ glassColor: colorKey });
+    },
+    [applyWorkspacePresentation],
+  );
+
+  const handleGlassThicknessChange = useCallback(
+    (thicknessVal: GlassThicknessMm) => {
+      setGlassThicknessMm(thicknessVal);
+      applyWorkspacePresentation({ glassThicknessMm: thicknessVal });
+    },
+    [applyWorkspacePresentation],
   );
   const supportsPerspectivePlane = isWindowProduct || isDoorProduct;
   const modelEffectStyle = useMemo(
@@ -1376,6 +1489,7 @@ export function ProductModelWorkspace({
       {
         selectedMaterials,
         rawMaterialsMap: candidateMaterialsMap,
+        hasExplicitOverrides,
       },
     ).then((result) => {
       if (!result || cancelled) return;
@@ -1388,7 +1502,7 @@ export function ProductModelWorkspace({
       if (!cancelled) setProductBuildError(error instanceof Error ? error.message : "Could not build the product model.");
     });
     return () => { cancelled = true; };
-  }, [structuralDefinition, widthCm, heightCm, panelCount, includeSill, selectedAddon, addonAlumFinish, glassAppearance, glassColor, glassThicknessMm, alumFinish]);
+  }, [structuralDefinition, widthCm, heightCm, panelCount, includeSill, selectedAddon, addonAlumFinish, glassAppearance, glassColor, glassThicknessMm, alumFinish, hasExplicitOverrides, selectedMaterials, candidateMaterialsMap]);
 
   useEffect(() => {
     if (!mvpRendererRef.current) return;
@@ -1493,7 +1607,11 @@ export function ProductModelWorkspace({
     heightCm,
     includeSill,
     glassAppearance,
+    glassColor,
+    glassThicknessMm,
     alumFinish,
+    selectedAddon,
+    addonAlumFinish,
     effectiveLighting,
     autoRealism,
     autoShadow,
@@ -1791,14 +1909,50 @@ export function ProductModelWorkspace({
       });
       if (configuration.selectedMaterials) {
         setSelectedMaterials(configuration.selectedMaterials);
+        const defaults = structuralDefinition ? getDefaultMaterialSelections(structuralDefinition) : {};
+        const hasDiff = Object.entries(configuration.selectedMaterials).some(
+          ([key, val]) => defaults[key] !== val,
+        );
+        setHasExplicitOverrides(hasDiff);
       } else if (structuralDefinition) {
         setSelectedMaterials(getDefaultMaterialSelections(structuralDefinition));
+        setHasExplicitOverrides(false);
       }
+
+      if (mvpRendererRef.current) {
+        const nextPres = {
+          aluminumFinish: normalizeAluminumFinish(configuration.aluminumFinish),
+          glassAppearance: configuration.glassAppearance,
+          glassColor: normalizeGlassColor(configuration.glassColor),
+          glassThicknessMm: normalizeGlassThickness(configuration.glassThicknessMm),
+          includeSill: configuration.includeSill,
+          activeAddon: (configuration.selectedAddon as AddonSelectionType) ?? "none",
+          addonAluminumFinish: configuration.addonAluminumFinish ?? "analok",
+          addonConfig: {
+            finishColor: getFinishHexColor(configuration.addonAluminumFinish ?? "analok"),
+            zOffsetMm: 18,
+          },
+        };
+        mvpRendererRef.current.updatePresentation(nextPres);
+        if (mvpCanvasRef.current) {
+          const isPlanar = Boolean(configuration.perspectiveFitCorners);
+          const sourceCanvas = mvpRendererRef.current.render(configuration.yaw ?? 0, configuration.pitch ?? 0, isPlanar);
+          if (sourceCanvas) {
+            const ctx = mvpCanvasRef.current.getContext("2d");
+            if (ctx) {
+              ctx.clearRect(0, 0, mvpCanvasRef.current.width, mvpCanvasRef.current.height);
+              ctx.drawImage(sourceCanvas, 0, 0, sourceCanvas.width, sourceCanvas.height, 0, 0, mvpCanvasRef.current.width, mvpCanvasRef.current.height);
+            }
+          }
+        }
+      }
+      setModelRevision((prev) => prev + 1);
+
       setSelectedProduct(true);
       setIsSnapshotApplied(false);
       setProductInstanceRevision((current) => current + 1);
     },
-    [overlayX, overlayY, setManualDimensions, setSavedMeasurementEvidence, structuralDefinition],
+    [overlayX, overlayY, setManualDimensions, setSavedMeasurementEvidence, structuralDefinition, getFinishHexColor],
   );
 
   const handleReset = (e: React.MouseEvent) => {
@@ -2737,46 +2891,14 @@ export function ProductModelWorkspace({
     setSelectedAddon(type);
   }, []);
 
-  const getFinishHexColor = useCallback((finishId: string): string => {
-    const option = ALUMINUM_FINISH_OPTIONS.find((o) => o.id === finishId);
-    if (option) return option.previewHex;
-    return resolveSwatchColor(finishId);
-  }, []);
-
   const handleBaseFinishSelect = useCallback((finishId: string) => {
     const normalizedFinish = normalizeAluminumFinish(finishId);
     setAlumFinish(normalizedFinish);
 
-    // 1. Update 3D scene meshes in real time (< 16ms)
-    if (mvpRendererRef.current) {
-      mvpRendererRef.current.updatePresentation({
-        aluminumFinish: normalizedFinish,
-        glassAppearance,
-        glassColor,
-        glassThicknessMm,
-        includeSill,
-        activeAddon: selectedAddon,
-        addonAluminumFinish: addonAlumFinish,
-        addonConfig: {
-          finishColor: getFinishHexColor(addonAlumFinish),
-          zOffsetMm: 18,
-        },
-      });
+    // Apply 3D presentation in real time (< 16ms)
+    applyWorkspacePresentation({ aluminumFinish: normalizedFinish });
 
-      if (mvpCanvasRef.current) {
-        const isPlanar = Boolean(perspectiveCorners);
-        const sourceCanvas = mvpRendererRef.current.render(yaw, pitch, isPlanar);
-        if (sourceCanvas) {
-          const ctx = mvpCanvasRef.current.getContext("2d");
-          if (ctx) {
-            ctx.clearRect(0, 0, mvpCanvasRef.current.width, mvpCanvasRef.current.height);
-            ctx.drawImage(sourceCanvas, 0, 0, sourceCanvas.width, sourceCanvas.height, 0, 0, mvpCanvasRef.current.width, mvpCanvasRef.current.height);
-          }
-        }
-      }
-    }
-
-    // 2. Synchronize matching framing materials if materialCustomizationGroups exist
+    // Synchronize framing in selectedMaterials if alternate raw materials exist
     if (structuralDefinition && materialCustomizationGroups.length > 0) {
       const framingGroup = materialCustomizationGroups.find((g) => g.presentationCategory === "Framing");
       if (framingGroup) {
@@ -2795,75 +2917,15 @@ export function ProductModelWorkspace({
             structuralDefinition,
           );
           setSelectedMaterials(nextSelections);
-          if (mvpRendererRef.current) {
-            mvpRendererRef.current.updateCustomMaterials(nextSelections, candidateMaterialsMap);
-          }
         }
       }
     }
-
-    setModelRevision((prev) => prev + 1);
-  }, [
-    glassAppearance,
-    glassColor,
-    glassThicknessMm,
-    includeSill,
-    selectedAddon,
-    addonAlumFinish,
-    getFinishHexColor,
-    yaw,
-    pitch,
-    perspectiveCorners,
-    structuralDefinition,
-    materialCustomizationGroups,
-    selectedMaterials,
-    candidateMaterialsMap,
-  ]);
+  }, [applyWorkspacePresentation, structuralDefinition, materialCustomizationGroups, selectedMaterials]);
 
   const handleAddonFinishSelect = useCallback((finishId: string) => {
     setAddonAlumFinish(finishId);
-
-    if (mvpRendererRef.current) {
-      mvpRendererRef.current.updatePresentation({
-        aluminumFinish: normalizeAluminumFinish(alumFinish),
-        glassAppearance,
-        glassColor,
-        glassThicknessMm,
-        includeSill,
-        activeAddon: selectedAddon,
-        addonAluminumFinish: finishId,
-        addonConfig: {
-          finishColor: getFinishHexColor(finishId),
-          zOffsetMm: 18,
-        },
-      });
-
-      if (mvpCanvasRef.current) {
-        const isPlanar = Boolean(perspectiveCorners);
-        const sourceCanvas = mvpRendererRef.current.render(yaw, pitch, isPlanar);
-        if (sourceCanvas) {
-          const ctx = mvpCanvasRef.current.getContext("2d");
-          if (ctx) {
-            ctx.clearRect(0, 0, mvpCanvasRef.current.width, mvpCanvasRef.current.height);
-            ctx.drawImage(sourceCanvas, 0, 0, sourceCanvas.width, sourceCanvas.height, 0, 0, mvpCanvasRef.current.width, mvpCanvasRef.current.height);
-          }
-        }
-      }
-    }
-
-    setModelRevision((prev) => prev + 1);
-  }, [
-    alumFinish,
-    glassAppearance,
-    glassColor,
-    glassThicknessMm,
-    includeSill,
-    selectedAddon,
-    getFinishHexColor,
-    yaw,
-    pitch,
-    perspectiveCorners,
-  ]);
+    applyWorkspacePresentation({ addonAluminumFinish: finishId });
+  }, [applyWorkspacePresentation]);
 
 
   const toggleAccordion = (title: string) => {
@@ -4485,7 +4547,7 @@ export function ProductModelWorkspace({
                                 <legend className="text-[#c3c3c3] text-base font-normal">Glass Color</legend>
                                 <div className="mt-2 flex flex-wrap gap-2">
                                   {GLASS_COLOR_OPTIONS.map((option) => (
-                                    <button key={option.id} type="button" onClick={() => setGlassColor(option.id)} aria-pressed={glassColor === option.id} className={`flex items-center gap-1.5 rounded-[20px] border border-[#c3c3c3] px-3 py-1.5 text-base transition-colors ${glassColor === option.id ? "bg-[#0f1422] text-white" : "text-[#0f1422]"}`}><span className="size-3.5 rounded-full border border-black/15" style={{ backgroundColor: option.previewHex }} aria-hidden="true" />{option.label}</button>
+                                    <button key={option.id} type="button" onClick={() => handleGlassColorChange(option.id)} aria-pressed={glassColor === option.id} className={`flex items-center gap-1.5 rounded-[20px] border border-[#c3c3c3] px-3 py-1.5 text-base transition-colors ${glassColor === option.id ? "bg-[#0f1422] text-white" : "text-[#0f1422]"}`}><span className="size-3.5 rounded-full border border-black/15" style={{ backgroundColor: option.previewHex }} aria-hidden="true" />{option.label}</button>
                                   ))}
                                 </div>
                               </fieldset>
@@ -4493,7 +4555,7 @@ export function ProductModelWorkspace({
                                 <legend className="text-[#c3c3c3] text-base font-normal">Glass Thickness</legend>
                                 <div className="mt-2 flex flex-wrap gap-2">
                                   {GLASS_THICKNESS_OPTIONS.map((option) => (
-                                    <button key={option.value} type="button" onClick={() => setGlassThicknessMm(option.value)} aria-pressed={glassThicknessMm === option.value} className={`rounded-[20px] border border-[#c3c3c3] px-3 py-1.5 text-base transition-colors ${glassThicknessMm === option.value ? "bg-[#0f1422] text-white" : "text-[#0f1422]"}`}>{option.label}</button>
+                                    <button key={option.value} type="button" onClick={() => handleGlassThicknessChange(option.value)} aria-pressed={glassThicknessMm === option.value} className={`rounded-[20px] border border-[#c3c3c3] px-3 py-1.5 text-base transition-colors ${glassThicknessMm === option.value ? "bg-[#0f1422] text-white" : "text-[#0f1422]"}`}>{option.label}</button>
                                   ))}
                                 </div>
                               </fieldset>
@@ -4504,7 +4566,7 @@ export function ProductModelWorkspace({
                               <span className="text-[#c3c3c3] text-base font-normal">Glass Appearance</span>
                               <div className="grid grid-cols-2 gap-2.5">
                                 {(["clear", "frosted", "opaque", "reflective", "outdoor"] as GlassAppearanceMode[]).map((mode) => (
-                                  <button key={mode} type="button" onClick={() => { setGlassAppearance(mode); setGlassType(deriveGlassTypeFromAppearance(mode)); }} aria-pressed={glassAppearance === mode} className={`rounded-[20px] border border-[#c3c3c3] px-3 py-1.5 text-base capitalize transition-colors ${glassAppearance === mode ? "bg-[#0f1422] text-white" : "text-[#0f1422]"}`}>{mode}</button>
+                                  <button key={mode} type="button" onClick={() => handleFallbackGlassAppearanceChange(mode)} aria-pressed={glassAppearance === mode} className={`rounded-[20px] border border-[#c3c3c3] px-3 py-1.5 text-base capitalize transition-colors ${glassAppearance === mode ? "bg-[#0f1422] text-white" : "text-[#0f1422]"}`}>{mode}</button>
                                 ))}
                               </div>
                             </div>

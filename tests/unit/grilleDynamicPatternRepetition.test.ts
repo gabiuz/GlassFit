@@ -11,13 +11,13 @@ import * as THREE from "three";
 
 import {
   buildDynamicGrillPatternGroup,
-  buildParametricGrillGroup,
 } from "../../src/lib/visualization/addonGeometryBuilder.js";
 import {
   buildGrillAssembly,
   buildParametricProduct,
 } from "../../src/lib/visualization/parametricProductBuilder.js";
 import type {
+  ProductComponentDefinition,
   ProductStructuralDefinition,
   ResolvedStructure,
 } from "../../src/lib/visualization/types.js";
@@ -155,7 +155,7 @@ describe("Grille Dynamic Pattern Repetition & Constant Bar Cross-Sections", () =
   // Test 4: buildGrillAssembly with uploaded Lab_Grill components
   // --------------------------------------------------------------------------
   it("buildGrillAssembly correctly sizes frame rails and repeats middle bars pattern", () => {
-    const mockComponents = [
+    const mockComponents: ProductComponentDefinition[] = [
       {
         componentId: "comp-top",
         componentKey: "lab_grill_frame_top",
@@ -164,6 +164,7 @@ describe("Grille Dynamic Pattern Repetition & Constant Bar Cross-Sections", () =
         baseQuantity: 1,
         componentData: {},
         dimensionBinding: "WIDTH",
+        model: { assetId: "a-1", r2ObjectKey: "", url: "", fileName: "", sourceDimensionsMm: null },
       },
       {
         componentId: "comp-bottom",
@@ -173,6 +174,7 @@ describe("Grille Dynamic Pattern Repetition & Constant Bar Cross-Sections", () =
         baseQuantity: 1,
         componentData: {},
         dimensionBinding: "WIDTH",
+        model: { assetId: "a-2", r2ObjectKey: "", url: "", fileName: "", sourceDimensionsMm: null },
       },
       {
         componentId: "comp-left",
@@ -182,6 +184,7 @@ describe("Grille Dynamic Pattern Repetition & Constant Bar Cross-Sections", () =
         baseQuantity: 1,
         componentData: {},
         dimensionBinding: "HEIGHT",
+        model: { assetId: "a-3", r2ObjectKey: "", url: "", fileName: "", sourceDimensionsMm: null },
       },
       {
         componentId: "comp-right",
@@ -191,6 +194,7 @@ describe("Grille Dynamic Pattern Repetition & Constant Bar Cross-Sections", () =
         baseQuantity: 1,
         componentData: {},
         dimensionBinding: "HEIGHT",
+        model: { assetId: "a-4", r2ObjectKey: "", url: "", fileName: "", sourceDimensionsMm: null },
       },
       {
         componentId: "comp-middle",
@@ -200,6 +204,7 @@ describe("Grille Dynamic Pattern Repetition & Constant Bar Cross-Sections", () =
         baseQuantity: 1,
         componentData: {},
         dimensionBinding: "AREA",
+        model: { assetId: "a-5", r2ObjectKey: "", url: "", fileName: "", sourceDimensionsMm: null },
       },
     ];
 
@@ -289,20 +294,21 @@ describe("Grille Dynamic Pattern Repetition & Constant Bar Cross-Sections", () =
           baseQuantity: 1,
           componentData: {},
           dimensionBinding: "AREA",
+          model: { assetId: "a-mid", r2ObjectKey: "", url: "", fileName: "", sourceDimensionsMm: null },
         },
       ],
     };
 
     const mockCache: ComponentModelCache = {
-      getClone: (id: string) => new THREE.Mesh(new THREE.BoxGeometry(1.144, 1.144, 0.014)),
+      getClone: (_id: string) => new THREE.Mesh(new THREE.BoxGeometry(1.144, 1.144, 0.014)),
       getSourceSizeMeters: () => new THREE.Vector3(1.144, 1.144, 0.014),
     };
 
     const dummyResolved: ResolvedStructure = {
+      resolvedValues: { width: 1800, height: 1500 },
       numericValuesMm: { width: 1800, height: 1500 },
       componentQuantities: {},
-      selectedMaterialOptions: {},
-      resolvedValues: {},
+      appliedRuleIds: [],
     };
 
     const built = buildParametricProduct(addonDefinition, dummyResolved, mockCache, {
