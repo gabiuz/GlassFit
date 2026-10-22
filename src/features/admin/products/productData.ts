@@ -12,6 +12,7 @@ export const ADMIN_PRODUCT_TYPE_ORDER = [
 
 export type ProductTypeFilter = string | null;
 export type ProductStatusFilter = AdminProductStatus | null;
+export type ProductScopeFilter = "all" | "standard" | "addon";
 
 export type AdminProductItem = {
   id: string;
@@ -20,4 +21,6 @@ export type AdminProductItem = {
   description: string;
   basePrice: string;
   status: AdminProductStatus;
+  isAddon?: boolean;
+  addonType?: "screen" | "grill" | null;
 };

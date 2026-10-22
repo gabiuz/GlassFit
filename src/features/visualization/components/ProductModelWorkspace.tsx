@@ -23,6 +23,20 @@ import { ManualOcclusionPointPicker } from "./ManualOcclusionPointPicker";
 import { PerspectivePlanePicker } from "./PerspectivePlanePicker";
 import { PaperDetectionConfirmationModal } from "./PaperDetectionConfirmationModal";
 import { ObstructionWarningTooltip } from "./ObstructionWarningTooltip";
+import { MaterialCustomizerPanel } from "./MaterialCustomizerPanel";
+import { PartMaterialsPicker } from "./PartMaterialsPicker";
+import { getRawMaterials } from "@/lib/admin/materials/materialActions";
+import {
+  buildMaterialCustomizationGroups,
+  getDefaultMaterialSelections,
+  getAllCandidateMaterialsMap,
+  applyGroupSelection,
+  resolveSwatchColor,
+  type MaterialCustomizationGroup,
+  type MaterialCustomizationOption,
+} from "@/lib/visualization/materialCustomization";
+
+import type { RawMaterial } from "@/lib/pricing/types";
 import { useNavbarVisibility } from "@/components/shared/NavbarVisibilityContext";
 import { useCompactViewport } from "../hooks/useCompactViewport";
 import { useDocumentScrollLock } from "../hooks/useDocumentScrollLock";
@@ -44,7 +58,12 @@ import {
   PlacedOverlay,
   QuadrilateralCorners,
   ManualOcclusionPolygon,
+  CompatibleAddon,
 } from "@/lib/visualization/types";
+import { calculateAddonBOM, type AddonBOMResult } from "@/lib/pricing/addonPricingEngine";
+import { getCompatibleAddonsForProduct } from "@/lib/admin/products/addonMutations";
+
+export type AddonSelectionType = "none" | "screen" | "grill";
 import {
   homographyToCssMatrix3d,
   denormalizeCorners,
@@ -298,16 +317,100 @@ export function ProductModelWorkspace({
   const [includeSill, setIncludeSill] = useState(
     initialConfiguration?.includeSill ?? true,
   );
+  const [selectedAddon, setSelectedAddon] = useState<AddonSelectionType>(() => {
+    if (initialConfiguration?.selectedAddon) {
+      return initialConfiguration.selectedAddon;
+    }
+    const raw = initialConfiguration?.visualParameterValues?.selected_addon as Record<string, unknown> | undefined;
+    if (raw?.type === "screen" || raw?.type === "grill") {
+      return raw.type;
+    }
+    return "none";
+  });
+  const [addonAlumFinish, setAddonAlumFinish] = useState<string>(() => {
+    if (initialConfiguration?.addonAluminumFinish) {
+      return initialConfiguration.addonAluminumFinish;
+    }
+    const raw = initialConfiguration?.visualParameterValues?.selected_addon as Record<string, unknown> | undefined;
+    if (typeof raw?.finish === "string" && raw.finish) {
+      return raw.finish;
+    }
+    return "analok";
+  });
   const [panelCount, setPanelCount] = useState<number>(
     initialConfiguration?.panelCount ?? 2,
   );
   const [structuralWaiver, setStructuralWaiver] = useState<boolean>(
     initialConfiguration?.structuralWaiver ?? false,
   );
+  const [selectedMaterials, setSelectedMaterials] = useState<Record<string, string>>(() => {
+    if (initialConfiguration?.selectedMaterials) {
+      return initialConfiguration.selectedMaterials;
+    }
+    if (structuralDefinition) {
+      return getDefaultMaterialSelections(structuralDefinition);
+    }
+    return {};
+  });
+  const [isMobileFinishesSheetOpen, setIsMobileFinishesSheetOpen] = useState(false);
   const [isGuardrailModalOpen, setIsGuardrailModalOpen] = useState<boolean>(false);
   const [guardrailValidation, setGuardrailValidation] = useState<EngineeringValidationResult | null>(null);
   const [isMeasurementModalOpen, setIsMeasurementModalOpen] = useState(false);
   const [measurementEntries, setMeasurementEntries] = useState<MeasurementConfirmationEntry[]>([]);
+
+  // Admin-configured compatible add-ons for the active product (IMP-MS67, IMP-MS69)
+  const [asyncAddonsList, setAsyncAddonsList] = useState<CompatibleAddon[]>([]);
+
+  useEffect(() => {
+    if (structuralDefinition?.compatibleAddons && structuralDefinition.compatibleAddons.length > 0) {
+      return;
+    }
+    const productId = structuralDefinition?.product.productId;
+    if (!productId) {
+      return;
+    }
+    let cancelled = false;
+    getCompatibleAddonsForProduct(productId)
+      .then((bindings) => {
+        if (!cancelled && bindings && bindings.length > 0) {
+          setAsyncAddonsList(
+            bindings.map((b) => ({
+              id: b.id || b.addonProductId,
+              parentProductId: b.parentProductId,
+              addonProductId: b.addonProductId,
+              addonType: b.addonType,
+              isDefaultEnabled: b.isDefaultEnabled,
+              displayOrder: b.displayOrder,
+              addonProduct: b.addonProduct,
+            }))
+          );
+        }
+      })
+      .catch((err: unknown) => {
+        console.warn("Failed to load compatible add-ons for workspace product:", err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [structuralDefinition?.product.productId, structuralDefinition?.compatibleAddons]);
+
+  const compatibleAddonsList = (structuralDefinition?.compatibleAddons && structuralDefinition.compatibleAddons.length > 0)
+    ? structuralDefinition.compatibleAddons
+    : asyncAddonsList;
+
+  const screenAddon = compatibleAddonsList.find((a) => a.addonType === "screen");
+  const grillAddon = compatibleAddonsList.find((a) => a.addonType === "grill");
+  const hasScreenConfigured = Boolean(screenAddon);
+  const hasGrillConfigured = Boolean(grillAddon);
+  const hasCompatibleAddons = hasScreenConfigured || hasGrillConfigured;
+
+  // Reconcile effective add-on selection if active product does not support current choice
+  const effectiveSelectedAddon: AddonSelectionType =
+    (selectedAddon === "screen" && !hasScreenConfigured && compatibleAddonsList.length > 0) ||
+    (selectedAddon === "grill" && !hasGrillConfigured && compatibleAddonsList.length > 0)
+      ? "none"
+      : selectedAddon;
+
   const pendingComparisonOverlaysRef = useRef<PlacedOverlay[]>([]);
 
   // Fiducial Paper Calibration and Grounded Scale State (IMP-MS47, IMP-MS49)
@@ -424,6 +527,20 @@ export function ProductModelWorkspace({
     );
     return String(initialDims.heightCm);
   });
+
+  // Real-time Dedicated Add-on Parametric BOM Calculation (Sub-50ms sync)
+  const addonBOM = useMemo<AddonBOMResult | null>(() => {
+    if (effectiveSelectedAddon === "none") return null;
+    const widthValCm = Number(widthCm) || DEFAULT_PRODUCT_WIDTH_CM;
+    const heightValCm = Number(heightCm) || DEFAULT_PRODUCT_HEIGHT_CM;
+    return calculateAddonBOM({
+      addonType: effectiveSelectedAddon,
+      widthMm: widthValCm * 10,
+      heightMm: heightValCm * 10,
+    });
+  }, [effectiveSelectedAddon, widthCm, heightCm]);
+
+  const addonPrice = addonBOM?.finalAddonPrice ?? 0;
   const [thicknessMm, setThicknessMm] = useState(
     initialConfiguration?.thicknessMm
       ? String(initialConfiguration.thicknessMm)
@@ -616,6 +733,120 @@ export function ProductModelWorkspace({
   const [isOutlineMeasurementPaused, setIsOutlineMeasurementPaused] = useState(false);
   const [isSnapshotApplied, setIsSnapshotApplied] = useState(false);
   const [isCapturingSnapshot, setIsCapturingSnapshot] = useState(false);
+
+  useEffect(() => {
+    if (structuralDefinition) {
+      queueMicrotask(() => {
+        setSelectedMaterials((prev) => {
+          if (Object.keys(prev).length === 0) {
+            return getDefaultMaterialSelections(structuralDefinition);
+          }
+          const compKeys = new Set(structuralDefinition.components.map((c) => c.componentKey));
+          const hasMatch = Object.keys(prev).some((k) => compKeys.has(k));
+          if (!hasMatch) {
+            return getDefaultMaterialSelections(structuralDefinition);
+          }
+          return prev;
+        });
+      });
+    }
+  }, [structuralDefinition]);
+
+  const [allRawMaterials, setAllRawMaterials] = useState<RawMaterial[]>([]);
+
+  useEffect(() => {
+    let isMounted = true;
+    getRawMaterials({ is_active: true })
+      .then((mats) => {
+        if (isMounted && mats.length > 0) {
+          setAllRawMaterials(mats);
+        }
+      })
+      .catch((err) => {
+        console.warn("Could not load all raw materials for part picker:", err);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const candidateMaterialsMap = useMemo(() => {
+    return getAllCandidateMaterialsMap(structuralDefinition, allRawMaterials);
+  }, [structuralDefinition, allRawMaterials]);
+
+  const materialCustomizationGroups = useMemo(() => {
+    if (!structuralDefinition) return [];
+    return buildMaterialCustomizationGroups(structuralDefinition, selectedMaterials);
+  }, [structuralDefinition, selectedMaterials]);
+
+  const handleSelectMaterialOption = useCallback(
+    (group: MaterialCustomizationGroup, option: MaterialCustomizationOption) => {
+      if (!structuralDefinition) return;
+      const nextSelections = applyGroupSelection(
+        group,
+        option,
+        selectedMaterials,
+        structuralDefinition,
+      );
+      setSelectedMaterials(nextSelections);
+
+      if (mvpRendererRef.current) {
+        mvpRendererRef.current.updateCustomMaterials(nextSelections, candidateMaterialsMap);
+        setModelRevision((prev) => prev + 1);
+      }
+    },
+    [structuralDefinition, selectedMaterials, candidateMaterialsMap],
+  );
+
+  const handleSelectPartMaterial = useCallback(
+    (componentKey: string, rawMaterialId: string) => {
+      setSelectedMaterials((prev) => {
+        const next = {
+          ...prev,
+          [componentKey]: rawMaterialId,
+        };
+        if (mvpRendererRef.current) {
+          mvpRendererRef.current.updateCustomMaterials(next, candidateMaterialsMap);
+          if (mvpCanvasRef.current) {
+            const isPlanar = Boolean(perspectiveCorners);
+            const sourceCanvas = mvpRendererRef.current.render(yaw, pitch, isPlanar);
+            if (sourceCanvas) {
+              const ctx = mvpCanvasRef.current.getContext("2d");
+              if (ctx) {
+                ctx.clearRect(0, 0, mvpCanvasRef.current.width, mvpCanvasRef.current.height);
+                ctx.drawImage(sourceCanvas, 0, 0, sourceCanvas.width, sourceCanvas.height, 0, 0, mvpCanvasRef.current.width, mvpCanvasRef.current.height);
+              }
+            }
+          }
+        }
+        setModelRevision((r) => r + 1);
+        return next;
+      });
+    },
+    [candidateMaterialsMap, perspectiveCorners, yaw, pitch],
+  );
+
+  const handleResetMaterialsToDefaults = useCallback(() => {
+    if (!structuralDefinition) return;
+    const defaultSelections = getDefaultMaterialSelections(structuralDefinition);
+    setSelectedMaterials(defaultSelections);
+
+    if (mvpRendererRef.current) {
+      mvpRendererRef.current.updateCustomMaterials(defaultSelections, candidateMaterialsMap);
+      if (mvpCanvasRef.current) {
+        const isPlanar = Boolean(perspectiveCorners);
+        const sourceCanvas = mvpRendererRef.current.render(yaw, pitch, isPlanar);
+        if (sourceCanvas) {
+          const ctx = mvpCanvasRef.current.getContext("2d");
+          if (ctx) {
+            ctx.clearRect(0, 0, mvpCanvasRef.current.width, mvpCanvasRef.current.height);
+            ctx.drawImage(sourceCanvas, 0, 0, sourceCanvas.width, sourceCanvas.height, 0, 0, mvpCanvasRef.current.width, mvpCanvasRef.current.height);
+          }
+        }
+      }
+      setModelRevision((prev) => prev + 1);
+    }
+  }, [structuralDefinition, candidateMaterialsMap, perspectiveCorners, yaw, pitch]);
 
   useEffect(() => {
     overlayX.set(overlayPosition.x);
@@ -906,25 +1137,34 @@ export function ProductModelWorkspace({
         finishType,
         glassType,
         structuralWaiver,
+        selectedMaterials,
+        rawMaterials: candidateMaterialsMap,
       });
 
-      const unitPrice = bomCalc.finalQuotation > 0
+      const baseUnitPrice = bomCalc.finalQuotation > 0
         ? bomCalc.finalQuotation
         : (structuralDefinition.product.basePrice ?? 0);
 
+      const unitPrice = baseUnitPrice + addonPrice;
       const totalPrice = unitPrice * Math.max(1, quantity);
 
       return {
+        baseUnitPrice,
+        addonPrice,
         unitPrice,
         totalPrice,
         bomCalc,
+        addonBOM,
       };
     }
 
     return {
+      baseUnitPrice: 0,
+      addonPrice: 0,
       unitPrice: 0,
       totalPrice: 0,
       bomCalc: null,
+      addonBOM: null,
     };
   }, [
     structuralDefinition,
@@ -935,8 +1175,12 @@ export function ProductModelWorkspace({
     alumFinish,
     glassAppearance,
     includeSill,
+    addonPrice,
+    addonBOM,
     panelCount,
     structuralWaiver,
+    selectedMaterials,
+    candidateMaterialsMap,
   ]);
 
   const formattedPrice = useMemo(() => {
@@ -1099,7 +1343,7 @@ export function ProductModelWorkspace({
 
   useEffect(() => {
     if (!mvpRendererRef.current || !structuralDefinition) return;
-    const buildKey = `${structuralDefinition.product.productId}:${widthCm}:${heightCm}:${panelCount}:${includeSill}:${alumFinish}:${glassAppearance}:${glassColor}:${glassThicknessMm}`;
+    const buildKey = `${structuralDefinition.product.productId}:${widthCm}:${heightCm}:${panelCount}:${includeSill}:${selectedAddon}:${addonAlumFinish}:${alumFinish}:${glassAppearance}:${glassColor}:${glassThicknessMm}`;
     if (skipPreparedBuildRef.current === buildKey) {
       skipPreparedBuildRef.current = null;
       return;
@@ -1122,10 +1366,16 @@ export function ProductModelWorkspace({
       },
       {
         aluminumFinish: alumFinish,
+        addonAluminumFinish: addonAlumFinish,
         glassAppearance,
         glassColor,
         glassThicknessMm,
         includeSill,
+        activeAddon: selectedAddon,
+      },
+      {
+        selectedMaterials,
+        rawMaterialsMap: candidateMaterialsMap,
       },
     ).then((result) => {
       if (!result || cancelled) return;
@@ -1138,7 +1388,7 @@ export function ProductModelWorkspace({
       if (!cancelled) setProductBuildError(error instanceof Error ? error.message : "Could not build the product model.");
     });
     return () => { cancelled = true; };
-  }, [structuralDefinition, widthCm, heightCm, panelCount, includeSill, glassAppearance, glassColor, glassThicknessMm, alumFinish]);
+  }, [structuralDefinition, widthCm, heightCm, panelCount, includeSill, selectedAddon, addonAlumFinish, glassAppearance, glassColor, glassThicknessMm, alumFinish]);
 
   useEffect(() => {
     if (!mvpRendererRef.current) return;
@@ -1325,6 +1575,7 @@ export function ProductModelWorkspace({
       glassThicknessMm,
       ...(glassType ? { glassType } : {}),
       includeSill,
+      selectedMaterials,
       yaw,
       pitch,
       rotateAngle,
@@ -1340,6 +1591,12 @@ export function ProductModelWorkspace({
       autoRealism,
       positionX: overlayPosition.x,
       positionY: overlayPosition.y,
+      selectedAddon,
+      addonProductId: selectedAddon === "screen" ? (screenAddon?.addonProductId ?? null) : selectedAddon === "grill" ? (grillAddon?.addonProductId ?? null) : null,
+      addonName: addonBOM?.addonName ?? null,
+      addonPrice,
+      addonAluminumFinish: addonAlumFinish,
+      baseUnitPrice: realtimePricing.baseUnitPrice,
       visualParameterValues: {
         width: width * 10,
         height: height * 10,
@@ -1347,6 +1604,14 @@ export function ProductModelWorkspace({
         pane_count: panelCount,
         includeSill,
         include_sill: includeSill,
+        selected_materials: selectedMaterials,
+        selected_addon: selectedAddon !== "none" ? {
+          type: selectedAddon,
+          addon_product_id: selectedAddon === "screen" ? (screenAddon?.addonProductId ?? null) : (grillAddon?.addonProductId ?? null),
+          addon_name: addonBOM?.addonName ?? null,
+          finish: addonAlumFinish,
+          price: addonPrice,
+        } : null,
         dimension_source: manualDimensions ? "manual_tape" : isVerifiedCalibrated ? "planar_paper_estimate" : "heuristic",
         calibration_provenance: isVerifiedCalibrated ? activeMeasurementRecord : null,
         metric_measurement: isVerifiedCalibrated ? activeMetricMeasurement : null,
@@ -1381,6 +1646,13 @@ export function ProductModelWorkspace({
     glassType,
     heightCm,
     includeSill,
+    selectedAddon,
+    addonAlumFinish,
+    addonPrice,
+    addonBOM,
+    realtimePricing.baseUnitPrice,
+    screenAddon,
+    grillAddon,
     isFlipped,
     overlayPosition.x,
     overlayPosition.y,
@@ -1388,6 +1660,7 @@ export function ProductModelWorkspace({
     pitch,
     quantity,
     rotateAngle,
+    selectedMaterials,
     structuralWaiver,
     thicknessMm,
     widthCm,
@@ -1471,6 +1744,26 @@ export function ProductModelWorkspace({
       setGlassColor(normalizeGlassColor(configuration.glassColor));
       setGlassThicknessMm(normalizeGlassThickness(configuration.glassThicknessMm));
       setIncludeSill(configuration.includeSill);
+      if (configuration.selectedAddon) {
+        setSelectedAddon(configuration.selectedAddon);
+      } else if (configuration.visualParameterValues?.selected_addon) {
+        const rawAddon = configuration.visualParameterValues.selected_addon as Record<string, unknown>;
+        if (rawAddon?.type === "screen" || rawAddon?.type === "grill") {
+          setSelectedAddon(rawAddon.type);
+        } else {
+          setSelectedAddon("none");
+        }
+      } else {
+        setSelectedAddon("none");
+      }
+      if (configuration.addonAluminumFinish) {
+        setAddonAlumFinish(configuration.addonAluminumFinish);
+      } else if (configuration.visualParameterValues?.selected_addon) {
+        const rawAddon = configuration.visualParameterValues.selected_addon as Record<string, unknown>;
+        if (typeof rawAddon?.finish === "string" && rawAddon.finish) {
+          setAddonAlumFinish(rawAddon.finish);
+        }
+      }
       setYaw(configuration.yaw);
       setPitch(configuration.pitch);
       setRotateAngle(configuration.rotateAngle);
@@ -1496,11 +1789,16 @@ export function ProductModelWorkspace({
         width: Math.round(baseSize.width * scale),
         height: Math.round(baseSize.height * scale),
       });
+      if (configuration.selectedMaterials) {
+        setSelectedMaterials(configuration.selectedMaterials);
+      } else if (structuralDefinition) {
+        setSelectedMaterials(getDefaultMaterialSelections(structuralDefinition));
+      }
       setSelectedProduct(true);
       setIsSnapshotApplied(false);
       setProductInstanceRevision((current) => current + 1);
     },
-    [overlayX, overlayY, setManualDimensions, setSavedMeasurementEvidence],
+    [overlayX, overlayY, setManualDimensions, setSavedMeasurementEvidence, structuralDefinition],
   );
 
   const handleReset = (e: React.MouseEvent) => {
@@ -1555,6 +1853,11 @@ export function ProductModelWorkspace({
             thicknessMm: Number(definition.parameters.find((parameter) => parameter.parameterKey === "thickness")?.defaultValue) || 3,
             panelCount: Number(definition.parameters.find((parameter) => parameter.parameterKey === "pane_count")?.defaultValue) || 2,
             includeSill: Boolean(definition.template.baseConfiguration.includeSill ?? true),
+            selectedAddon: intent.mode === "change" ? selectedAddon : "none",
+            addonProductId: intent.mode === "change" ? (selectedAddon === "screen" ? (screenAddon?.addonProductId ?? null) : (grillAddon?.addonProductId ?? null)) : null,
+            addonName: intent.mode === "change" ? (addonBOM?.addonName ?? null) : null,
+            addonPrice: intent.mode === "change" ? addonPrice : 0,
+            addonAluminumFinish: intent.mode === "change" ? (selectedAddon !== "none" ? addonAlumFinish : "analok") : "analok",
             structuralWaiver: false,
             aluminumFinish: "white",
             glassAppearance: "clear",
@@ -1581,6 +1884,13 @@ export function ProductModelWorkspace({
               pane_count: Number(definition.parameters.find((parameter) => parameter.parameterKey === "pane_count")?.defaultValue) || 2,
               includeSill: Boolean(definition.template.baseConfiguration.includeSill ?? true),
               include_sill: Boolean(definition.template.baseConfiguration.includeSill ?? true),
+              selected_addon: intent.mode === "change" && selectedAddon !== "none" ? {
+                type: selectedAddon,
+                addon_product_id: selectedAddon === "screen" ? (screenAddon?.addonProductId ?? null) : (grillAddon?.addonProductId ?? null),
+                addon_name: addonBOM?.addonName ?? null,
+                finish: addonAlumFinish,
+                price: addonPrice,
+              } : null,
               dimension_source: "default_heuristic",
               metric_measurement: null, calibration_provenance: null,
               paper_standard: activeCalibrationMeta?.paperStandard ?? null,
@@ -1598,16 +1908,18 @@ export function ProductModelWorkspace({
         include_sill: targetConfiguration.includeSill,
       }, {
         aluminumFinish: normalizeAluminumFinish(targetConfiguration.aluminumFinish),
+        addonAluminumFinish: targetConfiguration.addonAluminumFinish,
         glassAppearance: targetConfiguration.glassAppearance,
         glassColor: targetConfiguration.glassColor ?? "clear",
         glassThicknessMm: targetConfiguration.glassThicknessMm ?? 6,
         includeSill: targetConfiguration.includeSill,
+        activeAddon: targetConfiguration.selectedAddon,
       });
       if (requestId !== switchRequestRef.current || roomId !== assetSessionRef.current) {
         renderer.releasePreparedModel(prepared);
         return;
       }
-      skipPreparedBuildRef.current = `${intent.productId}:${targetConfiguration.widthCm}:${targetConfiguration.heightCm}:${targetConfiguration.panelCount}:${targetConfiguration.includeSill}:${normalizeAluminumFinish(targetConfiguration.aluminumFinish)}:${targetConfiguration.glassAppearance}:${targetConfiguration.glassColor}:${targetConfiguration.glassThicknessMm}`;
+      skipPreparedBuildRef.current = `${intent.productId}:${targetConfiguration.widthCm}:${targetConfiguration.heightCm}:${targetConfiguration.panelCount}:${targetConfiguration.includeSill}:${targetConfiguration.selectedAddon ?? "none"}:${targetConfiguration.addonAluminumFinish ?? "analok"}:${normalizeAluminumFinish(targetConfiguration.aluminumFinish)}:${targetConfiguration.glassAppearance}:${targetConfiguration.glassColor}:${targetConfiguration.glassThicknessMm}`;
       suppressNextConfigurationPublicationRef.current = true;
       appliedTemplateDefaultsRef.current = intent.productId;
       renderer.commitPreparedModel(prepared);
@@ -2419,6 +2731,140 @@ export function ProductModelWorkspace({
   const handleIncludeSillToggle = useCallback(() => {
     setIncludeSill((current) => !current);
   }, []);
+
+  const handleAddonSelect = useCallback((type: AddonSelectionType) => {
+    // Strict mutual exclusion: selecting screen unselects grill; selecting grill unselects screen; selecting none clears both.
+    setSelectedAddon(type);
+  }, []);
+
+  const getFinishHexColor = useCallback((finishId: string): string => {
+    const option = ALUMINUM_FINISH_OPTIONS.find((o) => o.id === finishId);
+    if (option) return option.previewHex;
+    return resolveSwatchColor(finishId);
+  }, []);
+
+  const handleBaseFinishSelect = useCallback((finishId: string) => {
+    const normalizedFinish = normalizeAluminumFinish(finishId);
+    setAlumFinish(normalizedFinish);
+
+    // 1. Update 3D scene meshes in real time (< 16ms)
+    if (mvpRendererRef.current) {
+      mvpRendererRef.current.updatePresentation({
+        aluminumFinish: normalizedFinish,
+        glassAppearance,
+        glassColor,
+        glassThicknessMm,
+        includeSill,
+        activeAddon: selectedAddon,
+        addonAluminumFinish: addonAlumFinish,
+        addonConfig: {
+          finishColor: getFinishHexColor(addonAlumFinish),
+          zOffsetMm: 18,
+        },
+      });
+
+      if (mvpCanvasRef.current) {
+        const isPlanar = Boolean(perspectiveCorners);
+        const sourceCanvas = mvpRendererRef.current.render(yaw, pitch, isPlanar);
+        if (sourceCanvas) {
+          const ctx = mvpCanvasRef.current.getContext("2d");
+          if (ctx) {
+            ctx.clearRect(0, 0, mvpCanvasRef.current.width, mvpCanvasRef.current.height);
+            ctx.drawImage(sourceCanvas, 0, 0, sourceCanvas.width, sourceCanvas.height, 0, 0, mvpCanvasRef.current.width, mvpCanvasRef.current.height);
+          }
+        }
+      }
+    }
+
+    // 2. Synchronize matching framing materials if materialCustomizationGroups exist
+    if (structuralDefinition && materialCustomizationGroups.length > 0) {
+      const framingGroup = materialCustomizationGroups.find((g) => g.presentationCategory === "Framing");
+      if (framingGroup) {
+        const normalizedTarget = normalizedFinish.toLowerCase();
+        const matchedOption = framingGroup.options.find((opt) => {
+          const optFinish = (opt.finishType || opt.description || "").toLowerCase();
+          return optFinish.includes(normalizedTarget) ||
+            (normalizedTarget === "white" && optFinish.includes("white")) ||
+            (normalizedTarget === "analok" && optFinish.includes("analok"));
+        });
+        if (matchedOption) {
+          const nextSelections = applyGroupSelection(
+            framingGroup,
+            matchedOption,
+            selectedMaterials,
+            structuralDefinition,
+          );
+          setSelectedMaterials(nextSelections);
+          if (mvpRendererRef.current) {
+            mvpRendererRef.current.updateCustomMaterials(nextSelections, candidateMaterialsMap);
+          }
+        }
+      }
+    }
+
+    setModelRevision((prev) => prev + 1);
+  }, [
+    glassAppearance,
+    glassColor,
+    glassThicknessMm,
+    includeSill,
+    selectedAddon,
+    addonAlumFinish,
+    getFinishHexColor,
+    yaw,
+    pitch,
+    perspectiveCorners,
+    structuralDefinition,
+    materialCustomizationGroups,
+    selectedMaterials,
+    candidateMaterialsMap,
+  ]);
+
+  const handleAddonFinishSelect = useCallback((finishId: string) => {
+    setAddonAlumFinish(finishId);
+
+    if (mvpRendererRef.current) {
+      mvpRendererRef.current.updatePresentation({
+        aluminumFinish: normalizeAluminumFinish(alumFinish),
+        glassAppearance,
+        glassColor,
+        glassThicknessMm,
+        includeSill,
+        activeAddon: selectedAddon,
+        addonAluminumFinish: finishId,
+        addonConfig: {
+          finishColor: getFinishHexColor(finishId),
+          zOffsetMm: 18,
+        },
+      });
+
+      if (mvpCanvasRef.current) {
+        const isPlanar = Boolean(perspectiveCorners);
+        const sourceCanvas = mvpRendererRef.current.render(yaw, pitch, isPlanar);
+        if (sourceCanvas) {
+          const ctx = mvpCanvasRef.current.getContext("2d");
+          if (ctx) {
+            ctx.clearRect(0, 0, mvpCanvasRef.current.width, mvpCanvasRef.current.height);
+            ctx.drawImage(sourceCanvas, 0, 0, sourceCanvas.width, sourceCanvas.height, 0, 0, mvpCanvasRef.current.width, mvpCanvasRef.current.height);
+          }
+        }
+      }
+    }
+
+    setModelRevision((prev) => prev + 1);
+  }, [
+    alumFinish,
+    glassAppearance,
+    glassColor,
+    glassThicknessMm,
+    includeSill,
+    selectedAddon,
+    getFinishHexColor,
+    yaw,
+    pitch,
+    perspectiveCorners,
+  ]);
+
 
   const toggleAccordion = (title: string) => {
     setOpenAccordions((prev) =>
@@ -3998,7 +4444,7 @@ export function ProductModelWorkspace({
                         className="overflow-hidden"
                       >
                         <div className="px-6 pb-6 flex flex-col gap-6">
-                          {/* Aluminum Finish */}
+                          {/* Aluminum Finish (IMP-MS70) */}
                           <div className="flex flex-col gap-2">
                             <span className="text-[#c3c3c3] text-base font-normal">Aluminum Finish</span>
                             <div className="grid max-h-72 grid-cols-1 gap-1 overflow-y-auto pr-1">
@@ -4006,7 +4452,7 @@ export function ProductModelWorkspace({
                                 <button
                                   key={option.id}
                                   type="button"
-                                  onClick={() => setAlumFinish(option.id)}
+                                  onClick={() => handleBaseFinishSelect(option.id)}
                                   aria-pressed={alumFinish === option.id}
                                   className={`flex items-center gap-2 rounded-[8px] border px-2 py-2 text-left text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3] ${alumFinish === option.id ? "border-[#07b6d3] bg-white" : "border-transparent hover:bg-neutral-50"}`}
                                 >
@@ -4078,6 +4524,25 @@ export function ProductModelWorkspace({
                                 />
                               </button>
                             </label>
+                          )}
+
+                          {/* Choose Raw Materials for Each Part (IMP-MS70) */}
+                          {structuralDefinition?.components && structuralDefinition.components.length > 0 && (
+                            <div className="pt-1">
+                              <PartMaterialsPicker
+                                components={structuralDefinition.components}
+                                selectedMaterials={selectedMaterials}
+                                candidateMaterialsMap={candidateMaterialsMap}
+                                allRawMaterials={allRawMaterials}
+                                onSelectPartMaterial={handleSelectPartMaterial}
+                                onResetToDefaults={handleResetMaterialsToDefaults}
+                                dimensionsMm={{
+                                  widthMm: (parseFloat(widthCm) || 180) * 10,
+                                  heightMm: (parseFloat(heightCm) || 150) * 10,
+                                  panelCount,
+                                }}
+                              />
+                            </div>
                           )}
 
                           {/* Dimension */}
@@ -4153,6 +4618,142 @@ export function ProductModelWorkspace({
                     )}
                   </AnimatePresence>
                 </div>
+
+                {/* 4. Add-on Options Accordion (IMP-MS70) */}
+                {hasCompatibleAddons && (
+                  <div className="bg-[#f5f5f5]/30 border border-white rounded-[20px] shadow-[0px_0px_5px_0px_rgba(0,0,0,0.25)] overflow-hidden transition-colors">
+                    <button
+                      type="button"
+                      onClick={() => toggleAccordion("Add-on Options")}
+                      className="w-full p-6 flex justify-between items-center text-left cursor-pointer"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="text-[#0f1422] text-[18px] font-medium tracking-[-0.342px]">
+                          Add-on Options
+                        </span>
+                        {selectedAddon !== "none" && (
+                          <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-cyan-50 text-[#07b6d3] border border-cyan-200">
+                            +₱{addonPrice.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        )}
+                      </div>
+                      <motion.div
+                        animate={{ rotate: openAccordions.includes("Add-on Options") ? 180 : 0 }}
+                        transition={{ duration: 0.25, ease: "easeInOut" }}
+                      >
+                        <Image
+                          src="/visualization/dropdown-btn.svg"
+                          alt="Toggle"
+                          width={20}
+                          height={20}
+                        />
+                      </motion.div>
+                    </button>
+
+                    <AnimatePresence initial={false}>
+                      {openAccordions.includes("Add-on Options") && (
+                        <motion.div
+                          key="addon-content"
+                          initial={{ height: 0 }}
+                          animate={{ height: "auto" }}
+                          exit={{ height: 0 }}
+                          transition={{ duration: 0.3, ease: [0.04, 0.62, 0.23, 0.98] }}
+                          className="overflow-hidden"
+                        >
+                          <div className="px-6 pb-6 flex flex-col gap-5">
+                            {/* Attachment Segmented Toggle */}
+                            <div className="flex flex-col gap-2">
+                              <span className="text-[#0f1422] text-sm font-medium">Modular Attachment</span>
+                              <div className={`grid ${hasScreenConfigured && hasGrillConfigured ? "grid-cols-3" : "grid-cols-2"} gap-1.5 p-1 bg-neutral-100 rounded-[12px]`}>
+                                <button
+                                  type="button"
+                                  onClick={() => handleAddonSelect("none")}
+                                  aria-pressed={selectedAddon === "none"}
+                                  className={`py-2 px-3 text-sm rounded-[10px] font-medium transition-all cursor-pointer ${
+                                    selectedAddon === "none"
+                                      ? "bg-[#0f1422] text-white shadow-xs"
+                                      : "text-neutral-600 hover:text-black"
+                                  }`}
+                                >
+                                  None
+                                </button>
+
+                                {hasScreenConfigured && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleAddonSelect("screen")}
+                                    aria-pressed={selectedAddon === "screen"}
+                                    className={`py-2 px-3 text-sm rounded-[10px] font-medium transition-all cursor-pointer ${
+                                      selectedAddon === "screen"
+                                        ? "bg-[#0f1422] text-white shadow-xs"
+                                        : "text-neutral-600 hover:text-black"
+                                    }`}
+                                  >
+                                    Screen
+                                  </button>
+                                )}
+
+                                {hasGrillConfigured && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleAddonSelect("grill")}
+                                    aria-pressed={selectedAddon === "grill"}
+                                    className={`py-2 px-3 text-sm rounded-[10px] font-medium transition-all cursor-pointer ${
+                                      selectedAddon === "grill"
+                                        ? "bg-[#0f1422] text-white shadow-xs"
+                                        : "text-neutral-600 hover:text-black"
+                                    }`}
+                                  >
+                                    Grille
+                                  </button>
+                                )}
+                              </div>
+                              <p className="text-[11px] text-neutral-500">
+                                Choose an optional secondary addition. Only one attachment can be mounted at a time.
+                              </p>
+                            </div>
+
+                            {/* Independent Add-on Frame Finish */}
+                            {selectedAddon !== "none" && (
+                              <div className="flex flex-col gap-2 pt-3 border-t border-neutral-200/60">
+                                <span className="text-[#0f1422] text-sm font-medium">
+                                  {selectedAddon === "screen" ? "Screen Frame Finish" : "Grille Bar Finish"}
+                                </span>
+                                <div className="grid grid-cols-2 gap-2">
+                                  {workspaceFinishOptions.map((option) => {
+                                    const isSelected = addonAlumFinish === option.id;
+                                    return (
+                                      <button
+                                        key={option.id}
+                                        type="button"
+                                        onClick={() => handleAddonFinishSelect(option.id)}
+                                        aria-pressed={isSelected}
+                                        className={`flex items-center gap-2 rounded-[10px] border p-2 text-left transition-all cursor-pointer ${
+                                          isSelected
+                                            ? "border-[#07b6d3] bg-[#07b6d3]/5 ring-1 ring-[#07b6d3]/30"
+                                            : "border-neutral-200 bg-white hover:border-neutral-300"
+                                        }`}
+                                      >
+                                        <span
+                                          className="size-4 shrink-0 rounded-full border border-black/15"
+                                          style={{ backgroundColor: option.previewHex }}
+                                          aria-hidden="true"
+                                        />
+                                        <span className="truncate text-xs font-medium text-[#0f1422]">
+                                          {option.label}
+                                        </span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                )}
 
                 {/* 4. Object Aware Occlusion Accordion */}
                 <div className="bg-[#f5f5f5]/30 border border-white rounded-[20px] shadow-[0px_0px_5px_0px_rgba(0,0,0,0.25)] overflow-hidden transition-colors">
@@ -4302,6 +4903,15 @@ export function ProductModelWorkspace({
           <button type="button" onClick={handleFlip} className="min-h-11 rounded-[14px] bg-white/10 px-3 text-xs text-white focus-visible:outline-2 focus-visible:outline-[#07b6d3]">Flip</button>
           <button type="button" onClick={handleReset} className="min-h-11 rounded-[14px] bg-white/10 px-3 text-xs text-white focus-visible:outline-2 focus-visible:outline-[#07b6d3]">Reset</button>
           <button type="button" onClick={handleRemove} className="min-h-11 rounded-[14px] bg-[#c50000] px-3 text-xs text-white focus-visible:outline-2 focus-visible:outline-white">Remove</button>
+          {materialCustomizationGroups.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setIsMobileFinishesSheetOpen(true)}
+              className="min-h-11 rounded-[14px] bg-[#07b6d3] px-3 text-xs font-medium text-white focus-visible:outline-2 focus-visible:outline-white"
+            >
+              Finishes
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setIsMobileControlsOpen((open) => !open)}
@@ -4363,6 +4973,42 @@ export function ProductModelWorkspace({
         onAcknowledgeAndProceed={handleAcknowledgeAndProceed}
         onClose={() => setIsGuardrailModalOpen(false)}
       />
+
+      {/* ── Mobile Finishes and Materials Bottom Sheet (IMP-MS66, DSD-UI4) ── */}
+      {isMobileFinishesSheetOpen && materialCustomizationGroups.length > 0 && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:p-4">
+          <div className="w-full max-w-lg rounded-t-[20px] bg-white p-5 shadow-2xl max-h-[85vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-neutral-200">
+              <h3 className="text-base font-semibold text-[#0f1422]">Finishes and Materials</h3>
+              <button
+                type="button"
+                onClick={() => setIsMobileFinishesSheetOpen(false)}
+                className="rounded-full p-1 text-neutral-500 hover:bg-neutral-100"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="pt-4">
+              <MaterialCustomizerPanel
+                groups={materialCustomizationGroups}
+                selectedMaterials={selectedMaterials}
+                onSelectOption={handleSelectMaterialOption}
+                onResetDefaults={handleResetMaterialsToDefaults}
+                isMobile={true}
+              />
+            </div>
+            <div className="mt-4 pt-3 border-t border-neutral-100">
+              <button
+                type="button"
+                onClick={() => setIsMobileFinishesSheetOpen(false)}
+                className="w-full rounded-[14px] bg-[#0f1422] py-3 text-sm font-medium text-white"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Measurement Confirmation Modal (MS-08, IMP-MS47, IMP-MS50) ── */}
       {isMeasurementModalOpen && (

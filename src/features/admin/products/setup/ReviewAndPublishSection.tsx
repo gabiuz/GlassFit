@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, XCircle, AlertTriangle, Loader2 } from "lucide-react";
+import { CheckCircle2, XCircle, Loader2 } from "lucide-react";
 import { activateProduct } from "@/lib/admin/products/publishMutations";
 import { fetchDraftStructuralDefinition } from "@/lib/admin/products/validationMutations";
 import type { ProductStructuralDefinition } from "@/lib/visualization/types";
@@ -24,8 +24,8 @@ export function ReviewAndPublishSection({ productId }: ReviewAndPublishSectionPr
                 setIsLoading(true);
                 const def = await fetchDraftStructuralDefinition(productId);
                 setDraft(def);
-            } catch (e: any) {
-                setErrorMsg(e.message);
+            } catch (e: unknown) {
+                setErrorMsg(e instanceof Error ? e.message : "Failed to load product draft");
             } finally {
                 setIsLoading(false);
             }
@@ -41,8 +41,8 @@ export function ReviewAndPublishSection({ productId }: ReviewAndPublishSectionPr
             // Redirect to admin product list
             router.push("/admin/products");
             router.refresh();
-        } catch (e: any) {
-            setErrorMsg(e.message);
+        } catch (e: unknown) {
+            setErrorMsg(e instanceof Error ? e.message : "Failed to activate product");
             setIsActivating(false);
         }
     };
@@ -64,15 +64,28 @@ export function ReviewAndPublishSection({ productId }: ReviewAndPublishSectionPr
         );
     }
 
+    const isAddon = Boolean(draft?.product?.isAddon);
     const isParametric = draft?.template?.modelStrategy === "Parametric";
     const hasAssets = (draft?.assets?.length ?? 0) > 0;
     const hasParams = (draft?.parameters?.length ?? 0) > 0;
     const hasComponents = (draft?.components?.length ?? 0) > 0;
 
     let canActivate = true;
-    let missingErrors = [];
+    const missingErrors: string[] = [];
 
-    if (isParametric) {
+    if (isAddon) {
+        // Add-on accessories (IMP-MS70):
+        // Bypass 2D/3D assets. Support procedural generation or custom components.
+        const unassignedComponents = draft?.components?.filter(
+            (c) => !c.rawMaterialId && (!c.allowedMaterials || c.allowedMaterials.length === 0)
+        ) ?? [];
+        if (unassignedComponents.length > 0) {
+            canActivate = false;
+            missingErrors.push(
+                `Activation Blocked: ${unassignedComponents.length} component${unassignedComponents.length > 1 ? "s have" : " has"} zero materials assigned. Return to Step 2 to complete material mapping.`
+            );
+        }
+    } else if (isParametric) {
         if (!hasParams) {
             canActivate = false;
             missingErrors.push("Parametric products require at least one parameter.");
@@ -80,6 +93,15 @@ export function ReviewAndPublishSection({ productId }: ReviewAndPublishSectionPr
         if (!hasComponents) {
             canActivate = false;
             missingErrors.push("Parametric products require at least one component.");
+        }
+        const unassignedComponents = draft?.components?.filter(
+            (c) => !c.rawMaterialId && (!c.allowedMaterials || c.allowedMaterials.length === 0)
+        ) ?? [];
+        if (unassignedComponents.length > 0) {
+            canActivate = false;
+            missingErrors.push(
+                `Activation Blocked: ${unassignedComponents.length} component${unassignedComponents.length > 1 ? "s have" : " has"} zero materials assigned. Return to Step 4 to complete material mapping.`
+            );
         }
     } else {
         if (!hasAssets) {
@@ -112,12 +134,18 @@ export function ReviewAndPublishSection({ productId }: ReviewAndPublishSectionPr
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="border border-neutral-200 rounded-[12px] p-5 bg-white shadow-sm flex flex-col gap-2">
                     <div className="text-sm font-medium text-neutral-500">Strategy</div>
-                    <div className="text-lg text-[#0f1422]">{draft?.template?.modelStrategy || "Unknown"}</div>
+                    <div className="text-lg text-[#0f1422]">
+                        {isAddon ? "Parametric Frame + Panels" : (draft?.template?.modelStrategy || "Unknown")}
+                    </div>
                 </div>
                 
                 <div className="border border-neutral-200 rounded-[12px] p-5 bg-white shadow-sm flex flex-col gap-2">
                     <div className="text-sm font-medium text-neutral-500">Components</div>
-                    <div className="text-lg text-[#0f1422]">{draft?.components?.length ?? 0} configured</div>
+                    <div className="text-lg text-[#0f1422]">
+                        {isAddon
+                            ? ((draft?.components?.length ?? 0) > 0 ? `${draft?.components?.length} configured` : "Procedural Generation (Asset-Free)")
+                            : `${draft?.components?.length ?? 0} configured`}
+                    </div>
                 </div>
 
                 <div className="border border-neutral-200 rounded-[12px] p-5 bg-white shadow-sm flex flex-col gap-2">
@@ -130,6 +158,7 @@ export function ReviewAndPublishSection({ productId }: ReviewAndPublishSectionPr
                     <div className="text-lg text-[#0f1422]">{draft?.rules?.length ?? 0} active</div>
                 </div>
             </div>
+
 
             <div className="border border-neutral-200 rounded-[12px] overflow-hidden">
                 <div className="bg-neutral-50 p-4 border-b border-neutral-200">

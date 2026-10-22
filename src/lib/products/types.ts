@@ -16,6 +16,8 @@ export type DatabaseProduct = {
   description: string | null;
   base_price: number;
   status: "Active" | "Inactive";
+  is_addon?: boolean;
+  addon_type?: "screen" | "grill" | null;
   created_at: string;
   updated_at: string;
 

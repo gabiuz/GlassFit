@@ -1,6 +1,7 @@
 import {
   ADMIN_PRODUCT_TYPE_ORDER,
   type AdminProductItem,
+  type ProductScopeFilter,
   type ProductStatusFilter,
   type ProductTypeFilter,
 } from "./productData";
@@ -9,6 +10,7 @@ export type AdminProductFilterCriteria = {
   searchQuery: string;
   selectedType: ProductTypeFilter;
   selectedStatus: ProductStatusFilter;
+  selectedScope?: ProductScopeFilter;
 };
 
 export function deriveProductTypeOptions(
@@ -33,6 +35,7 @@ export function filterAdminProducts(
 ): AdminProductItem[] {
   const query = criteria.searchQuery.trim().toLocaleLowerCase();
   const selectedType = criteria.selectedType?.trim() || null;
+  const scope = criteria.selectedScope || "all";
 
   return products.filter((product) => {
     const matchesSearch =
@@ -44,7 +47,13 @@ export function filterAdminProducts(
       selectedType === null || product.type.trim() === selectedType;
     const matchesStatus =
       criteria.selectedStatus === null || product.status === criteria.selectedStatus;
+    const matchesScope =
+      scope === "all"
+        ? true
+        : scope === "addon"
+          ? Boolean(product.isAddon)
+          : !product.isAddon;
 
-    return matchesSearch && matchesProductType && matchesStatus;
+    return matchesSearch && matchesProductType && matchesStatus && matchesScope;
   });
 }

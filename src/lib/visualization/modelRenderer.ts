@@ -12,11 +12,14 @@ import { buildParametricProduct } from "@/lib/visualization/parametricProductBui
 import { resolveProductStructure } from "@/lib/visualization/structuralResolver";
 import { preloadComponentModels } from "@/lib/visualization/componentModelCache";
 import {
+  applyPBRToMesh,
   applyPresentationMaterials,
   detectProductMaterialCapabilities,
   type ProductMaterialCapabilities,
 } from "@/lib/visualization/materialClassifier";
+import type { RawMaterial } from "@/lib/pricing/types";
 import type { RrdAluminumFinishKey } from "@/lib/visualization/colorVariations";
+import type { AddonGeometryConfig } from "@/lib/visualization/addonGeometryBuilder";
 
 export type ModelPresentationOptions = {
   aluminumFinish: RrdAluminumFinishKey;
@@ -24,6 +27,9 @@ export type ModelPresentationOptions = {
   glassColor: GlassColorKey;
   glassThicknessMm: GlassThicknessMm;
   includeSill: boolean;
+  activeAddon?: "screen" | "grill" | "none" | null;
+  addonAluminumFinish?: string;
+  addonConfig?: AddonGeometryConfig;
 };
 
 export type LoadedModelResult = {
@@ -208,6 +214,10 @@ export class ProductModelRenderer {
     definition: ProductStructuralDefinition,
     values: Record<string, unknown>,
     presentation: ModelPresentationOptions,
+    customMaterials?: {
+      selectedMaterials: Record<string, string>;
+      rawMaterialsMap: Map<string, RawMaterial>;
+    },
   ): Promise<LoadedModelResult | undefined> {
     const loadVersion = (this.modelLoadVersion += 1);
     const prepared = await this.prepareModel(definition, values, presentation);
@@ -216,6 +226,9 @@ export class ProductModelRenderer {
       return;
     }
     this.commitPreparedModel(prepared);
+    if (customMaterials?.selectedMaterials && Object.keys(customMaterials.selectedMaterials).length > 0) {
+      this.updateCustomMaterials(customMaterials.selectedMaterials, customMaterials.rawMaterialsMap);
+    }
     return { capabilities: prepared.capabilities };
   }
 
@@ -276,7 +289,67 @@ export class ProductModelRenderer {
       glassColor: presentation.glassColor,
       glassThicknessMm: presentation.glassThicknessMm,
     });
+
+    if (presentation.addonConfig?.finishColor || presentation.addonAluminumFinish) {
+      const finishColor = presentation.addonConfig?.finishColor ?? (
+        presentation.addonAluminumFinish === "white"
+          ? "#f5f6f8"
+          : presentation.addonAluminumFinish === "black"
+            ? "#1a1a1a"
+            : presentation.addonAluminumFinish === "mill" || presentation.addonAluminumFinish === "al_1001"
+              ? "#d4d8dc"
+              : "#221d1a"
+      );
+      this.modelGroup.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          const isAddonFrame =
+            child.name.startsWith("Screen_Frame_") ||
+            child.name.startsWith("Grill_Frame_") ||
+            child.name.startsWith("Grill_Bar_") ||
+            (child.userData.isAddon && child.userData.presentationCategory === "Framing");
+          if (isAddonFrame && child.material instanceof THREE.MeshStandardMaterial) {
+            child.material.color.set(finishColor);
+            child.material.needsUpdate = true;
+          }
+        }
+      });
+    }
+
     return this.materialCapabilities;
+  }
+
+
+  updateCustomMaterials(
+    selectedMaterials: Record<string, string>,
+    rawMaterialsMap: Map<string, RawMaterial>,
+  ): void {
+    if (this.modelGroup.children.length === 0) return;
+    this.modelGroup.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        let compKey: string | undefined =
+          typeof child.userData?.componentKey === "string"
+            ? child.userData.componentKey
+            : undefined;
+        let curr: THREE.Object3D | null = child.parent;
+        while (!compKey && curr && curr !== this.modelGroup) {
+          if (typeof curr.userData?.componentKey === "string") {
+            compKey = curr.userData.componentKey;
+          }
+          curr = curr.parent;
+        }
+
+        const targetKey =
+          compKey ||
+          (child.name && selectedMaterials[child.name] ? child.name : undefined);
+
+        if (targetKey && selectedMaterials[targetKey]) {
+          const rawMat = rawMaterialsMap.get(selectedMaterials[targetKey]);
+          if (rawMat) {
+            applyPBRToMesh(child, rawMat);
+          }
+        }
+      }
+    });
   }
 
   private async loadParametricModel(
@@ -285,13 +358,20 @@ export class ProductModelRenderer {
     presentation: ModelPresentationOptions,
   ) {
     const resolved = resolveProductStructure({ definition, values });
-    const cache = await preloadComponentModels(definition.components);
+    const allComponents = [
+      ...definition.components,
+      ...(definition.compatibleAddons?.flatMap((a) => a.components ?? []) ?? []),
+    ];
+    const cache = await preloadComponentModels(allComponents);
     const { group } = buildParametricProduct(definition, resolved, cache, {
       glassAppearance: presentation.glassAppearance,
       glassColor: presentation.glassColor,
       glassThicknessMm: presentation.glassThicknessMm,
       includeSill: presentation.includeSill,
       alumFinish: presentation.aluminumFinish,
+      activeAddon: presentation.activeAddon,
+      addonAluminumFinish: presentation.addonAluminumFinish,
+      addonConfig: presentation.addonConfig,
     });
 
     return group;
@@ -409,10 +489,11 @@ export class ProductModelRenderer {
 
     if (isPlanarFit) {
       // 1. Establish the reference base bounds of the unrotated model at (0, 0, 0)
+      // Exclude add-on attachments so planar perspective camera framing never shifts or resizes host product
       this.modelGroup.rotation.set(0, 0, 0);
       this.modelGroup.updateMatrixWorld(true);
 
-      const baseBounds = new THREE.Box3().setFromObject(this.modelGroup);
+      const baseBounds = computeHostProductBounds(this.modelGroup);
       const baseSize = new THREE.Vector3();
       const baseCenter = new THREE.Vector3();
       baseBounds.getSize(baseSize);
@@ -501,9 +582,54 @@ function releaseModelGroup(root: THREE.Object3D, sharedGeometry: boolean) {
 function disposeOwnedModelMaterials(root: THREE.Object3D) {
   root.traverse((object) => {
     if (!(object instanceof THREE.Mesh)) return;
+    if (object.userData?.preserveMaterial || object.userData?.isScreenMesh) return;
     const materials = Array.isArray(object.material) ? object.material : [object.material];
     for (const material of materials) material.dispose();
   });
+}
+
+export function isAddonObject(object: THREE.Object3D): boolean {
+  let curr: THREE.Object3D | null = object;
+  while (curr) {
+    if (
+      curr.userData?.isAddon === true ||
+      curr.userData?.isUploadedAddon === true ||
+      curr.userData?.addonType !== undefined ||
+      (typeof curr.name === "string" && (
+        curr.name.startsWith("Addon_") ||
+        curr.name.startsWith("Screen_") ||
+        curr.name.startsWith("Grill_")
+      ))
+    ) {
+      return true;
+    }
+    curr = curr.parent;
+  }
+  return false;
+}
+
+export function computeHostProductBounds(modelGroup: THREE.Group): THREE.Box3 {
+  const hostBounds = new THREE.Box3();
+  let hasHostMesh = false;
+
+  modelGroup.traverse((child) => {
+    if (child instanceof THREE.Mesh) {
+      if (!isAddonObject(child)) {
+        if (!child.geometry.boundingBox) {
+          child.geometry.computeBoundingBox();
+        }
+        child.updateMatrixWorld(true);
+        hostBounds.expandByObject(child);
+        hasHostMesh = true;
+      }
+    }
+  });
+
+  if (!hasHostMesh) {
+    return new THREE.Box3().setFromObject(modelGroup);
+  }
+
+  return hostBounds;
 }
 
 function normalizeModelForViewer(container: THREE.Group, source: THREE.Object3D) {

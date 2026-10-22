@@ -27,6 +27,7 @@ export async function getProductById(id: string): Promise<ProductDetail | null> 
       product_type,
       description,
       base_price,
+      is_addon,
       product_assets (
         asset_id,
         asset_type,
@@ -38,9 +39,10 @@ export async function getProductById(id: string): Promise<ProductDetail | null> 
     `)
     .eq("product_id", id)
     .eq("status", "Active")
+    .eq("is_addon", false)
     .single();
 
-  if (error || !data) {
+  if (error || !data || data.is_addon) {
     return null;
   }
 

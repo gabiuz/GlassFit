@@ -6,6 +6,7 @@ import { SearchBar } from "@/components/shared/SearchBar";
 import {
   type AdminProductItem,
   type AdminProductStatus,
+  type ProductScopeFilter,
   type ProductStatusFilter,
   type ProductTypeFilter,
 } from "./productData";
@@ -276,6 +277,7 @@ export function ProductsContent({ initialProducts }: { initialProducts: AdminPro
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedType, setSelectedType] = useState<ProductTypeFilter>(null);
   const [selectedStatus, setSelectedStatus] = useState<ProductStatusFilter>(null);
+  const [selectedScope, setSelectedScope] = useState<ProductScopeFilter>("standard");
   const [productToDelete, setProductToDelete] = useState<AdminProductItem | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
@@ -290,14 +292,16 @@ export function ProductsContent({ initialProducts }: { initialProducts: AdminPro
         searchQuery,
         selectedType,
         selectedStatus,
+        selectedScope,
       }),
-    [products, searchQuery, selectedStatus, selectedType],
+    [products, searchQuery, selectedStatus, selectedType, selectedScope],
   );
 
   const resetFilters = () => {
     setSearchQuery("");
     setSelectedType(null);
     setSelectedStatus(null);
+    setSelectedScope("standard");
   };
 
   const handleDuplicateProduct = async (product: AdminProductItem) => {
@@ -356,16 +360,67 @@ export function ProductsContent({ initialProducts }: { initialProducts: AdminPro
             />
           </div>
 
-          <Link
-            href="/admin/products/new"
-            className="bg-[#0f1422] text-white rounded-[25px] px-5 py-2.5 sm:py-3 flex items-center justify-center gap-2 cursor-pointer hover:bg-black transition-colors shrink-0 shadow-xs"
-          >
-            <Plus className="size-4" />
-            <span className="text-sm sm:text-base font-medium whitespace-nowrap">
-              Add Product
-            </span>
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/admin/products/new"
+              className="bg-[#0f1422] text-white rounded-[25px] px-4 sm:px-5 py-2.5 sm:py-3 flex items-center justify-center gap-2 cursor-pointer hover:bg-black transition-colors shrink-0 shadow-xs"
+            >
+              <Plus className="size-4" />
+              <span className="text-sm sm:text-base font-medium whitespace-nowrap">
+                Add Product
+              </span>
+            </Link>
+            <Link
+              href="/admin/products/draft/setup?role=addon"
+              className="border border-[#0f1422] text-[#0f1422] bg-white rounded-[25px] px-3.5 sm:px-4 py-2.5 sm:py-3 flex items-center justify-center gap-1.5 cursor-pointer hover:bg-neutral-50 transition-colors shrink-0 shadow-xs"
+            >
+              <Plus className="size-3.5 text-[#07b6d3]" />
+              <span className="text-xs sm:text-sm font-medium whitespace-nowrap">
+                Add-on Accessory
+              </span>
+            </Link>
+          </div>
         </div>
+      </div>
+
+      {/* Scope Filter Tabs */}
+      <div className="flex items-center gap-1.5 p-1 bg-neutral-100 rounded-[25px] border border-neutral-200">
+        <button
+          type="button"
+          onClick={() => setSelectedScope("all")}
+          className={cn(
+            "px-4 py-1.5 rounded-[20px] text-xs sm:text-sm font-medium transition-colors cursor-pointer",
+            selectedScope === "all"
+              ? "bg-[#0f1422] text-white shadow-xs"
+              : "text-neutral-600 hover:text-black"
+          )}
+        >
+          All Catalog Items
+        </button>
+        <button
+          type="button"
+          onClick={() => setSelectedScope("standard")}
+          className={cn(
+            "px-4 py-1.5 rounded-[20px] text-xs sm:text-sm font-medium transition-colors cursor-pointer",
+            selectedScope === "standard"
+              ? "bg-[#0f1422] text-white shadow-xs"
+              : "text-neutral-600 hover:text-black"
+          )}
+        >
+          Standard Products
+        </button>
+        <button
+          type="button"
+          onClick={() => setSelectedScope("addon")}
+          className={cn(
+            "px-4 py-1.5 rounded-[20px] text-xs sm:text-sm font-medium transition-colors cursor-pointer",
+            selectedScope === "addon"
+              ? "bg-[#0f1422] text-white shadow-xs"
+              : "text-neutral-600 hover:text-black"
+          )}
+        >
+          Add-on Accessories
+        </button>
       </div>
 
       <div className="w-full flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -471,14 +526,28 @@ function ProductRow({
         <ProductIdBadge id={product.id} />
       </ColCell>
       <ColCell align="left" className="font-medium text-[#0f1422]">
-        {product.name}
+        <div className="flex items-center gap-2 flex-wrap">
+          <span>{product.name}</span>
+          {product.isAddon && (
+            <span
+              className={cn(
+                "inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border",
+                product.addonType === "screen"
+                  ? "bg-teal-50 text-teal-700 border-teal-200"
+                  : "bg-amber-50 text-amber-700 border-amber-200"
+              )}
+            >
+              {product.addonType === "screen" ? "Add-on: Screen" : "Add-on: Grille"}
+            </span>
+          )}
+        </div>
       </ColCell>
       <ColCell align="left">{product.type}</ColCell>
       <ColCell align="left" className="truncate text-neutral-600">
         {product.description?.trim() ? (
           <span className="truncate">{product.description}</span>
         ) : (
-          <span className="text-neutral-300 font-light">—</span>
+          <span className="text-neutral-300 font-light">-</span>
         )}
       </ColCell>
       <ColCell align="right" className="font-medium text-[#0f1422]">

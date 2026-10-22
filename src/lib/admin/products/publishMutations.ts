@@ -16,16 +16,25 @@ export async function activateProduct(productId: string) {
     const template = Array.isArray(draft.product_templates) ? draft.product_templates[0] : draft.product_templates;
     if (!template) throw new Error("Product template not found.");
 
-    if (template.model_strategy === "Parametric") {
+    if (draft.is_addon) {
+        // Procedural add-on accessories (IMP-MS70):
+        // Bypasses 2D/3D assets and 3D component model requirements.
+    } else if (template.model_strategy === "Parametric") {
         if (!template.product_parameters || template.product_parameters.length === 0) {
             throw new Error("Parametric products require at least one parameter.");
         }
         if (!template.product_components || template.product_components.length === 0) {
             throw new Error("Parametric products require at least one component.");
         }
-    }
-
-    if (template.model_strategy === "Fixed") {
+        const unassignedComponent = template.product_components.find((comp) => {
+            const hasRawMat = Boolean(comp.raw_material_id);
+            const hasBindings = Array.isArray(comp.product_component_materials) && comp.product_component_materials.length > 0;
+            return !hasRawMat && !hasBindings;
+        });
+        if (unassignedComponent) {
+            throw new Error(`Activation Blocked: Component "${unassignedComponent.component_name || unassignedComponent.component_key}" has zero materials assigned.`);
+        }
+    } else if (template.model_strategy === "Fixed") {
         const hasFixedModelAsset = draft.product_assets?.some((asset) =>
             (asset.asset_type === "Whole Model" || asset.asset_type === "Catalog 3D Preview") &&
             asset.status === "Active"
@@ -35,6 +44,7 @@ export async function activateProduct(productId: string) {
              throw new Error("Fixed products require a 3D model asset.");
         }
     }
+
 
     // 2. Publish the template first so the customer-side loader can find it
     // as soon as the product becomes visible in the catalog.

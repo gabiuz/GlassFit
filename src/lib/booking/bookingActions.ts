@@ -150,7 +150,36 @@ export async function generateSignedBookingLink(
 
   let displayOrder = 1;
   for (const [idx, item] of quotationDocument.items.entries()) {
+    const isAddonActive = item.selectedAddon && item.selectedAddon !== "none" && (item.addonPrice ?? 0) > 0;
+    const addonTitle = item.addonName ?? (item.selectedAddon === "screen" ? "Extruded Aluminum Insect Screen" : "Architectural Security Window Grille");
+
     for (const group of item.groups) {
+      const isThisAddonRow = isAddonActive && group.description === addonTitle;
+
+      if (isThisAddonRow) {
+        quotationItemRows.push({
+          quotation_id: quotationId,
+          item_name: `${item.productName} - ${addonTitle}`,
+          item_group_name: group.groupName,
+          quantity: group.quantity,
+          unit: group.unit,
+          unit_price: group.unitPrice,
+          estimated_subtotal: group.subtotal,
+          structural_waiver: false,
+          pricing_details: {
+            item_type: "addon_attachment",
+            addon_type: item.selectedAddon,
+            addon_name: addonTitle,
+            dimensions: item.dimensionsFormatted,
+            unit_price: item.addonPrice,
+            subtotal: group.subtotal,
+            addon_product_id: item.addonProductId ?? null,
+            parent_product_id: item.productId,
+            parent_item_id: item.itemId,
+          },
+          display_order: displayOrder++,
+        });
+      } else {
         quotationItemRows.push({
           quotation_id: quotationId,
           item_name: `${item.productName} (${group.description})`,
@@ -188,9 +217,17 @@ export async function generateSignedBookingLink(
             user_verified: false,
             calibration_method: item.calibrationMethod ?? null,
             calibration_confidence: null,
+            selected_materials: item.selectedMaterials ?? null,
+            selected_addon: isAddonActive ? {
+              type: item.selectedAddon,
+              addon_product_id: item.addonProductId ?? null,
+              addon_name: addonTitle,
+              price: item.addonPrice ?? 0,
+            } : null,
           },
           display_order: displayOrder++,
         });
+      }
     }
   }
 

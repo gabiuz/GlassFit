@@ -1,5 +1,5 @@
 import type { SpaceImageSession } from "@/lib/imageApi";
-import type { RawMaterial, CalculatedBOMResult } from "@/lib/pricing/types";
+import type { RawMaterial, CalculatedBOMResult, ComponentMaterialBinding } from "@/lib/pricing/types";
 import type { AluminumFinishKey, RrdAluminumFinishKey } from "./colorVariations";
 
 export type JsonObject = Record<string, unknown>;
@@ -16,6 +16,8 @@ export type GlassAppearanceMode = "clear" | "frosted" | "opaque" | "reflective" 
 export type GlassColorKey = "clear" | "bronze" | "silver" | "blue";
 export type GlassThicknessMm = 6 | 8 | 12;
 export type GlassTypeKey = "regular" | "frosted" | "mirror" | "tempered" | "reflective";
+export type ActiveAddonType = "screen" | "grill" | "none" | null;
+export type { AddonGeometryConfig } from "./addonGeometryBuilder";
 
 export type ProductConfigurationSeed = {
   aluminumFinish: RrdAluminumFinishKey;
@@ -73,10 +75,13 @@ export type ProductComponentDefinition = {
   componentId: string;
   componentKey: string;
   componentName: string;
+  partName?: string;
   componentType: string;
   baseQuantity: number;
   rawMaterialId?: string | null;
   rawMaterial?: RawMaterial | null;
+  allowedMaterials?: ComponentMaterialBinding[];
+  defaultRawMaterialId?: string | null;
   dimensionBinding?: "WIDTH" | "HEIGHT" | "AREA" | "FIXED";
   spanRatio?: number;
   isRemovable?: boolean;
@@ -84,6 +89,11 @@ export type ProductComponentDefinition = {
   presentationCategory?: "Framing" | "Glazing" | "Hardware" | "Consumable" | "Other";
   componentData: JsonObject;
   model: ProductComponentModel;
+  // Step 4 structural metadata extensions
+  role?: string;
+  finishGroup?: string;
+  lengthFormula?: string;
+  quantityFormula?: string;
 };
 
 export type ProductStructuralAsset = {
@@ -113,6 +123,8 @@ export type ProductStructuralDefinition = {
     basePrice?: number;
     catalogImageUrl?: string | null;
     preview_glb_url?: string | null;
+    isAddon?: boolean;
+    addonType?: "screen" | "grill" | null;
   };
   template: {
     templateId: string;
@@ -120,12 +132,42 @@ export type ProductStructuralDefinition = {
     modelStrategy: ModelStrategy;
     measurementUnit: "mm" | "cm" | "m" | string;
     baseConfiguration: JsonObject;
+    category?: string;
+    parametricRules?: JsonObject;
   };
   parameters: ProductParameter[];
   components: ProductComponentDefinition[];
   rules: StructuralRule[];
   assets?: ProductStructuralAsset[];
+  componentMaterials?: ComponentMaterialBinding[];
+  compatibleAddons?: CompatibleAddon[];
 };
+
+export type CompatibleAddon = {
+  id: string;
+  parentProductId: string;
+  addonProductId: string;
+  addonType: "screen" | "grill";
+  isDefaultEnabled?: boolean;
+  displayOrder?: number;
+  addonProduct?: {
+    productId: string;
+    productName: string;
+    basePrice: number;
+    status: string;
+  };
+  template?: {
+    templateId: string;
+    templateName: string;
+    modelStrategy: string;
+    measurementUnit: string;
+    baseConfiguration: Record<string, unknown>;
+  };
+  components?: ProductComponentDefinition[];
+  assets?: ProductStructuralAsset[];
+};
+
+export type { RawMaterial as RawMaterialOption } from "@/lib/pricing/types";
 
 export type ResolvedStructure = {
   resolvedValues: Record<string, unknown>;
@@ -280,6 +322,13 @@ export type ProductConfigurationSnapshot = {
   autoRealism?: boolean;
   positionX?: number;
   positionY?: number;
+  selectedMaterials?: Record<string, string>;
+  selectedAddon?: "none" | "screen" | "grill";
+  addonProductId?: string | null;
+  addonName?: string | null;
+  addonPrice?: number;
+  addonAluminumFinish?: string;
+  baseUnitPrice?: number;
   visualParameterValues: Record<string, unknown>;
 };
 

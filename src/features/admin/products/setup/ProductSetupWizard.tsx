@@ -12,7 +12,7 @@ import { ParametersAndRulesSection } from "./ParametersAndRulesSection";
 import { ValidationWorkspaceSection } from "./ValidationWorkspaceSection";
 import { ReviewAndPublishSection } from "./ReviewAndPublishSection";
 import type { UpsertParameterInput, UpsertRuleInput } from "@/lib/admin/products/parameterMutations";
-import { buildProductSetupUrl, type StepKey } from "@/lib/admin/products/wizardSteps";
+import { buildProductSetupUrl, getStepsForProduct, type StepKey } from "@/lib/admin/products/wizardSteps";
 
 export interface ProductAssetSummary {
     asset_id?: string;
@@ -32,7 +32,7 @@ export interface ProductAssetSummary {
 
 export interface ProductTemplateSummary {
     template_id?: string;
-    model_strategy?: "PARAMETRIC_GLTF" | "PARAMETRIC_BOX_PROCEDURAL" | "HYBRID_DYNAMIC";
+    model_strategy?: "PARAMETRIC_GLTF" | "PARAMETRIC_BOX_PROCEDURAL" | "HYBRID_DYNAMIC" | "Parametric" | "Fixed";
     base_configuration?: Record<string, unknown>;
     product_components?: unknown[];
     product_parameters?: unknown[];
@@ -47,6 +47,8 @@ export interface ProductSetupData {
     description?: string | null;
     base_price?: number;
     status?: string;
+    is_addon?: boolean;
+    addon_type?: "screen" | "grill" | null;
     product_templates?: ProductTemplateSummary[] | ProductTemplateSummary;
     product_assets?: ProductAssetSummary[];
     [key: string]: unknown;
@@ -58,16 +60,6 @@ export type ProductSetupWizardProps = {
     initialStep: StepKey;
 };
 
-const steps: { key: StepKey; label: string; number: number }[] = [
-    { key: "basic", label: "Basic Info", number: 1 },
-    { key: "strategy", label: "Visualization", number: 2 },
-    { key: "assets", label: "Assets", number: 3 },
-    { key: "components", label: "Components", number: 4 },
-    { key: "parameters", label: "Parameters", number: 5 },
-    { key: "validation", label: "Validation", number: 6 },
-    { key: "review", label: "Review", number: 7 },
-];
-
 export function ProductSetupWizard({ productId, initialData, initialStep }: ProductSetupWizardProps) {
     const router = useRouter();
     const [draftId, setDraftId] = useState<string>(productId === "draft" ? "" : productId);
@@ -78,6 +70,8 @@ export function ProductSetupWizard({ productId, initialData, initialStep }: Prod
 
     const isDraft = !draftId;
     const currentProductId = draftId || productId;
+    const isAddon = Boolean(productData?.is_addon);
+    const steps = getStepsForProduct(isAddon);
 
     useEffect(() => {
         // Route state is authoritative when the server provides a new validated step.
@@ -107,10 +101,13 @@ export function ProductSetupWizard({ productId, initialData, initialStep }: Prod
     };
 
     const handleProductCreated = (newId: string, data: Record<string, unknown>) => {
+        const isAddonProduct = Boolean(data.is_addon ?? productData?.is_addon);
         setDraftId(newId);
         setProductData({ ...productData, ...data, product_id: newId });
-        setActiveStep("strategy");
-        router.replace(buildProductSetupUrl(newId, "strategy"));
+        const nextStep = isAddonProduct ? "components" : "strategy";
+        setActiveStep(nextStep);
+        router.replace(buildProductSetupUrl(newId, nextStep));
+        refreshDraft(newId);
     };
 
     const handleStrategySaved = (data: Record<string, unknown>) => {
@@ -209,7 +206,7 @@ export function ProductSetupWizard({ productId, initialData, initialStep }: Prod
                     <StructuralComponentsSection
                         productId={draftId}
                         templateId={(Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.template_id : productData?.product_templates?.template_id) || ""}
-                        modelStrategy={(Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.model_strategy : productData?.product_templates?.model_strategy) || null}
+                        modelStrategy={(Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.model_strategy : productData?.product_templates?.model_strategy) || (isAddon ? "Parametric" : null)}
                         productType={productData?.product_type || "Window"}
                         initialData={Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.product_components : productData?.product_templates?.product_components}
                         wholeModelAsset={productData?.product_assets?.find?.((a: ProductAssetSummary) => a.asset_type === "Catalog 3D Preview" && a.is_primary !== false) || null}
@@ -218,8 +215,10 @@ export function ProductSetupWizard({ productId, initialData, initialStep }: Prod
                 )}
                 {activeStep === "parameters" && (
                     <ParametersAndRulesSection
+                        productId={currentProductId}
+                        isAddon={isAddon}
                         templateId={(Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.template_id : productData?.product_templates?.template_id) || null}
-                        modelStrategy={(Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.model_strategy : productData?.product_templates?.model_strategy) || null}
+                        modelStrategy={(Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.model_strategy : productData?.product_templates?.model_strategy) || (isAddon ? "Parametric" : null)}
                         productType={productData?.product_type || "Window"}
                         initialData={{
                             parameters: (Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.product_parameters : productData?.product_templates?.product_parameters) as UpsertParameterInput[] | undefined,
@@ -239,7 +238,7 @@ export function ProductSetupWizard({ productId, initialData, initialStep }: Prod
                     <ReviewAndPublishSection productId={currentProductId} />
                 )}
             </div>
-
         </div>
     );
 }
+

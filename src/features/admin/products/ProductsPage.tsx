@@ -7,7 +7,7 @@ export async function ProductsPage() {
 
   const { data: products } = await supabase
     .from("products")
-    .select("product_id, product_name, product_type, description, base_price, status")
+    .select("product_id, product_name, product_type, description, base_price, status, is_addon, addon_type")
     .order("created_at", { ascending: false });
 
   const formattedProducts: AdminProductItem[] = (products || []).map((p) => ({
@@ -20,6 +20,8 @@ export async function ProductsPage() {
       minimumFractionDigits: 2,
     }).format(p.base_price)}`,
     status: (p.status === "Active" ? "Published" : "Draft") as AdminProductStatus,
+    isAddon: Boolean(p.is_addon),
+    addonType: (p.addon_type as "screen" | "grill") || null,
   }));
 
   return <ProductsContent initialProducts={formattedProducts} />;
