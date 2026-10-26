@@ -3438,9 +3438,9 @@ export function ProductModelWorkspace({
       </div>
 
       {/* ── Top Toolbar Controls ── */}
-      <div className={shouldLockMobileEditor ? "hidden" : "w-full flex flex-col md:flex-row items-center justify-between gap-6 mb-10"}>
+      <div className={shouldLockMobileEditor ? "hidden" : "w-full flex flex-col lg:flex-row items-center justify-between gap-6 mb-10"}>
         {/* Left: Undo, Redo, Zoom */}
-        <div className="flex flex-wrap items-center gap-4 sm:gap-6 justify-center md:justify-start">
+        <div className="flex flex-wrap items-center gap-4 sm:gap-6 justify-center lg:justify-start">
           {/* Undo / Redo */}
           <div className="flex items-center gap-3">
             <button
@@ -3492,7 +3492,7 @@ export function ProductModelWorkspace({
         </div>
 
         {/* Right: Change Product Banner */}
-        <div className="bg-[#f5f5f5] flex flex-wrap items-center justify-center md:justify-end gap-4 px-4 py-2.5 rounded-[20px] shadow-xs relative">
+        <div className="bg-[#f5f5f5] flex flex-wrap items-center justify-center lg:justify-end gap-4 px-4 py-2.5 rounded-[20px] shadow-xs relative">
           <span className="text-green text-lg sm:text-xl font-normal tracking-[-0.38px] whitespace-nowrap">
             Want to make changes?
           </span>
