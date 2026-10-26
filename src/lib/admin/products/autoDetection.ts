@@ -5,8 +5,8 @@
  * Traceability Codes: PRD-F14, SDD-C9, DSD-UI10, ERD-E6
  */
 
-import type { DimensionBinding, PresentationCategory } from '@/lib/pricing/types';
-import type { ComponentType } from './componentMutations';
+import type { DimensionBinding, PresentationCategory, RawMaterial } from '@/lib/pricing/types';
+import type { ComponentType } from './types';
 
 export interface AutoDetectionResult {
   dimensionBinding: DimensionBinding;
@@ -153,6 +153,19 @@ export function autoDetectComponentSettings(fileName: string): AutoDetectionResu
     };
   }
 
+  // 9. Screen & insect wire mesh
+  if (name.includes("mesh") || name.includes("wire_mesh") || name.includes("screen_mesh") || (name.includes("screen") && !name.includes("door") && !name.includes("frame"))) {
+    return {
+      dimensionBinding: "AREA",
+      spanRatio: 1.0,
+      isRemovable: false,
+      togglePropertyKey: null,
+      presentationCategory: "Hardware",
+      componentType: "Hardware",
+      suggestedMaterialCategory: "Hardware",
+    };
+  }
+
   // 8. Mechanical hardware & wheels
   if (
     name.includes("roller") ||
@@ -185,5 +198,98 @@ export function autoDetectComponentSettings(fileName: string): AutoDetectionResu
     presentationCategory: "Framing",
     componentType: "Model",
     suggestedMaterialCategory: "Aluminum",
+  };
+}
+
+export interface SuggestedCandidateMaterial {
+  rawMaterialId: string;
+  isDefault: boolean;
+  displayOrder: number;
+}
+
+export interface SuggestedMaterialConfig {
+  materialBindings: SuggestedCandidateMaterial[];
+  defaultRawMaterialId: string | null;
+}
+
+/**
+ * Suggest standard multi-material candidate sets based on component classification
+ * and presentation category per IMP-MS64.
+ */
+export function suggestCandidateMaterials(
+  presentationCategory: PresentationCategory,
+  rawMaterials: RawMaterial[],
+  preferredFinish?: string
+): SuggestedMaterialConfig {
+  if (!rawMaterials || rawMaterials.length === 0) {
+    return { materialBindings: [], defaultRawMaterialId: null };
+  }
+
+  let targetCategory: string;
+  switch (presentationCategory) {
+    case "Framing":
+      targetCategory = "Aluminum";
+      break;
+    case "Glazing":
+      targetCategory = "Glass";
+      break;
+    case "Hardware":
+      targetCategory = "Hardware";
+      break;
+    case "Consumable":
+      targetCategory = "Consumable";
+      break;
+    default:
+      targetCategory = "Aluminum";
+  }
+
+  const matches = rawMaterials.filter(
+    (m) => m.category.toLowerCase() === targetCategory.toLowerCase() && m.is_active !== false
+  );
+
+  if (matches.length === 0) {
+    return { materialBindings: [], defaultRawMaterialId: null };
+  }
+
+  // Determine default material index based on preferredFinish or standard conventions
+  let defaultIdx = 0;
+  if (preferredFinish) {
+    const prefIdx = matches.findIndex((m) =>
+      m.finish_type.toLowerCase().includes(preferredFinish.toLowerCase())
+    );
+    if (prefIdx >= 0) defaultIdx = prefIdx;
+  } else if (targetCategory === "Aluminum") {
+    // Prefer Analok or Powder Coated White as primary default
+    const analokIdx = matches.findIndex((m) =>
+      m.finish_type.toLowerCase().includes("analok")
+    );
+    if (analokIdx >= 0) {
+      defaultIdx = analokIdx;
+    } else {
+      const pcwIdx = matches.findIndex((m) =>
+        m.finish_type.toLowerCase().includes("powdercoatedwhite") ||
+        m.finish_type.toLowerCase().includes("white")
+      );
+      if (pcwIdx >= 0) defaultIdx = pcwIdx;
+    }
+  } else if (targetCategory === "Glass") {
+    // Prefer Clear glass as primary default
+    const clearIdx = matches.findIndex((m) =>
+      m.finish_type.toLowerCase().includes("clear")
+    );
+    if (clearIdx >= 0) defaultIdx = clearIdx;
+  }
+
+  const materialBindings: SuggestedCandidateMaterial[] = matches.map((m, idx) => ({
+    rawMaterialId: m.id,
+    isDefault: idx === defaultIdx,
+    displayOrder: idx,
+  }));
+
+  const defaultRawMaterialId = matches[defaultIdx]?.id || null;
+
+  return {
+    materialBindings,
+    defaultRawMaterialId,
   };
 }

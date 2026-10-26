@@ -14,6 +14,7 @@ import type {
   QuotationBOMGroupItem,
   QuotationBOMSummary,
   RawMaterial,
+  ComponentMaterialBinding,
 } from "./types";
 import type { PlacedOverlay, ProductStructuralDefinition } from "@/lib/visualization/types";
 
@@ -587,13 +588,15 @@ export function calculateBOMFromStructuralDefinition(
     heightMm: number;
     panelCount?: number;
     hasSill?: boolean;
-    finishType?: "Analok" | "PowderCoatedWhite";
-    glassType?: "6mm_bronze" | "6mm_clear" | "6mm_tempered";
+    finishType?: "Analok" | "PowderCoatedWhite" | string;
+    glassType?: "6mm_bronze" | "6mm_clear" | "6mm_tempered" | string;
     structuralWaiver?: boolean;
+    selectedMaterials?: Record<string, string>;
+    rawMaterials?: RawMaterial[] | Map<string, RawMaterial> | Record<string, RawMaterial>;
   }
 ): CalculatedBOMResult {
   if (!definition || !definition.components || definition.components.length === 0) {
-    return calculateStandardSeries798(params);
+    return calculateStandardSeries798(params as Parameters<typeof calculateStandardSeries798>[0]);
   }
 
   const isPCW = params.finishType === "PowderCoatedWhite";
@@ -625,11 +628,54 @@ export function calculateBOMFromStructuralDefinition(
   }
 
   const pricingInputs: ComponentPricingInput[] = definition.components.map((comp) => {
-    let mat = comp.rawMaterial || null;
+    let mat: RawMaterial | null = null;
+    const selectedMatId = params.selectedMaterials?.[comp.componentKey];
+
+    const getRawMaterialById = (id: string): RawMaterial | null => {
+      if (!id || !params.rawMaterials) return null;
+      if (params.rawMaterials instanceof Map) {
+        return params.rawMaterials.get(id) ?? null;
+      }
+      if (Array.isArray(params.rawMaterials)) {
+        return params.rawMaterials.find((m) => m.id === id) ?? null;
+      }
+      if (typeof params.rawMaterials === "object") {
+        return (params.rawMaterials as Record<string, RawMaterial>)[id] ?? null;
+      }
+      return null;
+    };
+
+    const compMaterials = comp.allowedMaterials ?? definition.componentMaterials?.filter((cm: ComponentMaterialBinding) => cm.componentKey === comp.componentKey) ?? [];
+
+    if (selectedMatId) {
+      const bindingMatch = compMaterials.find((b: ComponentMaterialBinding) => b.rawMaterialId === selectedMatId)?.rawMaterial;
+      const lookupMatch = getRawMaterialById(selectedMatId);
+      if (bindingMatch) {
+        mat = bindingMatch;
+      } else if (lookupMatch) {
+        mat = lookupMatch;
+      } else if (comp.rawMaterial?.id === selectedMatId) {
+        mat = comp.rawMaterial;
+      }
+    }
+
+    if (!mat && compMaterials.length > 0) {
+      const defaultBinding = compMaterials.find((b: ComponentMaterialBinding) => b.isDefault) || compMaterials[0];
+      if (defaultBinding.rawMaterial) {
+        mat = defaultBinding.rawMaterial;
+      } else {
+        const found = getRawMaterialById(defaultBinding.rawMaterialId);
+        if (found) mat = found;
+      }
+    }
+
+    if (!mat && comp.rawMaterial) {
+      mat = comp.rawMaterial;
+    }
 
     if (!mat) {
-      const key = comp.componentKey.toLowerCase();
-      const name = comp.componentName.toLowerCase();
+      const key = (comp.componentKey || "").toLowerCase();
+      const name = (comp.componentName || comp.partName || "").toLowerCase();
 
       if (key.includes("head") || name.includes("head") || key.includes("top") || name.includes("top")) {
         mat = {
@@ -708,7 +754,7 @@ export function calculateBOMFromStructuralDefinition(
 
     return {
       componentKey: comp.componentKey,
-      componentName: comp.componentName,
+      componentName: comp.componentName || comp.partName || comp.componentKey,
       dimensionBinding: comp.dimensionBinding || "FIXED",
       spanRatio: typeof comp.spanRatio === "number" ? comp.spanRatio : 1.0,
       baseQuantity: typeof comp.baseQuantity === "number" ? comp.baseQuantity : 1,
@@ -875,13 +921,13 @@ export function calculateOverlayPricing(overlay: PlacedOverlay): {
 
   const panelCount = overlay.configuration.panelCount ?? (widthMm >= 2400 ? 3 : 2);
   const hasSill = overlay.configuration.includeSill ?? true;
-  const finishType = overlay.configuration.aluminumFinish === "white" ? "PowderCoatedWhite" : "Analok";
-  const glassType = (overlay.configuration.thicknessMm ?? 6) >= 6 && overlay.configuration.glassAppearance === "clear"
+  const finishType: "PowderCoatedWhite" | "Analok" = overlay.configuration.aluminumFinish === "white" ? "PowderCoatedWhite" : "Analok";
+  const glassType: "6mm_clear" | "6mm_bronze" = (overlay.configuration.thicknessMm ?? 6) >= 6 && overlay.configuration.glassAppearance === "clear"
     ? "6mm_clear"
     : "6mm_bronze";
   const structuralWaiver = overlay.configuration.structuralWaiver ?? false;
 
-  const options: Parameters<typeof calculateStandardSeries798>[0] = {
+  const options = {
     widthMm,
     heightMm,
     panelCount,
@@ -889,13 +935,15 @@ export function calculateOverlayPricing(overlay: PlacedOverlay): {
     finishType,
     glassType,
     structuralWaiver,
+    selectedMaterials: overlay.configuration.selectedMaterials,
   };
   const definition = overlay.variationRenderRecipe?.structuralDefinition;
   const bomResult = definition
     ? calculateBOMFromStructuralDefinition(definition, options)
     : calculateStandardSeries798(options);
 
-  const unitPrice = bomResult.finalQuotation;
+  const addonPrice = Number(overlay.configuration.addonPrice) || 0;
+  const unitPrice = bomResult.finalQuotation + addonPrice;
   const totalPrice = unitPrice * quantity;
 
   return {

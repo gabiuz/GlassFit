@@ -11,36 +11,58 @@ export type CreateProductInput = {
     product_type: string;
     description: string;
     base_price: number;
+    is_addon?: boolean;
+    addon_type?: "screen" | "grill" | null;
 };
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const PRODUCT_TYPES = new Set([
-    "Window",
-    "Door",
-    "Partition",
-    "Cabinet",
-    "Enclosure",
-    "Railing",
-    "Other",
-]);
-
-function validateProductDraftInput(input: CreateProductInput): CreateProductInput {
-    const productName = input.product_name.trim();
-    if (!productName) throw new Error("Product name is required.");
-    if (!PRODUCT_TYPES.has(input.product_type)) throw new Error("Product type is invalid.");
-    if (!Number.isFinite(input.base_price) || input.base_price < 0) {
-        throw new Error("Base price must be a finite, non-negative number.");
-    }
-
-    return {
-        product_name: productName,
-        product_type: input.product_type,
-        description: input.description.trim(),
-        base_price: input.base_price,
-    };
-}
+import { validateProductDraftInput } from "./productValidation";
 
 export type UpdateProductInput = CreateProductInput;
+
+async function ensureAddonTemplate(
+    supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+    productId: string,
+    productName: string,
+    addonType: "screen" | "grill" | null | undefined,
+    profileId: string,
+) {
+    const { data: existing } = await supabase
+        .from("product_templates")
+        .select("template_id")
+        .eq("product_id", productId)
+        .maybeSingle();
+
+    const baseConfig = {
+        builder_key: "frame_panels_v1",
+        is_addon: true,
+        addon_type: addonType ?? "screen",
+    };
+
+    if (existing) {
+        await supabase
+            .from("product_templates")
+            .update({
+                model_strategy: "Parametric",
+                base_configuration: baseConfig,
+                updated_by: profileId,
+            })
+            .eq("template_id", existing.template_id);
+    } else {
+        await supabase
+            .from("product_templates")
+            .insert({
+                product_id: productId,
+                template_name: `${productName} Template`,
+                model_strategy: "Parametric",
+                measurement_unit: "mm",
+                base_configuration: baseConfig,
+                status: "Inactive",
+                created_by: profileId,
+                updated_by: profileId,
+            });
+    }
+}
 
 export async function createProductDraft(input: CreateProductInput) {
     const adminCtx = await requirePermission("manage_products");
@@ -55,6 +77,8 @@ export async function createProductDraft(input: CreateProductInput) {
             product_type: normalizedInput.product_type,
             description: normalizedInput.description,
             base_price: normalizedInput.base_price,
+            is_addon: normalizedInput.is_addon ?? false,
+            addon_type: normalizedInput.addon_type ?? null,
             status: "Inactive", // Draft state
             created_by: adminCtx.profileId,
             updated_by: adminCtx.profileId,
@@ -65,6 +89,16 @@ export async function createProductDraft(input: CreateProductInput) {
     if (error) {
         console.error("Failed to create product:", error);
         throw new Error(error.message);
+    }
+
+    if (normalizedInput.is_addon) {
+        await ensureAddonTemplate(
+            supabase,
+            data.product_id,
+            normalizedInput.product_name,
+            normalizedInput.addon_type,
+            adminCtx.profileId,
+        );
     }
 
     revalidatePath("/admin/products");
@@ -87,6 +121,8 @@ export async function updateProductDraft(productId: string, input: UpdateProduct
             product_type: normalizedInput.product_type,
             description: normalizedInput.description,
             base_price: normalizedInput.base_price,
+            is_addon: normalizedInput.is_addon ?? false,
+            addon_type: normalizedInput.addon_type ?? null,
             updated_by: adminCtx.profileId,
         })
         .eq("product_id", productId)
@@ -102,10 +138,21 @@ export async function updateProductDraft(productId: string, input: UpdateProduct
         throw new Error("Product draft was not found or could not be updated.");
     }
 
+    if (normalizedInput.is_addon) {
+        await ensureAddonTemplate(
+            supabase,
+            data.product_id,
+            normalizedInput.product_name,
+            normalizedInput.addon_type,
+            adminCtx.profileId,
+        );
+    }
+
     revalidatePath("/admin/products");
     revalidatePath(`/admin/products/${productId}/setup`);
     return data.product_id;
 }
+
 
 export type UpsertTemplateInput = {
     model_strategy: "Fixed" | "Parametric";
@@ -190,6 +237,8 @@ export async function getProductDraft(productId: string) {
             description,
             base_price,
             status,
+            is_addon,
+            addon_type,
             product_templates (
                 template_id,
                 model_strategy,
@@ -207,7 +256,14 @@ export async function getProductDraft(productId: string) {
                     toggle_property_key,
                     presentation_category,
                     glb_file_url,
-                    component_data
+                    component_data,
+                    product_component_materials (
+                        id,
+                        product_component_id,
+                        raw_material_id,
+                        is_default,
+                        display_order
+                    )
                 ),
                 product_parameters (
                     parameter_id,
@@ -284,6 +340,16 @@ export async function deleteProduct(productId: string) {
     await requirePermission("manage_products");
     const supabase = await createSupabaseServerClient();
 
+    // Prevent deleting add-on products that are bound to active host products (QAD-TC82.8)
+    const { count: boundCount } = await supabase
+        .from("product_compatible_addons")
+        .select("id", { count: "exact", head: true })
+        .eq("addon_product_id", productId);
+
+    if (boundCount && boundCount > 0) {
+        throw new Error("Cannot delete product: this add-on accessory is linked to one or more host products.");
+    }
+
     // 1. Fetch all assets associated with this product to delete them from R2
     const { data: assets, error: assetError } = await supabase
         .from("product_assets")
@@ -310,6 +376,9 @@ export async function deleteProduct(productId: string) {
 
     if (deleteError) {
         console.error("Failed to delete product:", deleteError);
+        if (deleteError.code === "23503" || deleteError.message.toLowerCase().includes("violates foreign key constraint")) {
+            throw new Error("Cannot delete product: this add-on accessory is linked to one or more host products.");
+        }
         throw new Error(deleteError.message);
     }
 

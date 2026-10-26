@@ -143,6 +143,7 @@ export function BookingFlow() {
         const config = overlay.configuration;
         const wMm = ((Number(config.widthCm) || 120) * 10);
         const hMm = ((Number(config.heightCm) || 120) * 10);
+        const dimension = `${wMm / 10}cm × ${hMm / 10}cm`;
         const quantity = Math.max(1, config.quantity ?? 1);
         const sill = config.includeSill ?? true;
         const waiver = config.structuralWaiver ?? false;
@@ -151,7 +152,16 @@ export function BookingFlow() {
           ? "6mm_clear"
           : "6mm_bronze";
         const panels = config.panelCount ?? (wMm >= 2400 ? 3 : 2);
-        const dimension = `${wMm / 10}cm × ${hMm / 10}cm`;
+        const rawAddonType = config.selectedAddon ?? ((config.visualParameterValues?.selected_addon as Record<string, unknown> | undefined)?.type as "screen" | "grill" | undefined);
+        const selectedAddon = (rawAddonType && rawAddonType !== "none" ? rawAddonType : "none") as "none" | "screen" | "grill";
+        const rawAddonPrice = config.addonPrice ?? ((config.visualParameterValues?.selected_addon as Record<string, unknown> | undefined)?.price as number | undefined);
+        const addonPrice = selectedAddon !== "none" ? Number(rawAddonPrice) || 0 : 0;
+        const rawAddonName = config.addonName ?? ((config.visualParameterValues?.selected_addon as Record<string, unknown> | undefined)?.addon_name as string | undefined);
+        const addonName = selectedAddon !== "none" ? (rawAddonName || (selectedAddon === "screen" ? "Extruded Aluminum Insect Screen" : "Architectural Security Window Grille")) : null;
+        const addonProductId = selectedAddon !== "none" ? (config.addonProductId || null) : null;
+        const rawAddonFinish = config.addonAluminumFinish ?? ((config.visualParameterValues?.selected_addon as Record<string, unknown> | undefined)?.finish as string | undefined);
+        const addonAluminumFinish = selectedAddon !== "none" ? (rawAddonFinish || undefined) : undefined;
+        const baseUnitPrice = config.baseUnitPrice ?? (pricing.unitPrice - addonPrice);
 
         quotations.push({
           itemId: overlay.overlayId,
@@ -173,6 +183,12 @@ export function BookingFlow() {
           totalPrice: pricing.totalPrice,
           imageUrl: overlay.flattenedImageDataUrl || finalSnapshotDataUrl || "",
           bomResult: pricing.bomResult,
+          selectedAddon,
+          addonProductId,
+          addonName,
+          addonPrice,
+          baseUnitPrice,
+          addonAluminumFinish,
           paperStandard:
             (config.visualParameterValues as Record<string, unknown> | undefined)?.paper_standard as string | undefined,
           calibrationScaleCmPerPx:
@@ -189,6 +205,20 @@ export function BookingFlow() {
     } else if (structuralDefinition) {
       const quantity = Math.max(1, productConfiguration?.quantity ?? 1);
       const dimension = `${widthMm / 10}cm × ${heightMm / 10}cm`;
+
+      const rawAddonType = productConfiguration?.selectedAddon ?? ((productConfiguration?.visualParameterValues?.selected_addon as Record<string, unknown> | undefined)?.type as "screen" | "grill" | undefined);
+      const selectedAddon = (rawAddonType && rawAddonType !== "none" ? rawAddonType : "none") as "none" | "screen" | "grill";
+      const rawAddonPrice = productConfiguration?.addonPrice ?? ((productConfiguration?.visualParameterValues?.selected_addon as Record<string, unknown> | undefined)?.price as number | undefined);
+      const addonPrice = selectedAddon !== "none" ? Number(rawAddonPrice) || 0 : 0;
+      const rawAddonName = productConfiguration?.addonName ?? ((productConfiguration?.visualParameterValues?.selected_addon as Record<string, unknown> | undefined)?.addon_name as string | undefined);
+      const addonName = selectedAddon !== "none" ? (rawAddonName || (selectedAddon === "screen" ? "Extruded Aluminum Insect Screen" : "Architectural Security Window Grille")) : null;
+      const addonProductId = selectedAddon !== "none" ? (productConfiguration?.addonProductId || null) : null;
+      const rawAddonFinish = productConfiguration?.addonAluminumFinish ?? ((productConfiguration?.visualParameterValues?.selected_addon as Record<string, unknown> | undefined)?.finish as string | undefined);
+      const addonAluminumFinish = selectedAddon !== "none" ? (rawAddonFinish || undefined) : undefined;
+      const baseUnitPrice = productConfiguration?.baseUnitPrice ?? bomCalc.finalQuotation;
+      const unitPrice = baseUnitPrice + addonPrice;
+      const totalPrice = unitPrice * quantity;
+
       quotations.push({
         itemId: "primary-item",
         productId: structuralDefinition.product.productId,
@@ -205,10 +235,16 @@ export function BookingFlow() {
         finishType,
         glassType,
         quantity,
-        unitPrice: bomCalc.finalQuotation,
-        totalPrice: bomCalc.finalQuotation * quantity,
+        unitPrice,
+        totalPrice,
         imageUrl: finalSnapshotDataUrl || structuralDefinition.product.catalogImageUrl || "",
         bomResult: bomCalc,
+        selectedAddon,
+        addonProductId,
+        addonName,
+        addonPrice,
+        baseUnitPrice,
+        addonAluminumFinish,
         paperStandard:
           (productConfiguration?.visualParameterValues as Record<string, unknown> | undefined)?.paper_standard as string | undefined,
         calibrationScaleCmPerPx:
@@ -240,6 +276,22 @@ export function BookingFlow() {
       hasAnySill: anySill,
     };
   }, [placedOverlays, comparisonOverlays, structuralDefinition, productConfiguration, bomCalc, hasSill, structuralWaiver, widthMm, heightMm, finalSnapshotDataUrl, finishType, glassType, panelCount]);
+
+  const addonSummaryText = useMemo(() => {
+    const activeItems = quotationItems.filter((it) => it.selectedAddon && it.selectedAddon !== "none");
+    if (activeItems.length === 0) return null;
+    if (activeItems.length === 1) {
+      const it = activeItems[0];
+      const finishSuffix = it.addonAluminumFinish
+        ? ` (${it.addonAluminumFinish.charAt(0).toUpperCase() + it.addonAluminumFinish.slice(1)})`
+        : "";
+      const priceStr = it.addonPrice && it.addonPrice > 0
+        ? ` (+₱${it.addonPrice.toLocaleString("en-PH", { minimumFractionDigits: 2 })})`
+        : "";
+      return `${it.addonName || (it.selectedAddon === "screen" ? "Extruded Aluminum Insect Screen" : "Architectural Security Window Grille")}${finishSuffix}${priceStr}`;
+    }
+    return `${activeItems.length} Fixtures with Add-on Attachments`;
+  }, [quotationItems]);
 
   const quotationDraft = useMemo(() => createQuotationDocumentSnapshotV1({
     customer: { name: customerName, phone: customerPhone, email: customerEmail, siteLocation: null },
@@ -462,6 +514,7 @@ export function BookingFlow() {
             fileName="Livingroom.jpeg"
             dateFormatted={dateFormatted}
             expiresFormatted={expiresFormatted}
+            addonSummary={addonSummaryText}
           />
         )}
         {step === 3 && (
@@ -474,6 +527,7 @@ export function BookingFlow() {
             productName={productNameSummary}
             quotationNumber={quotationNumber}
             customerName={customerName}
+            addonSummary={addonSummaryText}
           />
         )}
         {step === 4 && (

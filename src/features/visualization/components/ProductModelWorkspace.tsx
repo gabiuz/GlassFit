@@ -18,11 +18,26 @@ import {
 } from "motion/react";
 import { ChevronDown, RotateCw, FlipHorizontal, RotateCcw, Trash2, MousePointer2, Maximize, Move, Minus, Plus, CheckCircle2, Info, Lock } from "lucide-react";
 import Button from "@/components/shared/Button";
+import { cn } from "@/lib/utils";
 import { AddProductModal } from "./AddProductModal";
 import { ManualOcclusionPointPicker } from "./ManualOcclusionPointPicker";
 import { PerspectivePlanePicker } from "./PerspectivePlanePicker";
 import { PaperDetectionConfirmationModal } from "./PaperDetectionConfirmationModal";
 import { ObstructionWarningTooltip } from "./ObstructionWarningTooltip";
+import { MaterialCustomizerPanel } from "./MaterialCustomizerPanel";
+import { PartMaterialsPicker } from "./PartMaterialsPicker";
+import { getRawMaterials } from "@/lib/admin/materials/materialActions";
+import {
+  buildMaterialCustomizationGroups,
+  getDefaultMaterialSelections,
+  getAllCandidateMaterialsMap,
+  applyGroupSelection,
+  resolveSwatchColor,
+  type MaterialCustomizationGroup,
+  type MaterialCustomizationOption,
+} from "@/lib/visualization/materialCustomization";
+
+import type { RawMaterial } from "@/lib/pricing/types";
 import { useNavbarVisibility } from "@/components/shared/NavbarVisibilityContext";
 import { useCompactViewport } from "../hooks/useCompactViewport";
 import { useDocumentScrollLock } from "../hooks/useDocumentScrollLock";
@@ -30,7 +45,10 @@ import { TOUCH_PROXY_OFFSET_CSS_PX } from "../mobileConfiguratorGeometry";
 import { TouchDragProxy } from "./TouchDragProxy";
 import type { CatalogProduct } from "@/lib/products/types";
 import type { SpaceImageSession, LightingAnalysis } from "@/lib/imageApi";
-import { ProductModelRenderer } from "@/lib/visualization/modelRenderer";
+import {
+  ProductModelRenderer,
+  type ModelPresentationOptions,
+} from "@/lib/visualization/modelRenderer";
 import { getWorkspaceDefinition } from "@/lib/visualization/workspaceDefinitionCache";
 import {
   GlassAppearanceMode,
@@ -44,7 +62,12 @@ import {
   PlacedOverlay,
   QuadrilateralCorners,
   ManualOcclusionPolygon,
+  CompatibleAddon,
 } from "@/lib/visualization/types";
+import { calculateAddonBOM, type AddonBOMResult } from "@/lib/pricing/addonPricingEngine";
+import { getCompatibleAddonsForProduct } from "@/lib/admin/products/addonMutations";
+
+export type AddonSelectionType = "none" | "screen" | "grill";
 import {
   homographyToCssMatrix3d,
   denormalizeCorners,
@@ -298,16 +321,129 @@ export function ProductModelWorkspace({
   const [includeSill, setIncludeSill] = useState(
     initialConfiguration?.includeSill ?? true,
   );
+  const [selectedAddon, setSelectedAddon] = useState<AddonSelectionType>(() => {
+    if (initialConfiguration?.selectedAddon) {
+      return initialConfiguration.selectedAddon;
+    }
+    const raw = initialConfiguration?.visualParameterValues?.selected_addon as Record<string, unknown> | undefined;
+    if (raw?.type === "screen" || raw?.type === "grill") {
+      return raw.type;
+    }
+    return "none";
+  });
+  const [addonAlumFinish, setAddonAlumFinish] = useState<string>(() => {
+    if (initialConfiguration?.addonAluminumFinish) {
+      return initialConfiguration.addonAluminumFinish;
+    }
+    const raw = initialConfiguration?.visualParameterValues?.selected_addon as Record<string, unknown> | undefined;
+    if (typeof raw?.finish === "string" && raw.finish) {
+      return raw.finish;
+    }
+    return "analok";
+  });
   const [panelCount, setPanelCount] = useState<number>(
     initialConfiguration?.panelCount ?? 2,
   );
   const [structuralWaiver, setStructuralWaiver] = useState<boolean>(
     initialConfiguration?.structuralWaiver ?? false,
   );
+  const [selectedMaterials, setSelectedMaterials] = useState<Record<string, string>>(() => {
+    if (initialConfiguration?.selectedMaterials) {
+      return initialConfiguration.selectedMaterials;
+    }
+    if (structuralDefinition) {
+      return getDefaultMaterialSelections(structuralDefinition);
+    }
+    return {};
+  });
+  const [hasExplicitOverrides, setHasExplicitOverrides] = useState<boolean>(false);
+  const [isMobileFinishesSheetOpen, setIsMobileFinishesSheetOpen] = useState(false);
   const [isGuardrailModalOpen, setIsGuardrailModalOpen] = useState<boolean>(false);
   const [guardrailValidation, setGuardrailValidation] = useState<EngineeringValidationResult | null>(null);
   const [isMeasurementModalOpen, setIsMeasurementModalOpen] = useState(false);
   const [measurementEntries, setMeasurementEntries] = useState<MeasurementConfirmationEntry[]>([]);
+
+  // Admin-configured compatible add-ons for the active product (IMP-MS67, IMP-MS69)
+  const [asyncAddonsList, setAsyncAddonsList] = useState<CompatibleAddon[]>([]);
+
+  useEffect(() => {
+    if (structuralDefinition?.compatibleAddons && structuralDefinition.compatibleAddons.length > 0) {
+      return;
+    }
+    const productId = structuralDefinition?.product.productId;
+    if (!productId) {
+      return;
+    }
+    let cancelled = false;
+    getCompatibleAddonsForProduct(productId)
+      .then((bindings) => {
+        if (!cancelled && bindings && bindings.length > 0) {
+          setAsyncAddonsList(
+            bindings.map((b) => ({
+              id: b.id || b.addonProductId,
+              parentProductId: b.parentProductId,
+              addonProductId: b.addonProductId,
+              addonType: b.addonType,
+              isDefaultEnabled: b.isDefaultEnabled,
+              displayOrder: b.displayOrder,
+              addonProduct: b.addonProduct,
+            }))
+          );
+        }
+      })
+      .catch((err: unknown) => {
+        console.warn("Failed to load compatible add-ons for workspace product:", err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [structuralDefinition?.product.productId, structuralDefinition?.compatibleAddons]);
+
+  const compatibleAddonsList = (structuralDefinition?.compatibleAddons && structuralDefinition.compatibleAddons.length > 0)
+    ? structuralDefinition.compatibleAddons
+    : asyncAddonsList;
+
+  const screenAddons = useMemo(
+    () => compatibleAddonsList.filter((a) => a.addonType === "screen"),
+    [compatibleAddonsList]
+  );
+  const grillAddons = useMemo(
+    () => compatibleAddonsList.filter((a) => a.addonType === "grill"),
+    [compatibleAddonsList]
+  );
+  const hasScreenConfigured = screenAddons.length > 0;
+  const hasGrillConfigured = grillAddons.length > 0;
+  const hasCompatibleAddons = hasScreenConfigured || hasGrillConfigured;
+
+  // Track specific chosen add-on product ID
+  const [selectedAddonProductId, setSelectedAddonProductId] = useState<string | null>(() => {
+    if (initialConfiguration?.addonProductId) {
+      return initialConfiguration.addonProductId;
+    }
+    const raw = initialConfiguration?.visualParameterValues?.selected_addon as Record<string, unknown> | undefined;
+    if (raw && typeof raw.addon_product_id === "string") {
+      return raw.addon_product_id;
+    }
+    return null;
+  });
+
+  // Reconcile effective add-on selection if active product does not support current choice
+  const effectiveSelectedAddon: AddonSelectionType =
+    (selectedAddon === "screen" && !hasScreenConfigured && compatibleAddonsList.length > 0) ||
+    (selectedAddon === "grill" && !hasGrillConfigured && compatibleAddonsList.length > 0)
+      ? "none"
+      : selectedAddon;
+
+  const activeCompatibleAddon = useMemo(() => {
+    if (effectiveSelectedAddon === "none") return null;
+    const list = effectiveSelectedAddon === "screen" ? screenAddons : grillAddons;
+    if (selectedAddonProductId) {
+      const found = list.find((a) => a.addonProductId === selectedAddonProductId);
+      if (found) return found;
+    }
+    return list[0] ?? null;
+  }, [effectiveSelectedAddon, screenAddons, grillAddons, selectedAddonProductId]);
+
   const pendingComparisonOverlaysRef = useRef<PlacedOverlay[]>([]);
 
   // Fiducial Paper Calibration and Grounded Scale State (IMP-MS47, IMP-MS49)
@@ -424,6 +560,20 @@ export function ProductModelWorkspace({
     );
     return String(initialDims.heightCm);
   });
+
+  // Real-time Dedicated Add-on Parametric BOM Calculation (Sub-50ms sync)
+  const addonBOM = useMemo<AddonBOMResult | null>(() => {
+    if (effectiveSelectedAddon === "none") return null;
+    const widthValCm = Number(widthCm) || DEFAULT_PRODUCT_WIDTH_CM;
+    const heightValCm = Number(heightCm) || DEFAULT_PRODUCT_HEIGHT_CM;
+    return calculateAddonBOM({
+      addonType: effectiveSelectedAddon,
+      widthMm: widthValCm * 10,
+      heightMm: heightValCm * 10,
+    });
+  }, [effectiveSelectedAddon, widthCm, heightCm]);
+
+  const addonPrice = addonBOM?.finalAddonPrice ?? 0;
   const [thicknessMm, setThicknessMm] = useState(
     initialConfiguration?.thicknessMm
       ? String(initialConfiguration.thicknessMm)
@@ -616,6 +766,184 @@ export function ProductModelWorkspace({
   const [isOutlineMeasurementPaused, setIsOutlineMeasurementPaused] = useState(false);
   const [isSnapshotApplied, setIsSnapshotApplied] = useState(false);
   const [isCapturingSnapshot, setIsCapturingSnapshot] = useState(false);
+
+  useEffect(() => {
+    if (structuralDefinition) {
+      queueMicrotask(() => {
+        setSelectedMaterials((prev) => {
+          if (Object.keys(prev).length === 0) {
+            return getDefaultMaterialSelections(structuralDefinition);
+          }
+          const compKeys = new Set(structuralDefinition.components.map((c) => c.componentKey));
+          const hasMatch = Object.keys(prev).some((k) => compKeys.has(k));
+          if (!hasMatch) {
+            return getDefaultMaterialSelections(structuralDefinition);
+          }
+          return prev;
+        });
+      });
+    }
+  }, [structuralDefinition]);
+
+  const [allRawMaterials, setAllRawMaterials] = useState<RawMaterial[]>([]);
+
+  useEffect(() => {
+    let isMounted = true;
+    getRawMaterials({ is_active: true })
+      .then((mats) => {
+        if (isMounted && mats.length > 0) {
+          setAllRawMaterials(mats);
+        }
+      })
+      .catch((err) => {
+        console.warn("Could not load all raw materials for part picker:", err);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const candidateMaterialsMap = useMemo(() => {
+    return getAllCandidateMaterialsMap(structuralDefinition, allRawMaterials);
+  }, [structuralDefinition, allRawMaterials]);
+
+  const materialCustomizationGroups = useMemo(() => {
+    if (!structuralDefinition) return [];
+    return buildMaterialCustomizationGroups(structuralDefinition, selectedMaterials);
+  }, [structuralDefinition, selectedMaterials]);
+
+  const getFinishHexColor = useCallback((finishId: string): string => {
+    const option = ALUMINUM_FINISH_OPTIONS.find((o) => o.id === finishId);
+    if (option) return option.previewHex;
+    return resolveSwatchColor(finishId);
+  }, []);
+
+  const applyWorkspacePresentation = useCallback((overrides?: Partial<ModelPresentationOptions>) => {
+    if (!mvpRendererRef.current) return;
+
+    const currentOptions: ModelPresentationOptions = {
+      aluminumFinish: overrides?.aluminumFinish ?? normalizeAluminumFinish(alumFinish),
+      glassAppearance: overrides?.glassAppearance ?? glassAppearance,
+      glassColor: overrides?.glassColor ?? glassColor,
+      glassThicknessMm: overrides?.glassThicknessMm ?? glassThicknessMm,
+      includeSill: overrides?.includeSill ?? includeSill,
+      activeAddon: overrides?.activeAddon ?? selectedAddon,
+      addonProductId: overrides?.addonProductId ?? selectedAddonProductId,
+      addonAluminumFinish: overrides?.addonAluminumFinish ?? addonAlumFinish,
+      addonConfig: {
+        finishColor: getFinishHexColor(overrides?.addonAluminumFinish ?? addonAlumFinish),
+        zOffsetMm: 18,
+      },
+    };
+
+    // 1. Update 3D scene materials in real time (< 16ms)
+    mvpRendererRef.current.updatePresentation(currentOptions);
+
+    // 2. Immediate 2D canvas blit
+    if (mvpCanvasRef.current) {
+      const isPlanar = Boolean(perspectiveCorners);
+      const sourceCanvas = mvpRendererRef.current.render(yaw, pitch, isPlanar);
+      if (sourceCanvas) {
+        const ctx = mvpCanvasRef.current.getContext("2d");
+        if (ctx) {
+          ctx.clearRect(0, 0, mvpCanvasRef.current.width, mvpCanvasRef.current.height);
+          ctx.drawImage(
+            sourceCanvas,
+            0,
+            0,
+            sourceCanvas.width,
+            sourceCanvas.height,
+            0,
+            0,
+            mvpCanvasRef.current.width,
+            mvpCanvasRef.current.height,
+          );
+        }
+      }
+    }
+
+    // 3. Mark skipPreparedBuildRef to prevent redundant debounced loadModel() rebuilds
+    const nextBuildKey = `${structuralDefinition?.product.productId}:${widthCm}:${heightCm}:${panelCount}:${currentOptions.includeSill}:${currentOptions.activeAddon}:${currentOptions.addonAluminumFinish}:${currentOptions.aluminumFinish}:${currentOptions.glassAppearance}:${currentOptions.glassColor}:${currentOptions.glassThicknessMm}`;
+    skipPreparedBuildRef.current = nextBuildKey;
+
+    // 4. Invalidate model revision for outline measurement and UI updates
+    setModelRevision((prev) => prev + 1);
+  }, [
+    alumFinish,
+    glassAppearance,
+    glassColor,
+    glassThicknessMm,
+    includeSill,
+    selectedAddon,
+    selectedAddonProductId,
+    addonAlumFinish,
+    getFinishHexColor,
+    perspectiveCorners,
+    yaw,
+    pitch,
+    structuralDefinition,
+    widthCm,
+    heightCm,
+    panelCount,
+  ]);
+
+  const handleSelectMaterialOption = useCallback(
+    (group: MaterialCustomizationGroup, option: MaterialCustomizationOption) => {
+      if (!structuralDefinition) return;
+      const nextSelections = applyGroupSelection(
+        group,
+        option,
+        selectedMaterials,
+        structuralDefinition,
+      );
+      setSelectedMaterials(nextSelections);
+      setHasExplicitOverrides(true);
+
+      if (mvpRendererRef.current) {
+        mvpRendererRef.current.updateCustomMaterials(nextSelections, candidateMaterialsMap);
+        setModelRevision((prev) => prev + 1);
+      }
+    },
+    [structuralDefinition, selectedMaterials, candidateMaterialsMap],
+  );
+
+  const handleSelectPartMaterial = useCallback(
+    (componentKey: string, rawMaterialId: string) => {
+      setHasExplicitOverrides(true);
+      setSelectedMaterials((prev) => {
+        const next = {
+          ...prev,
+          [componentKey]: rawMaterialId,
+        };
+        if (mvpRendererRef.current) {
+          mvpRendererRef.current.updateCustomMaterials(next, candidateMaterialsMap);
+          if (mvpCanvasRef.current) {
+            const isPlanar = Boolean(perspectiveCorners);
+            const sourceCanvas = mvpRendererRef.current.render(yaw, pitch, isPlanar);
+            if (sourceCanvas) {
+              const ctx = mvpCanvasRef.current.getContext("2d");
+              if (ctx) {
+                ctx.clearRect(0, 0, mvpCanvasRef.current.width, mvpCanvasRef.current.height);
+                ctx.drawImage(sourceCanvas, 0, 0, sourceCanvas.width, sourceCanvas.height, 0, 0, mvpCanvasRef.current.width, mvpCanvasRef.current.height);
+              }
+            }
+          }
+        }
+        setModelRevision((r) => r + 1);
+        return next;
+      });
+    },
+    [candidateMaterialsMap, perspectiveCorners, yaw, pitch],
+  );
+
+  const handleResetMaterialsToDefaults = useCallback(() => {
+    if (!structuralDefinition) return;
+    const defaultSelections = getDefaultMaterialSelections(structuralDefinition);
+    setSelectedMaterials(defaultSelections);
+    setHasExplicitOverrides(false);
+
+    applyWorkspacePresentation();
+  }, [structuralDefinition, applyWorkspacePresentation]);
 
   useEffect(() => {
     overlayX.set(overlayPosition.x);
@@ -834,16 +1162,63 @@ export function ProductModelWorkspace({
   const glassControlsDisabled = materialCapabilities?.hasGlass === false;
 
   const handleGlassTypeChange = useCallback((nextType: GlassTypeKey) => {
+    const nextAppearance = mapGlassTypeToAppearanceMode(nextType);
     setGlassType(nextType);
-    setGlassAppearance(mapGlassTypeToAppearanceMode(nextType));
-  }, []);
+    setGlassAppearance(nextAppearance);
+    applyWorkspacePresentation({ glassAppearance: nextAppearance });
+
+    // Synchronize glazing in selectedMaterials if matching glass option exists
+    if (structuralDefinition && materialCustomizationGroups.length > 0) {
+      const glazingGroup = materialCustomizationGroups.find((g) => g.presentationCategory === "Glazing");
+      if (glazingGroup) {
+        const matchedOption = glazingGroup.options.find((opt) =>
+          opt.description.toLowerCase().includes(nextType.toLowerCase())
+        );
+        if (matchedOption) {
+          const nextSelections = applyGroupSelection(
+            glazingGroup,
+            matchedOption,
+            selectedMaterials,
+            structuralDefinition,
+          );
+          setSelectedMaterials(nextSelections);
+        }
+      }
+    }
+  }, [applyWorkspacePresentation, structuralDefinition, materialCustomizationGroups, selectedMaterials]);
 
   const handleAdvancedGlassAppearanceChange = useCallback(
     (appearance: "opaque" | "outdoor") => {
       setGlassType(undefined);
       setGlassAppearance(appearance);
+      applyWorkspacePresentation({ glassAppearance: appearance });
     },
-    [],
+    [applyWorkspacePresentation],
+  );
+
+  const handleFallbackGlassAppearanceChange = useCallback(
+    (mode: GlassAppearanceMode) => {
+      setGlassAppearance(mode);
+      setGlassType(deriveGlassTypeFromAppearance(mode));
+      applyWorkspacePresentation({ glassAppearance: mode });
+    },
+    [applyWorkspacePresentation],
+  );
+
+  const handleGlassColorChange = useCallback(
+    (colorKey: GlassColorKey) => {
+      setGlassColor(colorKey);
+      applyWorkspacePresentation({ glassColor: colorKey });
+    },
+    [applyWorkspacePresentation],
+  );
+
+  const handleGlassThicknessChange = useCallback(
+    (thicknessVal: GlassThicknessMm) => {
+      setGlassThicknessMm(thicknessVal);
+      applyWorkspacePresentation({ glassThicknessMm: thicknessVal });
+    },
+    [applyWorkspacePresentation],
   );
   const supportsPerspectivePlane = isWindowProduct || isDoorProduct;
   const modelEffectStyle = useMemo(
@@ -906,25 +1281,34 @@ export function ProductModelWorkspace({
         finishType,
         glassType,
         structuralWaiver,
+        selectedMaterials,
+        rawMaterials: candidateMaterialsMap,
       });
 
-      const unitPrice = bomCalc.finalQuotation > 0
+      const baseUnitPrice = bomCalc.finalQuotation > 0
         ? bomCalc.finalQuotation
         : (structuralDefinition.product.basePrice ?? 0);
 
+      const unitPrice = baseUnitPrice + addonPrice;
       const totalPrice = unitPrice * Math.max(1, quantity);
 
       return {
+        baseUnitPrice,
+        addonPrice,
         unitPrice,
         totalPrice,
         bomCalc,
+        addonBOM,
       };
     }
 
     return {
+      baseUnitPrice: 0,
+      addonPrice: 0,
       unitPrice: 0,
       totalPrice: 0,
       bomCalc: null,
+      addonBOM: null,
     };
   }, [
     structuralDefinition,
@@ -935,8 +1319,12 @@ export function ProductModelWorkspace({
     alumFinish,
     glassAppearance,
     includeSill,
+    addonPrice,
+    addonBOM,
     panelCount,
     structuralWaiver,
+    selectedMaterials,
+    candidateMaterialsMap,
   ]);
 
   const formattedPrice = useMemo(() => {
@@ -1099,7 +1487,7 @@ export function ProductModelWorkspace({
 
   useEffect(() => {
     if (!mvpRendererRef.current || !structuralDefinition) return;
-    const buildKey = `${structuralDefinition.product.productId}:${widthCm}:${heightCm}:${panelCount}:${includeSill}:${alumFinish}:${glassAppearance}:${glassColor}:${glassThicknessMm}`;
+    const buildKey = `${structuralDefinition.product.productId}:${widthCm}:${heightCm}:${panelCount}:${includeSill}:${selectedAddon}:${selectedAddonProductId}:${addonAlumFinish}:${alumFinish}:${glassAppearance}:${glassColor}:${glassThicknessMm}`;
     if (skipPreparedBuildRef.current === buildKey) {
       skipPreparedBuildRef.current = null;
       return;
@@ -1122,10 +1510,18 @@ export function ProductModelWorkspace({
       },
       {
         aluminumFinish: alumFinish,
+        addonAluminumFinish: addonAlumFinish,
         glassAppearance,
         glassColor,
         glassThicknessMm,
         includeSill,
+        activeAddon: selectedAddon,
+        addonProductId: selectedAddonProductId,
+      },
+      {
+        selectedMaterials,
+        rawMaterialsMap: candidateMaterialsMap,
+        hasExplicitOverrides,
       },
     ).then((result) => {
       if (!result || cancelled) return;
@@ -1138,7 +1534,7 @@ export function ProductModelWorkspace({
       if (!cancelled) setProductBuildError(error instanceof Error ? error.message : "Could not build the product model.");
     });
     return () => { cancelled = true; };
-  }, [structuralDefinition, widthCm, heightCm, panelCount, includeSill, glassAppearance, glassColor, glassThicknessMm, alumFinish]);
+  }, [structuralDefinition, widthCm, heightCm, panelCount, includeSill, selectedAddon, selectedAddonProductId, addonAlumFinish, glassAppearance, glassColor, glassThicknessMm, alumFinish, hasExplicitOverrides, selectedMaterials, candidateMaterialsMap]);
 
   useEffect(() => {
     if (!mvpRendererRef.current) return;
@@ -1243,7 +1639,11 @@ export function ProductModelWorkspace({
     heightCm,
     includeSill,
     glassAppearance,
+    glassColor,
+    glassThicknessMm,
     alumFinish,
+    selectedAddon,
+    addonAlumFinish,
     effectiveLighting,
     autoRealism,
     autoShadow,
@@ -1325,6 +1725,7 @@ export function ProductModelWorkspace({
       glassThicknessMm,
       ...(glassType ? { glassType } : {}),
       includeSill,
+      selectedMaterials,
       yaw,
       pitch,
       rotateAngle,
@@ -1340,6 +1741,12 @@ export function ProductModelWorkspace({
       autoRealism,
       positionX: overlayPosition.x,
       positionY: overlayPosition.y,
+      selectedAddon: effectiveSelectedAddon,
+      addonProductId: effectiveSelectedAddon !== "none" ? (activeCompatibleAddon?.addonProductId ?? selectedAddonProductId ?? null) : null,
+      addonName: effectiveSelectedAddon !== "none" ? (activeCompatibleAddon?.addonProduct?.productName ?? addonBOM?.addonName ?? (effectiveSelectedAddon === "screen" ? "Extruded Aluminum Insect Screen" : "Architectural Security Window Grille")) : null,
+      addonPrice: effectiveSelectedAddon !== "none" ? (addonPrice || (addonBOM?.finalAddonPrice ?? 0)) : 0,
+      addonAluminumFinish: effectiveSelectedAddon !== "none" ? addonAlumFinish : undefined,
+      baseUnitPrice: realtimePricing.baseUnitPrice,
       visualParameterValues: {
         width: width * 10,
         height: height * 10,
@@ -1347,6 +1754,14 @@ export function ProductModelWorkspace({
         pane_count: panelCount,
         includeSill,
         include_sill: includeSill,
+        selected_materials: selectedMaterials,
+        selected_addon: effectiveSelectedAddon !== "none" ? {
+          type: effectiveSelectedAddon,
+          addon_product_id: activeCompatibleAddon?.addonProductId ?? selectedAddonProductId ?? null,
+          addon_name: activeCompatibleAddon?.addonProduct?.productName ?? addonBOM?.addonName ?? (effectiveSelectedAddon === "screen" ? "Extruded Aluminum Insect Screen" : "Architectural Security Window Grille"),
+          finish: addonAlumFinish,
+          price: addonPrice || (addonBOM?.finalAddonPrice ?? 0),
+        } : null,
         dimension_source: manualDimensions ? "manual_tape" : isVerifiedCalibrated ? "planar_paper_estimate" : "heuristic",
         calibration_provenance: isVerifiedCalibrated ? activeMeasurementRecord : null,
         metric_measurement: isVerifiedCalibrated ? activeMetricMeasurement : null,
@@ -1381,6 +1796,13 @@ export function ProductModelWorkspace({
     glassType,
     heightCm,
     includeSill,
+    effectiveSelectedAddon,
+    selectedAddonProductId,
+    activeCompatibleAddon,
+    addonAlumFinish,
+    addonPrice,
+    addonBOM,
+    realtimePricing.baseUnitPrice,
     isFlipped,
     overlayPosition.x,
     overlayPosition.y,
@@ -1388,6 +1810,7 @@ export function ProductModelWorkspace({
     pitch,
     quantity,
     rotateAngle,
+    selectedMaterials,
     structuralWaiver,
     thicknessMm,
     widthCm,
@@ -1471,6 +1894,34 @@ export function ProductModelWorkspace({
       setGlassColor(normalizeGlassColor(configuration.glassColor));
       setGlassThicknessMm(normalizeGlassThickness(configuration.glassThicknessMm));
       setIncludeSill(configuration.includeSill);
+      if (configuration.selectedAddon) {
+        setSelectedAddon(configuration.selectedAddon);
+      } else if (configuration.visualParameterValues?.selected_addon) {
+        const rawAddon = configuration.visualParameterValues.selected_addon as Record<string, unknown>;
+        if (rawAddon?.type === "screen" || rawAddon?.type === "grill") {
+          setSelectedAddon(rawAddon.type);
+        } else {
+          setSelectedAddon("none");
+        }
+      } else {
+        setSelectedAddon("none");
+      }
+      if (configuration.addonProductId) {
+        setSelectedAddonProductId(configuration.addonProductId);
+      } else if (configuration.visualParameterValues?.selected_addon) {
+        const rawAddon = configuration.visualParameterValues.selected_addon as Record<string, unknown>;
+        if (typeof rawAddon?.addon_product_id === "string") {
+          setSelectedAddonProductId(rawAddon.addon_product_id);
+        }
+      }
+      if (configuration.addonAluminumFinish) {
+        setAddonAlumFinish(configuration.addonAluminumFinish);
+      } else if (configuration.visualParameterValues?.selected_addon) {
+        const rawAddon = configuration.visualParameterValues.selected_addon as Record<string, unknown>;
+        if (typeof rawAddon?.finish === "string" && rawAddon.finish) {
+          setAddonAlumFinish(rawAddon.finish);
+        }
+      }
       setYaw(configuration.yaw);
       setPitch(configuration.pitch);
       setRotateAngle(configuration.rotateAngle);
@@ -1496,11 +1947,52 @@ export function ProductModelWorkspace({
         width: Math.round(baseSize.width * scale),
         height: Math.round(baseSize.height * scale),
       });
+      if (configuration.selectedMaterials) {
+        setSelectedMaterials(configuration.selectedMaterials);
+        const defaults = structuralDefinition ? getDefaultMaterialSelections(structuralDefinition) : {};
+        const hasDiff = Object.entries(configuration.selectedMaterials).some(
+          ([key, val]) => defaults[key] !== val,
+        );
+        setHasExplicitOverrides(hasDiff);
+      } else if (structuralDefinition) {
+        setSelectedMaterials(getDefaultMaterialSelections(structuralDefinition));
+        setHasExplicitOverrides(false);
+      }
+
+      if (mvpRendererRef.current) {
+        const nextPres = {
+          aluminumFinish: normalizeAluminumFinish(configuration.aluminumFinish),
+          glassAppearance: configuration.glassAppearance,
+          glassColor: normalizeGlassColor(configuration.glassColor),
+          glassThicknessMm: normalizeGlassThickness(configuration.glassThicknessMm),
+          includeSill: configuration.includeSill,
+          activeAddon: (configuration.selectedAddon as AddonSelectionType) ?? "none",
+          addonAluminumFinish: configuration.addonAluminumFinish ?? "analok",
+          addonConfig: {
+            finishColor: getFinishHexColor(configuration.addonAluminumFinish ?? "analok"),
+            zOffsetMm: 18,
+          },
+        };
+        mvpRendererRef.current.updatePresentation(nextPres);
+        if (mvpCanvasRef.current) {
+          const isPlanar = Boolean(configuration.perspectiveFitCorners);
+          const sourceCanvas = mvpRendererRef.current.render(configuration.yaw ?? 0, configuration.pitch ?? 0, isPlanar);
+          if (sourceCanvas) {
+            const ctx = mvpCanvasRef.current.getContext("2d");
+            if (ctx) {
+              ctx.clearRect(0, 0, mvpCanvasRef.current.width, mvpCanvasRef.current.height);
+              ctx.drawImage(sourceCanvas, 0, 0, sourceCanvas.width, sourceCanvas.height, 0, 0, mvpCanvasRef.current.width, mvpCanvasRef.current.height);
+            }
+          }
+        }
+      }
+      setModelRevision((prev) => prev + 1);
+
       setSelectedProduct(true);
       setIsSnapshotApplied(false);
       setProductInstanceRevision((current) => current + 1);
     },
-    [overlayX, overlayY, setManualDimensions, setSavedMeasurementEvidence],
+    [overlayX, overlayY, setManualDimensions, setSavedMeasurementEvidence, structuralDefinition, getFinishHexColor],
   );
 
   const handleReset = (e: React.MouseEvent) => {
@@ -1555,6 +2047,11 @@ export function ProductModelWorkspace({
             thicknessMm: Number(definition.parameters.find((parameter) => parameter.parameterKey === "thickness")?.defaultValue) || 3,
             panelCount: Number(definition.parameters.find((parameter) => parameter.parameterKey === "pane_count")?.defaultValue) || 2,
             includeSill: Boolean(definition.template.baseConfiguration.includeSill ?? true),
+            selectedAddon: intent.mode === "change" ? selectedAddon : "none",
+            addonProductId: intent.mode === "change" && selectedAddon !== "none" ? (activeCompatibleAddon?.addonProductId ?? null) : null,
+            addonName: intent.mode === "change" && selectedAddon !== "none" ? (activeCompatibleAddon?.addonProduct?.productName ?? addonBOM?.addonName ?? null) : null,
+            addonPrice: intent.mode === "change" ? addonPrice : 0,
+            addonAluminumFinish: intent.mode === "change" ? (selectedAddon !== "none" ? addonAlumFinish : "analok") : "analok",
             structuralWaiver: false,
             aluminumFinish: "white",
             glassAppearance: "clear",
@@ -1581,6 +2078,13 @@ export function ProductModelWorkspace({
               pane_count: Number(definition.parameters.find((parameter) => parameter.parameterKey === "pane_count")?.defaultValue) || 2,
               includeSill: Boolean(definition.template.baseConfiguration.includeSill ?? true),
               include_sill: Boolean(definition.template.baseConfiguration.includeSill ?? true),
+              selected_addon: intent.mode === "change" && selectedAddon !== "none" ? {
+                type: selectedAddon,
+                addon_product_id: activeCompatibleAddon?.addonProductId ?? null,
+                addon_name: activeCompatibleAddon?.addonProduct?.productName ?? addonBOM?.addonName ?? null,
+                finish: addonAlumFinish,
+                price: addonPrice,
+              } : null,
               dimension_source: "default_heuristic",
               metric_measurement: null, calibration_provenance: null,
               paper_standard: activeCalibrationMeta?.paperStandard ?? null,
@@ -1598,16 +2102,18 @@ export function ProductModelWorkspace({
         include_sill: targetConfiguration.includeSill,
       }, {
         aluminumFinish: normalizeAluminumFinish(targetConfiguration.aluminumFinish),
+        addonAluminumFinish: targetConfiguration.addonAluminumFinish,
         glassAppearance: targetConfiguration.glassAppearance,
         glassColor: targetConfiguration.glassColor ?? "clear",
         glassThicknessMm: targetConfiguration.glassThicknessMm ?? 6,
         includeSill: targetConfiguration.includeSill,
+        activeAddon: targetConfiguration.selectedAddon,
       });
       if (requestId !== switchRequestRef.current || roomId !== assetSessionRef.current) {
         renderer.releasePreparedModel(prepared);
         return;
       }
-      skipPreparedBuildRef.current = `${intent.productId}:${targetConfiguration.widthCm}:${targetConfiguration.heightCm}:${targetConfiguration.panelCount}:${targetConfiguration.includeSill}:${normalizeAluminumFinish(targetConfiguration.aluminumFinish)}:${targetConfiguration.glassAppearance}:${targetConfiguration.glassColor}:${targetConfiguration.glassThicknessMm}`;
+      skipPreparedBuildRef.current = `${intent.productId}:${targetConfiguration.widthCm}:${targetConfiguration.heightCm}:${targetConfiguration.panelCount}:${targetConfiguration.includeSill}:${targetConfiguration.selectedAddon ?? "none"}:${targetConfiguration.addonAluminumFinish ?? "analok"}:${normalizeAluminumFinish(targetConfiguration.aluminumFinish)}:${targetConfiguration.glassAppearance}:${targetConfiguration.glassColor}:${targetConfiguration.glassThicknessMm}`;
       suppressNextConfigurationPublicationRef.current = true;
       appliedTemplateDefaultsRef.current = intent.productId;
       renderer.commitPreparedModel(prepared);
@@ -1670,7 +2176,7 @@ export function ProductModelWorkspace({
       }
     }
 
-    const nextActiveOverlayId = `active-${product.id}-${crypto.randomUUID()}`;
+    const nextActiveOverlayId = `active-${product.id}-${generateSafeUUID()}`;
     if (product.id !== currentProductId) {
       let maxNum = activeLayerNumber;
       for (const overlay of placedOverlays) maxNum = Math.max(maxNum, overlay.layerNumber ?? 0);
@@ -1801,11 +2307,16 @@ export function ProductModelWorkspace({
         ? { ...projectedModelBounds }
         : (mvpCanvasRef.current ? getVisibleModelBounds(mvpCanvasRef.current) ?? undefined : undefined);
       const capturedCanvas = await captureCurrentProductCanvas();
-      const activeImageDataUrl = capturedCanvas.toDataURL("image/png");
+      let activeImageDataUrl = "";
+      try {
+        activeImageDataUrl = capturedCanvas.toDataURL("image/png");
+      } catch (exportErr) {
+        console.warn("[Snapshot] Could not extract data URL from captured canvas:", exportErr);
+      }
       const currentFinish = normalizeAluminumFinish(
         currentConfiguration.aluminumFinish,
       );
-      const uniqueOverlayId = crypto.randomUUID();
+      const uniqueOverlayId = generateSafeUUID();
       const posX = overlayX.get();
       const posY = overlayY.get();
       const prodId = currentProductId ?? structuralDefinition?.product.productId ?? "";
@@ -1847,31 +2358,36 @@ export function ProductModelWorkspace({
       } : undefined;
       const variationAssetRefs = assetSessionId && variationRenderRecipe
         ? await (async () => {
-            const fingerprint = createVariationRenderFingerprint(
-              variationRenderRecipe,
-              currentFinish,
-            );
-            const captured = await captureTransparentCanvasBlob(capturedCanvas);
-            const asset = await variationAssetStore.put({
-              cacheKey: createVariationCacheKey(
-                assetSessionId,
-                uniqueOverlayId,
+            try {
+              const fingerprint = createVariationRenderFingerprint(
+                variationRenderRecipe,
                 currentFinish,
+              );
+              const captured = await captureTransparentCanvasBlob(capturedCanvas);
+              const asset = await variationAssetStore.put({
+                cacheKey: createVariationCacheKey(
+                  assetSessionId,
+                  uniqueOverlayId,
+                  currentFinish,
+                  fingerprint,
+                ),
+                assetSessionId,
+                overlayId: uniqueOverlayId,
+                finish: currentFinish,
                 fingerprint,
-              ),
-              assetSessionId,
-              overlayId: uniqueOverlayId,
-              finish: currentFinish,
-              fingerprint,
-              width: captured.width,
-              height: captured.height,
-              mimeType: captured.mimeType,
-              blob: captured.blob,
-              createdAt: Date.now(),
-              lastAccessedAt: Date.now(),
-              priority: "visible",
-            });
-            return { [currentFinish]: asset };
+                width: captured.width,
+                height: captured.height,
+                mimeType: captured.mimeType,
+                blob: captured.blob,
+                createdAt: Date.now(),
+                lastAccessedAt: Date.now(),
+                priority: "visible",
+              });
+              return { [currentFinish]: asset };
+            } catch (assetErr) {
+              console.warn("[Snapshot] Could not generate or store variation asset ref:", assetErr);
+              return undefined;
+            }
           })()
         : undefined;
 
@@ -2029,6 +2545,7 @@ export function ProductModelWorkspace({
 
   const handleSaveSnapshot = useCallback(async () => {
     setIsCapturingSnapshot(true);
+    setProductBuildError(null);
 
     try {
       const dataUrl = await captureCurrentSnapshot();
@@ -2056,6 +2573,7 @@ export function ProductModelWorkspace({
 
   const handleContinueToComparison = useCallback(async () => {
     setIsCapturingSnapshot(true);
+    setProductBuildError(null);
 
     try {
       await captureCurrentSnapshot();
@@ -2080,6 +2598,13 @@ export function ProductModelWorkspace({
         currentConfiguration,
       );
 
+      if (entries.length === 0) {
+        onPlacedOverlaysChange?.(comparisonOverlays);
+        onComparisonOverlaysChange?.(comparisonOverlays);
+        router.push("/comparison");
+        return;
+      }
+
       setMeasurementEntries(entries);
       setIsMeasurementModalOpen(true);
     } catch (error) {
@@ -2097,8 +2622,11 @@ export function ProductModelWorkspace({
     createPlacedOverlay,
     currentConfiguration,
     heightCm,
+    onComparisonOverlaysChange,
+    onPlacedOverlaysChange,
     placedOverlays,
     realtimePricing.totalPrice,
+    router,
     selectedProduct,
     structuralDefinition,
     widthCm,
@@ -2419,6 +2947,61 @@ export function ProductModelWorkspace({
   const handleIncludeSillToggle = useCallback(() => {
     setIncludeSill((current) => !current);
   }, []);
+
+  const handleAddonSelect = useCallback((type: AddonSelectionType) => {
+    // Strict mutual exclusion: selecting screen unselects grill; selecting grill unselects screen; selecting none clears both.
+    setSelectedAddon(type);
+    if (type === "screen") {
+      const isAlreadyScreen = screenAddons.some((a) => a.addonProductId === selectedAddonProductId);
+      if (!isAlreadyScreen && screenAddons.length > 0) {
+        setSelectedAddonProductId(screenAddons[0].addonProductId);
+      }
+    } else if (type === "grill") {
+      const isAlreadyGrill = grillAddons.some((a) => a.addonProductId === selectedAddonProductId);
+      if (!isAlreadyGrill && grillAddons.length > 0) {
+        setSelectedAddonProductId(grillAddons[0].addonProductId);
+      }
+    } else {
+      setSelectedAddonProductId(null);
+    }
+  }, [screenAddons, grillAddons, selectedAddonProductId]);
+
+  const handleBaseFinishSelect = useCallback((finishId: string) => {
+    const normalizedFinish = normalizeAluminumFinish(finishId);
+    setAlumFinish(normalizedFinish);
+
+    // Apply 3D presentation in real time (< 16ms)
+    applyWorkspacePresentation({ aluminumFinish: normalizedFinish });
+
+    // Synchronize framing in selectedMaterials if alternate raw materials exist
+    if (structuralDefinition && materialCustomizationGroups.length > 0) {
+      const framingGroup = materialCustomizationGroups.find((g) => g.presentationCategory === "Framing");
+      if (framingGroup) {
+        const normalizedTarget = normalizedFinish.toLowerCase();
+        const matchedOption = framingGroup.options.find((opt) => {
+          const optFinish = (opt.finishType || opt.description || "").toLowerCase();
+          return optFinish.includes(normalizedTarget) ||
+            (normalizedTarget === "white" && optFinish.includes("white")) ||
+            (normalizedTarget === "analok" && optFinish.includes("analok"));
+        });
+        if (matchedOption) {
+          const nextSelections = applyGroupSelection(
+            framingGroup,
+            matchedOption,
+            selectedMaterials,
+            structuralDefinition,
+          );
+          setSelectedMaterials(nextSelections);
+        }
+      }
+    }
+  }, [applyWorkspacePresentation, structuralDefinition, materialCustomizationGroups, selectedMaterials]);
+
+  const handleAddonFinishSelect = useCallback((finishId: string) => {
+    setAddonAlumFinish(finishId);
+    applyWorkspacePresentation({ addonAluminumFinish: finishId });
+  }, [applyWorkspacePresentation]);
+
 
   const toggleAccordion = (title: string) => {
     setOpenAccordions((prev) =>
@@ -3131,6 +3714,7 @@ export function ProductModelWorkspace({
               {/* Background Space Image */}
               <img
                 src={bgImage}
+                crossOrigin="anonymous"
                 alt="Space image background"
                 draggable={false}
                 className="w-full h-full object-cover select-none"
@@ -3342,6 +3926,7 @@ export function ProductModelWorkspace({
                           ) : (
                             <img
                               src={productOverlayImage}
+                              crossOrigin="anonymous"
                               alt="Selected Product Overlay"
                               draggable={false}
                               className="w-full h-full object-cover transition-transform duration-300 select-none pointer-events-none"
@@ -3447,6 +4032,7 @@ export function ProductModelWorkspace({
                       <img
                         key={object.id}
                         src={bgImage}
+                        crossOrigin="anonymous"
                         alt=""
                         aria-hidden="true"
                         className="absolute inset-0 h-full w-full object-contain select-none"
@@ -3465,6 +4051,7 @@ export function ProductModelWorkspace({
                     {manualMaskDataUrl && (
                       <img
                         src={bgImage}
+                        crossOrigin="anonymous"
                         alt=""
                         aria-hidden="true"
                         className="absolute inset-0 h-full w-full object-contain select-none"
@@ -3998,7 +4585,7 @@ export function ProductModelWorkspace({
                         className="overflow-hidden"
                       >
                         <div className="px-6 pb-6 flex flex-col gap-6">
-                          {/* Aluminum Finish */}
+                          {/* Aluminum Finish (IMP-MS70) */}
                           <div className="flex flex-col gap-2">
                             <span className="text-[#c3c3c3] text-base font-normal">Aluminum Finish</span>
                             <div className="grid max-h-72 grid-cols-1 gap-1 overflow-y-auto pr-1">
@@ -4006,7 +4593,7 @@ export function ProductModelWorkspace({
                                 <button
                                   key={option.id}
                                   type="button"
-                                  onClick={() => setAlumFinish(option.id)}
+                                  onClick={() => handleBaseFinishSelect(option.id)}
                                   aria-pressed={alumFinish === option.id}
                                   className={`flex items-center gap-2 rounded-[8px] border px-2 py-2 text-left text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3] ${alumFinish === option.id ? "border-[#07b6d3] bg-white" : "border-transparent hover:bg-neutral-50"}`}
                                 >
@@ -4039,7 +4626,7 @@ export function ProductModelWorkspace({
                                 <legend className="text-[#c3c3c3] text-base font-normal">Glass Color</legend>
                                 <div className="mt-2 flex flex-wrap gap-2">
                                   {GLASS_COLOR_OPTIONS.map((option) => (
-                                    <button key={option.id} type="button" onClick={() => setGlassColor(option.id)} aria-pressed={glassColor === option.id} className={`flex items-center gap-1.5 rounded-[20px] border border-[#c3c3c3] px-3 py-1.5 text-base transition-colors ${glassColor === option.id ? "bg-[#0f1422] text-white" : "text-[#0f1422]"}`}><span className="size-3.5 rounded-full border border-black/15" style={{ backgroundColor: option.previewHex }} aria-hidden="true" />{option.label}</button>
+                                    <button key={option.id} type="button" onClick={() => handleGlassColorChange(option.id)} aria-pressed={glassColor === option.id} className={`flex items-center gap-1.5 rounded-[20px] border border-[#c3c3c3] px-3 py-1.5 text-base transition-colors ${glassColor === option.id ? "bg-[#0f1422] text-white" : "text-[#0f1422]"}`}><span className="size-3.5 rounded-full border border-black/15" style={{ backgroundColor: option.previewHex }} aria-hidden="true" />{option.label}</button>
                                   ))}
                                 </div>
                               </fieldset>
@@ -4047,7 +4634,7 @@ export function ProductModelWorkspace({
                                 <legend className="text-[#c3c3c3] text-base font-normal">Glass Thickness</legend>
                                 <div className="mt-2 flex flex-wrap gap-2">
                                   {GLASS_THICKNESS_OPTIONS.map((option) => (
-                                    <button key={option.value} type="button" onClick={() => setGlassThicknessMm(option.value)} aria-pressed={glassThicknessMm === option.value} className={`rounded-[20px] border border-[#c3c3c3] px-3 py-1.5 text-base transition-colors ${glassThicknessMm === option.value ? "bg-[#0f1422] text-white" : "text-[#0f1422]"}`}>{option.label}</button>
+                                    <button key={option.value} type="button" onClick={() => handleGlassThicknessChange(option.value)} aria-pressed={glassThicknessMm === option.value} className={`rounded-[20px] border border-[#c3c3c3] px-3 py-1.5 text-base transition-colors ${glassThicknessMm === option.value ? "bg-[#0f1422] text-white" : "text-[#0f1422]"}`}>{option.label}</button>
                                   ))}
                                 </div>
                               </fieldset>
@@ -4058,7 +4645,7 @@ export function ProductModelWorkspace({
                               <span className="text-[#c3c3c3] text-base font-normal">Glass Appearance</span>
                               <div className="grid grid-cols-2 gap-2.5">
                                 {(["clear", "frosted", "opaque", "reflective", "outdoor"] as GlassAppearanceMode[]).map((mode) => (
-                                  <button key={mode} type="button" onClick={() => { setGlassAppearance(mode); setGlassType(deriveGlassTypeFromAppearance(mode)); }} aria-pressed={glassAppearance === mode} className={`rounded-[20px] border border-[#c3c3c3] px-3 py-1.5 text-base capitalize transition-colors ${glassAppearance === mode ? "bg-[#0f1422] text-white" : "text-[#0f1422]"}`}>{mode}</button>
+                                  <button key={mode} type="button" onClick={() => handleFallbackGlassAppearanceChange(mode)} aria-pressed={glassAppearance === mode} className={`rounded-[20px] border border-[#c3c3c3] px-3 py-1.5 text-base capitalize transition-colors ${glassAppearance === mode ? "bg-[#0f1422] text-white" : "text-[#0f1422]"}`}>{mode}</button>
                                 ))}
                               </div>
                             </div>
@@ -4078,6 +4665,25 @@ export function ProductModelWorkspace({
                                 />
                               </button>
                             </label>
+                          )}
+
+                          {/* Choose Raw Materials for Each Part (IMP-MS70) */}
+                          {structuralDefinition?.components && structuralDefinition.components.length > 0 && (
+                            <div className="pt-1">
+                              <PartMaterialsPicker
+                                components={structuralDefinition.components}
+                                selectedMaterials={selectedMaterials}
+                                candidateMaterialsMap={candidateMaterialsMap}
+                                allRawMaterials={allRawMaterials}
+                                onSelectPartMaterial={handleSelectPartMaterial}
+                                onResetToDefaults={handleResetMaterialsToDefaults}
+                                dimensionsMm={{
+                                  widthMm: (parseFloat(widthCm) || 180) * 10,
+                                  heightMm: (parseFloat(heightCm) || 150) * 10,
+                                  panelCount,
+                                }}
+                              />
+                            </div>
                           )}
 
                           {/* Dimension */}
@@ -4153,6 +4759,266 @@ export function ProductModelWorkspace({
                     )}
                   </AnimatePresence>
                 </div>
+
+                {/* 4. Add-on Options Accordion (IMP-MS70) */}
+                {hasCompatibleAddons && (
+                  <div className="bg-[#f5f5f5]/30 border border-white rounded-[20px] shadow-[0px_0px_5px_0px_rgba(0,0,0,0.25)] overflow-hidden transition-colors">
+                    <button
+                      type="button"
+                      onClick={() => toggleAccordion("Add-on Options")}
+                      className="w-full p-6 flex justify-between items-center text-left cursor-pointer"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="text-[#0f1422] text-[18px] font-medium tracking-[-0.342px]">
+                          Add-on Options
+                        </span>
+                        {selectedAddon !== "none" && (
+                          <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-cyan-50 text-[#07b6d3] border border-cyan-200">
+                            +₱{addonPrice.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        )}
+                      </div>
+                      <motion.div
+                        animate={{ rotate: openAccordions.includes("Add-on Options") ? 180 : 0 }}
+                        transition={{ duration: 0.25, ease: "easeInOut" }}
+                      >
+                        <Image
+                          src="/visualization/dropdown-btn.svg"
+                          alt="Toggle"
+                          width={20}
+                          height={20}
+                        />
+                      </motion.div>
+                    </button>
+
+                    <AnimatePresence initial={false}>
+                      {openAccordions.includes("Add-on Options") && (
+                        <motion.div
+                          key="addon-content"
+                          initial={{ height: 0 }}
+                          animate={{ height: "auto" }}
+                          exit={{ height: 0 }}
+                          transition={{ duration: 0.3, ease: [0.04, 0.62, 0.23, 0.98] }}
+                          className="overflow-hidden"
+                        >
+                          <div className="px-6 pb-6 flex flex-col gap-5">
+                            {/* Attachment Segmented Toggle */}
+                            <div className="flex flex-col gap-2">
+                              <span className="text-[#0f1422] text-sm font-medium">Modular Attachment</span>
+                              <div className={`grid ${hasScreenConfigured && hasGrillConfigured ? "grid-cols-3" : "grid-cols-2"} gap-1.5 p-1 bg-neutral-100 rounded-[12px]`}>
+                                <button
+                                  type="button"
+                                  onClick={() => handleAddonSelect("none")}
+                                  aria-pressed={selectedAddon === "none"}
+                                  className={`py-2 px-3 text-sm rounded-[10px] font-medium transition-all cursor-pointer ${
+                                    selectedAddon === "none"
+                                      ? "bg-[#0f1422] text-white shadow-xs"
+                                      : "text-neutral-600 hover:text-black"
+                                  }`}
+                                >
+                                  None
+                                </button>
+
+                                {hasScreenConfigured && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleAddonSelect("screen")}
+                                    aria-pressed={selectedAddon === "screen"}
+                                    className={`py-2 px-3 text-sm rounded-[10px] font-medium transition-all cursor-pointer ${
+                                      selectedAddon === "screen"
+                                        ? "bg-[#0f1422] text-white shadow-xs"
+                                        : "text-neutral-600 hover:text-black"
+                                    }`}
+                                  >
+                                    Screen
+                                  </button>
+                                )}
+
+                                {hasGrillConfigured && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleAddonSelect("grill")}
+                                    aria-pressed={selectedAddon === "grill"}
+                                    className={`py-2 px-3 text-sm rounded-[10px] font-medium transition-all cursor-pointer ${
+                                      selectedAddon === "grill"
+                                        ? "bg-[#0f1422] text-white shadow-xs"
+                                        : "text-neutral-600 hover:text-black"
+                                    }`}
+                                  >
+                                    Grille
+                                  </button>
+                                )}
+                              </div>
+                              <p className="text-[11px] text-neutral-500">
+                                Choose an optional secondary addition. Only one attachment can be mounted at a time.
+                              </p>
+                            </div>
+
+                            {/* Multiple Screen / Mesh Option Selection */}
+                            {effectiveSelectedAddon === "screen" && screenAddons.length > 1 && (
+                              <div className="flex flex-col gap-2 pt-3 border-t border-neutral-200/60">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[#0f1422] text-sm font-medium">Screen / Mesh Option</span>
+                                  <span className="text-[11px] text-neutral-500">{screenAddons.length} available</span>
+                                </div>
+                                <div className="flex flex-col gap-1.5">
+                                  {screenAddons.map((addon) => {
+                                    const isSelected = activeCompatibleAddon?.addonProductId === addon.addonProductId;
+                                    return (
+                                      <button
+                                        key={addon.addonProductId}
+                                        type="button"
+                                        onClick={() => setSelectedAddonProductId(addon.addonProductId)}
+                                        aria-pressed={isSelected}
+                                        className={cn(
+                                          "flex items-center justify-between p-3 rounded-[10px] border text-left transition-all cursor-pointer",
+                                          isSelected
+                                            ? "border-[#07b6d3] bg-[#07b6d3]/5 ring-1 ring-[#07b6d3]/30"
+                                            : "border-neutral-200 bg-white hover:border-neutral-300"
+                                        )}
+                                      >
+                                        <div className="flex flex-col gap-0.5">
+                                          <span className="text-xs font-semibold text-[#0f1422]">
+                                            {addon.addonProduct?.productName ?? "Insect Screen Attachment"}
+                                          </span>
+                                          {addon.template?.templateName && (
+                                            <span className="text-[11px] text-neutral-500">
+                                              Template: {addon.template.templateName}
+                                            </span>
+                                          )}
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                          {addon.addonProduct?.basePrice ? (
+                                            <span className="text-xs font-medium text-neutral-700">
+                                              ₱{addon.addonProduct.basePrice.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                                            </span>
+                                          ) : null}
+                                          <div
+                                            className={cn(
+                                              "size-4 rounded-full border flex items-center justify-center",
+                                              isSelected ? "border-[#07b6d3] bg-[#07b6d3]" : "border-neutral-300"
+                                            )}
+                                          >
+                                            {isSelected && <div className="size-1.5 rounded-full bg-white" />}
+                                          </div>
+                                        </div>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Multiple Grille Option Selection */}
+                            {effectiveSelectedAddon === "grill" && grillAddons.length > 1 && (
+                              <div className="flex flex-col gap-2 pt-3 border-t border-neutral-200/60">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[#0f1422] text-sm font-medium">Grille Style Option</span>
+                                  <span className="text-[11px] text-neutral-500">{grillAddons.length} available</span>
+                                </div>
+                                <div className="flex flex-col gap-1.5">
+                                  {grillAddons.map((addon) => {
+                                    const isSelected = activeCompatibleAddon?.addonProductId === addon.addonProductId;
+                                    return (
+                                      <button
+                                        key={addon.addonProductId}
+                                        type="button"
+                                        onClick={() => setSelectedAddonProductId(addon.addonProductId)}
+                                        aria-pressed={isSelected}
+                                        className={cn(
+                                          "flex items-center justify-between p-3 rounded-[10px] border text-left transition-all cursor-pointer",
+                                          isSelected
+                                            ? "border-[#07b6d3] bg-[#07b6d3]/5 ring-1 ring-[#07b6d3]/30"
+                                            : "border-neutral-200 bg-white hover:border-neutral-300"
+                                        )}
+                                      >
+                                        <div className="flex flex-col gap-0.5">
+                                          <span className="text-xs font-semibold text-[#0f1422]">
+                                            {addon.addonProduct?.productName ?? "Security Grille Attachment"}
+                                          </span>
+                                          {addon.template?.templateName && (
+                                            <span className="text-[11px] text-neutral-500">
+                                              Template: {addon.template.templateName}
+                                            </span>
+                                          )}
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                          {addon.addonProduct?.basePrice ? (
+                                            <span className="text-xs font-medium text-neutral-700">
+                                              ₱{addon.addonProduct.basePrice.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                                            </span>
+                                          ) : null}
+                                          <div
+                                            className={cn(
+                                              "size-4 rounded-full border flex items-center justify-center",
+                                              isSelected ? "border-[#07b6d3] bg-[#07b6d3]" : "border-neutral-300"
+                                            )}
+                                          >
+                                            {isSelected && <div className="size-1.5 rounded-full bg-white" />}
+                                          </div>
+                                        </div>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Single configured addon label feedback */}
+                            {effectiveSelectedAddon === "screen" && screenAddons.length === 1 && activeCompatibleAddon?.addonProduct?.productName && (
+                              <div className="flex items-center justify-between text-xs text-neutral-600 bg-neutral-50 px-3 py-2 rounded-[8px] border border-neutral-200">
+                                <span className="font-medium text-neutral-800">Attachment:</span>
+                                <span>{activeCompatibleAddon.addonProduct.productName}</span>
+                              </div>
+                            )}
+                            {effectiveSelectedAddon === "grill" && grillAddons.length === 1 && activeCompatibleAddon?.addonProduct?.productName && (
+                              <div className="flex items-center justify-between text-xs text-neutral-600 bg-neutral-50 px-3 py-2 rounded-[8px] border border-neutral-200">
+                                <span className="font-medium text-neutral-800">Attachment:</span>
+                                <span>{activeCompatibleAddon.addonProduct.productName}</span>
+                              </div>
+                            )}
+
+                            {/* Independent Add-on Frame Finish */}
+                            {selectedAddon !== "none" && (
+                              <div className="flex flex-col gap-2 pt-3 border-t border-neutral-200/60">
+                                <span className="text-[#0f1422] text-sm font-medium">
+                                  {selectedAddon === "screen" ? "Screen Frame Finish" : "Grille Bar Finish"}
+                                </span>
+                                <div className="grid grid-cols-2 gap-2">
+                                  {workspaceFinishOptions.map((option) => {
+                                    const isSelected = addonAlumFinish === option.id;
+                                    return (
+                                      <button
+                                        key={option.id}
+                                        type="button"
+                                        onClick={() => handleAddonFinishSelect(option.id)}
+                                        aria-pressed={isSelected}
+                                        className={`flex items-center gap-2 rounded-[10px] border p-2 text-left transition-all cursor-pointer ${
+                                          isSelected
+                                            ? "border-[#07b6d3] bg-[#07b6d3]/5 ring-1 ring-[#07b6d3]/30"
+                                            : "border-neutral-200 bg-white hover:border-neutral-300"
+                                        }`}
+                                      >
+                                        <span
+                                          className="size-4 shrink-0 rounded-full border border-black/15"
+                                          style={{ backgroundColor: option.previewHex }}
+                                          aria-hidden="true"
+                                        />
+                                        <span className="truncate text-xs font-medium text-[#0f1422]">
+                                          {option.label}
+                                        </span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                )}
 
                 {/* 4. Object Aware Occlusion Accordion */}
                 <div className="bg-[#f5f5f5]/30 border border-white rounded-[20px] shadow-[0px_0px_5px_0px_rgba(0,0,0,0.25)] overflow-hidden transition-colors">
@@ -4302,6 +5168,15 @@ export function ProductModelWorkspace({
           <button type="button" onClick={handleFlip} className="min-h-11 rounded-[14px] bg-white/10 px-3 text-xs text-white focus-visible:outline-2 focus-visible:outline-[#07b6d3]">Flip</button>
           <button type="button" onClick={handleReset} className="min-h-11 rounded-[14px] bg-white/10 px-3 text-xs text-white focus-visible:outline-2 focus-visible:outline-[#07b6d3]">Reset</button>
           <button type="button" onClick={handleRemove} className="min-h-11 rounded-[14px] bg-[#c50000] px-3 text-xs text-white focus-visible:outline-2 focus-visible:outline-white">Remove</button>
+          {materialCustomizationGroups.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setIsMobileFinishesSheetOpen(true)}
+              className="min-h-11 rounded-[14px] bg-[#07b6d3] px-3 text-xs font-medium text-white focus-visible:outline-2 focus-visible:outline-white"
+            >
+              Finishes
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setIsMobileControlsOpen((open) => !open)}
@@ -4315,43 +5190,57 @@ export function ProductModelWorkspace({
       )}
 
       {/* ── Bottom Step Navigation Bar ── */}
-      <div className={shouldLockMobileEditor ? "hidden" : "bg-[#f5f5f5] w-full rounded-[20px] p-5 flex flex-col sm:flex-row items-center justify-between gap-4 select-none shadow-sm mt-4"}>
-        {/* Back Button */}
-        <button
-          type="button"
-          onClick={onBack}
-          className="w-full sm:w-auto bg-[#0f1422] hover:bg-black text-white font-normal text-base sm:text-[20px] tracking-[-0.38px] leading-[1.4] px-6 py-3.5 rounded-[25px] transition-colors cursor-pointer text-center"
-        >
-          Back
-        </button>
-
-        {/* Action Buttons Right */}
-        <div className="w-full sm:w-auto flex flex-col sm:flex-row items-center gap-3 sm:gap-5">
+      <div className={shouldLockMobileEditor ? "hidden" : "flex flex-col gap-2 mt-4 select-none"}>
+        {productBuildError && (
+          <div className="w-full rounded-[14px] border border-red-200 bg-red-50 p-4 text-sm text-red-700 flex items-center justify-between shadow-xs">
+            <span>{productBuildError}</span>
+            <button
+              type="button"
+              onClick={() => setProductBuildError(null)}
+              className="ml-3 text-red-500 hover:text-red-800 font-semibold text-xs cursor-pointer"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+        <div className="bg-[#f5f5f5] w-full rounded-[20px] p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm">
+          {/* Back Button */}
           <button
             type="button"
-            disabled={isCapturingSnapshot || !selectedProduct}
-            onClick={handleSaveSnapshot}
-            className="w-full sm:w-auto bg-transparent border border-[#0f1422] hover:bg-neutral-100 text-[#0f1422] font-normal text-base sm:text-[20px] tracking-[-0.38px] leading-[1.4] px-6 py-3.5 rounded-[25px] transition-colors cursor-pointer text-center"
+            onClick={onBack}
+            className="w-full sm:w-auto bg-[#0f1422] hover:bg-black text-white font-normal text-base sm:text-[20px] tracking-[-0.38px] leading-[1.4] px-6 py-3.5 rounded-[25px] transition-colors cursor-pointer text-center"
           >
-            Save Snapshot
+            Back
           </button>
-          <Button
-            type="button"
-            disabled={isCapturingSnapshot || !selectedProduct}
-            onClick={handleContinueToComparison}
-            variant="lightGradWhiteText"
-            value="Continue to Comparison"
-            leftIcon={null}
-            rightIcon={
-              <Image
-                src="/right_arrow.svg"
-                width={25}
-                height={25}
-                alt="Arrow right"
-              />
-            }
-            className="w-full sm:w-auto justify-center"
-          />
+
+          {/* Action Buttons Right */}
+          <div className="w-full sm:w-auto flex flex-col sm:flex-row items-center gap-3 sm:gap-5">
+            <button
+              type="button"
+              disabled={isCapturingSnapshot || (!selectedProduct && placedOverlays.length === 0)}
+              onClick={handleSaveSnapshot}
+              className="w-full sm:w-auto bg-transparent border border-[#0f1422] hover:bg-neutral-100 disabled:opacity-50 disabled:cursor-not-allowed text-[#0f1422] font-normal text-base sm:text-[20px] tracking-[-0.38px] leading-[1.4] px-6 py-3.5 rounded-[25px] transition-colors cursor-pointer text-center"
+            >
+              {isCapturingSnapshot ? "Saving Snapshot..." : "Save Snapshot"}
+            </button>
+            <Button
+              type="button"
+              disabled={isCapturingSnapshot || (!selectedProduct && placedOverlays.length === 0)}
+              onClick={handleContinueToComparison}
+              variant="lightGradWhiteText"
+              value={isCapturingSnapshot ? "Preparing Comparison..." : "Continue to Comparison"}
+              leftIcon={null}
+              rightIcon={
+                <Image
+                  src="/right_arrow.svg"
+                  width={25}
+                  height={25}
+                  alt="Arrow right"
+                />
+              }
+              className="w-full sm:w-auto justify-center"
+            />
+          </div>
         </div>
       </div>
 
@@ -4363,6 +5252,42 @@ export function ProductModelWorkspace({
         onAcknowledgeAndProceed={handleAcknowledgeAndProceed}
         onClose={() => setIsGuardrailModalOpen(false)}
       />
+
+      {/* ── Mobile Finishes and Materials Bottom Sheet (IMP-MS66, DSD-UI4) ── */}
+      {isMobileFinishesSheetOpen && materialCustomizationGroups.length > 0 && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:p-4">
+          <div className="w-full max-w-lg rounded-t-[20px] bg-white p-5 shadow-2xl max-h-[85vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-neutral-200">
+              <h3 className="text-base font-semibold text-[#0f1422]">Finishes and Materials</h3>
+              <button
+                type="button"
+                onClick={() => setIsMobileFinishesSheetOpen(false)}
+                className="rounded-full p-1 text-neutral-500 hover:bg-neutral-100"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="pt-4">
+              <MaterialCustomizerPanel
+                groups={materialCustomizationGroups}
+                selectedMaterials={selectedMaterials}
+                onSelectOption={handleSelectMaterialOption}
+                onResetDefaults={handleResetMaterialsToDefaults}
+                isMobile={true}
+              />
+            </div>
+            <div className="mt-4 pt-3 border-t border-neutral-100">
+              <button
+                type="button"
+                onClick={() => setIsMobileFinishesSheetOpen(false)}
+                className="w-full rounded-[14px] bg-[#0f1422] py-3 text-sm font-medium text-white"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Measurement Confirmation Modal (MS-08, IMP-MS47, IMP-MS50) ── */}
       {isMeasurementModalOpen && (
@@ -4680,23 +5605,31 @@ async function captureWorkspaceCanvas({
 
   if (backgroundImage) {
     for (const object of activeOcclusionObjects) {
-      await drawMaskedBackgroundLayer({
-        outputWidth: canvasBounds.width,
-        outputHeight: canvasBounds.height,
-        context,
-        backgroundImage,
-        maskUrl: object.mask_url,
-      });
+      try {
+        await drawMaskedBackgroundLayer({
+          outputWidth: canvasBounds.width,
+          outputHeight: canvasBounds.height,
+          context,
+          backgroundImage,
+          maskUrl: object.mask_url,
+        });
+      } catch (occlusionErr) {
+        console.warn("[Snapshot] Occlusion layer failed to load, skipping:", occlusionErr);
+      }
     }
 
     if (manualMaskDataUrl) {
-      await drawMaskedBackgroundLayer({
-        outputWidth: canvasBounds.width,
-        outputHeight: canvasBounds.height,
-        context,
-        backgroundImage,
-        maskUrl: manualMaskDataUrl,
-      });
+      try {
+        await drawMaskedBackgroundLayer({
+          outputWidth: canvasBounds.width,
+          outputHeight: canvasBounds.height,
+          context,
+          backgroundImage,
+          maskUrl: manualMaskDataUrl,
+        });
+      } catch (manualMaskErr) {
+        console.warn("[Snapshot] Manual occlusion mask failed to load:", manualMaskErr);
+      }
     }
   }
 
@@ -4753,15 +5686,19 @@ async function drawSnapshotOverlay({
       if (hasGeneratedProduct && generatedCanvas) {
         offCtx.drawImage(generatedCanvas, 0, 0, offscreen.width, offscreen.height);
       } else {
-        const fallbackProductImage = await loadSnapshotImage(fallbackProductImageUrl);
-        drawObjectCoverImage(
-          offCtx,
-          fallbackProductImage,
-          0,
-          0,
-          offscreen.width,
-          offscreen.height,
-        );
+        try {
+          const fallbackProductImage = await loadSnapshotImage(fallbackProductImageUrl);
+          drawObjectCoverImage(
+            offCtx,
+            fallbackProductImage,
+            0,
+            0,
+            offscreen.width,
+            offscreen.height,
+          );
+        } catch (fallbackErr) {
+          console.warn("[Snapshot] Could not draw fallback warped product image:", fallbackErr);
+        }
       }
       offCtx.restore();
 
@@ -4795,15 +5732,19 @@ async function drawSnapshotOverlay({
       height,
     );
   } else {
-    const fallbackProductImage = await loadSnapshotImage(fallbackProductImageUrl);
-    drawObjectCoverImage(
-      context,
-      fallbackProductImage,
-      -width / 2,
-      -height / 2,
-      width,
-      height,
-    );
+    try {
+      const fallbackProductImage = await loadSnapshotImage(fallbackProductImageUrl);
+      drawObjectCoverImage(
+        context,
+        fallbackProductImage,
+        -width / 2,
+        -height / 2,
+        width,
+        height,
+      );
+    } catch (fallbackErr) {
+      console.warn("[Snapshot] Could not draw fallback product image:", fallbackErr);
+    }
   }
 
   context.restore();
@@ -4943,17 +5884,96 @@ function getCanvasImageSourceSize(image: CanvasImageSource) {
   };
 }
 
-function loadSnapshotImage(src: string) {
+function generateSafeUUID(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
+function loadSnapshotImage(src: string, timeoutMs: number = 9000): Promise<HTMLImageElement> {
   return new Promise<HTMLImageElement>((resolve, reject) => {
+    if (!src) {
+      reject(new Error("Unable to load an empty image source for the snapshot."));
+      return;
+    }
+
     const image = new window.Image();
+    let isSettled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const cleanup = () => {
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      image.onload = null;
+      image.onerror = null;
+    };
+
+    const attemptFetchFallback = async () => {
+      try {
+        const response = await fetch(src, { mode: "cors" });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const blob = await response.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        const fallbackImg = new window.Image();
+        fallbackImg.onload = () => {
+          cleanup();
+          resolve(fallbackImg);
+        };
+        fallbackImg.onerror = () => {
+          cleanup();
+          URL.revokeObjectURL(objectUrl);
+          reject(new Error("Unable to load an image for the snapshot."));
+        };
+        fallbackImg.src = objectUrl;
+      } catch {
+        cleanup();
+        reject(new Error("Unable to load an image for the snapshot."));
+      }
+    };
 
     if (/^https?:\/\//i.test(src)) {
       image.crossOrigin = "anonymous";
     }
 
-    image.onload = () => resolve(image);
-    image.onerror = () => reject(new Error("Unable to load an image for the snapshot."));
+    timer = setTimeout(() => {
+      if (!isSettled) {
+        isSettled = true;
+        cleanup();
+        reject(new Error("Image loading timed out for snapshot."));
+      }
+    }, timeoutMs);
+
+    image.onload = () => {
+      if (isSettled) return;
+      isSettled = true;
+      cleanup();
+      resolve(image);
+    };
+
+    image.onerror = () => {
+      if (isSettled) return;
+      if (/^https?:\/\//i.test(src)) {
+        void attemptFetchFallback();
+      } else {
+        isSettled = true;
+        cleanup();
+        reject(new Error("Unable to load an image for the snapshot."));
+      }
+    };
+
     image.src = src;
+    if (image.complete && image.naturalWidth > 0) {
+      isSettled = true;
+      cleanup();
+      resolve(image);
+    }
   });
 }
 

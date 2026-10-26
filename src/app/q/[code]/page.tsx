@@ -121,6 +121,13 @@ export default async function PublicQuotationPage({ params }: PublicQuotationPag
             <h1 className="text-3xl sm:text-4xl font-semibold text-[#0f1422]">
               {data.productName}
             </h1>
+            {data.addonName && data.selectedAddon && data.selectedAddon !== "none" && !data.isMultiProduct && (
+              <div className="flex items-center gap-2 mt-1">
+                <span className="text-xs font-semibold text-sky-800 bg-sky-100/90 border border-sky-300 px-3 py-1 rounded-full">
+                  Included Add-on: {data.addonName} {data.addonAluminumFinish ? `(${data.addonAluminumFinish})` : ""} {typeof data.addonPrice === "number" && data.addonPrice > 0 ? `(+₱${data.addonPrice.toLocaleString("en-PH", { minimumFractionDigits: 2 })})` : ""}
+                </span>
+              </div>
+            )}
             <p className="text-neutral-600 text-sm">
               Prepared for <span className="font-medium text-[#0f1422]">{data.customerName}</span> · Created on {data.createdAtFormatted}
             </p>
@@ -201,6 +208,13 @@ export default async function PublicQuotationPage({ params }: PublicQuotationPag
                       <span className="text-[#0f1422] font-medium text-right">
                         {item.hasSill ? "Standard" : "Flush (No Sill)"}
                       </span>
+
+                      <span className="text-neutral-500">Add-on:</span>
+                      <span className="text-[#0f1422] font-medium text-right">
+                        {item.selectedAddon && item.selectedAddon !== "none"
+                          ? `${item.addonName || (item.selectedAddon === "screen" ? "Insect Screen" : "Security Grille")}${item.addonAluminumFinish ? ` (${item.addonAluminumFinish})` : ""}${typeof item.addonPrice === "number" && item.addonPrice > 0 ? ` (+₱${item.addonPrice.toLocaleString("en-PH", { minimumFractionDigits: 2 })})` : ""}`
+                          : "None"}
+                      </span>
                     </div>
 
                     {item.structuralWaiver && (
@@ -212,7 +226,14 @@ export default async function PublicQuotationPage({ params }: PublicQuotationPag
                   </div>
 
                   <div className="flex items-baseline justify-between border-t border-neutral-200/70 pt-3 mt-1 bg-white/70 -mx-5 -mb-5 p-4 rounded-b-[20px]">
-                    <span className="text-xs text-neutral-500">Unit Price: ₱{item.unitPrice.toLocaleString("en-PH", { minimumFractionDigits: 2 })}</span>
+                    <div className="flex flex-col">
+                      <span className="text-xs text-neutral-500">Unit Price: ₱{item.unitPrice.toLocaleString("en-PH", { minimumFractionDigits: 2 })}</span>
+                      {item.selectedAddon && item.selectedAddon !== "none" && typeof item.addonPrice === "number" && item.addonPrice > 0 && (
+                        <span className="text-[11px] text-neutral-400">
+                          Base: ₱{(item.baseUnitPrice ?? (item.unitPrice - item.addonPrice)).toLocaleString("en-PH", { minimumFractionDigits: 2 })} + Add-on: ₱{item.addonPrice.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                        </span>
+                      )}
+                    </div>
                     <span className="font-bold text-sm text-emerald-800">
                       ₱{item.totalPrice.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
                     </span>
@@ -291,6 +312,27 @@ export default async function PublicQuotationPage({ params }: PublicQuotationPag
                   <span className="text-[#0f1422] font-medium text-right">
                     {data.hasSill ? "Standard Sill Track" : "Flush Base (No Sill)"}
                   </span>
+
+                  <span className="text-neutral-500">Add-on Attachment:</span>
+                  <span className="text-[#0f1422] font-medium text-right">
+                    {data.selectedAddon && data.selectedAddon !== "none"
+                      ? `${data.addonName || (data.selectedAddon === "screen" ? "Insect Screen" : "Security Grille")}${data.addonAluminumFinish ? ` (${data.addonAluminumFinish})` : ""}${typeof data.addonPrice === "number" && data.addonPrice > 0 ? ` (+₱${data.addonPrice.toLocaleString("en-PH", { minimumFractionDigits: 2 })})` : ""}`
+                      : "None"}
+                  </span>
+
+                  {data.selectedAddon && data.selectedAddon !== "none" && typeof data.addonPrice === "number" && data.addonPrice > 0 && (
+                    <>
+                      <span className="text-neutral-500">Base Fixture Price:</span>
+                      <span className="text-[#0f1422] font-medium text-right">
+                        ₱{(data.baseUnitPrice ?? (data.totalEstimatedAmount - data.addonPrice)).toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                      </span>
+
+                      <span className="text-neutral-500">Add-on Price:</span>
+                      <span className="text-emerald-700 font-medium text-right">
+                        +₱{data.addonPrice.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                      </span>
+                    </>
+                  )}
                 </>
               )}
             </div>

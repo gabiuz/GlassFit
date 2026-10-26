@@ -75,7 +75,55 @@ function termsAppendix(): string {
 }
 
 function canonicalGroupsTable(item: QuotationDocumentViewModel["items"][number], finalPrice: number): string {
-  return `<section class="item-card item-card--compact"><header><h3>${escapeHtml(item.productName)}</h3><span class="numeric-value">Qty: ${item.quantity}</span></header><div class="fixture-specs"><span><b>Dimensions:</b> <span class="dimension-value">${escapeHtml(item.dimensionsFormatted)}</span></span><span><b>Measurement:</b> ${escapeHtml(dimensionSourceLabel(item.dimensionSource))}</span><span><b>Panels:</b> ${item.panelCount}</span><span><b>Finish:</b> ${escapeHtml(item.finishLabel)}</span><span><b>Glass:</b> ${escapeHtml(item.glassLabel)}</span><span><b>Sill:</b> ${item.hasSill ? "Standard sill" : "Flush sill omitted"}</span></div>${item.structuralWaiver ? `<p class="item-waiver">Structural waiver attached for this fixture.</p>` : ""}<div class="item-subtotal"><span>Final item price</span><strong class="currency">${money(finalPrice)}</strong></div></section>`;
+  const isLegacyDimensionSpec = Boolean(
+    !item.specificationSummary ||
+    item.specificationSummary === "Legacy quotation item" ||
+    /\d+cm\s*×\s*\d+cm/i.test(item.specificationSummary)
+  );
+  const customSpecs = !isLegacyDimensionSpec
+    ? `<span><b>Specifications:</b> ${escapeHtml(item.specificationSummary!)}</span>`
+    : "";
+
+  const addonFinishSuffix = item.addonAluminumFinish
+    ? ` (${item.addonAluminumFinish.charAt(0).toUpperCase() + item.addonAluminumFinish.slice(1)})`
+    : "";
+  const hasAddon = Boolean(
+    (item.selectedAddon && item.selectedAddon !== "none") ||
+    (item.addonPrice ?? 0) > 0 ||
+    Boolean(item.addonName)
+  );
+  const addonLabel = hasAddon
+    ? (item.addonName
+        ? `${item.addonName}${addonFinishSuffix}`
+        : item.selectedAddon && item.selectedAddon !== "none"
+          ? (item.selectedAddon === "screen" ? `Extruded Aluminum Insect Screen${addonFinishSuffix}` : `Architectural Security Window Grille${addonFinishSuffix}`)
+          : `Custom Add-on Attachment${addonFinishSuffix}`)
+    : "None";
+
+  const addonPriceFormatted = hasAddon && (item.addonPrice ?? 0) > 0 ? (item.addonPrice ?? 0) : 0;
+  const addonSpec = hasAddon
+    ? `<span><b>Add-on Attachment:</b> ${escapeHtml(addonLabel)}${addonPriceFormatted > 0 ? ` (+${money(addonPriceFormatted)})` : ""}</span>`
+    : `<span><b>Add-on Attachment:</b> None</span>`;
+
+  const basePrice = item.baseUnitPrice ?? (item.unitPrice - addonPriceFormatted);
+  const addonNameShort = item.selectedAddon === "screen"
+    ? `Insect Screen${addonFinishSuffix}`
+    : item.selectedAddon === "grill"
+      ? `Security Grille${addonFinishSuffix}`
+      : (item.addonName ? `${item.addonName}${addonFinishSuffix}` : "Add-on");
+
+  const subtotalContent = hasAddon && addonPriceFormatted > 0
+    ? `<div class="item-pricing-breakdown" style="display:flex;flex-direction:column;gap:3px;font-size:11px;color:#475569;">
+        <span>Base Window Fixture: ${money(basePrice)}</span>
+        <span>Add-on (${escapeHtml(addonNameShort)}): ${money(addonPriceFormatted)}</span>
+      </div>
+      <div style="text-align:right;">
+        <span>Fixture Total</span>
+        <strong class="currency">${money(finalPrice)}</strong>
+      </div>`
+    : `<span>Final item price</span><strong class="currency">${money(finalPrice)}</strong>`;
+
+  return `<section class="item-card item-card--compact"><header><h3>${escapeHtml(item.productName)}</h3><span class="numeric-value">Qty: ${item.quantity}</span></header><div class="fixture-specs"><span><b>Dimensions:</b> <span class="dimension-value">${escapeHtml(item.dimensionsFormatted)}</span></span><span><b>Measurement:</b> ${escapeHtml(dimensionSourceLabel(item.dimensionSource))}</span><span><b>Panels:</b> ${item.panelCount}</span><span><b>Finish:</b> ${escapeHtml(item.finishLabel)}</span><span><b>Glass:</b> ${escapeHtml(item.glassLabel)}</span><span><b>Sill:</b> ${item.hasSill ? "Standard sill" : "Flush sill omitted"}</span>${addonSpec}${customSpecs}</div>${item.structuralWaiver ? `<p class="item-waiver">Structural waiver attached for this fixture.</p>` : ""}<div class="item-subtotal">${subtotalContent}</div></section>`;
 }
 
 interface QuotationRenderContext {
@@ -113,6 +161,33 @@ function canonicalToLegacy(view: QuotationDocumentViewModel): QuotationPdfMetada
     hasSill: view.hasSill,
     structuralWaiver: view.structuralWaiver,
     bomResult: placeholder,
+    items: view.items.map((it) => ({
+      itemId: it.itemId,
+      productId: it.productId ?? "",
+      productName: it.productName,
+      productType: it.productType,
+      variantName: it.variantName,
+      specSummary: it.specificationSummary,
+      dimensionsFormatted: it.dimensionsFormatted,
+      widthMm: it.widthMm,
+      heightMm: it.heightMm,
+      panelCount: it.panelCount,
+      hasSill: it.hasSill,
+      structuralWaiver: it.structuralWaiver,
+      finishType: it.finishLabel,
+      glassType: it.glassLabel,
+      quantity: it.quantity,
+      unitPrice: it.unitPrice,
+      totalPrice: it.calculatedSubtotal,
+      imageUrl: it.imageSource ?? "",
+      bomResult: placeholder,
+      selectedAddon: it.selectedAddon,
+      addonProductId: it.addonProductId,
+      addonName: it.addonName,
+      addonPrice: it.addonPrice,
+      baseUnitPrice: it.baseUnitPrice,
+      addonAluminumFinish: it.addonAluminumFinish,
+    })),
     operatingDays: view.operatingDays,
     operatingHours: view.operatingHours,
     operatingScheduleFormatted: view.operatingScheduleFormatted,
@@ -160,9 +235,52 @@ function generateLegacyQuotationPdfHtml(metadata: QuotationPdfMetadata, context:
   const reference = metadata.referenceCode ? `<div>Reference: ${escapeHtml(metadata.referenceCode)}${metadata.shareableUrl ? ` · <a class="long-string" href="${escapeHtml(metadata.shareableUrl)}">${escapeHtml(metadata.shareableUrl)}</a>` : ""}</div>` : "";
   const waiver = anyWaiver ? `<aside class="waiver-banner"><strong>Notice: NSCP 2015 Structural Span Waiver Attached</strong><p>This configuration exceeds standard Series 798 2-panel structural width recommendations (W &gt;= 2400mm). The customer has acknowledged potential operational stiffness and wind-load deflection risks.</p></aside>` : "";
   const estimatorName = metadata.estimatorName?.trim() || "R.R.D. Aluminum & Glass Works";
+  const singleItem = metadata.items?.[0];
+  const singleHasAddon = Boolean(
+    (singleItem?.selectedAddon && singleItem.selectedAddon !== "none") ||
+    (singleItem?.addonPrice ?? 0) > 0 ||
+    Boolean(singleItem?.addonName)
+  );
+  const singleAddonFinishSuffix = singleItem?.addonAluminumFinish
+    ? ` (${singleItem.addonAluminumFinish.charAt(0).toUpperCase() + singleItem.addonAluminumFinish.slice(1)})`
+    : "";
+  const singleAddonPriceFormatted = singleHasAddon && (singleItem?.addonPrice ?? 0) > 0 ? (singleItem?.addonPrice ?? 0) : 0;
+  const singleAddonLabel = singleHasAddon
+    ? `${singleItem?.addonName || (singleItem?.selectedAddon === "screen" ? "Extruded Aluminum Insect Screen" : "Architectural Security Window Grille")}${singleAddonFinishSuffix}${singleAddonPriceFormatted > 0 ? ` (+${money(singleAddonPriceFormatted)})` : ""}`
+    : null;
+
   const fixtures = isMulti ? items.map((item, index) => {
     const itemImage = sanitizeImageSource(item.imageUrl, origins);
-    return `<section class="item-card"><header><h3>Fixture ${index + 1}: ${escapeHtml(item.productName)}</h3><span class="numeric-value">Qty: ${item.quantity}</span></header>${itemImage ? snapshot(itemImage, `${item.productName} visualization preview`) : ""}<div class="fixture-specs"><span><b>Dimensions:</b> <span class="dimension-value">${item.widthMm}mm × ${item.heightMm}mm</span></span><span><b>Measurement:</b> ${escapeHtml(dimensionSourceLabel(item.dimensionSource))}</span><span><b>Panels:</b> ${item.panelCount}</span><span><b>Finish:</b> ${escapeHtml(item.finishType)}</span><span><b>Glass:</b> ${escapeHtml(item.glassType)}</span><span><b>Sill:</b> ${item.hasSill ? "Standard sill" : "Flush sill omitted"}</span></div>${item.structuralWaiver ? `<p class="item-waiver">Structural waiver attached for this fixture.</p>` : ""}${bomTable(item.bomResult, item.hasSill)}<div class="item-subtotal"><span class="quantity-price">Unit price: ${money(item.unitPrice)} × ${item.quantity}</span><strong class="currency">Fixture subtotal: ${money(item.totalPrice)}</strong></div></section>`;
+    const hasAddon = Boolean(
+      (item.selectedAddon && item.selectedAddon !== "none") ||
+      (item.addonPrice ?? 0) > 0 ||
+      Boolean(item.addonName)
+    );
+    const addonFinishSuffix = item.addonAluminumFinish
+      ? ` (${item.addonAluminumFinish.charAt(0).toUpperCase() + item.addonAluminumFinish.slice(1)})`
+      : "";
+    const addonLabel = hasAddon
+      ? (item.addonName
+          ? `${item.addonName}${addonFinishSuffix}`
+          : item.selectedAddon && item.selectedAddon !== "none"
+            ? (item.selectedAddon === "screen" ? "Extruded Aluminum Insect Screen" : "Architectural Security Window Grille")
+            : "Custom Add-on Attachment")
+      : "None";
+    const addonPriceFormatted = hasAddon && (item.addonPrice ?? 0) > 0 ? (item.addonPrice ?? 0) : 0;
+    const addonSpec = hasAddon
+      ? `<span><b>Add-on Attachment:</b> ${escapeHtml(addonLabel)}${addonPriceFormatted > 0 ? ` (+${money(addonPriceFormatted)})` : ""}</span>`
+      : `<span><b>Add-on Attachment:</b> None</span>`;
+    const basePrice = item.baseUnitPrice ?? (item.unitPrice - addonPriceFormatted);
+    const addonNameShort = item.selectedAddon === "screen"
+      ? `Insect Screen${addonFinishSuffix}`
+      : item.selectedAddon === "grill"
+        ? `Security Grille${addonFinishSuffix}`
+        : (item.addonName ? `${item.addonName}${addonFinishSuffix}` : "Add-on");
+    const subtotalBreakdown = hasAddon && addonPriceFormatted > 0
+      ? `<div class="item-pricing-breakdown" style="display:flex;flex-direction:column;gap:2px;font-size:11px;color:#475569;margin-bottom:4px;"><span>Base Window Fixture: ${money(basePrice)}</span><span>Add-on (${escapeHtml(addonNameShort)}): ${money(addonPriceFormatted)}</span></div>`
+      : "";
+
+    return `<section class="item-card"><header><h3>Fixture ${index + 1}: ${escapeHtml(item.productName)}</h3><span class="numeric-value">Qty: ${item.quantity}</span></header>${itemImage ? snapshot(itemImage, `${item.productName} visualization preview`) : ""}<div class="fixture-specs"><span><b>Dimensions:</b> <span class="dimension-value">${item.widthMm}mm × ${item.heightMm}mm</span></span><span><b>Measurement:</b> ${escapeHtml(dimensionSourceLabel(item.dimensionSource))}</span><span><b>Panels:</b> ${item.panelCount}</span><span><b>Finish:</b> ${escapeHtml(item.finishType)}</span><span><b>Glass:</b> ${escapeHtml(item.glassType)}</span><span><b>Sill:</b> ${item.hasSill ? "Standard sill" : "Flush sill omitted"}</span>${addonSpec}</div>${item.structuralWaiver ? `<p class="item-waiver">Structural waiver attached for this fixture.</p>` : ""}${bomTable(item.bomResult, item.hasSill)}<div class="item-subtotal">${subtotalBreakdown}<span class="quantity-price">Unit price: ${money(item.unitPrice)} × ${item.quantity}</span><strong class="currency">Fixture subtotal: ${money(item.totalPrice)}</strong></div></section>`;
   }).join("") : bomTable(metadata.bomResult, metadata.hasSill);
   return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>GlassFit Quotation ${escapeHtml(metadata.quotationNumber)}</title><style>
 @page { size: A4 portrait; margin: 15mm; } * { box-sizing: border-box; } html,body { min-width:0; } body { margin:0; padding:24px 16px 48px; background:#f1f5f9; color:#0f1422; font:400 13px/1.5 Arial,Helvetica,sans-serif; }
@@ -208,7 +326,7 @@ function generateLegacyQuotationPdfHtml(metadata: QuotationPdfMetadata, context:
 }
 </style></head><body><nav class="preview-toolbar no-print" aria-label="Quotation preview controls"><div><strong>Quotation preview</strong><div>${escapeHtml(metadata.quotationNumber)}</div><p class="print-guidance">For a clean Save as PDF result, disable Headers and footers in the browser print dialog when that option is available.</p></div><div class="toolbar-actions"><button class="primary" type="button" onclick="window.print()">Print / Save as PDF</button><button type="button" onclick="window.close()">Close preview</button></div></nav>
 <main class="document-sheet"><header class="document-header"><div><img class="brand-logo" src="${escapeHtml(metadata.brandLogoUrl)}" alt="GlassFit"><p>Consultation Partner: R.R.D. Aluminum &amp; Glass Works</p>${metadata.operatingScheduleFormatted ? `<div class="partner-schedule" style="margin-top:4px;font-size:11px;color:#475569;"><span>Operating Schedule: </span><strong style="color:#0f1422;">${escapeHtml(metadata.operatingScheduleFormatted)}</strong></div>` : ""}</div><div><h1>PRELIMINARY CONSULTATION ESTIMATE</h1><strong>No. ${escapeHtml(metadata.quotationNumber)}</strong><div>${escapeHtml(metadata.createdAtFormatted)}</div>${reference}${metadata.quotationValidityText ? `<div>${escapeHtml(metadata.quotationValidityText)}</div>` : ""}</div></header>
-<section class="meta-grid"><div><span>Customer</span><strong>${escapeHtml(metadata.customerName)}</strong></div>${field("Phone",metadata.customerPhone)}${field("Email",metadata.customerEmail)}${field("Site location",metadata.siteLocation)}<div><span>Project</span><strong>${escapeHtml(metadata.projectName)}</strong></div></section>${waiver}${snapshot(sanitizeImageSource(metadata.snapshotImageUrl,origins),"Client-space visualization preview")}${context.showProjectSpecifications && !isMulti ? `<div class="fixture-specs project-specifications"><span><b>Dimensions:</b> <span class="dimension-value">W: ${Math.round(metadata.bomResult.widthM * 1000)} mm × H: ${Math.round(metadata.bomResult.heightM * 1000)} mm</span></span><span><b>Panels:</b> ${metadata.bomResult.panelCount}</span><span><b>Finish:</b> ${escapeHtml(metadata.bomResult.frozenDetails.finish_type)}</span><span><b>Glass:</b> ${escapeHtml(metadata.bomResult.frozenDetails.glass_type)}</span><span><b>Sill:</b> ${metadata.hasSill ? "Standard sill" : "Bottom Sill Omitted. Net material reduction applied."}</span></div>` : ""}
+<section class="meta-grid"><div><span>Customer</span><strong>${escapeHtml(metadata.customerName)}</strong></div>${field("Phone",metadata.customerPhone)}${field("Email",metadata.customerEmail)}${field("Site location",metadata.siteLocation)}<div><span>Project</span><strong>${escapeHtml(metadata.projectName)}</strong></div></section>${waiver}${snapshot(sanitizeImageSource(metadata.snapshotImageUrl,origins),"Client-space visualization preview")}${context.showProjectSpecifications && !isMulti ? `<div class="fixture-specs project-specifications"><span><b>Dimensions:</b> <span class="dimension-value">W: ${Math.round(metadata.bomResult.widthM * 1000)} mm × H: ${Math.round(metadata.bomResult.heightM * 1000)} mm</span></span><span><b>Panels:</b> ${metadata.bomResult.panelCount}</span><span><b>Finish:</b> ${escapeHtml(metadata.bomResult.frozenDetails.finish_type)}</span><span><b>Glass:</b> ${escapeHtml(metadata.bomResult.frozenDetails.glass_type)}</span><span><b>Sill:</b> ${metadata.hasSill ? "Standard sill" : "Bottom Sill Omitted. Net material reduction applied."}</span>${singleAddonLabel ? `<span><b>Add-on Attachment:</b> ${escapeHtml(singleAddonLabel)}</span>` : ""}</div>` : ""}
 <section class="summary-card"><span>${escapeHtml(metadata.projectName)}</span><strong class="currency">${money(total)}</strong><span>Preliminary estimated total</span></section><h2>${isMulti ? `ITEMIZED FIXTURE BREAKDOWN (${items.length} FIXTURES)` : "Itemized quotation breakdown"}</h2>${fixtures}
 <table class="total-table"><tr class="grand-total-row"><td>Grand total</td><td>${money(total)}</td></tr></table>
 <section class="ocular-card"><h2>Ocular inspection checklist</h2><ul class="checklist"><li>Aperture dimensions physically measured.</li><li>Opening checked for square, plumb, and level.</li><li>Perimeter substrate inspected.</li><li>Access and work area reviewed.</li><li>Final specifications reviewed with customer.</li></ul>${metadata.operatingDays && metadata.operatingHours ? `<div class="consultation-availability" style="margin-top:14px;padding:10px 14px;background:#f8fafc;border-radius:6px;border-left:3px solid #07b6d3;font-size:11px;color:#334155;"><strong>Consultation &amp; Ocular Measurement Hours:</strong><p style="margin:4px 0 0 0;">Site visits and ocular inspections are scheduled during partner operating days (<strong>${escapeHtml(metadata.operatingDays)}</strong>) between <strong>${escapeHtml(metadata.operatingHours)}</strong>.</p></div>` : ""}<div class="signature-grid"><div class="signature-block"><div class="line"><strong>${escapeHtml(metadata.customerName)}</strong><time>${escapeHtml(metadata.createdAtFormatted)}</time></div><p>Customer signature / Printed name / Date</p></div><div class="signature-block"><div class="line"><strong>${escapeHtml(estimatorName)}</strong><time>${escapeHtml(metadata.createdAtFormatted)}</time></div><p>Estimator signature / Printed name / Date</p></div></div></section>
@@ -220,9 +338,11 @@ export function createQuotationPdfDocument(metadata: QuotationPdfMetadata): Gene
   return { quotationNumber:metadata.quotationNumber, referenceCode:metadata.referenceCode ?? "", fileName, htmlContent:generateQuotationPdfHtml(metadata), documentTitle:`GlassFit Quotation - ${metadata.quotationNumber}`, r2ObjectKey:`quotations/${metadata.quotationNumber}/${fileName}`, hasStructuralWaiver:metadata.items?.some((item)=>item.structuralWaiver) ?? metadata.structuralWaiver, totalEstimatedAmount:metadata.consolidatedSummary?.finalGrandTotal ?? metadata.bomResult.finalQuotation };
 }
 
-export function formatBookingShareMessage(options: { customerName:string; quotationNumber:string; referenceLink:string; productDescription:string; totalEstimatePhp:number; hasStructuralWaiver?:boolean }): { messageText:string; messengerUrl:string; viberUrl:string } {
+export function formatBookingShareMessage(options: { customerName: string; quotationNumber: string; referenceLink: string; productDescription: string; totalEstimatePhp: number; hasStructuralWaiver?: boolean; addonSummary?: string | null }): { messageText: string; messengerUrl: string; viberUrl: string } {
   const waiver = options.hasStructuralWaiver ? "\n(Note: Structural waiver attached for aperture span >= 2400mm)" : "";
-  const price = new Intl.NumberFormat("en-PH",{style:"currency",currency:"PHP",maximumFractionDigits:0}).format(options.totalEstimatePhp).replace("PHP","Php");
-  const messageText = `Hello R.R.D! I would like to inquire about a consultation for my customized glass and aluminum project:\n\nProduct: ${options.productDescription}\nQuotation No: ${options.quotationNumber}\nEstimated Amount: ${price}${waiver}\n\nHere is my saved reference link:\n${options.referenceLink}\n\nCan we schedule an ocular inspection and site measurement? Thank you! - ${options.customerName}`;
-  const encoded = encodeURIComponent(messageText); return { messageText, messengerUrl:`https://m.me/rrdaluminumglass?text=${encoded}`, viberUrl:`viber://forward?text=${encoded}` };
+  const addonLine = options.addonSummary ? `\nAdd-on Attachment: ${options.addonSummary}` : "";
+  const price = new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: 0 }).format(options.totalEstimatePhp).replace("PHP", "Php");
+  const messageText = `Hello R.R.D! I would like to inquire about a consultation for my customized glass and aluminum project:\n\nProduct: ${options.productDescription}\nQuotation No: ${options.quotationNumber}${addonLine}\nEstimated Amount: ${price}${waiver}\n\nHere is my saved reference link:\n${options.referenceLink}\n\nCan we schedule an ocular inspection and site measurement? Thank you! - ${options.customerName}`;
+  const encoded = encodeURIComponent(messageText);
+  return { messageText, messengerUrl: `https://m.me/rrdaluminumglass?text=${encoded}`, viberUrl: `viber://forward?text=${encoded}` };
 }

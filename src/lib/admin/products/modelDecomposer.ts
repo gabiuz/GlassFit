@@ -9,7 +9,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
 import type { DimensionBinding, PresentationCategory } from "@/lib/pricing/types";
-import type { ComponentType } from "./componentMutations";
+import type { ComponentType } from "./types";
 import { autoDetectComponentSettings } from "./autoDetection";
 
 // Polyfill FileReader for Node.js / unit testing environments if absent

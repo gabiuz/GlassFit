@@ -2,28 +2,16 @@
 
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { requirePermission } from "@/lib/auth/admin";
-import type { DimensionBinding, PresentationCategory } from "@/lib/pricing/types";
+import {
+    normalizeMaterialBindings,
+    type ComponentMaterialBindingInput,
+} from "@/lib/pricing/materialBindingUtils";
+import type {
+    UpsertComponentInput,
+    UpsertComponentPayload,
+} from "./types";
 
-export type ComponentType = "Procedural" | "Model" | "Glass" | "Frame" | "Panel" | "Hardware" | "Other";
-
-export type UpsertComponentInput = {
-    templateId: string;
-    componentKey: string;
-    componentName: string;
-    componentType: ComponentType;
-    baseQuantity: number;
-    rawMaterialId?: string | null;
-    dimensionBinding?: DimensionBinding;
-    spanRatio?: number;
-    isRemovable?: boolean;
-    togglePropertyKey?: string | null;
-    presentationCategory?: PresentationCategory;
-    glbFileUrl?: string | null;
-    assemblyGroup?: string;
-    componentData?: Record<string, unknown>; // To store source_dimensions_mm, etc.
-};
-
-export async function upsertProductComponent(input: UpsertComponentInput) {
+export async function upsertProductComponent(input: UpsertComponentInput): Promise<string> {
     const adminCtx = await requirePermission("manage_products");
     const supabase = await createSupabaseServerClient();
 
@@ -35,8 +23,18 @@ export async function upsertProductComponent(input: UpsertComponentInput) {
         .eq("component_key", input.componentKey)
         .single();
 
-    let finalData;
-    let finalError;
+    let finalData: { component_id: string } | null = null;
+    let finalError: Error | { message: string } | null = null;
+
+    // Normalize material bindings if provided
+    let normalizedBindings: ComponentMaterialBindingInput[] | undefined = undefined;
+    let resolvedRawMaterialId: string | null = input.rawMaterialId || null;
+
+    if (input.materialBindings !== undefined) {
+        normalizedBindings = normalizeMaterialBindings(input.materialBindings);
+        const defaultBinding = normalizedBindings.find((b) => b.isDefault);
+        resolvedRawMaterialId = defaultBinding ? defaultBinding.rawMaterialId : null;
+    }
 
     // We inject assembly_group into component_data if provided
     const mergedComponentData = {
@@ -48,7 +46,7 @@ export async function upsertProductComponent(input: UpsertComponentInput) {
         component_name: input.componentName,
         component_type: input.componentType,
         base_quantity: input.baseQuantity,
-        raw_material_id: input.rawMaterialId || null,
+        raw_material_id: resolvedRawMaterialId,
         dimension_binding: input.dimensionBinding || "FIXED",
         span_ratio: typeof input.spanRatio === "number" ? input.spanRatio : 1.0,
         is_removable: Boolean(input.isRemovable),
@@ -81,7 +79,7 @@ export async function upsertProductComponent(input: UpsertComponentInput) {
             })
             .select("component_id")
             .single();
-            
+
         finalData = data;
         finalError = error;
     }
@@ -95,6 +93,135 @@ export async function upsertProductComponent(input: UpsertComponentInput) {
         throw new Error("Product component could not be saved.");
     }
 
-    return finalData.component_id;
+    const componentId = finalData.component_id;
+
+    // Synchronize product_component_materials junction rows
+    if (normalizedBindings !== undefined) {
+        if (normalizedBindings.length === 0) {
+            // Delete all existing bindings
+            const { error: delError } = await supabase
+                .from("product_component_materials")
+                .delete()
+                .eq("product_component_id", componentId);
+
+            if (delError) {
+                console.error("Failed to clear product component materials:", delError);
+            }
+        } else {
+            const rawMaterialIds = normalizedBindings.map((b) => b.rawMaterialId);
+
+            // 1. Delete rows not in candidate list
+            await supabase
+                .from("product_component_materials")
+                .delete()
+                .eq("product_component_id", componentId)
+                .not("raw_material_id", "in", `(${rawMaterialIds.join(",")})`);
+
+            // 2. Clear default flag to avoid unique constraint collision
+            await supabase
+                .from("product_component_materials")
+                .update({ is_default: false })
+                .eq("product_component_id", componentId);
+
+            // 3. Upsert candidate bindings with target is_default
+            for (const binding of normalizedBindings) {
+                const { error: upsertMatError } = await supabase
+                    .from("product_component_materials")
+                    .upsert(
+                        {
+                            product_component_id: componentId,
+                            raw_material_id: binding.rawMaterialId,
+                            is_default: binding.isDefault,
+                            display_order: binding.displayOrder ?? 0,
+                            updated_at: new Date().toISOString(),
+                        },
+                        {
+                            onConflict: "product_component_id,raw_material_id",
+                        }
+                    );
+
+                if (upsertMatError) {
+                    console.error("Failed to upsert product component material row:", upsertMatError);
+                }
+            }
+        }
+    } else if (resolvedRawMaterialId) {
+        // Fallback for legacy calls: ensure single default entry exists
+        await supabase
+            .from("product_component_materials")
+            .upsert(
+                {
+                    product_component_id: componentId,
+                    raw_material_id: resolvedRawMaterialId,
+                    is_default: true,
+                    display_order: 0,
+                    updated_at: new Date().toISOString(),
+                },
+                {
+                    onConflict: "product_component_id,raw_material_id",
+                }
+            );
+    }
+
+    return componentId;
 }
 
+export async function upsertProductComponentWithMaterials(
+    payload: UpsertComponentPayload
+): Promise<{ success: boolean; componentId: string; error?: string }> {
+    try {
+        let templateId = payload.templateId;
+
+        if (!templateId && payload.productId) {
+            const supabase = await createSupabaseServerClient();
+            const { data: template } = await supabase
+                .from("product_templates")
+                .select("template_id")
+                .eq("product_id", payload.productId)
+                .single();
+
+            if (template) {
+                templateId = template.template_id;
+            }
+        }
+
+        if (!templateId) {
+            return {
+                success: false,
+                componentId: "",
+                error: "Missing required templateId or productId to resolve product template.",
+            };
+        }
+
+        const componentId = await upsertProductComponent({
+            templateId,
+            componentKey: payload.componentKey,
+            componentName: payload.componentName,
+            componentType: payload.componentType,
+            baseQuantity: payload.baseQuantity,
+            rawMaterialId: payload.rawMaterialId,
+            dimensionBinding: payload.dimensionBinding,
+            spanRatio: payload.spanRatio,
+            isRemovable: payload.isRemovable,
+            togglePropertyKey: payload.togglePropertyKey,
+            presentationCategory: payload.presentationCategory,
+            glbFileUrl: payload.glbFileUrl,
+            assemblyGroup: payload.assemblyGroup,
+            componentData: payload.componentData,
+            materialBindings: payload.materialBindings,
+        });
+
+        return {
+            success: true,
+            componentId,
+        };
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : "Unknown error upserting component with materials";
+        console.error("upsertProductComponentWithMaterials error:", err);
+        return {
+            success: false,
+            componentId: "",
+            error: message,
+        };
+    }
+}

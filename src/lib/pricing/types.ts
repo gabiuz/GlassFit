@@ -181,6 +181,45 @@ export const PresentationCategorySchema = z.enum([
 ]);
 export type PresentationCategory = z.infer<typeof PresentationCategorySchema>;
 
+export const ComponentMaterialBindingSchema = z.object({
+  id: z.string().uuid().optional(),
+  componentId: z.string().uuid().optional(),
+  rawMaterialId: z.string().uuid(),
+  isDefault: z.boolean().default(false),
+  displayOrder: z.number().int().default(0),
+  rawMaterial: RawMaterialSchema.optional(),
+});
+
+export interface ComponentMaterialBinding {
+  id?: string;
+  bindingId?: string;
+  componentId?: string;
+  componentKey?: string;
+  rawMaterialId: string;
+  isDefault: boolean;
+  displayOrder?: number;
+  rawMaterial?: RawMaterial;
+}
+
+export interface ProductComponent {
+  id: string;
+  productId: string;
+  componentKey: string;
+  componentName: string;
+  componentType: string;
+  assemblyGroup: string;
+  baseQuantity: number;
+  rawMaterialId: string | null;
+  dimensionBinding: DimensionBinding;
+  spanRatio: number;
+  isRemovable: boolean;
+  togglePropertyKey: string | null;
+  presentationCategory: PresentationCategory;
+  glbFileUrl?: string | null;
+  allowedMaterials?: ComponentMaterialBinding[];
+  defaultRawMaterialId?: string | null;
+}
+
 export const ProductComponentBindingSchema = z.object({
   component_id: z.string().uuid().optional(),
   template_id: z.string().uuid(),
@@ -374,6 +413,14 @@ export interface ItemizedProductQuotation {
   userVerified?: boolean | null;
   calibrationMethod?: string | null;
   calibrationConfidence?: number | null;
+  selectedMaterials?: Record<string, string>;
+  selectedAddon?: "none" | "screen" | "grill";
+  addonProductId?: string | null;
+  addonName?: string | null;
+  addonPrice?: number;
+  baseUnitPrice?: number;
+  addonAluminumFinish?: string;
+  addonBOM?: import("./addonPricingEngine").AddonBOMResult | null;
 }
 
 export interface ConsolidatedQuotationSummary {

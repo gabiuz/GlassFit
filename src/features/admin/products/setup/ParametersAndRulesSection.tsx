@@ -1,17 +1,17 @@
 "use client";
 
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
-import { Plus, X, Loader2, Info, Settings2, CodeSquare, CheckCircle2, AlertCircle } from "lucide-react";
+import { Plus, X, Loader2, Info, Settings2, CodeSquare, CheckCircle2, AlertCircle, Layers } from "lucide-react";
 import {
     upsertParametersAndRules,
-    upsertProductParameters,
-    upsertStructuralRules,
     UpsertParameterInput,
     UpsertRuleInput,
-    RuleType
 } from "@/lib/admin/products/parameterMutations";
+import { AddonInheritanceSection } from "./AddonInheritanceSection";
 
 export type ParametersAndRulesSectionProps = {
+    productId?: string;
+    isAddon?: boolean;
     templateId: string | null;
     modelStrategy: string | null;
     productType?: string;
@@ -23,20 +23,21 @@ export type ParametersAndRulesSectionProps = {
     onSave: () => void;
 };
 
-export function ParametersAndRulesSection({ templateId, modelStrategy, productType = "Window", initialData, onSave }: ParametersAndRulesSectionProps) {
+export function ParametersAndRulesSection({ productId, isAddon = false, templateId, modelStrategy, productType = "Window", initialData, onSave }: ParametersAndRulesSectionProps) {
     const [isSaving, setIsSaving] = useState(false);
     const [autoSaveStatus, setAutoSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
-    const [activeTab, setActiveTab] = useState<"parameters" | "rules">("parameters");
+    const [activeTab, setActiveTab] = useState<"parameters" | "rules" | "addons">("parameters");
 
     // Reference data for rules
+    const rawComponents = initialData?.components;
     const componentKeys = useMemo(() => {
-        if (!initialData?.components || !Array.isArray(initialData.components)) return [];
-        return initialData.components.map(c => ({
+        if (!rawComponents || !Array.isArray(rawComponents)) return [];
+        return rawComponents.map(c => ({
             key: String(c.component_key || "").trim(),
             name: String(c.component_name || c.component_key || "").trim()
         }));
-    }, [initialData?.components]);
+    }, [rawComponents]);
 
     const hasFrameCenter = useMemo(() => componentKeys.some(c => c.key.toLowerCase().includes("center") || c.key.toLowerCase().includes("mullion")), [componentKeys]);
     const hasGlassPanel = useMemo(() => componentKeys.some(c => c.key.toLowerCase().includes("glass") || c.key.toLowerCase().includes("pane")), [componentKeys]);
@@ -360,6 +361,16 @@ export function ParametersAndRulesSection({ templateId, modelStrategy, productTy
                 >
                     <CodeSquare className="size-4" /> Logic Rules ({rules.length})
                 </button>
+                {productId && (
+                    <button
+                        onClick={() => setActiveTab("addons")}
+                        className={`flex items-center gap-2 px-4 py-2 border-b-2 font-medium transition-colors ${
+                            activeTab === "addons" ? "border-[#07b6d3] text-[#07b6d3]" : "border-transparent text-neutral-500 hover:text-neutral-800"
+                        }`}
+                    >
+                        <Layers className="size-4" /> Compatible Add-ons
+                    </button>
+                )}
             </div>
 
             {/* Parameters Tab */}
@@ -666,6 +677,13 @@ export function ParametersAndRulesSection({ templateId, modelStrategy, productTy
                     <button onClick={addRule} className="flex items-center gap-2 text-sm text-[#07b6d3] font-medium hover:text-[#06a2bc] px-2 py-1 self-start transition-colors">
                         <Plus className="size-4" /> Add Rule
                     </button>
+                </div>
+            )}
+
+            {/* Compatible Add-ons Tab */}
+            {activeTab === "addons" && productId && (
+                <div className="mt-2">
+                    <AddonInheritanceSection productId={productId} isAddon={isAddon} />
                 </div>
             )}
 

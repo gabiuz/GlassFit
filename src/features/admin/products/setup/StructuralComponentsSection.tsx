@@ -2,14 +2,15 @@
 
 import React, { useState, useEffect, useMemo, Suspense } from "react";
 import { UploadCloud, X, Loader2, CheckCircle, AlertCircle, Eye, CheckSquare, Square, Layers, Sparkles } from "lucide-react";
-import { upsertProductComponent, ComponentType } from "@/lib/admin/products/componentMutations";
+import { upsertProductComponent } from "@/lib/admin/products/componentMutations";
+import type { ComponentType } from "@/lib/admin/products/types";
 import { generatePresignedUrl, confirmAssetUpload } from "@/lib/admin/products/assetUpload";
-import { autoDetectComponentSettings } from "@/lib/admin/products/autoDetection";
+import { autoDetectComponentSettings, suggestCandidateMaterials } from "@/lib/admin/products/autoDetection";
 import { decomposeWholeModel, type ExtractedComponentPart } from "@/lib/admin/products/modelDecomposer";
 import { DecompositionPreviewModal } from "./DecompositionPreviewModal";
 import { PartInspectorDrawer, type PartInspectorConfig } from "./PartInspectorDrawer";
 import { getRawMaterials } from "@/lib/admin/materials/materialActions";
-import type { RawMaterial, DimensionBinding, PresentationCategory } from "@/lib/pricing/types";
+import type { RawMaterial, DimensionBinding, PresentationCategory, ComponentMaterialBinding } from "@/lib/pricing/types";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, Stage } from "@react-three/drei";
 import * as THREE from "three";
@@ -42,6 +43,7 @@ type MappedFile = {
     assemblyGroup: string;
     baseQuantity: number;
     rawMaterialId: string | null;
+    materialBindings?: ComponentMaterialBinding[];
     dimensionBinding: DimensionBinding;
     spanRatio: number;
     isRemovable: boolean;
@@ -77,6 +79,27 @@ function getPartScale(targetMeters: number, sourceMeters: number) {
         return 1;
     }
     return targetMeters / sourceMeters;
+}
+
+function extractComponentBindings(comp: Record<string, unknown>): ComponentMaterialBinding[] {
+    const rawPcm = Array.isArray(comp.product_component_materials) ? comp.product_component_materials : [];
+    if (rawPcm.length > 0) {
+        return rawPcm.map((b: Record<string, unknown>, idx: number) => ({
+            id: b.id as string | undefined,
+            componentId: (b.product_component_id || comp.component_id) as string | undefined,
+            rawMaterialId: String(b.raw_material_id || ""),
+            isDefault: Boolean(b.is_default),
+            displayOrder: typeof b.display_order === "number" ? b.display_order : idx,
+        }));
+    }
+    if (comp.raw_material_id) {
+        return [{
+            rawMaterialId: String(comp.raw_material_id),
+            isDefault: true,
+            displayOrder: 0,
+        }];
+    }
+    return [];
 }
 
 // 3D Canvas Multi-Part Viewer Component (Assembled Structure Preview)
@@ -415,6 +438,9 @@ export function StructuralComponentsSection({
         return initialData.map((comp: Record<string, unknown>) => {
             const detected = autoDetectComponentSettings(String(comp.component_name || comp.component_key || ""));
             const compData = (comp.component_data || {}) as Record<string, unknown>;
+            const bindings = extractComponentBindings(comp);
+            const defaultBinding = bindings.find(b => b.isDefault);
+            const rawMaterialId = defaultBinding ? defaultBinding.rawMaterialId : (comp.raw_material_id as string) || null;
             return {
                 id: String(comp.component_id || crypto.randomUUID()),
                 file: new File([], `${comp.component_key}.glb`),
@@ -423,7 +449,8 @@ export function StructuralComponentsSection({
                 componentType: (comp.component_type as ComponentType) || detected.componentType,
                 assemblyGroup: String(compData.assembly_group || ""),
                 baseQuantity: typeof comp.base_quantity === "number" ? comp.base_quantity : 1,
-                rawMaterialId: (comp.raw_material_id as string) || null,
+                rawMaterialId,
+                materialBindings: bindings,
                 dimensionBinding: (comp.dimension_binding as DimensionBinding) || detected.dimensionBinding,
                 spanRatio: typeof comp.span_ratio === "number" ? comp.span_ratio : detected.spanRatio,
                 isRemovable: typeof comp.is_removable === "boolean" ? comp.is_removable : detected.isRemovable,
@@ -444,6 +471,9 @@ export function StructuralComponentsSection({
                     return initialData.map((comp: Record<string, unknown>) => {
                         const detected = autoDetectComponentSettings(String(comp.component_name || comp.component_key || ""));
                         const compData = (comp.component_data || {}) as Record<string, unknown>;
+                        const bindings = extractComponentBindings(comp);
+                        const defaultBinding = bindings.find(b => b.isDefault);
+                        const rawMaterialId = defaultBinding ? defaultBinding.rawMaterialId : (comp.raw_material_id as string) || null;
                         return {
                             id: String(comp.component_id || crypto.randomUUID()),
                             file: new File([], `${comp.component_key}.glb`),
@@ -452,7 +482,8 @@ export function StructuralComponentsSection({
                             componentType: (comp.component_type as ComponentType) || detected.componentType,
                             assemblyGroup: String(compData.assembly_group || ""),
                             baseQuantity: typeof comp.base_quantity === "number" ? comp.base_quantity : 1,
-                            rawMaterialId: (comp.raw_material_id as string) || null,
+                            rawMaterialId,
+                            materialBindings: bindings,
                             dimensionBinding: (comp.dimension_binding as DimensionBinding) || detected.dimensionBinding,
                             spanRatio: typeof comp.span_ratio === "number" ? comp.span_ratio : detected.spanRatio,
                             isRemovable: typeof comp.is_removable === "boolean" ? comp.is_removable : detected.isRemovable,
@@ -463,14 +494,18 @@ export function StructuralComponentsSection({
                         };
                     });
                 }
-                // Merge glbFileUrl and rawMaterialId if updated remotely
+                // Merge glbFileUrl, rawMaterialId, and materialBindings if updated remotely
                 return prev.map((item) => {
                     const found = initialData.find((c: Record<string, unknown>) => c.component_key === item.componentKey || c.component_id === item.id);
                     if (found) {
+                        const foundBindings = extractComponentBindings(found);
+                        const defaultBinding = foundBindings.find(b => b.isDefault);
+                        const remoteRawMaterialId = defaultBinding ? defaultBinding.rawMaterialId : (found.raw_material_id as string) || item.rawMaterialId;
                         return {
                             ...item,
                             glbFileUrl: item.glbFileUrl || (found.glb_file_url as string) || null,
-                            rawMaterialId: item.rawMaterialId !== undefined && item.status !== "success" ? item.rawMaterialId : (found.raw_material_id as string) || item.rawMaterialId,
+                            rawMaterialId: item.rawMaterialId !== undefined && item.status !== "success" ? item.rawMaterialId : remoteRawMaterialId,
+                            materialBindings: item.materialBindings !== undefined && item.status !== "success" ? item.materialBindings : (foundBindings.length > 0 ? foundBindings : item.materialBindings),
                         };
                     }
                     return item;
@@ -546,6 +581,8 @@ export function StructuralComponentsSection({
                 console.warn("Could not parse GLB preview locally:", err);
             }
 
+            const suggested = suggestCandidateMaterials(autoDetected.presentationCategory, rawMaterials);
+
             return {
                 id: crypto.randomUUID(),
                 file: f,
@@ -554,7 +591,12 @@ export function StructuralComponentsSection({
                 componentType: autoDetected.componentType,
                 assemblyGroup: autoDetected.presentationCategory.toLowerCase(),
                 baseQuantity: 1,
-                rawMaterialId: null,
+                rawMaterialId: suggested.defaultRawMaterialId,
+                materialBindings: suggested.materialBindings.map(b => ({
+                    rawMaterialId: b.rawMaterialId,
+                    isDefault: b.isDefault,
+                    displayOrder: b.displayOrder,
+                })),
                 dimensionBinding: autoDetected.dimensionBinding,
                 spanRatio: autoDetected.spanRatio,
                 isRemovable: autoDetected.isRemovable,
@@ -637,29 +679,37 @@ export function StructuralComponentsSection({
     };
 
     const handleApplyExtractedParts = (selectedParts: ExtractedComponentPart[]) => {
-        const newMapped: MappedFile[] = selectedParts.map((part) => ({
-            id: part.id || crypto.randomUUID(),
-            file: part.file,
-            componentKey: part.componentKey,
-            componentName: part.componentName,
-            componentType: part.componentType,
-            assemblyGroup: part.presentationCategory.toLowerCase(),
-            baseQuantity: part.baseQuantity || 1,
-            rawMaterialId: null,
-            dimensionBinding: part.dimensionBinding,
-            spanRatio: part.spanRatio,
-            isRemovable: part.isRemovable,
-            togglePropertyKey: part.togglePropertyKey,
-            presentationCategory: part.presentationCategory,
-            glbFileUrl: null,
-            status: "idle" as const,
-            previewMesh: part.previewMesh,
-            sourceDimensions: {
-                x: part.dimensionsMm.width / 1000,
-                y: part.dimensionsMm.height / 1000,
-                z: part.dimensionsMm.depth / 1000,
-            },
-        }));
+        const newMapped: MappedFile[] = selectedParts.map((part) => {
+            const suggested = suggestCandidateMaterials(part.presentationCategory, rawMaterials);
+            return {
+                id: part.id || crypto.randomUUID(),
+                file: part.file,
+                componentKey: part.componentKey,
+                componentName: part.componentName,
+                componentType: part.componentType,
+                assemblyGroup: part.presentationCategory.toLowerCase(),
+                baseQuantity: part.baseQuantity || 1,
+                rawMaterialId: suggested.defaultRawMaterialId,
+                materialBindings: suggested.materialBindings.map(b => ({
+                    rawMaterialId: b.rawMaterialId,
+                    isDefault: b.isDefault,
+                    displayOrder: b.displayOrder,
+                })),
+                dimensionBinding: part.dimensionBinding,
+                spanRatio: part.spanRatio,
+                isRemovable: part.isRemovable,
+                togglePropertyKey: part.togglePropertyKey,
+                presentationCategory: part.presentationCategory,
+                glbFileUrl: null,
+                status: "idle" as const,
+                previewMesh: part.previewMesh,
+                sourceDimensions: {
+                    x: part.dimensionsMm.width / 1000,
+                    y: part.dimensionsMm.height / 1000,
+                    z: part.dimensionsMm.depth / 1000,
+                },
+            };
+        });
 
         setMappedFiles((prev) => [...prev, ...newMapped]);
         if (newMapped.length > 0) {
@@ -688,9 +738,21 @@ export function StructuralComponentsSection({
         setMappedFiles(prev =>
             prev.map(item => {
                 if (selectedIds.has(item.id)) {
+                    let nextBindings = item.materialBindings;
+                    let nextRawMaterialId = item.rawMaterialId;
+
+                    if (updates.materialBindings !== undefined) {
+                        nextBindings = updates.materialBindings;
+                        const def = nextBindings.find(b => b.isDefault);
+                        nextRawMaterialId = def ? def.rawMaterialId : null;
+                    } else if (updates.rawMaterialId !== undefined) {
+                        nextRawMaterialId = updates.rawMaterialId;
+                    }
+
                     return {
                         ...item,
-                        ...(updates.rawMaterialId !== undefined && { rawMaterialId: updates.rawMaterialId }),
+                        rawMaterialId: nextRawMaterialId,
+                        materialBindings: nextBindings,
                         ...(updates.dimensionBinding !== undefined && { dimensionBinding: updates.dimensionBinding }),
                         ...(updates.spanRatio !== undefined && { spanRatio: updates.spanRatio }),
                         ...(updates.isRemovable !== undefined && { isRemovable: updates.isRemovable }),
@@ -698,6 +760,27 @@ export function StructuralComponentsSection({
                         ...(updates.presentationCategory !== undefined && { presentationCategory: updates.presentationCategory }),
                         ...(updates.baseQuantity !== undefined && { baseQuantity: updates.baseQuantity }),
                         ...(updates.assemblyGroup !== undefined && { assemblyGroup: updates.assemblyGroup }),
+                        status: "idle" as const,
+                    };
+                }
+                return item;
+            })
+        );
+    };
+
+    const handleSyncAssemblyGroup = (
+        assemblyGroup: string,
+        bindings: ComponentMaterialBinding[],
+        defaultMaterialId: string | null
+    ) => {
+        if (!assemblyGroup) return;
+        setMappedFiles(prev =>
+            prev.map(item => {
+                if (item.assemblyGroup.toLowerCase() === assemblyGroup.toLowerCase()) {
+                    return {
+                        ...item,
+                        materialBindings: bindings,
+                        rawMaterialId: defaultMaterialId,
                         status: "idle" as const,
                     };
                 }
@@ -737,7 +820,7 @@ export function StructuralComponentsSection({
 
             updateMappedFile(mapped.id, { status: "uploading" });
 
-            // 2. Upsert Component in DB with all MS-3 fields
+            // 2. Upsert Component in DB with all MS-3 & MS64 fields
             const componentId = await upsertProductComponent({
                 templateId,
                 componentKey: mapped.componentKey,
@@ -745,6 +828,11 @@ export function StructuralComponentsSection({
                 componentType: mapped.componentType,
                 baseQuantity: mapped.baseQuantity,
                 rawMaterialId: mapped.rawMaterialId,
+                materialBindings: mapped.materialBindings?.map(b => ({
+                    rawMaterialId: b.rawMaterialId,
+                    isDefault: b.isDefault,
+                    displayOrder: b.displayOrder,
+                })),
                 dimensionBinding: mapped.dimensionBinding,
                 spanRatio: mapped.spanRatio,
                 isRemovable: mapped.isRemovable,
@@ -837,6 +925,7 @@ export function StructuralComponentsSection({
                 componentName: m.componentName,
                 componentType: m.componentType,
                 rawMaterialId: m.rawMaterialId,
+                materialBindings: m.materialBindings || (m.rawMaterialId ? [{ rawMaterialId: m.rawMaterialId, isDefault: true, displayOrder: 0 }] : []),
                 dimensionBinding: m.dimensionBinding,
                 spanRatio: m.spanRatio,
                 isRemovable: m.isRemovable,
@@ -1153,6 +1242,7 @@ export function StructuralComponentsSection({
                             selectedParts={selectedPartConfigs}
                             rawMaterials={rawMaterials}
                             onUpdateParts={handleBatchUpdateSelected}
+                            onSyncAssemblyGroup={handleSyncAssemblyGroup}
                             onDeselect={() => setSelectedIds(new Set())}
                         />
                     </div>
@@ -1243,8 +1333,13 @@ export function StructuralComponentsSection({
                                             </td>
                                             <td className="px-3 py-2 max-w-[180px] truncate text-neutral-600">
                                                 {mat ? (
-                                                    <span title={mat.description} className="text-[#07b6d3] font-medium">
-                                                        {mat.material_code}
+                                                    <span title={mat.description} className="text-[#07b6d3] font-medium flex items-center gap-1">
+                                                        <span>{mat.material_code}</span>
+                                                        {mapped.materialBindings && mapped.materialBindings.length > 1 && (
+                                                            <span className="text-[10px] px-1 py-0.2 rounded bg-cyan-100 text-[#07b6d3] font-semibold">
+                                                                +{mapped.materialBindings.length - 1}
+                                                            </span>
+                                                        )}
                                                     </span>
                                                 ) : (
                                                     <span className="text-neutral-400 italic">Unassigned</span>

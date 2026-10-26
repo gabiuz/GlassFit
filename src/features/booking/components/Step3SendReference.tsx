@@ -15,6 +15,7 @@ interface Step3SendReferenceProps {
   productName?: string;
   quotationNumber?: string;
   customerName?: string;
+  addonSummary?: string | null;
 }
 
 export function Step3SendReference({
@@ -26,6 +27,7 @@ export function Step3SendReference({
   productName = "Series 798 Sliding Window",
   quotationNumber = "Q-2026-0482",
   customerName = "Juan Dela Cruz",
+  addonSummary = null,
 }: Step3SendReferenceProps) {
   const [copied, setCopied] = useState(false);
 
@@ -43,6 +45,7 @@ export function Step3SendReference({
     productDescription: productName,
     totalEstimatePhp,
     hasStructuralWaiver,
+    addonSummary,
   });
 
   const handleCopyMessage = () => {

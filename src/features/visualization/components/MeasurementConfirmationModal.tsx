@@ -26,6 +26,11 @@ import {
 } from "@/lib/visualization/measurementConfirmation";
 import { currentPhotoMeasurement, readMeasurementRecord } from "@/lib/visualization/measurementRecord";
 import { calculateBOMFromStructuralDefinition } from "@/lib/pricing/pricingEngine";
+import {
+  calculateAddonBOM,
+  getAddonDisplayName,
+  type AddonBOMResult,
+} from "@/lib/pricing/addonPricingEngine";
 
 const ProductModel3D = dynamic(
   () =>
@@ -155,6 +160,53 @@ export function MeasurementConfirmationModal({
       ? currentEntry.recalculatedTotalPrice
       : currentEntry.systemTotalPrice;
 
+  const currentBomCalc = currentEntry?.structuralDefinition
+    ? calculateBOMFromStructuralDefinition(
+        currentEntry.structuralDefinition,
+        {
+          widthMm: currentWidthMm,
+          heightMm: currentHeightMm,
+          panelCount: currentEntry.overlayConfiguration.panelCount,
+          hasSill: currentEntry.overlayConfiguration.includeSill,
+          finishType:
+            currentEntry.overlayConfiguration.aluminumFinish === "white"
+              ? "PowderCoatedWhite"
+              : "Analok",
+          glassType:
+            (currentEntry.overlayConfiguration.thicknessMm ?? 6) >= 6 &&
+            currentEntry.overlayConfiguration.glassAppearance === "clear"
+              ? "6mm_clear"
+              : "6mm_bronze",
+          structuralWaiver: currentEntry.overlayConfiguration.structuralWaiver,
+          selectedMaterials: currentEntry.overlayConfiguration.selectedMaterials,
+        },
+      )
+    : null;
+
+  const currentSelectedAddon =
+    currentEntry.overlayConfiguration.selectedAddon ??
+    ((currentEntry.overlayConfiguration.visualParameterValues?.selected_addon as Record<string, unknown> | undefined)?.type as "screen" | "grill" | undefined) ??
+    "none";
+
+  const currentAddonBOM: AddonBOMResult | null =
+    currentSelectedAddon !== "none"
+      ? calculateAddonBOM({
+          addonType: currentSelectedAddon,
+          widthMm: currentWidthMm,
+          heightMm: currentHeightMm,
+        })
+      : null;
+
+  const currentAddonFinish =
+    currentEntry.overlayConfiguration.addonAluminumFinish ??
+    ((currentEntry.overlayConfiguration.visualParameterValues?.selected_addon as Record<string, unknown> | undefined)?.finish as string | undefined) ??
+    "";
+  const currentAddonFinishLabel = currentAddonFinish
+    ? currentAddonFinish.charAt(0).toUpperCase() + currentAddonFinish.slice(1)
+    : "";
+
+  const currentAddonPrice = currentAddonBOM?.finalAddonPrice ?? 0;
+
   const recalculatePrice = (
     entry: MeasurementConfirmationEntry,
     override: MeasurementOverride,
@@ -188,13 +240,31 @@ export function MeasurementConfirmationModal({
         finishType,
         glassType,
         structuralWaiver: entry.overlayConfiguration.structuralWaiver,
+        selectedMaterials: entry.overlayConfiguration.selectedMaterials,
       },
     );
 
-    const unitPrice =
+    const baseUnitPrice =
       bomCalc.finalQuotation > 0
         ? bomCalc.finalQuotation
         : (entry.structuralDefinition.product.basePrice ?? 0);
+
+    const entryAddonType =
+      entry.overlayConfiguration.selectedAddon ??
+      ((entry.overlayConfiguration.visualParameterValues?.selected_addon as Record<string, unknown> | undefined)?.type as "screen" | "grill" | undefined) ??
+      "none";
+
+    let addonPrice = 0;
+    if (entryAddonType !== "none") {
+      const addonBom = calculateAddonBOM({
+        addonType: entryAddonType,
+        widthMm: widthMmVal,
+        heightMm: heightMmVal,
+      });
+      addonPrice = addonBom.finalAddonPrice;
+    }
+
+    const unitPrice = baseUnitPrice + addonPrice;
 
     const quantity = Math.max(1, entry.overlayConfiguration.quantity ?? 1);
     return unitPrice * quantity;
@@ -723,6 +793,113 @@ export function MeasurementConfirmationModal({
             ₱{Math.round(displayedPrice).toLocaleString()}
           </div>
         </div>
+
+        {/* Selected Specification Summary Card (DSD-UI7 / IMP-MS66) */}
+        <div className="mb-5 rounded-[16px] border border-neutral-200/80 bg-neutral-50 p-4 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold uppercase tracking-wider text-neutral-600">
+              Selected Specifications
+            </span>
+            <span className="text-[10px] font-semibold text-[#07b6d3] bg-[#07b6d3]/10 px-2 py-0.5 rounded-full">
+              Verified
+            </span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+            <div>
+              <span className="text-neutral-500 block text-[11px]">Frame Finish:</span>
+              <strong className="text-[#0f1422] font-medium">
+                {currentBomCalc?.finishType ? formatFinishName(currentBomCalc.finishType) : formatFinishName(currentEntry.aluminumFinish)}
+              </strong>
+            </div>
+            <div>
+              <span className="text-neutral-500 block text-[11px]">Glass Infill:</span>
+              <strong className="text-[#0f1422] font-medium">
+                {currentBomCalc?.glassType || "6mm Standard Architectural Glass"}
+              </strong>
+            </div>
+            <div className="sm:col-span-2">
+              <span className="text-neutral-500 block text-[11px]">Dimensions:</span>
+              <span className="font-mono text-[#0f1422] font-medium">
+                {Math.round(currentWidthMm).toLocaleString()} mm (W) x {Math.round(currentHeightMm).toLocaleString()} mm (H)
+              </span>
+            </div>
+            <div className="sm:col-span-2">
+              <span className="text-neutral-500 block text-[11px]">Attachment:</span>
+              <strong className="text-[#0f1422] font-medium">
+                {currentSelectedAddon !== "none"
+                  ? `${getAddonDisplayName(currentSelectedAddon)} (+₱${currentAddonPrice.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`
+                  : "None (Standard Opening)"}
+              </strong>
+            </div>
+          </div>
+        </div>
+
+        {/* Dedicated Add-on Attachment Line Card (IMP-MS69 / DSD-UI7) */}
+        {currentAddonBOM && (
+          <div className="mb-5 rounded-[16px] border border-cyan-200 bg-cyan-50/40 p-4 space-y-3">
+            <div className="flex items-center justify-between border-b border-cyan-100 pb-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold uppercase tracking-wider text-[#0f1422]">
+                  Modular Attachment
+                </span>
+                <span className="text-[10px] font-semibold text-[#07b6d3] bg-[#07b6d3]/15 px-2 py-0.5 rounded-full">
+                  {currentSelectedAddon === "screen"
+                    ? `Insect Screen${currentAddonFinishLabel ? ` (${currentAddonFinishLabel})` : ""}`
+                    : `Security Grille${currentAddonFinishLabel ? ` (${currentAddonFinishLabel})` : ""}`}
+                </span>
+              </div>
+              <span className="font-mono font-semibold text-[#07b6d3]">
+                +₱{currentAddonBOM.finalAddonPrice.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
+            <div className="space-y-1.5 text-xs">
+              <div className="flex justify-between items-center text-[#0f1422]">
+                <span className="font-medium">
+                  {currentAddonBOM.addonName}
+                  {currentAddonFinishLabel ? ` (${currentAddonFinishLabel})` : ""}
+                </span>
+                <span className="text-neutral-500">1 unit</span>
+              </div>
+              <div className="space-y-1 pl-2 border-l-2 border-cyan-200 text-[11px] text-neutral-600">
+                {currentAddonBOM.breakdown.map((item, bIdx) => (
+                  <div key={bIdx} className="flex justify-between items-center">
+                    <span>{item.item} ({item.quantity} {item.unit})</span>
+                    <span className="font-mono">₱{item.subtotal.toFixed(2)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Itemized BOM Summary Table (IMP-MS66 / QAD-TC81.6) */}
+        {currentBomCalc && currentBomCalc.bomSummary && (
+          <div className="mb-5 rounded-[16px] border border-neutral-200/80 bg-white p-4 space-y-3">
+            <div className="flex items-center justify-between border-b border-neutral-100 pb-2">
+              <span className="text-xs font-semibold uppercase tracking-wider text-neutral-700">
+                Itemized BOM Summary
+              </span>
+              <span className="text-[11px] text-neutral-500 font-mono">
+                {currentBomCalc.bomSummary.currency}
+              </span>
+            </div>
+            <div className="space-y-2 text-xs">
+              {currentBomCalc.bomSummary.groups.map((group, gIdx) => (
+                <div key={gIdx} className="flex justify-between items-center py-1 border-b border-neutral-50 last:border-0">
+                  <div>
+                    <span className="font-medium text-[#0f1422] block">{group.item_group_name}</span>
+                    <span className="text-[11px] text-neutral-500">
+                      Qty: {group.quantity} {group.unit_label} @ ₱{group.unit_price.toFixed(2)}
+                    </span>
+                  </div>
+                  <span className="font-mono font-semibold text-[#0f1422]">
+                    ₱{group.estimated_subtotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Override Acknowledgement Agreement (Conditional) */}
         {isOverridden && (

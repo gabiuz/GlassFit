@@ -523,7 +523,15 @@ def _serve_generated_artifact(root: Path, artifact_path: str) -> FileResponse:
     if resolved_root not in resolved_artifact.parents or not resolved_artifact.is_file():
         raise HTTPException(status_code=404, detail="Generated artifact not found.")
 
-    return FileResponse(resolved_artifact)
+    return FileResponse(
+        resolved_artifact,
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+            "Access-Control-Allow-Headers": "*",
+            "Vary": "Origin",
+        },
+    )
 
 
 def _rewrite_object_mask_urls(objects: list[dict], url_prefix: str) -> None:

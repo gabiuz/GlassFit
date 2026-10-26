@@ -139,6 +139,12 @@ export const PublicQuotationItemSchema = z.object({
   unitPrice: z.number(),
   totalPrice: z.number(),
   imageUrl: z.string().nullable().optional(),
+  selectedAddon: z.enum(["none", "screen", "grill"]).nullable().optional(),
+  addonProductId: z.string().nullable().optional(),
+  addonName: z.string().nullable().optional(),
+  addonPrice: z.number().nullable().optional(),
+  baseUnitPrice: z.number().nullable().optional(),
+  addonAluminumFinish: z.string().nullable().optional(),
 });
 export type PublicQuotationItem = z.infer<typeof PublicQuotationItemSchema>;
 
@@ -166,6 +172,12 @@ export const PublicQuotationSummarySchema = z.object({
   snapshotImageUrl: z.string().nullable(),
   status: SignedLinkStatusSchema,
   isMultiProduct: z.boolean().default(false),
+  selectedAddon: z.enum(["none", "screen", "grill"]).nullable().optional(),
+  addonProductId: z.string().nullable().optional(),
+  addonName: z.string().nullable().optional(),
+  addonPrice: z.number().nullable().optional(),
+  baseUnitPrice: z.number().nullable().optional(),
+  addonAluminumFinish: z.string().nullable().optional(),
   items: z.array(PublicQuotationItemSchema).optional(),
   consolidatedMetrics: z
     .object({

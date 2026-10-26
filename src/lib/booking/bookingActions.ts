@@ -150,7 +150,36 @@ export async function generateSignedBookingLink(
 
   let displayOrder = 1;
   for (const [idx, item] of quotationDocument.items.entries()) {
+    const isAddonActive = item.selectedAddon && item.selectedAddon !== "none" && (item.addonPrice ?? 0) > 0;
+    const addonTitle = item.addonName ?? (item.selectedAddon === "screen" ? "Extruded Aluminum Insect Screen" : "Architectural Security Window Grille");
+
     for (const group of item.groups) {
+      const isThisAddonRow = isAddonActive && group.description === addonTitle;
+
+      if (isThisAddonRow) {
+        quotationItemRows.push({
+          quotation_id: quotationId,
+          item_name: `${item.productName} - ${addonTitle}`,
+          item_group_name: group.groupName,
+          quantity: group.quantity,
+          unit: group.unit,
+          unit_price: group.unitPrice,
+          estimated_subtotal: group.subtotal,
+          structural_waiver: false,
+          pricing_details: {
+            item_type: "addon_attachment",
+            addon_type: item.selectedAddon,
+            addon_name: addonTitle,
+            dimensions: item.dimensionsFormatted,
+            unit_price: item.addonPrice,
+            subtotal: group.subtotal,
+            addon_product_id: item.addonProductId ?? null,
+            parent_product_id: item.productId,
+            parent_item_id: item.itemId,
+          },
+          display_order: displayOrder++,
+        });
+      } else {
         quotationItemRows.push({
           quotation_id: quotationId,
           item_name: `${item.productName} (${group.description})`,
@@ -188,9 +217,17 @@ export async function generateSignedBookingLink(
             user_verified: false,
             calibration_method: item.calibrationMethod ?? null,
             calibration_confidence: null,
+            selected_materials: item.selectedMaterials ?? null,
+            selected_addon: isAddonActive ? {
+              type: item.selectedAddon,
+              addon_product_id: item.addonProductId ?? null,
+              addon_name: addonTitle,
+              price: item.addonPrice ?? 0,
+            } : null,
           },
           display_order: displayOrder++,
         });
+      }
     }
   }
 
@@ -471,6 +508,12 @@ export async function getPublicBookingReference(
     unitPrice: number;
     totalPrice: number;
     imageUrl?: string | null;
+    selectedAddon?: "screen" | "grill" | "none" | null;
+    addonProductId?: string | null;
+    addonName?: string | null;
+    addonPrice?: number | null;
+    baseUnitPrice?: number | null;
+    addonAluminumFinish?: string | null;
   }>();
 
   let totalFramingMeters = 0;
@@ -510,6 +553,15 @@ export async function getPublicBookingReference(
           const specSummary = String(details.spec_summary || `${finish} | ${wMm / 10}cm × ${hMm / 10}cm`);
           const dimsFormatted = String(details.dimensions_formatted || `${wMm / 10}cm × ${hMm / 10}cm`);
 
+          const rawAddon = typeof details.selected_addon === "object" ? (details.selected_addon as Record<string, unknown>) : undefined;
+          const rawAddonType = typeof details.selected_addon === "string" ? details.selected_addon : rawAddon?.type;
+          const selectedAddon = rawAddonType === "screen" || rawAddonType === "grill" ? rawAddonType : (rawAddonType === "none" ? "none" : undefined);
+          const addonProductId = typeof details.addon_product_id === "string" ? details.addon_product_id : typeof rawAddon?.addon_product_id === "string" ? (rawAddon.addon_product_id as string) : undefined;
+          const addonName = typeof details.addon_name === "string" ? details.addon_name : typeof rawAddon?.addon_name === "string" ? (rawAddon.addon_name as string) : undefined;
+          const addonPrice = typeof details.addon_price === "number" ? details.addon_price : typeof rawAddon?.price === "number" ? (rawAddon.price as number) : undefined;
+          const baseUnitPrice = typeof details.base_unit_price === "number" ? details.base_unit_price : undefined;
+          const addonAluminumFinish = typeof details.addon_aluminum_finish === "string" ? details.addon_aluminum_finish : typeof rawAddon?.finish === "string" ? (rawAddon.finish as string) : undefined;
+
           if (waiver) hasAnyMultiWaiver = true;
           totalQuantity += qty;
 
@@ -532,6 +584,12 @@ export async function getPublicBookingReference(
             unitPrice: uPrice,
             totalPrice: tPrice,
             imageUrl: img,
+            selectedAddon,
+            addonProductId,
+            addonName,
+            addonPrice,
+            baseUnitPrice,
+            addonAluminumFinish,
           });
         }
       }
@@ -546,7 +604,38 @@ export async function getPublicBookingReference(
     }
   }
 
-  const itemsList = Array.from(itemsMap.values());
+  const docSnapshotResult = QuotationDocumentSnapshotV1Schema.safeParse(quote.quotation_document_snapshot);
+  const docSnapshot = docSnapshotResult.success ? docSnapshotResult.data : null;
+
+  const rawItemsList = Array.from(itemsMap.values());
+  const itemsList = docSnapshot && docSnapshot.items.length > 0
+    ? docSnapshot.items.map((item) => ({
+        itemId: item.itemId,
+        productId: item.productId ?? undefined,
+        productName: item.productName,
+        productType: item.productType,
+        variantName: item.variantName,
+        specSummary: item.specificationSummary,
+        dimensionsFormatted: item.dimensionsFormatted,
+        widthMm: item.widthMm,
+        heightMm: item.heightMm,
+        panelCount: item.panelCount,
+        hasSill: item.hasSill,
+        structuralWaiver: item.structuralWaiver,
+        finishType: item.finishLabel,
+        glassType: item.glassLabel,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        totalPrice: item.calculatedSubtotal,
+        imageUrl: item.imageSource ?? null,
+        selectedAddon: item.selectedAddon,
+        addonProductId: item.addonProductId ?? null,
+        addonName: item.addonName ?? null,
+        addonPrice: item.addonPrice,
+        baseUnitPrice: item.baseUnitPrice,
+        addonAluminumFinish: item.addonAluminumFinish,
+      }))
+    : rawItemsList;
   const isMultiProduct = itemsList.length > 1;
 
   // Single-product fallback parameters
@@ -602,6 +691,14 @@ export async function getPublicBookingReference(
     hour12: true,
   }).format(expiresDate);
 
+  const primaryItem = itemsList[0];
+  const selectedAddon = primaryItem?.selectedAddon ?? (typeof firstDetails?.selected_addon === "object" ? (firstDetails.selected_addon as Record<string, unknown>)?.type as ("screen" | "grill" | "none") : undefined);
+  const addonProductId = primaryItem?.addonProductId ?? (typeof firstDetails?.selected_addon === "object" ? String((firstDetails.selected_addon as Record<string, unknown>)?.addon_product_id) : undefined);
+  const addonName = primaryItem?.addonName ?? (typeof firstDetails?.selected_addon === "object" ? String((firstDetails.selected_addon as Record<string, unknown>)?.addon_name) : undefined);
+  const addonPrice = primaryItem?.addonPrice ?? (typeof firstDetails?.selected_addon === "object" ? Number((firstDetails.selected_addon as Record<string, unknown>)?.price) : undefined);
+  const baseUnitPrice = primaryItem?.baseUnitPrice ?? (typeof firstDetails?.base_unit_price === "number" ? firstDetails.base_unit_price : undefined);
+  const addonAluminumFinish = primaryItem?.addonAluminumFinish ?? (typeof firstDetails?.selected_addon === "object" ? String((firstDetails.selected_addon as Record<string, unknown>)?.finish) : undefined);
+
   return {
     referenceCode,
     quotationNumber: quote.quotation_number,
@@ -615,10 +712,16 @@ export async function getPublicBookingReference(
     finishType: itemsList[0]?.finishType || finishType,
     glassType: itemsList[0]?.glassType || glassType,
     structuralWaiver,
+    selectedAddon,
+    addonProductId,
+    addonName,
+    addonPrice,
+    baseUnitPrice,
+    addonAluminumFinish,
     totalEstimatedAmount: Number(quote.total_estimated_amount),
-    ...(QuotationDocumentSnapshotV1Schema.safeParse(quote.quotation_document_snapshot).success
+    ...(docSnapshot
       ? deriveQuotationPricingFromItems(
-          QuotationDocumentSnapshotV1Schema.parse(quote.quotation_document_snapshot),
+          docSnapshot,
           QuotationItemPriceOverridesV1Schema.safeParse(quote.item_price_overrides).success ? QuotationItemPriceOverridesV1Schema.parse(quote.item_price_overrides) : null,
           quote.admin_labor_charge !== null && quote.admin_labor_charge !== undefined ? Number(quote.admin_labor_charge) : null,
         )
@@ -638,26 +741,37 @@ export async function getPublicBookingReference(
           totalLaborCost: Math.round(totalLaborCost * 100) / 100,
         }
       : undefined,
-    groups: rawItems.map(
-      (item: {
-        item_name: string;
-        quantity: number;
-        unit: string;
-        unit_price: number;
-        estimated_subtotal: number;
-        pricing_details?: unknown;
-      }) => {
-        const det = item.pricing_details as Record<string, unknown> | undefined;
-        return {
-          item_group_name: item.item_name,
-          quantity: Number(item.quantity),
-          unit_label: item.unit,
-          unit_price: Number(item.unit_price),
-          estimated_subtotal: Number(item.estimated_subtotal),
-          product_name: typeof det?.product_name === "string" ? det.product_name : undefined,
-        };
-      }
-    ),
+    groups: docSnapshot && docSnapshot.items.length > 0
+      ? docSnapshot.items.flatMap((it) =>
+          it.groups.map((g) => ({
+            item_group_name: g.description || g.groupName,
+            quantity: g.quantity,
+            unit_label: g.unit,
+            unit_price: g.unitPrice,
+            estimated_subtotal: g.subtotal,
+            product_name: it.productName,
+          }))
+        )
+      : rawItems.map(
+          (item: {
+            item_name: string;
+            quantity: number;
+            unit: string;
+            unit_price: number;
+            estimated_subtotal: number;
+            pricing_details?: unknown;
+          }) => {
+            const det = item.pricing_details as Record<string, unknown> | undefined;
+            return {
+              item_group_name: item.item_name,
+              quantity: Number(item.quantity),
+              unit_label: item.unit,
+              unit_price: Number(item.unit_price),
+              estimated_subtotal: Number(item.estimated_subtotal),
+              product_name: typeof det?.product_name === "string" ? det.product_name : undefined,
+            };
+          }
+        ),
   };
 }
 

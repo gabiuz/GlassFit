@@ -2,6 +2,7 @@
 import { z } from "zod";
 import { MeasurementRecordSchema, StoredMeasurementRecordSchema } from "../visualization/measurementRecord";
 import type { CalculatedBOMResult, ItemizedProductQuotation } from "./types";
+import { calculateAddonBOM } from "./addonPricingEngine";
 
 const MONEY_MAX = 9_999_999_999.99;
 const money = z.number().finite().min(0).max(MONEY_MAX).refine(
@@ -52,6 +53,13 @@ export const QuotationDocumentItemSchema = z.object({
   calibrationProvenance: StoredMeasurementRecordSchema.nullable().optional(),
   calibrationMethod: z.string().nullable().optional(),
   calibrationConfidence: z.number().nullable().optional(),
+  selectedMaterials: z.record(z.string(), z.string()).optional(),
+  selectedAddon: z.enum(["none", "screen", "grill"]).optional(),
+  addonProductId: z.string().nullable().optional(),
+  addonName: z.string().nullable().optional(),
+  addonPrice: money.optional(),
+  baseUnitPrice: money.optional(),
+  addonAluminumFinish: z.string().optional(),
 }).superRefine((item, context) => {
   if (Math.round(item.unitPrice * item.quantity * 100) !== Math.round(item.calculatedSubtotal * 100)) {
     context.addIssue({ code: "custom", path: ["calculatedSubtotal"], message: "Item arithmetic mismatch" });
@@ -163,8 +171,9 @@ export type QuotationPricingView = {
   adminLaborCharge: number | null;
 };
 
-function groupsFromBom(bom: CalculatedBOMResult) {
-  const map = (groupName: string, rows: CalculatedBOMResult["framingItems"]) => rows.map((row) => ({
+function groupsFromBom(bom: CalculatedBOMResult | undefined | null) {
+  if (!bom) return [];
+  const map = (groupName: string, rows: CalculatedBOMResult["framingItems"]) => (rows || []).map((row) => ({
     groupName,
     description: row.description,
     quantity: row.quantity,
@@ -177,7 +186,7 @@ function groupsFromBom(bom: CalculatedBOMResult) {
     ...map("Glass Infill", bom.glazingItems),
     ...map("Hardware & Accessories", bom.hardwareItems),
     ...map("Miscellaneous", bom.consumableItems),
-    { groupName: "Labor & Installation", description: "Shop floor labor", quantity: 1, unit: "lot", unitPrice: bom.fabricationLaborCost, subtotal: bom.fabricationLaborCost },
+    { groupName: "Labor & Installation", description: "Shop floor labor", quantity: 1, unit: "lot", unitPrice: bom.fabricationLaborCost ?? 0, subtotal: bom.fabricationLaborCost ?? 0 },
   ];
 }
 
@@ -198,24 +207,60 @@ export function createQuotationDocumentSnapshotV1(input: {
     structuralWaiver: input.structuralWaiver, finishType: input.fallbackBom.finishType, glassType: input.fallbackBom.glassType,
     quantity: 1, unitPrice: input.fallbackBom.finalQuotation, totalPrice: input.fallbackBom.finalQuotation, imageUrl: "", bomResult: input.fallbackBom,
   }];
-  const items = sourceItems.map((item) => ({
-    itemId: item.itemId, productId: item.productId || null, productName: item.productName,
-    productType: item.productType, variantName: item.variantName, specificationSummary: item.specSummary,
-    dimensionsFormatted: item.dimensionsFormatted, widthMm: item.widthMm, heightMm: item.heightMm,
-    panelCount: item.panelCount, hasSill: item.hasSill, structuralWaiver: item.structuralWaiver,
-    finishLabel: item.finishType, glassLabel: item.glassType, quantity: item.quantity, unitPrice: item.unitPrice,
-    calculatedSubtotal: item.totalPrice, imageSource: item.imageUrl || null, groups: groupsFromBom(item.bomResult),
-    dimensionSource: item.dimensionSource,
-    calibrationProvenance: item.calibrationProvenance,
-    calibrationMethod: item.calibrationMethod,
-    calibrationConfidence: item.calibrationConfidence,
-  }));
-  const pricing = sourceItems.reduce((totals, item) => ({
-    directMaterialsSubtotal: totals.directMaterialsSubtotal + item.bomResult.directMaterialsSubtotal * item.quantity,
-    laborSubtotal: totals.laborSubtotal + item.bomResult.fabricationLaborCost * item.quantity,
-    contractorMargin: totals.contractorMargin + item.bomResult.contractorMargin * item.quantity,
-    calculatedFinalPrice: totals.calculatedFinalPrice + item.totalPrice,
-  }), { directMaterialsSubtotal: 0, laborSubtotal: 0, contractorMargin: 0, calculatedFinalPrice: 0 });
+  const items = sourceItems.map((item) => {
+    const itemGroups = groupsFromBom(item.bomResult);
+    if (item.selectedAddon && item.selectedAddon !== "none" && (item.addonPrice ?? 0) > 0) {
+      itemGroups.push({
+        groupName: "Hardware & Accessories",
+        description: item.addonName ?? (item.selectedAddon === "screen" ? "Extruded Aluminum Insect Screen" : "Architectural Security Window Grille"),
+        quantity: item.quantity,
+        unit: "set",
+        unitPrice: item.addonPrice ?? 0,
+        subtotal: (item.addonPrice ?? 0) * item.quantity,
+      });
+    }
+
+    return {
+      itemId: item.itemId, productId: item.productId || null, productName: item.productName,
+      productType: item.productType, variantName: item.variantName, specificationSummary: item.specSummary,
+      dimensionsFormatted: item.dimensionsFormatted, widthMm: item.widthMm, heightMm: item.heightMm,
+      panelCount: item.panelCount, hasSill: item.hasSill, structuralWaiver: item.structuralWaiver,
+      finishLabel: item.finishType, glassLabel: item.glassType, quantity: item.quantity, unitPrice: item.unitPrice,
+      calculatedSubtotal: item.totalPrice, imageSource: item.imageUrl || null, groups: itemGroups,
+      dimensionSource: item.dimensionSource,
+      calibrationProvenance: item.calibrationProvenance,
+      calibrationMethod: item.calibrationMethod,
+      calibrationConfidence: item.calibrationConfidence,
+      selectedMaterials: item.selectedMaterials,
+      selectedAddon: item.selectedAddon,
+      addonProductId: item.addonProductId,
+      addonName: item.addonName,
+      addonPrice: item.addonPrice,
+      baseUnitPrice: item.baseUnitPrice,
+      addonAluminumFinish: item.addonAluminumFinish,
+    };
+  });
+  const pricing = sourceItems.reduce((totals, item) => {
+    const resolvedAddonBOM = item.addonBOM ?? (
+      item.selectedAddon && item.selectedAddon !== "none"
+        ? calculateAddonBOM({
+            addonType: item.selectedAddon,
+            widthMm: item.widthMm,
+            heightMm: item.heightMm,
+          })
+        : null
+    );
+    const addonMat = resolvedAddonBOM ? resolvedAddonBOM.directMaterialCost : 0;
+    const addonLabor = resolvedAddonBOM ? resolvedAddonBOM.laborCost : 0;
+    const addonMargin = resolvedAddonBOM ? resolvedAddonBOM.contractorMargin : 0;
+
+    return {
+      directMaterialsSubtotal: totals.directMaterialsSubtotal + (item.bomResult.directMaterialsSubtotal + addonMat) * item.quantity,
+      laborSubtotal: totals.laborSubtotal + (item.bomResult.fabricationLaborCost + addonLabor) * item.quantity,
+      contractorMargin: totals.contractorMargin + (item.bomResult.contractorMargin + addonMargin) * item.quantity,
+      calculatedFinalPrice: totals.calculatedFinalPrice + item.totalPrice,
+    };
+  }, { directMaterialsSubtotal: 0, laborSubtotal: 0, contractorMargin: 0, calculatedFinalPrice: 0 });
   return QuotationDocumentDraftV1Schema.parse({ schemaVersion: 1, customer: input.customer, projectName: input.projectName, hasSill: input.hasSill, structuralWaiver: input.structuralWaiver, items, pricing });
 }
 
@@ -381,6 +426,7 @@ export function reconstructLegacyQuotationDocument(input: {
       unitPrice,
       calculatedSubtotal,
       imageSource: typeof details.image_url === "string" ? details.image_url : null,
+      selectedMaterials: (details.selected_materials && typeof details.selected_materials === "object") ? (details.selected_materials as Record<string, string>) : undefined,
       groups: rows.map((row) => ({
         groupName: String(row.item_group_name || row.item_name || "Component Group"),
         description: String(row.item_name || "Component Description"),
