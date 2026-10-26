@@ -7,6 +7,7 @@
 
 import * as THREE from "three";
 import { createInsectScreenMaterial, createGrillMaterial } from "./materialClassifier";
+import { calculateGrilleLinearBOM } from "../pricing/grillePricingEngine";
 
 export interface AddonGeometryConfig {
   frameWidthMm?: number; // Face width of screen/grill frame profile (default: 25mm for screen, 20mm for grill)
@@ -328,6 +329,21 @@ export function buildParametricGrillGroup(
   group.userData.horizontalBarCount = patternGroup.userData.horizontalBarCount;
   group.userData.pitchMm = patternGroup.userData.colPitchMm;
   group.userData.zOffsetMm = zOffset / MM_TO_METERS;
+  group.userData.grilleBOM = calculateGrilleLinearBOM({
+    widthMm,
+    heightMm,
+    patternType: "staggered_brick",
+    nominalPitchColMm: config.nominalBarPitchMm ?? 140,
+    nominalPitchRowMm: config.nominalRowPitchMm ?? 191,
+    includePerimeterFrame: true,
+    grilleRawMaterial: {
+      id: "default-grille-mat",
+      material_code: "AL-GRILLE-TUBE-16MM",
+      description: "16mm Square Tube Aluminum",
+      unit_price: 160,
+      waste_allowance: 0.12,
+    },
+  });
 
   return group;
 }

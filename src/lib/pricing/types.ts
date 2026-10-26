@@ -169,6 +169,7 @@ export const DimensionBindingSchema = z.enum([
   "HEIGHT",
   "AREA",
   "FIXED",
+  "GRILLE_LINEAR",
 ]);
 export type DimensionBinding = z.infer<typeof DimensionBindingSchema>;
 
@@ -421,6 +422,7 @@ export interface ItemizedProductQuotation {
   baseUnitPrice?: number;
   addonAluminumFinish?: string;
   addonBOM?: import("./addonPricingEngine").AddonBOMResult | null;
+  grilleBOM?: GrilleLinearBOMResult | null;
 }
 
 export interface ConsolidatedQuotationSummary {
@@ -438,3 +440,101 @@ export interface ConsolidatedQuotationSummary {
   totalContractorMargin: number;
   finalGrandTotal: number;
 }
+
+// ----------------------------------------------------------------------------
+// 6. Parametric Linear Grille Pricing & Bar Metrics (IMP-MS71)
+// ----------------------------------------------------------------------------
+
+export type GrilleBarOrientation = "HORIZONTAL" | "VERTICAL";
+
+export type GrillePatternType =
+  | "grid" // Full-height vertical pickets + continuous horizontal rails
+  | "louvers" // Continuous horizontal slats + vertical center mullion(s)
+  | "staggered_brick" // Vertical pickets + alternating staggered horizontal tie bars
+  | "custom_uploaded"; // Extracted from uploaded 3D GLB mesh
+
+export interface GrilleBarMetric {
+  id: string;
+  name: string;
+  orientation: GrilleBarOrientation;
+  lengthMm: number; // Cut length of a single piece in millimeters
+  lengthM: number; // Cut length in meters
+  count: number; // Number of identical pieces
+  totalLinearM: number; // lengthM * count
+  rawMaterialId?: string | null;
+  materialCode?: string;
+  unitPricePerMeter: number;
+  subtotalCost: number;
+}
+
+export interface GrilleLinearPricingInput {
+  widthMm: number; // Aperture opening width
+  heightMm: number; // Aperture opening height
+  patternType?: GrillePatternType;
+  nominalPitchColMm?: number; // Target vertical bar pitch (default: 140mm)
+  nominalPitchRowMm?: number; // Target horizontal bar pitch (default: 191mm)
+  horizontalBarCount?: number; // Optional explicit or geometry-detected horizontal bar count
+  verticalBarCount?: number; // Optional explicit or geometry-detected vertical bar count
+  frameProfileWidthMm?: number; // Perimeter frame face width (default: 20mm)
+  includePerimeterFrame?: boolean; // True if grille includes outer frame rails (default: true)
+  grilleRawMaterial: {
+    id: string;
+    material_code: string;
+    description: string;
+    unit_price: number; // PHP per linear meter
+    waste_allowance?: number; // e.g. 0.12 (12%)
+  };
+  frameRawMaterial?: {
+    id: string;
+    material_code: string;
+    description: string;
+    unit_price: number; // PHP per linear meter
+    waste_allowance?: number;
+  } | null;
+  laborRate?: number; // Default 0.25 (25% of material)
+  laborFloor?: number; // Default PHP 650.00
+  contractorMarginRate?: number; // Default 0.25 (25%)
+}
+
+export interface GrilleLinearBOMResult {
+  patternType: GrillePatternType;
+  totalPieces: number;
+  totalLinearMeters: number;
+  directMaterialCost: number;
+  wasteAllowanceCost: number;
+  laborCost: number;
+  contractorMargin: number;
+  finalPrice: number;
+  perimeterRails: {
+    topRail: GrilleBarMetric;
+    bottomRail: GrilleBarMetric;
+    leftJamb: GrilleBarMetric;
+    rightJamb: GrilleBarMetric;
+    totalLinearM: number;
+    subtotalCost: number;
+  } | null;
+  verticalBars: {
+    barCount: number;
+    cutLengthMm: number;
+    totalLinearM: number;
+    subtotalCost: number;
+    details: GrilleBarMetric[];
+  };
+  horizontalBars: {
+    barCount: number;
+    cutLengthMm: number;
+    totalLinearM: number;
+    subtotalCost: number;
+    details: GrilleBarMetric[];
+  };
+  itemizedBreakdown: Array<{
+    item: string;
+    orientation: GrilleBarOrientation | "PERIMETER";
+    pieces: number;
+    lengthMm: number;
+    totalMeters: number;
+    unitRate: number;
+    subtotal: number;
+  }>;
+}
+

@@ -189,6 +189,7 @@ export function BookingFlow() {
           addonPrice,
           baseUnitPrice,
           addonAluminumFinish,
+          grilleBOM: config.grilleBOM ?? overlay.grilleBOM ?? null,
           paperStandard:
             (config.visualParameterValues as Record<string, unknown> | undefined)?.paper_standard as string | undefined,
           calibrationScaleCmPerPx:
@@ -245,6 +246,7 @@ export function BookingFlow() {
         addonPrice,
         baseUnitPrice,
         addonAluminumFinish,
+        grilleBOM: productConfiguration?.grilleBOM ?? null,
         paperStandard:
           (productConfiguration?.visualParameterValues as Record<string, unknown> | undefined)?.paper_standard as string | undefined,
         calibrationScaleCmPerPx:

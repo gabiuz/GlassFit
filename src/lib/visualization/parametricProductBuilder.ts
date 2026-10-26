@@ -17,6 +17,8 @@ import {
   type AddonGeometryConfig,
 } from "./addonGeometryBuilder";
 
+import { calculateGrilleLinearBOM } from "../pricing/grillePricingEngine";
+import type { GrilleLinearBOMResult } from "../pricing/types";
 export {
   createWindowGlassMaterial,
   createMaterialPalette,
@@ -50,6 +52,7 @@ export interface ParametricProductBuilderOptions {
   addonProductId?: string | null;
   addonAluminumFinish?: string;
   addonConfig?: AddonGeometryConfig;
+  grilleBOM?: GrilleLinearBOMResult;
 }
 
 export function buildParametricProduct(
@@ -723,6 +726,23 @@ export function buildGrillAssembly(
   assembly.userData.isAddon = true;
   assembly.userData.widthMm = targetWidthMm;
   assembly.userData.heightMm = targetHeightMm;
+
+  const grilleBOM = options.grilleBOM ?? calculateGrilleLinearBOM({
+    widthMm: targetWidthMm,
+    heightMm: targetHeightMm,
+    patternType: "staggered_brick",
+    nominalPitchColMm: options.addonConfig?.nominalBarPitchMm ?? 140,
+    nominalPitchRowMm: options.addonConfig?.nominalRowPitchMm ?? 191,
+    includePerimeterFrame: true,
+    grilleRawMaterial: {
+      id: "default-grille-mat",
+      material_code: "AL-GRILLE-TUBE-16MM",
+      description: "16mm Square Tube Aluminum",
+      unit_price: 160,
+      waste_allowance: 0.12,
+    },
+  });
+  assembly.userData.grilleBOM = grilleBOM;
 
   if (!components || components.length === 0) {
     const procedural = buildParametricGrillGroup(targetWidthMm, targetHeightMm, options.addonConfig, resolvedFrameMat);

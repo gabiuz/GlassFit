@@ -25,6 +25,29 @@ export interface AutoDetectionResult {
 export function autoDetectComponentSettings(fileName: string): AutoDetectionResult {
   const name = fileName.toLowerCase().replace(/\.glb$/, "");
 
+  // Grille middle bars, center infill, pickets, lattices, and louvers (IMP-MS72)
+  if (
+    name.includes("center_grille") ||
+    name.includes("middle_bars") ||
+    name.includes("grill_middle") ||
+    name.includes("grill_bars") ||
+    name.includes("grille_infill") ||
+    name.includes("picket") ||
+    name.includes("lattice") ||
+    (name.includes("grill") && !name.includes("frame") && !name.includes("jamb") && !name.includes("rail")) ||
+    (name.includes("grille") && !name.includes("frame") && !name.includes("jamb") && !name.includes("rail"))
+  ) {
+    return {
+      dimensionBinding: "GRILLE_LINEAR",
+      spanRatio: 1.0,
+      isRemovable: false,
+      togglePropertyKey: null,
+      presentationCategory: "Framing",
+      componentType: "Frame",
+      suggestedMaterialCategory: "Aluminum",
+    };
+  }
+
   // 1. Sill profiles
   if (name.includes("sill") || name.includes("threshold") || name.includes("bottom_track") || name.includes("bottom_sliding_track")) {
     return {

@@ -19,7 +19,12 @@ import { resolveProductStructure } from "@/lib/visualization/structuralResolver"
 import { buildParametricProduct } from "@/lib/visualization/parametricProductBuilder";
 import { getRawMaterials } from "@/lib/admin/materials/materialActions";
 import { calculateParametricBOM, type ComponentPricingInput, type CalculatedBOMResult } from "@/lib/pricing/pricingEngine";
-import type { RawMaterial } from "@/lib/pricing/types";
+import { calculateGrilleLinearBOM } from "@/lib/pricing/grillePricingEngine";
+import {
+  analyzeGrilleGeometry,
+  type GrilleGeometryAnalysis,
+} from "@/lib/pricing/grilleGeometryAnalyzer";
+import type { RawMaterial, GrilleLinearBOMResult } from "@/lib/pricing/types";
 import { applyPBRToMesh } from "@/lib/visualization/materialClassifier";
 import {
   computeGrillPattern,
@@ -484,6 +489,105 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
 
   const currentWidthMm = parameters.width ?? parameters.quotation_width ?? 1200;
   const currentHeightMm = parameters.height ?? parameters.quotation_height ?? 1200;
+
+  const hasGrilleComponent = useMemo(() => {
+    if (!definition) return false;
+    return (
+      activeAddon === "grill" ||
+      definition.product.addonType === "grill" ||
+      definition.components.some((c) => c.dimensionBinding === "GRILLE_LINEAR")
+    );
+  }, [definition, activeAddon]);
+
+  const grilleBOMResult = useMemo((): GrilleLinearBOMResult | null => {
+    if (!definition || !hasGrilleComponent) return null;
+
+    const grilleComp =
+      definition.components.find((c) => c.dimensionBinding === "GRILLE_LINEAR") ||
+      definition.components.find((c) => {
+        const k = c.componentKey.toLowerCase();
+        return (
+          k.includes("middle") ||
+          k.includes("grill") ||
+          k.includes("infill") ||
+          k.includes("bar") ||
+          k.includes("picket")
+        );
+      });
+
+    const activeMatId = grilleComp
+      ? materialOverrides[grilleComp.componentKey] ||
+        grilleComp.allowedMaterials?.find((m) => m.isDefault)?.rawMaterialId ||
+        grilleComp.rawMaterialId
+      : null;
+
+    const boundMat =
+      rawMaterials.find((m) => m.id === activeMatId) ||
+      rawMaterials.find((m) => m.category === "Aluminum" && m.billing_unit === "m") ||
+      null;
+
+    const barRate = boundMat?.unit_price ?? 165.0;
+    const barScrap = boundMat?.waste_allowance ?? 0.12;
+
+    let analyzedData: GrilleGeometryAnalysis | null = null;
+    let numCols = 1;
+    let numRows = 1;
+
+    if (cache && grilleComp) {
+      try {
+        const clone = cache.getClone(grilleComp.componentId);
+        if (clone) {
+          analyzedData = analyzeGrilleGeometry(clone, currentWidthMm, currentHeightMm);
+        }
+      } catch {
+        // Model might not be loaded into cache yet
+      }
+
+      try {
+        const sz = cache.getSourceSizeMeters(grilleComp.componentId);
+        const sourceW = sz.x > 0.005 ? sz.x * 1000 : 1144;
+        const sourceH = sz.y > 0.005 ? sz.y * 1000 : 1144;
+        const innerW = Math.max(100, currentWidthMm - 40);
+        const innerH = Math.max(100, currentHeightMm - 40);
+        numCols = Math.max(1, Math.round(innerW / sourceW));
+        numRows = Math.max(1, Math.round(innerH / sourceH));
+      } catch {
+        // Use default tile repetition of 1x1
+      }
+    }
+
+    const horizontalCount = analyzedData
+      ? analyzedData.horizontalSummary.pieceCount * numRows
+      : undefined;
+    const verticalCount = analyzedData
+      ? analyzedData.verticalSummary.pieceCount * numCols + (numCols > 1 ? numCols - 1 : 0)
+      : undefined;
+
+    return calculateGrilleLinearBOM({
+      widthMm: currentWidthMm,
+      heightMm: currentHeightMm,
+      patternType: analyzedData?.patternType ?? "grid",
+      nominalPitchColMm: analyzedData?.nominalPitchMm.columnPitch,
+      nominalPitchRowMm: analyzedData?.nominalPitchMm.rowPitch,
+      verticalBarCount: verticalCount,
+      horizontalBarCount: horizontalCount,
+      grilleRawMaterial: {
+        id: boundMat?.id || "grille-mat",
+        material_code: boundMat?.material_code || "AL-16X16-PCW",
+        description: boundMat?.description || "16mm Square Tube White",
+        unit_price: barRate,
+        waste_allowance: barScrap,
+      },
+    });
+  }, [
+    definition,
+    hasGrilleComponent,
+    currentWidthMm,
+    currentHeightMm,
+    materialOverrides,
+    rawMaterials,
+    cache,
+  ]);
 
   const grillPattern = useMemo(() => {
     return computeGrillPattern(currentWidthMm, currentHeightMm);
@@ -967,6 +1071,82 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
           )}
         </div>
       </div>
+
+      {/* Grille Linear Extrusion Cut List Table (IMP-MS72) */}
+      {grilleBOMResult && (
+        <div className="rounded-[20px] bg-slate-900 border border-slate-800 p-5">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2.5">
+              <div className="w-3 h-3 rounded-full bg-sky-400" />
+              <h3 className="text-base font-semibold text-white">
+                Grille Linear Extrusion Cut List (Dynamic Parity)
+              </h3>
+            </div>
+            <span className="text-xs text-slate-400">
+              Aperture: {currentWidthMm}mm W x {currentHeightMm}mm H
+            </span>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs text-slate-300">
+              <thead className="bg-slate-800/60 text-slate-400 uppercase text-[10px] tracking-wider border-b border-slate-700">
+                <tr>
+                  <th className="py-2.5 px-3">Member Description</th>
+                  <th className="py-2.5 px-3">Orientation</th>
+                  <th className="py-2.5 px-3 text-right">Piece Count</th>
+                  <th className="py-2.5 px-3 text-right">Cut Length</th>
+                  <th className="py-2.5 px-3 text-right">Total Meters</th>
+                  <th className="py-2.5 px-3 text-right">Rate (PHP/m)</th>
+                  <th className="py-2.5 px-3 text-right">Subtotal</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800">
+                {grilleBOMResult.itemizedBreakdown.map((row, idx) => (
+                  <tr key={idx} className="hover:bg-slate-800/40">
+                    <td className="py-2 px-3 font-medium text-white">{row.item}</td>
+                    <td className="py-2 px-3">
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                          row.orientation === "VERTICAL"
+                            ? "bg-blue-900/60 text-blue-300 border border-blue-500/30"
+                            : row.orientation === "HORIZONTAL"
+                            ? "bg-purple-900/60 text-purple-300 border border-purple-500/30"
+                            : "bg-slate-800 text-slate-300 border border-slate-600"
+                        }`}
+                      >
+                        {row.orientation}
+                      </span>
+                    </td>
+                    <td className="py-2 px-3 text-right font-mono">{row.pieces} pcs</td>
+                    <td className="py-2 px-3 text-right font-mono">{row.lengthMm} mm</td>
+                    <td className="py-2 px-3 text-right font-mono">{row.totalMeters.toFixed(2)} m</td>
+                    <td className="py-2 px-3 text-right font-mono">PHP {row.unitRate.toFixed(2)}</td>
+                    <td className="py-2 px-3 text-right font-mono font-semibold text-white">
+                      PHP {row.subtotal.toFixed(2)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot className="border-t-2 border-slate-700 font-semibold text-white bg-slate-800/40">
+                <tr>
+                  <td colSpan={2} className="py-2.5 px-3">Total Fabrication Extrusion</td>
+                  <td className="py-2.5 px-3 text-right font-mono text-teal-400">
+                    {grilleBOMResult.totalPieces} pcs
+                  </td>
+                  <td className="py-2.5 px-3 text-right text-slate-400">-</td>
+                  <td className="py-2.5 px-3 text-right font-mono text-teal-400">
+                    {grilleBOMResult.totalLinearMeters.toFixed(2)} m
+                  </td>
+                  <td className="py-2.5 px-3 text-right text-slate-400">-</td>
+                  <td className="py-2.5 px-3 text-right font-mono text-teal-300">
+                    PHP {grilleBOMResult.finalPrice.toFixed(2)}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Pre-Activation Readiness Verification */}
       <div className="pt-2">

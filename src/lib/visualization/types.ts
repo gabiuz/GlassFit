@@ -1,5 +1,5 @@
 import type { SpaceImageSession } from "@/lib/imageApi";
-import type { RawMaterial, CalculatedBOMResult, ComponentMaterialBinding } from "@/lib/pricing/types";
+import type { RawMaterial, CalculatedBOMResult, ComponentMaterialBinding, DimensionBinding } from "@/lib/pricing/types";
 import type { AluminumFinishKey, RrdAluminumFinishKey } from "./colorVariations";
 
 export type JsonObject = Record<string, unknown>;
@@ -82,7 +82,7 @@ export type ProductComponentDefinition = {
   rawMaterial?: RawMaterial | null;
   allowedMaterials?: ComponentMaterialBinding[];
   defaultRawMaterialId?: string | null;
-  dimensionBinding?: "WIDTH" | "HEIGHT" | "AREA" | "FIXED";
+  dimensionBinding?: DimensionBinding;
   spanRatio?: number;
   isRemovable?: boolean;
   togglePropertyKey?: string | null;
@@ -221,6 +221,7 @@ export type PlacedOverlay = {
   totalPrice?: number;
   layerNumber?: number;
   previewGlbUrl?: string | null;
+  grilleBOM?: import("@/lib/pricing/types").GrilleLinearBOMResult | null;
 };
 
 export type VariationAssetRef = {
@@ -329,6 +330,7 @@ export type ProductConfigurationSnapshot = {
   addonPrice?: number;
   addonAluminumFinish?: string;
   baseUnitPrice?: number;
+  grilleBOM?: import("@/lib/pricing/types").GrilleLinearBOMResult | null;
   visualParameterValues: Record<string, unknown>;
 };
 

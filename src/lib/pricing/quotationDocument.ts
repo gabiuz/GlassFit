@@ -1,8 +1,9 @@
 /** Canonical quotation document domain. Traceability: IMP-MS17, PRD-F10, PRD-F11, SDD-C7. */
 import { z } from "zod";
 import { MeasurementRecordSchema, StoredMeasurementRecordSchema } from "../visualization/measurementRecord";
-import type { CalculatedBOMResult, ItemizedProductQuotation } from "./types";
+import type { CalculatedBOMResult, ItemizedProductQuotation, GrilleLinearBOMResult } from "./types";
 import { calculateAddonBOM } from "./addonPricingEngine";
+import { calculateGrilleLinearBOM } from "./grillePricingEngine";
 
 const MONEY_MAX = 9_999_999_999.99;
 const money = z.number().finite().min(0).max(MONEY_MAX).refine(
@@ -60,6 +61,7 @@ export const QuotationDocumentItemSchema = z.object({
   addonPrice: money.optional(),
   baseUnitPrice: money.optional(),
   addonAluminumFinish: z.string().optional(),
+  grilleBOM: z.custom<GrilleLinearBOMResult>().nullable().optional(),
 }).superRefine((item, context) => {
   if (Math.round(item.unitPrice * item.quantity * 100) !== Math.round(item.calculatedSubtotal * 100)) {
     context.addIssue({ code: "custom", path: ["calculatedSubtotal"], message: "Item arithmetic mismatch" });
@@ -194,19 +196,19 @@ export function createQuotationDocumentSnapshotV1(input: {
   customer: QuotationDocumentDraftV1["customer"];
   projectName: string;
   items: ItemizedProductQuotation[];
-  fallbackBom: CalculatedBOMResult;
+  fallbackBom?: CalculatedBOMResult;
   hasSill: boolean;
   structuralWaiver: boolean;
   adminLaborCharge?: number | null;
 }): QuotationDocumentDraftV1 {
-  const sourceItems = input.items.length > 0 ? input.items : [{
+  const sourceItems = input.items.length > 0 ? input.items : input.fallbackBom ? [{
     itemId: "primary-item", productId: "", productName: input.projectName, productType: "Window & Door",
     variantName: `${input.fallbackBom.panelCount}-Panel Configuration`, specSummary: `${input.fallbackBom.finishType} | ${input.fallbackBom.widthM * 100}cm × ${input.fallbackBom.heightM * 100}cm`,
     dimensionsFormatted: `${input.fallbackBom.widthM * 100}cm × ${input.fallbackBom.heightM * 100}cm`, widthMm: input.fallbackBom.widthM * 1000,
     heightMm: input.fallbackBom.heightM * 1000, panelCount: input.fallbackBom.panelCount, hasSill: input.hasSill,
     structuralWaiver: input.structuralWaiver, finishType: input.fallbackBom.finishType, glassType: input.fallbackBom.glassType,
     quantity: 1, unitPrice: input.fallbackBom.finalQuotation, totalPrice: input.fallbackBom.finalQuotation, imageUrl: "", bomResult: input.fallbackBom,
-  }];
+  }] : [];
   const items = sourceItems.map((item) => {
     const itemGroups = groupsFromBom(item.bomResult);
     if (item.selectedAddon && item.selectedAddon !== "none" && (item.addonPrice ?? 0) > 0) {
@@ -238,21 +240,50 @@ export function createQuotationDocumentSnapshotV1(input: {
       addonPrice: item.addonPrice,
       baseUnitPrice: item.baseUnitPrice,
       addonAluminumFinish: item.addonAluminumFinish,
+      grilleBOM: item.grilleBOM,
     };
   });
   const pricing = sourceItems.reduce((totals, item) => {
-    const resolvedAddonBOM = item.addonBOM ?? (
-      item.selectedAddon && item.selectedAddon !== "none"
-        ? calculateAddonBOM({
-            addonType: item.selectedAddon,
-            widthMm: item.widthMm,
-            heightMm: item.heightMm,
-          })
-        : null
-    );
-    const addonMat = resolvedAddonBOM ? resolvedAddonBOM.directMaterialCost : 0;
-    const addonLabor = resolvedAddonBOM ? resolvedAddonBOM.laborCost : 0;
-    const addonMargin = resolvedAddonBOM ? resolvedAddonBOM.contractorMargin : 0;
+    const isGrille = item.selectedAddon === "grill";
+    const resolvedGrilleBOM = isGrille
+      ? (item.grilleBOM ?? calculateGrilleLinearBOM({
+          widthMm: item.widthMm,
+          heightMm: item.heightMm,
+          patternType: "staggered_brick",
+          grilleRawMaterial: {
+            id: "doc-grille-mat",
+            material_code: "AL-GRILLE-TUBE-16MM",
+            description: "16mm Square Tube Aluminum",
+            unit_price: (item.addonAluminumFinish || "").toLowerCase().includes("white") ? 180 : 160,
+            waste_allowance: 0.12,
+          },
+          includePerimeterFrame: true,
+        }))
+      : null;
+
+    const resolvedAddonBOM = !isGrille && item.selectedAddon && item.selectedAddon !== "none"
+      ? (item.addonBOM ?? calculateAddonBOM({
+          addonType: item.selectedAddon,
+          widthMm: item.widthMm,
+          heightMm: item.heightMm,
+        }))
+      : null;
+
+    const addonMat = resolvedGrilleBOM
+      ? resolvedGrilleBOM.directMaterialCost
+      : resolvedAddonBOM
+        ? resolvedAddonBOM.directMaterialCost
+        : 0;
+    const addonLabor = resolvedGrilleBOM
+      ? resolvedGrilleBOM.laborCost
+      : resolvedAddonBOM
+        ? resolvedAddonBOM.laborCost
+        : 0;
+    const addonMargin = resolvedGrilleBOM
+      ? resolvedGrilleBOM.contractorMargin
+      : resolvedAddonBOM
+        ? resolvedAddonBOM.contractorMargin
+        : 0;
 
     return {
       directMaterialsSubtotal: totals.directMaterialsSubtotal + (item.bomResult.directMaterialsSubtotal + addonMat) * item.quantity,

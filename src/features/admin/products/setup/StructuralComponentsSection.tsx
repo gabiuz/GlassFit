@@ -9,6 +9,7 @@ import { autoDetectComponentSettings, suggestCandidateMaterials } from "@/lib/ad
 import { decomposeWholeModel, type ExtractedComponentPart } from "@/lib/admin/products/modelDecomposer";
 import { DecompositionPreviewModal } from "./DecompositionPreviewModal";
 import { PartInspectorDrawer, type PartInspectorConfig } from "./PartInspectorDrawer";
+import { analyzeGrilleGeometry, type GrilleGeometryAnalysis } from "@/lib/pricing/grilleGeometryAnalyzer";
 import { getRawMaterials } from "@/lib/admin/materials/materialActions";
 import type { RawMaterial, DimensionBinding, PresentationCategory, ComponentMaterialBinding } from "@/lib/pricing/types";
 import { Canvas } from "@react-three/fiber";
@@ -936,6 +937,18 @@ export function StructuralComponentsSection({
             }));
     }, [mappedFiles, selectedIds]);
 
+    const analyzedGrilleData = useMemo((): GrilleGeometryAnalysis | null => {
+        const primary = selectedPartConfigs[0];
+        if (!primary || primary.dimensionBinding !== "GRILLE_LINEAR") return null;
+        const matchingFile = mappedFiles.find((m) => m.id === primary.id);
+        if (!matchingFile?.previewMesh) return null;
+        try {
+            return analyzeGrilleGeometry(matchingFile.previewMesh, 1200, 1200);
+        } catch {
+            return null;
+        }
+    }, [selectedPartConfigs, mappedFiles]);
+
     // If it is fixed, skip structural components setup
     if (modelStrategy !== "Parametric") {
         return (
@@ -1241,6 +1254,7 @@ export function StructuralComponentsSection({
                         <PartInspectorDrawer
                             selectedParts={selectedPartConfigs}
                             rawMaterials={rawMaterials}
+                            analyzedGrilleData={analyzedGrilleData}
                             onUpdateParts={handleBatchUpdateSelected}
                             onSyncAssemblyGroup={handleSyncAssemblyGroup}
                             onDeselect={() => setSelectedIds(new Set())}

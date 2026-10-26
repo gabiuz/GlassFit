@@ -15,7 +15,9 @@ import type {
   QuotationBOMSummary,
   RawMaterial,
   ComponentMaterialBinding,
+  DimensionBinding,
 } from "./types";
+import { calculateGrilleLinearBOM } from "./grillePricingEngine";
 import type { PlacedOverlay, ProductStructuralDefinition } from "@/lib/visualization/types";
 
 export type {
@@ -27,7 +29,7 @@ export type {
 export interface ComponentPricingInput {
   componentKey: string;
   componentName: string;
-  dimensionBinding: "WIDTH" | "HEIGHT" | "AREA" | "FIXED";
+  dimensionBinding: DimensionBinding;
   spanRatio: number;
   baseQuantity: number;
   isRemovable: boolean;
@@ -127,6 +129,23 @@ export function calculateParametricBOM(
           computedQty = widthM * heightM * comp.spanRatio * comp.baseQuantity;
           unitLabel = "sqm";
           break;
+        case "GRILLE_LINEAR": {
+          const grilleBOM = calculateGrilleLinearBOM({
+            widthMm: options.widthMm,
+            heightMm: options.heightMm,
+            includePerimeterFrame: false,
+            grilleRawMaterial: {
+              id: mat?.id || "grille-mat",
+              material_code: mat?.material_code || "GRILLE-EXT",
+              description: mat?.description || "Grille Bar",
+              unit_price: unitPrice,
+              waste_allowance: wasteFactor,
+            },
+          });
+          computedQty = round2(grilleBOM.verticalBars.totalLinearM + grilleBOM.horizontalBars.totalLinearM) * comp.spanRatio * comp.baseQuantity;
+          unitLabel = "m";
+          break;
+        }
         case "FIXED":
         default:
           computedQty = comp.baseQuantity;
