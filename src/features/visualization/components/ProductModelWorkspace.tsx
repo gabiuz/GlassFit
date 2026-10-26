@@ -1009,13 +1009,29 @@ export function ProductModelWorkspace({
     width: aspectWidth,
     height: aspectHeight,
   });
+  const measuredCanvasSizeRef = useRef<{ width: number; height: number } | null>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = canvasRef.current;
     if (!el) return;
     const updateSize = () => {
       const rect = el.getBoundingClientRect();
       if (rect.width > 0 && rect.height > 0) {
+        const previousSize = measuredCanvasSizeRef.current;
+        if (previousSize && previousSize.width !== rect.width) {
+          const scale = rect.width / previousSize.width;
+          setOverlayPosition((position) => ({
+            x: position.x * scale,
+            y: position.y * scale,
+          }));
+          setOverlaySize((size) => ({
+            width: size.width * scale,
+            height: size.height * scale,
+          }));
+          overlayX.set(overlayX.get() * scale);
+          overlayY.set(overlayY.get() * scale);
+        }
+        measuredCanvasSizeRef.current = { width: rect.width, height: rect.height };
         setCanvasDisplaySize({ width: rect.width, height: rect.height });
       }
     };
@@ -1023,20 +1039,16 @@ export function ProductModelWorkspace({
     const observer = new ResizeObserver(updateSize);
     observer.observe(el);
     return () => observer.disconnect();
-  }, [aspectWidth, aspectHeight]);
+  }, [aspectWidth, aspectHeight, overlayX, overlayY, shouldLockMobileEditor, compactOrientation]);
 
   const perspectiveToolbarPosition = useMemo(() => {
     if (!perspectiveCorners) return null;
     const currentWidth = canvasDisplaySize.width;
     const currentHeight = canvasDisplaySize.height;
-    const pxCorners = denormalizeCorners(
-      perspectiveCorners,
-      currentWidth,
-      currentHeight,
-    );
-    const minX = Math.min(...pxCorners.map((p) => p.x));
-    const maxX = Math.max(...pxCorners.map((p) => p.x));
-    const minY = Math.min(...pxCorners.map((p) => p.y));
+    const pxCorners = denormalizeCorners(perspectiveCorners, currentWidth, currentHeight);
+    const minX = Math.min(...pxCorners.map((point) => point.x));
+    const maxX = Math.max(...pxCorners.map((point) => point.x));
+    const minY = Math.min(...pxCorners.map((point) => point.y));
     return {
       left: Math.max(160, Math.min(currentWidth - 160, (minX + maxX) / 2)),
       top: Math.max(12, minY - 48),
@@ -3752,18 +3764,18 @@ export function ProductModelWorkspace({
         {/* Left Side: Space Canvas + Instructions */}
         <div className={shouldLockMobileEditor ? "flex h-full min-w-0 flex-1 items-center justify-center overflow-hidden" : "flex-1 min-w-0 flex flex-col gap-6 w-full lg:sticky lg:top-35 lg:self-start"}>
           {/* Main Space Canvas Card */}
-          <div className={shouldLockMobileEditor ? "relative flex h-full w-full items-center justify-center overflow-hidden bg-[#0f1422] touch-none" : "bg-white/10 border border-[#f5f5f5] p-3 sm:p-5 rounded-[20px] shadow-[0px_0px_5px_0px_rgba(0,0,0,0.25)] relative w-full flex items-center justify-center overflow-hidden"}>
+          <div className={shouldLockMobileEditor ? "relative flex h-full w-full items-center justify-center overflow-hidden bg-[#0f1422] touch-none [container-type:size]" : "bg-white/10 border border-[#f5f5f5] p-3 sm:p-5 rounded-[20px] shadow-[0px_0px_5px_0px_rgba(0,0,0,0.25)] relative w-full flex flex-col items-center justify-center gap-3 lg:flex-row lg:gap-0"}>
             <div
               ref={canvasRef}
               className="relative mx-auto rounded-[15px] overflow-hidden bg-neutral-100"
               style={{
                 aspectRatio: workspaceAspectRatio,
                 width: shouldLockMobileEditor
-                  ? "auto"
+                  ? `min(100cqw, calc(100cqh * ${aspectWidth} / ${aspectHeight}))`
                   : `min(100%, calc(55vh * ${aspectWidth} / ${aspectHeight}))`,
                 maxWidth: "100%",
                 maxHeight: shouldLockMobileEditor ? "100%" : "55vh",
-                height: shouldLockMobileEditor ? "100%" : undefined,
+                height: shouldLockMobileEditor ? "auto" : undefined,
                 touchAction: shouldLockMobileEditor ? "none" : undefined,
               }}
             >
@@ -4132,61 +4144,6 @@ export function ProductModelWorkspace({
                 >
                   {perspectiveCorners ? (
                     <>
-                      {perspectiveToolbarPosition && !shouldLockMobileEditor && (
-                        <div
-                          className="absolute flex items-center gap-2.5 select-none animate-in fade-in slide-in-from-bottom-2 duration-200 pointer-events-auto"
-                          style={{
-                            left: perspectiveToolbarPosition.left,
-                            top: perspectiveToolbarPosition.top,
-                            transform: "translateX(-50%)",
-                          }}
-                        >
-                          <button
-                            type="button"
-                            onClick={() => setShowPerspectivePicker(true)}
-                            className="bg-[#0f1422] hover:bg-black text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
-                          >
-                            <Maximize className="w-4 h-4 text-white" />
-                            <span className="text-[13px] font-normal tracking-[-0.266px]">Edit Corners</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setPerspectiveCorners(null);
-                              setModelRevision((prev) => prev + 1);
-                            }}
-                            className="bg-[#0f1422] hover:bg-black text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
-                          >
-                            <Move className="w-4 h-4 text-white" />
-                            <span className="text-[13px] font-normal tracking-[-0.266px]">Free Place</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleFlip}
-                            className="bg-[#0f1422] hover:bg-black text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
-                          >
-                            <FlipHorizontal className="w-4 h-4 text-white" />
-                            <span className="text-[13px] font-normal tracking-[-0.266px]">Flip</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleReset}
-                            className="bg-[#0f1422] hover:bg-black text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
-                          >
-                            <RotateCcw className="w-4 h-4 text-white" />
-                            <span className="text-[13px] font-normal tracking-[-0.266px]">Reset</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleRemove}
-                            className="bg-[#c50000] hover:bg-[#a30000] text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
-                          >
-                            <Trash2 className="w-4 h-4 text-white" />
-                            <span className="text-[13px] font-normal tracking-[-0.266px]">Remove</span>
-                          </button>
-                        </div>
-                      )}
-
                       {/* 9 Perspective Quadrilateral Transform Handles (Picture 2 Parity) */}
                       {perspectiveHandlePoints && (
                         <>
@@ -4372,6 +4329,87 @@ export function ProductModelWorkspace({
                 />
               )}
             </div>
+            {perspectiveToolbarPosition && !shouldLockMobileEditor && selectedProduct && isEditingProduct && perspectiveCorners && (
+                        <div
+                          className="absolute z-50 hidden lg:flex items-center gap-2.5 select-none animate-in fade-in slide-in-from-bottom-2 duration-200 pointer-events-auto"
+                          style={{
+                            left: `calc(50% + ${perspectiveToolbarPosition.left - canvasDisplaySize.width / 2}px)`,
+                            top: `calc(50% + ${perspectiveToolbarPosition.top - canvasDisplaySize.height / 2}px)`,
+                            transform: "translateX(-50%)",
+                          }}
+                        >
+                          <button type="button" onClick={() => setShowPerspectivePicker(true)} className="bg-[#0f1422] hover:bg-black text-white w-25 h-12 px-2 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md">
+                            <Maximize className="w-4 h-4 text-white" />
+                            <span className="text-[13px] font-normal tracking-[-0.266px]">Edit Corners</span>
+                          </button>
+                          <button type="button" onClick={() => { setPerspectiveCorners(null); setModelRevision((prev) => prev + 1); }} className="bg-[#0f1422] hover:bg-black text-white w-25 h-12 px-2 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md">
+                            <Move className="w-4 h-4 text-white" />
+                            <span className="text-[13px] font-normal tracking-[-0.266px]">Free Place</span>
+                          </button>
+                          <button type="button" onClick={handleFlip} className="bg-[#0f1422] hover:bg-black text-white w-25 h-12 px-2 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md">
+                            <FlipHorizontal className="w-4 h-4 text-white" />
+                            <span className="text-[13px] font-normal tracking-[-0.266px]">Flip</span>
+                          </button>
+                          <button type="button" onClick={handleReset} className="bg-[#0f1422] hover:bg-black text-white w-25 h-12 px-2 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md">
+                            <RotateCcw className="w-4 h-4 text-white" />
+                            <span className="text-[13px] font-normal tracking-[-0.266px]">Reset</span>
+                          </button>
+                          <button type="button" onClick={handleRemove} className="bg-[#c50000] hover:bg-[#a30000] text-white w-25 h-12 px-2 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md">
+                            <Trash2 className="w-4 h-4 text-white" />
+                            <span className="text-[13px] font-normal tracking-[-0.266px]">Remove</span>
+                          </button>
+                        </div>
+                      )}
+                      {!shouldLockMobileEditor && selectedProduct && isEditingProduct && perspectiveCorners && (
+                        <div
+                          className="grid w-full max-w-[600px] grid-cols-2 gap-2 select-none sm:grid-cols-5 lg:hidden"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => setShowPerspectivePicker(true)}
+                            className="bg-[#0f1422] hover:bg-black text-white min-h-11 min-w-0 px-2 py-2 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]"
+                          >
+                            <Maximize className="w-4 h-4 text-white" />
+                            <span className="text-[13px] font-normal tracking-[-0.266px] text-center">Edit Corners</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPerspectiveCorners(null);
+                              setModelRevision((prev) => prev + 1);
+                            }}
+                            className="bg-[#0f1422] hover:bg-black text-white min-h-11 min-w-0 px-2 py-2 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]"
+                          >
+                            <Move className="w-4 h-4 text-white" />
+                            <span className="text-[13px] font-normal tracking-[-0.266px] text-center">Free Place</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleFlip}
+                            className="bg-[#0f1422] hover:bg-black text-white min-h-11 min-w-0 px-2 py-2 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]"
+                          >
+                            <FlipHorizontal className="w-4 h-4 text-white" />
+                            <span className="text-[13px] font-normal tracking-[-0.266px] text-center">Flip</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleReset}
+                            className="bg-[#0f1422] hover:bg-black text-white min-h-11 min-w-0 px-2 py-2 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]"
+                          >
+                            <RotateCcw className="w-4 h-4 text-white" />
+                            <span className="text-[13px] font-normal tracking-[-0.266px] text-center">Reset</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleRemove}
+                            className="bg-[#c50000] hover:bg-[#a30000] text-white min-h-11 min-w-0 px-2 py-2 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]"
+                          >
+                            <Trash2 className="w-4 h-4 text-white" />
+                            <span className="text-[13px] font-normal tracking-[-0.266px] text-center">Remove</span>
+                          </button>
+                        </div>
+                      )}
+
           </div>
 
           {/* Action Instructions Bar */}
