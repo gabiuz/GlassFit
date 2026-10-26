@@ -115,7 +115,7 @@ export function CalibrationModeSelector({
       <div
         role="radiogroup"
         aria-label="Calibration mode options"
-        className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2"
+        className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2"
       >
         {/* Automatic Detection Card */}
         <div
@@ -131,7 +131,7 @@ export function CalibrationModeSelector({
               : "border-neutral-200 bg-white hover:border-neutral-300 hover:bg-neutral-50/50",
           ].join(" ")}
         >
-          <div className="flex items-start justify-between gap-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="flex items-center gap-2.5">
               <div
                 className={[
@@ -159,7 +159,7 @@ export function CalibrationModeSelector({
             Upload a space photo and enter the workspace with an approximate preview. No paper reference required.
           </p>
 
-          <div className="mt-4 flex items-center justify-between border-t border-neutral-100 pt-3">
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-neutral-100 pt-3">
             <span className="text-xs text-neutral-500">Requires no markers</span>
             <span className="rounded-md border border-neutral-200 bg-neutral-50 px-2 py-0.5 text-xs font-medium text-neutral-700">
               Approximate Preview Available
@@ -181,7 +181,7 @@ export function CalibrationModeSelector({
               : "border-neutral-200 bg-white hover:border-neutral-300 hover:bg-neutral-50/50",
           ].join(" ")}
         >
-          <div className="flex items-start justify-between gap-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="flex items-center gap-2.5">
               <div
                 className={[
@@ -209,7 +209,7 @@ export function CalibrationModeSelector({
             Tape a standard piece of bond paper to your wall before taking the photo. Confirm its format and placement after detection.
           </p>
 
-          <div className="mt-4 flex items-center justify-between border-t border-neutral-100 pt-3">
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-neutral-100 pt-3">
             <span className="text-xs text-neutral-500">Requires 1 sheet of paper</span>
             <span className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-800">
               Requires Reference Review
@@ -240,7 +240,7 @@ export function CalibrationModeSelector({
           <div
             role="radiogroup"
             aria-label="Philippine paper sizes"
-            className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3"
+            className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3"
           >
             {PAPER_OPTIONS.map((option) => {
               const isSelected = paperStandard === option.id;

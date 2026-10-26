@@ -156,9 +156,9 @@ export function ProductDetails({ product }: { product: ProductDetail }) {
     <div className="flex w-full flex-col gap-8 px-6 pt-8 pb-16 lg:px-21.5 lg:pt-13.75 lg:pb-33">
       <Breadcrumb productName={product.product_name} />
 
-      <div className="flex w-full flex-col items-stretch gap-9 lg:flex-row lg:items-start">
+      <div className="flex w-full flex-col items-stretch gap-9 xl:flex-row xl:items-start">
         <div className="relative flex flex-col gap-3 shrink-0 w-full sm:w-auto">
-          <div className="relative h-64 w-full shrink-0 overflow-hidden rounded-sm bg-[#d9d9d9] sm:h-96 lg:h-226.75 lg:w-164.5 group">
+          <div className="relative h-64 w-full shrink-0 overflow-hidden rounded-sm bg-[#d9d9d9] sm:h-96 xl:h-226.75 xl:w-164.5 group">
             {(!view3d || !has3d) && (
               total2dImages > 0 ? (
                 <>

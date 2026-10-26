@@ -4689,14 +4689,14 @@ export function ProductModelWorkspace({
                           {/* Dimension */}
                           <div className="flex flex-col gap-2">
                             <span className="text-[#0f1422] text-base font-medium">Dimension</span>
-                            <div className="grid grid-cols-3 gap-3">
+                            <div className={`grid grid-cols-1 gap-3 ${shouldLockMobileEditor && compactOrientation === "landscape" ? "" : "sm:grid-cols-3"}`}>
                               <div className="flex flex-col gap-1">
                                 <span className="flex min-h-10 items-end text-[#c3c3c3] text-sm leading-tight">Width (cm)</span>
                                 <input
                                   type="text"
                                   value={widthCm}
                                   onChange={(e) => handleWidthCmChange(e.target.value)}
-                                  className="w-full bg-white border border-[#c3c3c3] rounded-[10px] px-3 py-1.5 text-center text-[#0f1422] text-base shadow-[0px_0px_7px_rgba(0,0,0,0.1)] focus:outline-none"
+                                  className="min-h-11 w-full bg-white border border-[#c3c3c3] rounded-[10px] px-3 py-1.5 text-center text-[#0f1422] text-base shadow-[0px_0px_7px_rgba(0,0,0,0.1)] focus:outline-none"
                                 />
                               </div>
                               <div className="flex flex-col gap-1">
@@ -4705,7 +4705,7 @@ export function ProductModelWorkspace({
                                   type="text"
                                   value={heightCm}
                                   onChange={(e) => handleHeightCmChange(e.target.value)}
-                                  className="w-full bg-white border border-[#c3c3c3] rounded-[10px] px-3 py-1.5 text-center text-[#0f1422] text-base shadow-[0px_0px_7px_rgba(0,0,0,0.1)] focus:outline-none"
+                                  className="min-h-11 w-full bg-white border border-[#c3c3c3] rounded-[10px] px-3 py-1.5 text-center text-[#0f1422] text-base shadow-[0px_0px_7px_rgba(0,0,0,0.1)] focus:outline-none"
                                 />
                               </div>
                               <div className="flex flex-col gap-1">
@@ -4714,7 +4714,7 @@ export function ProductModelWorkspace({
                                   type="text"
                                   value={thicknessMm}
                                   onChange={(e) => setThicknessMm(e.target.value)}
-                                  className="w-full bg-white border border-[#c3c3c3] rounded-[10px] px-3 py-1.5 text-center text-[#0f1422] text-base shadow-[0px_0px_7px_rgba(0,0,0,0.1)] focus:outline-none"
+                                  className="min-h-11 w-full bg-white border border-[#c3c3c3] rounded-[10px] px-3 py-1.5 text-center text-[#0f1422] text-base shadow-[0px_0px_7px_rgba(0,0,0,0.1)] focus:outline-none"
                                 />
                               </div>
                             </div>
@@ -4725,11 +4725,13 @@ export function ProductModelWorkspace({
                             <span className="text-[#0f1422] text-base font-medium">Quantity</span>
                             <div className="flex flex-col gap-1">
                               <span className="text-[#c3c3c3] text-sm">Qty</span>
-                              <div className="bg-white border border-[#c3c3c3] rounded-[10px] px-3 py-1.5 flex items-center justify-between w-28 shadow-[0px_0px_7px_rgba(0,0,0,0.1)]">
+                              <div className="bg-white border border-[#c3c3c3] rounded-[10px] flex items-center justify-between w-36 shadow-[0px_0px_7px_rgba(0,0,0,0.1)]">
                                 <button
                                   type="button"
                                   onClick={() => setQuantity((q) => Math.max(1, q - 1))}
-                                  className="p-1 hover:opacity-75 transition-opacity cursor-pointer"
+                                  disabled={quantity <= 1}
+                                  aria-label="Decrease quantity"
+                                  className="flex min-h-11 min-w-11 items-center justify-center hover:opacity-75 transition-opacity cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-[#07b6d3]"
                                 >
                                   <Image
                                     src="/visualization/minus-solid-full 1.svg"
@@ -4742,7 +4744,8 @@ export function ProductModelWorkspace({
                                 <button
                                   type="button"
                                   onClick={() => setQuantity((q) => q + 1)}
-                                  className="p-1 hover:opacity-75 transition-opacity cursor-pointer"
+                                  aria-label="Increase quantity"
+                                  className="flex min-h-11 min-w-11 items-center justify-center hover:opacity-75 transition-opacity cursor-pointer focus-visible:outline-2 focus-visible:outline-[#07b6d3]"
                                 >
                                   <Image
                                     src="/visualization/plus-solid-full 1.svg"
