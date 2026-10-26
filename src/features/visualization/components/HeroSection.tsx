@@ -37,7 +37,7 @@ export function HeroSection() {
           ))}
         </div>
       </div>
-      <div className="relative min-h-60 md:min-h-115">
+      <div className="relative min-h-52 sm:min-h-80 md:min-h-96 lg:min-h-115">
         <div className="absolute inset-0 overflow-hidden">
           <video
             className="absolute inset-0 h-full w-full object-cover"
@@ -51,8 +51,8 @@ export function HeroSection() {
           <div className="absolute inset-0 bg-white/70"></div>
         </div>
         <div className="relative z-10">
-          <div className="flex min-h-60 md:min-h-115 items-center justify-center">
-            <h1 className="text-4xl sm:text-6xl lg:text-8xl text-black font-medium text-center uppercase leading-tight lg:leading-[115.20px]">
+          <div className="flex min-h-52 items-center justify-center px-4 pt-16 sm:min-h-80 sm:px-6 md:min-h-96 lg:min-h-115 lg:pt-20">
+            <h1 className="text-3xl sm:text-5xl md:text-6xl lg:text-8xl text-black font-medium text-center uppercase leading-tight lg:leading-[115.20px]">
               <span className="bg-grad-light bg-clip-text text-transparent">
                 Visualization Workspace
               </span>

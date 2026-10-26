@@ -137,8 +137,8 @@ export function ProductAwareUploadPage({
       <HeroSection />
 
       <section className="px-6 pt-8 md:px-12 md:pt-12 lg:px-24.25 lg:pt-17.75">
-        <div className="mx-auto flex w-full max-w-367 flex-col gap-5 rounded-[20px] border border-[#c3c3c3]/50 bg-white px-5 py-5 shadow-[0px_0px_5px_0px_rgba(0,0,0,0.18)] md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-4">
+        <div className="mx-auto flex w-full max-w-367 flex-col gap-5 rounded-[20px] border border-[#c3c3c3]/50 bg-white px-5 py-5 shadow-[0px_0px_5px_0px_rgba(0,0,0,0.18)] lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex min-w-0 items-center gap-4">
             <div className="relative h-20 w-24 shrink-0 overflow-hidden rounded-[10px] bg-neutral-100">
               {product.catalogImageUrl ? (
                 <Image
@@ -156,7 +156,7 @@ export function ProductAwareUploadPage({
             </div>
             <div className="min-w-0">
               <p className="text-sm text-[#c3c3c3]">You are visualizing</p>
-              <h1 className="truncate text-2xl font-medium text-black">
+              <h1 className="break-words text-2xl font-medium text-black">
                 {product.productName}
               </h1>
               <p className="text-sm text-green">{product.productType}</p>
