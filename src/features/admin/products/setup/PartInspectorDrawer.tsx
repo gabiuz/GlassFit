@@ -15,6 +15,8 @@ import type {
   ComponentMaterialBinding,
 } from '@/lib/pricing/types';
 import type { ComponentType } from '@/lib/admin/products/types';
+import { calculateGrilleLinearBOM } from '@/lib/pricing/grillePricingEngine';
+import type { GrilleGeometryAnalysis } from '@/lib/pricing/grilleGeometryAnalyzer';
 
 export interface PartInspectorConfig {
   id: string;
@@ -36,6 +38,7 @@ interface PartInspectorDrawerProps {
   selectedParts: PartInspectorConfig[];
   allParts?: PartInspectorConfig[];
   rawMaterials: RawMaterial[];
+  analyzedGrilleData?: GrilleGeometryAnalysis | null;
   onUpdateParts: (updates: Partial<PartInspectorConfig>) => void;
   onSyncAssemblyGroup?: (assemblyGroup: string, bindings: ComponentMaterialBinding[], defaultMaterialId: string | null) => void;
   onDeselect: () => void;
@@ -44,12 +47,14 @@ interface PartInspectorDrawerProps {
 export function PartInspectorDrawer({
   selectedParts,
   rawMaterials,
+  analyzedGrilleData,
   onUpdateParts,
   onSyncAssemblyGroup,
   onDeselect,
 }: PartInspectorDrawerProps) {
   const [categoryFilter, setCategoryFilter] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [validationWarning, setValidationWarning] = useState<string | null>(null);
 
   const primary = selectedParts[0] as PartInspectorConfig | undefined;
   const isMulti = selectedParts.length > 1;
@@ -84,9 +89,52 @@ export function PartInspectorDrawer({
     return rawMaterials.find((m) => m.id === defaultMaterialId) || null;
   }, [rawMaterials, defaultMaterialId]);
 
+  // Dynamic geometry analysis fallback for GRILLE_LINEAR
+  const defaultGrilleAnalysis = useMemo((): GrilleGeometryAnalysis | null => {
+    if (primary?.dimensionBinding !== 'GRILLE_LINEAR') return null;
+    if (analyzedGrilleData) return analyzedGrilleData;
+
+    const bom = calculateGrilleLinearBOM({
+      widthMm: 1200,
+      heightMm: 1200,
+      patternType: 'grid',
+      grilleRawMaterial: {
+        id: currentDefaultMaterial?.id || 'default',
+        material_code: currentDefaultMaterial?.material_code || 'AL-16X16-PCW',
+        description: currentDefaultMaterial?.description || '16mm Square Tube White',
+        unit_price: currentDefaultMaterial?.unit_price || 165,
+        waste_allowance: currentDefaultMaterial?.waste_allowance || 0.12,
+      },
+    });
+
+    return {
+      patternType: 'grid',
+      detectedFrameThicknessMm: { top: 20, bottom: 20, left: 20, right: 20 },
+      innerApertureMm: { width: 1160, height: 1160 },
+      nominalPitchMm: { columnPitch: 140, rowPitch: 191 },
+      subBars: [],
+      horizontalSummary: {
+        distinctLengthsMm: [bom.horizontalBars.cutLengthMm],
+        pieceCount: bom.horizontalBars.barCount,
+        totalLinearM: bom.horizontalBars.totalLinearM,
+      },
+      verticalSummary: {
+        distinctLengthsMm: [bom.verticalBars.cutLengthMm],
+        pieceCount: bom.verticalBars.barCount,
+        totalLinearM: bom.verticalBars.totalLinearM,
+      },
+    };
+  }, [primary?.dimensionBinding, analyzedGrilleData, currentDefaultMaterial]);
+
+  const displayGrilleData = analyzedGrilleData ?? defaultGrilleAnalysis;
+
   // Filtering materials list
   const filteredMaterials = useMemo(() => {
     return rawMaterials.filter((m) => {
+      if (primary?.dimensionBinding === 'GRILLE_LINEAR') {
+        // Grilles require linear profile extrusions billed per meter
+        if (m.billing_unit !== 'm') return false;
+      }
       if (categoryFilter !== 'All' && m.category.toLowerCase() !== categoryFilter.toLowerCase()) {
         return false;
       }
@@ -99,7 +147,7 @@ export function PartInspectorDrawer({
       }
       return true;
     });
-  }, [rawMaterials, categoryFilter, searchQuery]);
+  }, [rawMaterials, categoryFilter, searchQuery, primary?.dimensionBinding]);
 
   if (!primary || selectedParts.length === 0) {
     return (
@@ -119,6 +167,21 @@ export function PartInspectorDrawer({
 
   // Material Toggle Handler (Checkbox)
   const handleToggleMaterial = (rawMaterialId: string) => {
+    const targetMat = rawMaterials.find((m) => m.id === rawMaterialId);
+    if (primary.dimensionBinding === 'GRILLE_LINEAR') {
+      if (targetMat && targetMat.billing_unit !== 'm') {
+        setValidationWarning('Grilles require linear profile extrusions billed per meter.');
+        return;
+      }
+      setValidationWarning(null);
+      // Single-click material assignment applies to entire grille
+      onUpdateParts({
+        materialBindings: [{ rawMaterialId, isDefault: true, displayOrder: 0 }],
+        rawMaterialId,
+      });
+      return;
+    }
+
     if (checkedMaterialIds.has(rawMaterialId)) {
       // Unchecking this material
       const remaining = currentBindings.filter((b) => b.rawMaterialId !== rawMaterialId);
@@ -161,6 +224,20 @@ export function PartInspectorDrawer({
 
   // Set as Default Handler (Radio / Click)
   const handleSetDefault = (rawMaterialId: string) => {
+    const targetMat = rawMaterials.find((m) => m.id === rawMaterialId);
+    if (primary.dimensionBinding === 'GRILLE_LINEAR') {
+      if (targetMat && targetMat.billing_unit !== 'm') {
+        setValidationWarning('Grilles require linear profile extrusions billed per meter.');
+        return;
+      }
+      setValidationWarning(null);
+      onUpdateParts({
+        materialBindings: [{ rawMaterialId, isDefault: true, displayOrder: 0 }],
+        rawMaterialId,
+      });
+      return;
+    }
+
     if (checkedMaterialIds.has(rawMaterialId)) {
       const newBindings = currentBindings.map((b) => ({
         ...b,
@@ -241,6 +318,23 @@ export function PartInspectorDrawer({
                 Sync to Group Parts
               </button>
             )}
+          </div>
+        )}
+
+        {/* Validation Warning Alert */}
+        {validationWarning && (
+          <div className="flex items-center justify-between p-3 rounded-[10px] bg-amber-50 border border-amber-300 text-amber-800 text-xs">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
+              <span>{validationWarning}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setValidationWarning(null)}
+              className="text-amber-700 hover:text-amber-900 font-semibold ml-2 cursor-pointer"
+            >
+              Dismiss
+            </button>
           </div>
         )}
 
@@ -446,24 +540,87 @@ export function PartInspectorDrawer({
             Dimension Driver
           </label>
           <div className="grid grid-cols-2 gap-2">
-            {(['WIDTH', 'HEIGHT', 'AREA', 'FIXED'] as DimensionBinding[]).map((driver) => (
+            {(['WIDTH', 'HEIGHT', 'AREA', 'FIXED', 'GRILLE_LINEAR'] as DimensionBinding[]).map((driver) => (
               <button
                 key={driver}
                 type="button"
                 onClick={() => onUpdateParts({ dimensionBinding: driver })}
-                className={
+                className={`${
+                  driver === 'GRILLE_LINEAR' ? 'col-span-2 ' : ''
+                }${
                   primary.dimensionBinding === driver
                     ? 'px-3 py-2 rounded-[8px] text-xs font-medium border text-center transition-all border-[#07b6d3] bg-[#07b6d3]/10 text-[#07b6d3]'
                     : 'px-3 py-2 rounded-[8px] text-xs font-medium border text-center transition-all border-neutral-200 text-neutral-600 hover:bg-neutral-50'
-                }
+                }`}
               >
                 {driver === 'WIDTH' && 'Width (1D)'}
                 {driver === 'HEIGHT' && 'Height (1D)'}
                 {driver === 'AREA' && 'Area (2D)'}
                 {driver === 'FIXED' && 'Static / Fixed'}
+                {driver === 'GRILLE_LINEAR' && 'Grille Linear (Per Meter)'}
               </button>
             ))}
           </div>
+
+          {/* Grille Linear Analysis Summary Card (IMP-MS72) */}
+          {primary.dimensionBinding === 'GRILLE_LINEAR' && (
+            <div className="mt-4 p-4 rounded-[16px] bg-slate-900/60 border border-teal-500/30 text-white">
+              <div className="flex items-center justify-between pb-2 mb-3 border-b border-slate-700/60">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-teal-400 animate-pulse" />
+                  <h4 className="text-sm font-semibold text-teal-300">
+                    Grille Linear Pricing Engine Active
+                  </h4>
+                </div>
+                <span className="text-xs px-2 py-0.5 rounded-full bg-teal-950 text-teal-300 border border-teal-500/40">
+                  Per Piece / Per Meter
+                </span>
+              </div>
+
+              <p className="text-xs text-slate-300 mb-3">
+                This center grille is measured accurately by linear cut length and piece count.
+                All constituent vertical and horizontal bars dynamically scale and inherit the profile selected below.
+              </p>
+
+              {displayGrilleData ? (
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="p-2.5 rounded-[12px] bg-slate-800/80 border border-slate-700/60">
+                    <span className="text-slate-400 block mb-1">Vertical Bars:</span>
+                    <span className="font-bold text-white text-sm">
+                      {displayGrilleData.verticalSummary.pieceCount} pcs
+                    </span>
+                    {displayGrilleData.verticalSummary.distinctLengthsMm?.length > 0 && (
+                      <span className="text-slate-300 block text-[11px] mt-0.5 font-mono">
+                        Cut Length: {displayGrilleData.verticalSummary.distinctLengthsMm.join(', ')} mm
+                      </span>
+                    )}
+                    <span className="text-slate-400 block text-[11px] mt-0.5">
+                      Total: {displayGrilleData.verticalSummary.totalLinearM} linear meters
+                    </span>
+                  </div>
+
+                  <div className="p-2.5 rounded-[12px] bg-slate-800/80 border border-slate-700/60">
+                    <span className="text-slate-400 block mb-1">Horizontal Bars:</span>
+                    <span className="font-bold text-white text-sm">
+                      {displayGrilleData.horizontalSummary.pieceCount} pcs
+                    </span>
+                    {displayGrilleData.horizontalSummary.distinctLengthsMm?.length > 0 && (
+                      <span className="text-slate-300 block text-[11px] mt-0.5 font-mono">
+                        Cut Length: {displayGrilleData.horizontalSummary.distinctLengthsMm.join(', ')} mm
+                      </span>
+                    )}
+                    <span className="text-slate-400 block text-[11px] mt-0.5">
+                      Total: {displayGrilleData.horizontalSummary.totalLinearM} linear meters
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-xs text-slate-400 italic">
+                  Analyzing 3D geometry and sub-bar orientations...
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Section 3: Span Ratio / Multiplier */}

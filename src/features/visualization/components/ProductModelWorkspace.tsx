@@ -65,6 +65,8 @@ import {
   CompatibleAddon,
 } from "@/lib/visualization/types";
 import { calculateAddonBOM, type AddonBOMResult } from "@/lib/pricing/addonPricingEngine";
+import { calculateGrilleLinearBOM } from "@/lib/pricing/grillePricingEngine";
+import type { GrilleLinearBOMResult } from "@/lib/pricing/types";
 import { getCompatibleAddonsForProduct } from "@/lib/admin/products/addonMutations";
 
 export type AddonSelectionType = "none" | "screen" | "grill";
@@ -561,19 +563,6 @@ export function ProductModelWorkspace({
     return String(initialDims.heightCm);
   });
 
-  // Real-time Dedicated Add-on Parametric BOM Calculation (Sub-50ms sync)
-  const addonBOM = useMemo<AddonBOMResult | null>(() => {
-    if (effectiveSelectedAddon === "none") return null;
-    const widthValCm = Number(widthCm) || DEFAULT_PRODUCT_WIDTH_CM;
-    const heightValCm = Number(heightCm) || DEFAULT_PRODUCT_HEIGHT_CM;
-    return calculateAddonBOM({
-      addonType: effectiveSelectedAddon,
-      widthMm: widthValCm * 10,
-      heightMm: heightValCm * 10,
-    });
-  }, [effectiveSelectedAddon, widthCm, heightCm]);
-
-  const addonPrice = addonBOM?.finalAddonPrice ?? 0;
   const [thicknessMm, setThicknessMm] = useState(
     initialConfiguration?.thicknessMm
       ? String(initialConfiguration.thicknessMm)
@@ -806,6 +795,65 @@ export function ProductModelWorkspace({
   const candidateMaterialsMap = useMemo(() => {
     return getAllCandidateMaterialsMap(structuralDefinition, allRawMaterials);
   }, [structuralDefinition, allRawMaterials]);
+
+  // Real-time Dedicated Add-on Parametric BOM Calculation (Sub-50ms sync)
+  const addonBOM = useMemo<AddonBOMResult | null>(() => {
+    if (effectiveSelectedAddon === "none") return null;
+    const widthValCm = Number(widthCm) || DEFAULT_PRODUCT_WIDTH_CM;
+    const heightValCm = Number(heightCm) || DEFAULT_PRODUCT_HEIGHT_CM;
+    return calculateAddonBOM({
+      addonType: effectiveSelectedAddon,
+      widthMm: widthValCm * 10,
+      heightMm: heightValCm * 10,
+    });
+  }, [effectiveSelectedAddon, widthCm, heightCm]);
+
+  // Real-time Dedicated Grille Linear BOM Calculation (IMP-MS73 / Sub-50ms sync)
+  const activeGrilleBOM = useMemo<GrilleLinearBOMResult | null>(() => {
+    if (effectiveSelectedAddon !== "grill") return null;
+    const widthValCm = Number(widthCm) || DEFAULT_PRODUCT_WIDTH_CM;
+    const heightValCm = Number(heightCm) || DEFAULT_PRODUCT_HEIGHT_CM;
+    const widthMm = widthValCm * 10;
+    const heightMm = heightValCm * 10;
+
+    const finishKey = addonAlumFinish || alumFinish || "analok";
+    const normalizedKey = finishKey.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+    const matchedMaterial = allRawMaterials.find((m) => {
+      const f = m.finish_type.toLowerCase().replace(/[^a-z0-9]/g, "");
+      if (normalizedKey === "white" && (f === "powdercoatedwhite" || f === "white")) return true;
+      if (normalizedKey === "powdercoatedwhite" && (f === "powdercoatedwhite" || f === "white")) return true;
+      if (normalizedKey === "analok" && f === "analok") return true;
+      if (normalizedKey === "black" && (f === "powdercoatedblack" || f === "black" || f === "al1009")) return true;
+      if (normalizedKey === "mill" && f === "mill") return true;
+      return f.includes(normalizedKey) || normalizedKey.includes(f);
+    });
+
+    const isWhite = normalizedKey.includes("white");
+    const isBlack = normalizedKey.includes("black") || normalizedKey === "al1009";
+    const defaultRate = isWhite ? 180 : isBlack ? 175 : 160;
+
+    const unitPrice = matchedMaterial?.unit_price ?? defaultRate;
+    const wasteAllowance = matchedMaterial?.waste_allowance ?? 0.12;
+
+    return calculateGrilleLinearBOM({
+      widthMm,
+      heightMm,
+      patternType: "staggered_brick",
+      grilleRawMaterial: {
+        id: matchedMaterial?.id ?? "default-grille-mat",
+        material_code: matchedMaterial?.material_code ?? "AL-GRILLE-TUBE-16MM",
+        description: matchedMaterial?.description ?? "16mm Square Tube Aluminum",
+        unit_price: unitPrice,
+        waste_allowance: wasteAllowance,
+      },
+      includePerimeterFrame: true,
+    });
+  }, [effectiveSelectedAddon, widthCm, heightCm, addonAlumFinish, alumFinish, allRawMaterials]);
+
+  const addonPrice = effectiveSelectedAddon === "grill"
+    ? (activeGrilleBOM?.finalPrice ?? 0)
+    : (addonBOM?.finalAddonPrice ?? 0);
 
   const materialCustomizationGroups = useMemo(() => {
     if (!structuralDefinition) return [];
@@ -1299,6 +1347,7 @@ export function ProductModelWorkspace({
         totalPrice,
         bomCalc,
         addonBOM,
+        grilleBOM: activeGrilleBOM,
       };
     }
 
@@ -1309,6 +1358,7 @@ export function ProductModelWorkspace({
       totalPrice: 0,
       bomCalc: null,
       addonBOM: null,
+      grilleBOM: null,
     };
   }, [
     structuralDefinition,
@@ -1321,6 +1371,7 @@ export function ProductModelWorkspace({
     includeSill,
     addonPrice,
     addonBOM,
+    activeGrilleBOM,
     panelCount,
     structuralWaiver,
     selectedMaterials,
@@ -1743,9 +1794,10 @@ export function ProductModelWorkspace({
       positionY: overlayPosition.y,
       selectedAddon: effectiveSelectedAddon,
       addonProductId: effectiveSelectedAddon !== "none" ? (activeCompatibleAddon?.addonProductId ?? selectedAddonProductId ?? null) : null,
-      addonName: effectiveSelectedAddon !== "none" ? (activeCompatibleAddon?.addonProduct?.productName ?? addonBOM?.addonName ?? (effectiveSelectedAddon === "screen" ? "Extruded Aluminum Insect Screen" : "Architectural Security Window Grille")) : null,
-      addonPrice: effectiveSelectedAddon !== "none" ? (addonPrice || (addonBOM?.finalAddonPrice ?? 0)) : 0,
+      addonName: effectiveSelectedAddon !== "none" ? (activeCompatibleAddon?.addonProduct?.productName ?? (effectiveSelectedAddon === "grill" ? "Architectural Security Window Grille" : (addonBOM?.addonName ?? "Extruded Aluminum Insect Screen"))) : null,
+      addonPrice: effectiveSelectedAddon !== "none" ? addonPrice : 0,
       addonAluminumFinish: effectiveSelectedAddon !== "none" ? addonAlumFinish : undefined,
+      grilleBOM: activeGrilleBOM ?? null,
       baseUnitPrice: realtimePricing.baseUnitPrice,
       visualParameterValues: {
         width: width * 10,
@@ -1758,9 +1810,10 @@ export function ProductModelWorkspace({
         selected_addon: effectiveSelectedAddon !== "none" ? {
           type: effectiveSelectedAddon,
           addon_product_id: activeCompatibleAddon?.addonProductId ?? selectedAddonProductId ?? null,
-          addon_name: activeCompatibleAddon?.addonProduct?.productName ?? addonBOM?.addonName ?? (effectiveSelectedAddon === "screen" ? "Extruded Aluminum Insect Screen" : "Architectural Security Window Grille"),
+          addon_name: activeCompatibleAddon?.addonProduct?.productName ?? (effectiveSelectedAddon === "grill" ? "Architectural Security Window Grille" : (addonBOM?.addonName ?? "Extruded Aluminum Insect Screen")),
           finish: addonAlumFinish,
-          price: addonPrice || (addonBOM?.finalAddonPrice ?? 0),
+          price: addonPrice,
+          grille_bom: activeGrilleBOM ?? null,
         } : null,
         dimension_source: manualDimensions ? "manual_tape" : isVerifiedCalibrated ? "planar_paper_estimate" : "heuristic",
         calibration_provenance: isVerifiedCalibrated ? activeMeasurementRecord : null,
@@ -1802,6 +1855,7 @@ export function ProductModelWorkspace({
     addonAlumFinish,
     addonPrice,
     addonBOM,
+    activeGrilleBOM,
     realtimePricing.baseUnitPrice,
     isFlipped,
     overlayPosition.x,
@@ -2410,6 +2464,7 @@ export function ProductModelWorkspace({
         unitPrice: realtimePricing.unitPrice,
         totalPrice: realtimePricing.totalPrice,
         previewGlbUrl: glbUrl,
+        grilleBOM: activeGrilleBOM ?? undefined,
       };
     },
     [
@@ -2427,6 +2482,7 @@ export function ProductModelWorkspace({
       projectedModelBounds,
       realtimePricing,
       structuralDefinition,
+      activeGrilleBOM,
     ],
   );
 
@@ -5010,6 +5066,45 @@ export function ProductModelWorkspace({
                                       </button>
                                     );
                                   })}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Dynamic Grille Extrusion Specifications Card (IMP-MS73 / QAD-TC88.1, QAD-TC88.2) */}
+                            {effectiveSelectedAddon === "grill" && activeGrilleBOM && (
+                              <div className="mt-3 p-3 rounded-[16px] bg-neutral-900/80 border border-neutral-700 text-xs text-white">
+                                <div className="flex items-center justify-between mb-2">
+                                  <span className="font-semibold text-teal-300">
+                                    Grille Extrusion Specifications
+                                  </span>
+                                  <span className="font-mono text-teal-400 font-bold">
+                                    {activeGrilleBOM.totalLinearMeters.toFixed(2)} m Total
+                                  </span>
+                                </div>
+
+                                <div className="space-y-1 text-neutral-300 text-[11px]">
+                                  <div className="flex justify-between">
+                                    <span>Vertical Bars:</span>
+                                    <span className="font-mono text-white">
+                                      {activeGrilleBOM.verticalBars.barCount} pcs @ {activeGrilleBOM.verticalBars.cutLengthMm}mm ({activeGrilleBOM.verticalBars.totalLinearM.toFixed(2)}m)
+                                    </span>
+                                  </div>
+
+                                  <div className="flex justify-between">
+                                    <span>Horizontal Bars:</span>
+                                    <span className="font-mono text-white">
+                                      {activeGrilleBOM.horizontalBars.barCount} pcs @ {activeGrilleBOM.horizontalBars.cutLengthMm}mm ({activeGrilleBOM.horizontalBars.totalLinearM.toFixed(2)}m)
+                                    </span>
+                                  </div>
+
+                                  {activeGrilleBOM.perimeterRails && (
+                                    <div className="flex justify-between">
+                                      <span>Perimeter Rails:</span>
+                                      <span className="font-mono text-white">
+                                        4 rails ({activeGrilleBOM.perimeterRails.totalLinearM.toFixed(2)}m)
+                                      </span>
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                             )}

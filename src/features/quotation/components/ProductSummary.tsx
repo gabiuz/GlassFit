@@ -286,6 +286,7 @@ function createProductSummaryItemFromOverlay(
     addonPrice: addonPrice > 0 ? addonPrice : undefined,
     baseUnitPrice,
     addonAluminumFinish,
+    grilleBOM: overlay.configuration?.grilleBOM ?? overlay.grilleBOM ?? null,
     ...quotationMeasurement(overlay.configuration),
   };
 
@@ -422,6 +423,7 @@ function createProductSummaryItem(
     addonPrice: addonPrice > 0 ? addonPrice : undefined,
     baseUnitPrice,
     addonAluminumFinish,
+    grilleBOM: configuration?.grilleBOM ?? null,
     ...quotationMeasurement(configuration),
   };
 

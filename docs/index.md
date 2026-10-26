@@ -112,6 +112,8 @@ MS57 traceability: BRD-M1, BRD-M5, BRD-M6 -> PRD-F3, PRD-F4, PRD-F5, PRD-F6, PRD
 
 | Revision Date | Target Document | Author | Nature of Revision | Pull Request Ref |
 |---|---|---|---|---|
+| October 26, 2026 | `docs/implementation/ms72.md`, `src/features/admin/products/setup/`, `supabase/migrations/` | GlassFit Capstone Team | Implemented Admin Product Setup Wizard Center-Grille Part Inspector, GRILLE_LINEAR dimension binding, single-click material assignment, and Validation Workspace dynamic cut list preview (QAD-TC87) | Pending |
+| October 26, 2026 | `docs/implementation/ms71.md`, `src/lib/pricing/` | GlassFit Capstone Team | Implemented Parametric Grille Linear-Meter Pricing Engine, Automated 3D Sub-Bar Geometry Analyzer, and Pattern Repetition Metric Engine (QAD-TC86) | Pending |
 | October 21, 2026 | `docs/implementation/ms63.md`, `src/lib/imageApi.ts`, `fastapi-service/main.py`, `src/features/visualization/` | GlassFit Capstone Team | Implemented resilient HEIC space image ingestion, exponential backoff retry, early WebP downscaled paper detection, session-bound /snap-paper endpoint, local blob buffering, and registered QAD-TC78 | Pending |
 | October 21, 2026 | MS62 implementation and tests | GlassFit Capstone Team | Implemented mode isolation, legacy restoration, and paper skip recovery; automated evidence in MS62 section 9, browser acceptance pending | Pending |
 | October 21, 2026 | `docs/implementation/ms62.md`, PRD, SDD, DSD, QAD, milestones, and index | GlassFit Capstone Team | Specified paper-free Automatic Detection, exclusive paper-mode localization/review, request-authoritative mapping, legacy session policy, and QAD-TC77; documentation only | Pending |
@@ -169,3 +171,6 @@ MS56 traceability: IMP-MS56 / BRD-M2, BRD-M5, BRD-M6 -> PRD-F5, PRD-F6, PRD-F10,
 MS58 traceability: BRD-M1, BRD-M5, BRD-M6 -> PRD-F3, PRD-F4 -> SDD-C2, SDD-C3 -> DSD-UI3 -> QAD-TC73. Single-click paper seed localization constrains candidate selection and extracts localized paper boundaries on tap; integrates with confirmation gateway and manual loupe fallbacks. See [MS58](implementation/ms58.md).
  
 MS63 traceability: BRD-M1, BRD-M4, BRD-M6 -> PRD-F3, PRD-F4, PRD-F10 -> SDD-C2, SDD-C3 -> QAD-TC78.1 through QAD-TC78.8. Implemented client-side exponential backoff retry across network drops, early WebP downscaled paper detection, session-bound /snap-paper endpoint, and local blob URL buffering. See [MS63](implementation/ms63.md).
+
+MS71 traceability: IMP-MS71 / BRD-M2, BRD-M3, BRD-M5 -> PRD-F2, PRD-F5, PRD-F6, PRD-F10, PRD-F11, PRD-F14 -> SDD-C4, SDD-C7, SDD-C9 -> DSD-UI4, DSD-UI7, DSD-UI10 -> ERD-E6, ERD-E13, ERD-E14, ERD-E17 -> QAD-TC86.1 through QAD-TC86.10. Implemented on October 26, 2026. Parametric linear-meter security grille pricing engine, automated 3D sub-bar geometry analyzer, and dynamic pattern repetition metric engine. See [MS71](implementation/ms71.md).
+

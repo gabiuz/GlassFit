@@ -31,6 +31,8 @@ import {
   getAddonDisplayName,
   type AddonBOMResult,
 } from "@/lib/pricing/addonPricingEngine";
+import { calculateGrilleLinearBOM } from "@/lib/pricing/grillePricingEngine";
+import type { GrilleLinearBOMResult } from "@/lib/pricing/types";
 
 const ProductModel3D = dynamic(
   () =>
@@ -99,6 +101,7 @@ export function MeasurementConfirmationModal({
   const [heightInputStr, setHeightInputStr] = useState<string>(() =>
     String(entries[0]?.override.heightIn ?? ""),
   );
+  const [showGrilleCutList, setShowGrilleCutList] = useState(false);
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const acknowledgementCheckboxId = useId();
 
@@ -205,7 +208,32 @@ export function MeasurementConfirmationModal({
     ? currentAddonFinish.charAt(0).toUpperCase() + currentAddonFinish.slice(1)
     : "";
 
-  const currentAddonPrice = currentAddonBOM?.finalAddonPrice ?? 0;
+  const currentGrilleBOM: GrilleLinearBOMResult | null =
+    currentSelectedAddon === "grill"
+      ? (() => {
+          const isWhite = currentAddonFinish.toLowerCase().includes("white");
+          const isBlack = currentAddonFinish.toLowerCase().includes("black") || currentAddonFinish.toLowerCase() === "al1009";
+          const unitPrice = isWhite ? 180 : isBlack ? 175 : 160;
+
+          return calculateGrilleLinearBOM({
+            widthMm: Math.round(currentWidthMm),
+            heightMm: Math.round(currentHeightMm),
+            patternType: "staggered_brick",
+            grilleRawMaterial: {
+              id: "00000000-0000-4000-8000-000000000001",
+              material_code: "AL-GRILLE-TUBE-16MM",
+              description: "16mm Square Tube Aluminum",
+              unit_price: unitPrice,
+              waste_allowance: 0.12,
+            },
+            includePerimeterFrame: true,
+          });
+        })()
+      : null;
+
+  const currentAddonPrice = currentSelectedAddon === "grill"
+    ? (currentGrilleBOM?.finalPrice ?? 0)
+    : (currentAddonBOM?.finalAddonPrice ?? 0);
 
   const recalculatePrice = (
     entry: MeasurementConfirmationEntry,
@@ -255,7 +283,25 @@ export function MeasurementConfirmationModal({
       "none";
 
     let addonPrice = 0;
-    if (entryAddonType !== "none") {
+    if (entryAddonType === "grill") {
+      const isWhite = (entry.overlayConfiguration.addonAluminumFinish ?? "").toLowerCase().includes("white");
+      const isBlack = (entry.overlayConfiguration.addonAluminumFinish ?? "").toLowerCase().includes("black");
+      const unitRate = isWhite ? 180 : isBlack ? 175 : 160;
+      const grilleBom = calculateGrilleLinearBOM({
+        widthMm: Math.round(widthMmVal),
+        heightMm: Math.round(heightMmVal),
+        patternType: "staggered_brick",
+        grilleRawMaterial: {
+          id: "recalc-grille-mat",
+          material_code: "AL-GRILLE-TUBE-16MM",
+          description: "16mm Square Tube Aluminum",
+          unit_price: unitRate,
+          waste_allowance: 0.12,
+        },
+        includePerimeterFrame: true,
+      });
+      addonPrice = grilleBom.finalPrice;
+    } else if (entryAddonType !== "none") {
       const addonBom = calculateAddonBOM({
         addonType: entryAddonType,
         widthMm: widthMmVal,
@@ -834,8 +880,8 @@ export function MeasurementConfirmationModal({
           </div>
         </div>
 
-        {/* Dedicated Add-on Attachment Line Card (IMP-MS69 / DSD-UI7) */}
-        {currentAddonBOM && (
+        {/* Dedicated Grille Attachment Line Card with Expandable Cut List Accordion (IMP-MS73 / QAD-TC88.4) */}
+        {currentSelectedAddon === "grill" && currentGrilleBOM && (
           <div className="mb-5 rounded-[16px] border border-cyan-200 bg-cyan-50/40 p-4 space-y-3">
             <div className="flex items-center justify-between border-b border-cyan-100 pb-2">
               <div className="flex items-center gap-2">
@@ -843,9 +889,98 @@ export function MeasurementConfirmationModal({
                   Modular Attachment
                 </span>
                 <span className="text-[10px] font-semibold text-[#07b6d3] bg-[#07b6d3]/15 px-2 py-0.5 rounded-full">
-                  {currentSelectedAddon === "screen"
-                    ? `Insect Screen${currentAddonFinishLabel ? ` (${currentAddonFinishLabel})` : ""}`
-                    : `Security Grille${currentAddonFinishLabel ? ` (${currentAddonFinishLabel})` : ""}`}
+                  Security Grille{currentAddonFinishLabel ? ` (${currentAddonFinishLabel})` : ""}
+                </span>
+              </div>
+              <span className="font-mono font-semibold text-[#07b6d3]">
+                +₱{currentGrilleBOM.finalPrice.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
+            <div className="space-y-1.5 text-xs">
+              <div className="flex justify-between items-center text-[#0f1422]">
+                <span className="font-medium">
+                  Architectural Security Window Grille
+                  {currentAddonFinishLabel ? ` (${currentAddonFinishLabel})` : ""}
+                </span>
+                <span className="text-neutral-500 font-mono">{currentGrilleBOM.totalLinearMeters.toFixed(2)}m profile</span>
+              </div>
+              <div className="space-y-1 pl-2 border-l-2 border-cyan-200 text-[11px] text-neutral-600">
+                <div className="flex justify-between items-center">
+                  <span>Vertical Pickets ({currentGrilleBOM.verticalBars.barCount} pcs @ {currentGrilleBOM.verticalBars.cutLengthMm}mm)</span>
+                  <span className="font-mono">{currentGrilleBOM.verticalBars.totalLinearM.toFixed(2)}m</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span>Horizontal Bars ({currentGrilleBOM.horizontalBars.barCount} pcs @ {currentGrilleBOM.horizontalBars.cutLengthMm}mm)</span>
+                  <span className="font-mono">{currentGrilleBOM.horizontalBars.totalLinearM.toFixed(2)}m</span>
+                </div>
+                {currentGrilleBOM.perimeterRails && (
+                  <div className="flex justify-between items-center">
+                    <span>Perimeter Frame (4 rails)</span>
+                    <span className="font-mono">{currentGrilleBOM.perimeterRails.totalLinearM.toFixed(2)}m</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Expandable Grille Fabrication Cut List Accordion (QAD-TC88.4) */}
+            <div className="mt-4 rounded-[16px] border border-neutral-700 bg-neutral-900/60 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setShowGrilleCutList(!showGrilleCutList)}
+                className="w-full flex items-center justify-between p-3.5 text-left text-xs font-semibold text-white hover:bg-neutral-800/60 transition-colors cursor-pointer"
+                aria-expanded={showGrilleCutList}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-teal-400" />
+                  <span>Security Grille Extrusion Cut List ({currentGrilleBOM.totalPieces} Pieces)</span>
+                </div>
+                <span className="text-neutral-400 font-mono">
+                  {showGrilleCutList ? "Hide Details" : "View Breakdown"}
+                </span>
+              </button>
+
+              {showGrilleCutList && (
+                <div className="p-3.5 border-t border-neutral-700 bg-neutral-950/80">
+                  <table className="w-full text-left text-[11px] text-neutral-300">
+                    <thead className="text-neutral-400 uppercase text-[9px] border-b border-neutral-700">
+                      <tr>
+                        <th className="py-1.5 px-2">Member</th>
+                        <th className="py-1.5 px-2 text-right">Count</th>
+                        <th className="py-1.5 px-2 text-right">Length</th>
+                        <th className="py-1.5 px-2 text-right">Total (m)</th>
+                        <th className="py-1.5 px-2 text-right">Cost</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-neutral-800">
+                      {currentGrilleBOM.itemizedBreakdown.map((item, idx) => (
+                        <tr key={idx}>
+                          <td className="py-1.5 px-2 text-white">{item.item}</td>
+                          <td className="py-1.5 px-2 text-right font-mono">{item.pieces}</td>
+                          <td className="py-1.5 px-2 text-right font-mono">{item.lengthMm}mm</td>
+                          <td className="py-1.5 px-2 text-right font-mono">{item.totalMeters.toFixed(2)}m</td>
+                          <td className="py-1.5 px-2 text-right font-mono text-teal-300 font-semibold">
+                            ₱{item.subtotal.toFixed(2)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Dedicated Screen Add-on Attachment Line Card */}
+        {currentSelectedAddon === "screen" && currentAddonBOM && (
+          <div className="mb-5 rounded-[16px] border border-cyan-200 bg-cyan-50/40 p-4 space-y-3">
+            <div className="flex items-center justify-between border-b border-cyan-100 pb-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold uppercase tracking-wider text-[#0f1422]">
+                  Modular Attachment
+                </span>
+                <span className="text-[10px] font-semibold text-[#07b6d3] bg-[#07b6d3]/15 px-2 py-0.5 rounded-full">
+                  Insect Screen{currentAddonFinishLabel ? ` (${currentAddonFinishLabel})` : ""}
                 </span>
               </div>
               <span className="font-mono font-semibold text-[#07b6d3]">

@@ -379,4 +379,58 @@ The implementation adds client test suite `npm run test:ms63` and FastAPI CV ser
 | QAD-TC78.7 | Mobile Safari native HEIC decode | Client pre-flight on Safari 17+ (iOS / macOS) renders native image preview immediately; bypasses file-card fallback | P1 |
 | QAD-TC78.8 | Non-Safari HEIC progress communication | Dropzone HUD feedback on Chrome/Firefox during HEIC processing displays progressive stages: "uploading", "retrying", "processing", "completed" | P1 |
 
+## QAD-TC86: Parametric Grille Linear-Meter Pricing Engine, Automated 3D Sub-Bar Geometry Analyzer, and Pattern Repetition Metric Engine (IMP-MS71)
+
+**Status:** Implemented with automated unit tests (`npm run test:ms71`). Traces to IMP-MS71, PRD-F2, PRD-F5, PRD-F6, PRD-F10, PRD-F11, PRD-F14, SDD-C4, SDD-C7, SDD-C9, DSD-UI4, DSD-UI7, DSD-UI10, ERD-E6, ERD-E13, ERD-E14, ERD-E17, BRD-M2, BRD-M3, BRD-M5. See [MS71 implementation specification](implementation/ms71.md) for detailed contracts, mathematical formulas, and execution commands.
+
+| Test ID | Scenario | Preconditions | Execution Steps | Expected Outcome | Severity |
+|---|---|---|---|---|---|
+| QAD-TC86.1 | Automated orientation classification of horizontal bars | Uploaded GLB with sub-mesh dimensions 1160mm x 16mm x 16mm | 1. Run `analyzeGrilleGeometry()` on root object<br>2. Inspect analyzed sub-bar collection | Bar is classified as `orientation = "HORIZONTAL"` with `lengthMm = 1160` | P0 |
+| QAD-TC86.2 | Automated orientation classification of vertical bars | Uploaded GLB with sub-mesh dimensions 16mm x 1400mm x 16mm | 1. Run `analyzeGrilleGeometry()` on root object<br>2. Inspect analyzed sub-bar collection | Bar is classified as `orientation = "VERTICAL"` with `lengthMm = 1400` | P0 |
+| QAD-TC86.3 | Grid pattern dynamic bar count and linear meters | Aperture width = 1200mm, height = 1200mm, grid pattern, 140mm pitch | 1. Execute `calculateGrilleLinearBOM()` with PHP 180/m material | Generates 8 vertical pickets (1.16m each) and 6 horizontal rails (1.16m each); total linear meters calculated exactly (20.96m) | P0 |
+| QAD-TC86.4 | Louver pattern dynamic bar count and linear meters | Aperture width = 1000mm, height = 1500mm, louver pattern, 45mm pitch | 1. Execute `calculateGrilleLinearBOM()` with PHP 160/m material | Generates 32 horizontal slats (0.96m each) and 1 center mullion (1.46m); linear meters computed per piece (37.1m) | P0 |
+| QAD-TC86.5 | Staggered brick pattern dynamic bar count | Aperture width = 1400mm, height = 1200mm, staggered brick pattern | 1. Execute `calculateGrilleLinearBOM()` | Generates 9 vertical pickets and alternating staggered horizontal tie bars matching 3D visual count (25 ties) | P0 |
+| QAD-TC86.6 | Perimeter rail cut lengths match aperture boundary | Aperture width = 1500mm, height = 1200mm, frame profile = 20mm | 1. Inspect `perimeterRails` output | Top/bottom rails measure 1500mm; left/right jambs measure 1160mm; total perimeter = 5.32m | P0 |
+| QAD-TC86.7 | Scrap allowance calculation (12% aluminum offcut) | Total net extrusion = 10.0m at PHP 200/m (net PHP 2,000.00) | 1. Inspect `wasteAllowanceCost` in result | Waste cost equals exactly PHP 240.00 (10.0m * 0.12 * 200) | P0 |
+| QAD-TC86.8 | Fabrication labor floor enforcement | Small grille with direct material cost = PHP 1,200.00 | 1. Calculate labor cost at 25% (PHP 300.00) | Labor cost clamps up to the minimum labor floor of PHP 650.00 | P0 |
+| QAD-TC86.9 | Contractor gross margin enforcement (25%) | Material = PHP 3,000.00, Labor = PHP 750.00 | 1. Compute margin at 25% of cost sum | Contractor margin equals exactly PHP 937.50; final price equals PHP 4,687.50 | P0 |
+| QAD-TC86.10 | Calculation performance under 10ms | Continuous dimension loop varying width/height 100 times | 1. Measure execution duration for 100 recalculations | Total execution time < 100ms (average < 1ms per recalculation), guaranteeing 60 FPS slider reactivity | P0 |
+
+## QAD-TC87: Admin Product Setup Wizard Center-Grille Part Inspector, Single-Click Material Binding, and Linear Calculation Preview (IMP-MS72)
+
+**Status:** Implemented with automated unit tests (`npm run test:ms72`). Traces to IMP-MS72, PRD-F14, PRD-F19, SDD-C4, SDD-C9, DSD-UI10, ERD-E6, ERD-E17, BRD-M2, BRD-M4, BRD-M5. See [MS72 implementation specification](implementation/ms72.md) for architectural contracts, UI specifications, and execution instructions.
+
+| Test ID | Scenario | Preconditions | Execution Steps | Expected Outcome | Severity |
+|---|---|---|---|---|---|
+| QAD-TC87.1 | Automatic detection of GRILLE_LINEAR from file name | Upload GLB file named `window_center_grille.glb` in Step 2 | 1. Upload file<br>2. Inspect component card in Step 2 | Auto-detects `dimensionBinding = "GRILLE_LINEAR"` and `presentationCategory = "Framing"` | P0 |
+| QAD-TC87.2 | Single-click material assignment applies to entire grille | Admin selects Center Grille in Part Inspector | 1. Select '16mm Square Tube White' from raw materials<br>2. Click Save | Material binds to the entire center grille assembly; all constituent bars inherit the rate | P0 |
+| QAD-TC87.3 | Part Inspector renders dynamic bar breakdown summary | Center Grille component selected in Part Inspector | 1. Open drawer<br>2. Inspect geometry analysis summary card | Displays discrete vertical bar count, horizontal bar count, individual cut lengths, and total linear meters | P0 |
+| QAD-TC87.4 | Raw materials dropdown filters to linear units (m) | `GRILLE_LINEAR` selected in dimension binding | 1. Open raw materials selection dropdown | Displays aluminum extrusion profiles billed in meters (`/m`); hides sheet glass (`sqm`) | P0 |
+| QAD-TC87.5 | Validation sandbox dynamically recalculates on width drag | In Step 4 validation preview, move width slider from 1000mm to 1600mm | 1. Drag width slider to 1600mm<br>2. Inspect Cut List table | Vertical pickets count increases proportionally; total linear meters updates in < 16ms | P0 |
+| QAD-TC87.6 | Validation sandbox dynamically recalculates on height drag | In Step 4 validation preview, move height slider from 1000mm to 1800mm | 1. Drag height slider to 1800mm<br>2. Inspect Cut List table | Vertical bar cut lengths lengthen from 960mm to 1760mm; horizontal tie bar rows recalculate | P0 |
+| QAD-TC87.7 | Cut List table displays exact piece counts and lengths | Test-drive sandbox loaded with 1200mm x 1200mm aperture | 1. Inspect table columns for pieces, cut length, total meters | Displays exact physical quantities matching Three.js 3D model geometry without rounding errors | P0 |
+| QAD-TC87.8 | Preserves single-selection state across wizard navigation | Admin binds material in Step 2, navigates to Step 3 and back | 1. Click Next to Step 3<br>2. Click Back to Step 2 | Center grille retains `GRILLE_LINEAR` binding and assigned raw material with zero state loss | P0 |
+| QAD-TC87.9 | Warning modal when non-linear material is bound | Admin attempts to force a glass material (`sqm`) on `GRILLE_LINEAR` | 1. Select 6mm Clear Glass<br>2. Attempt to save | Displays clear validation warning: "Grilles require linear profile extrusions billed per meter." | P1 |
+| QAD-TC87.10 | Database persistence of GRILLE_LINEAR binding | Admin clicks Save and Publish product | 1. Inspect PostgreSQL `product_components` record | Record persists `dimension_binding = 'GRILLE_LINEAR'` cleanly under Supabase RLS | P0 |
+
+## QAD-TC88: Customer Visualization Workspace Dynamic Grille Sizing, Real-Time Linear BOM Recalculation, and Itemized Quotation/PDF Handoff (IMP-MS73)
+
+**Status:** Implemented with automated unit tests (`npm run test:ms73`). Traces to IMP-MS73, PRD-F2, PRD-F5, PRD-F6, PRD-F10, PRD-F11, SDD-C4, SDD-C5, SDD-C7, SDD-C8, DSD-UI4, DSD-UI7, DSD-UI16, ERD-E13, ERD-E14, BRD-M2, BRD-M3, BRD-M4, BRD-M5. See [MS73 implementation specification](implementation/ms73.md) for architectural contracts, UI specifications, and execution instructions.
+
+| Test ID | Scenario | Preconditions | Execution Steps | Expected Outcome | Severity |
+|---|---|---|---|---|---|
+| QAD-TC88.1 | Workspace recalculates linear meters on width slider change | Security grille active in workspace; width = 1200mm | 1. Drag width slider to 1600mm<br>2. Inspect Add-on Options dock | Vertical pickets count increases; total linear meters updates in < 50ms | P0 |
+| QAD-TC88.2 | Workspace recalculates cut lengths on height slider change | Security grille active in workspace; height = 1200mm | 1. Drag height slider to 1800mm<br>2. Inspect Add-on Options dock | Vertical bar cut length increases from 1160mm to 1760mm; total linear meters recalculates | P0 |
+| QAD-TC88.3 | Finish swatch selection updates linear profile rate | Customer selects 'Powder Coated White' for grille | 1. Click White finish swatch<br>2. Observe HUD price delta | Canvas updates shader to White; unit rate updates to White extrusion price; BOM subtotal updates | P0 |
+| QAD-TC88.4 | Quotation modal renders expandable Cut List accordion | Customer configures window with Grille and clicks Review Quotation | 1. Open quotation modal<br>2. Click 'View Breakdown' | Displays itemized table with piece counts, cut lengths, total meters, and subtotals | P0 |
+| QAD-TC88.5 | Exact match between 3D canvas and quotation piece count | 1400mm x 1200mm window with staggered brick grille | 1. Count physical mesh bars in 3D canvas<br>2. Compare with modal cut list count | Physical mesh count exactly equals total pieces in the quotation modal (38 pieces) | P0 |
+| QAD-TC88.6 | Consultation PDF includes itemized linear cut quantities | Customer completes quotation and downloads PDF | 1. Download PDF<br>2. Inspect specification column | Prints exact vertical bar count, horizontal bar count, lengths, and total linear meters | P0 |
+| QAD-TC88.7 | Zero UI blocking or dropped frames on continuous slider drag | User rapidly scrubs width and height sliders | 1. Monitor calculation performance during 100 rapid changes | Calculations complete in < 16ms without memory leaks or dropped frames | P0 |
+| QAD-TC88.8 | Mutual exclusion unmounts grille and zeroes extrusion BOM | Customer has Grille active, then clicks Screen | 1. Click 'Screen' segment | Grille geometry unmounts; grille linear BOM is removed; screen area pricing activates | P0 |
+| QAD-TC88.9 | Standalone Grille product workspace dynamic calculation | Customer opens a standalone Grille catalog product | 1. Adjust dimensions in workspace | Dynamic linear engine calculates full aperture BOM without host window dependencies | P0 |
+| QAD-TC88.10 | Offline and network error resilience | Catalog raw material query fails or is delayed | 1. Trigger dimension change with network paused | Engine gracefully falls back to default linear rates (PHP 160/m) without throwing runtime exceptions | P1 |
+
+
+
+
 

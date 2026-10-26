@@ -541,3 +541,17 @@ This target supersedes the default paper-localization intake behavior described 
 
 Resolve network-induced HEIC photo upload failures under unstable cellular internet conditions. Eliminate full-resolution computer vision processing bottleneck by constraining OpenCV fiducial search and bilateral filtering to workspace-normalized resolutions (max 1920px), reducing CV execution latency from over 15 seconds to under 150 milliseconds. Introduce resilient client-side transport with exponential backoff retry and request timeouts. Decouple click-guided paper snapping by providing dedicated session-bound snapping (`/snap-paper`), eliminating redundant multi-megabyte image downloads and re-uploads over unstable connections. Preserve local file references and buffer converted workspace blobs on the client to ensure instant, network-resilient modal rendering.
 
+## MS71: Parametric Grille Linear-Meter Pricing Engine, Automated 3D Sub-Bar Geometry Analyzer, and Pattern Repetition Metric Engine
+
+**Status:** Implemented (October 26, 2026); automated unit test suite passing (`npm run test:ms71`). **Specification:** [IMP-MS71](implementation/ms71.md). **Traceability:** BRD-M2, BRD-M3, BRD-M5; PRD-F2, PRD-F5, PRD-F6, PRD-F10, PRD-F11, PRD-F14; SDD-C4, SDD-C7, SDD-C9; DSD-UI4, DSD-UI7, DSD-UI10; ERD-E6, ERD-E13, ERD-E14, ERD-E17; QAD-TC86.1 through QAD-TC86.10.
+
+Replaces area-based approximations with precise per-piece and per-meter measurement of individual horizontal and vertical bars under dynamic pattern repetition for window security grilles. Provides `grilleGeometryAnalyzer.ts` for automated 3D sub-bar geometry inspection of uploaded GLB files or procedural patterns without manual per-bar selection. Implements `grillePricingEngine.ts` calculating exact linear meters and piece counts for perimeter rails, vertical pickets, and horizontal divider/tie bars across Grid, Louver, and Staggered Brick topologies with 12% aluminum scrap allowance, PHP 650.00 fabrication labor floor, and 25% contractor margin. All 10 acceptance scenarios in QAD-TC86 verified.
+
+## MS72: Admin Product Setup Wizard Center-Grille Part Inspector, Single-Click Material Binding, and Linear Calculation Preview
+
+**Status:** Implemented (October 26, 2026); automated unit test suite passing (`npm run test:ms72`). **Specification:** [IMP-MS72](implementation/ms72.md). **Traceability:** BRD-M2, BRD-M4, BRD-M5; PRD-F14, PRD-F19; SDD-C4, SDD-C9; DSD-UI10; ERD-E6, ERD-E17; QAD-TC87.1 through QAD-TC87.10.
+
+Streamlines administrative grille authoring in the Product Setup Wizard by introducing the `GRILLE_LINEAR` dimension binding across database check constraints, TypeScript schemas, and automated filename classification (`window_center_grille`, `grill_bars`, `grille_infill`, `middle_bars`, `picket_lattice`). Enables single-click material assignment per linear meter for the entire center grille assembly without manual one-by-one bar selection. Filters candidate materials to linear extrusion profiles (`/m`) and validates against non-linear material assignment. Renders live 3D bar breakdown summary card in Part Inspector with discrete vertical/horizontal piece counts and cut lengths. Embeds real-time Grille Linear Extrusion Cut List table in Validation Workspace Section updating in under 16ms during width and height slider manipulation. All 10 acceptance scenarios in QAD-TC87 verified.
+
+
+
