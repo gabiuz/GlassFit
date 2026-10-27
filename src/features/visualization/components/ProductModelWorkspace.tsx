@@ -68,6 +68,9 @@ import { calculateAddonBOM, type AddonBOMResult } from "@/lib/pricing/addonPrici
 import { calculateGrilleLinearBOM } from "@/lib/pricing/grillePricingEngine";
 import type { GrilleLinearBOMResult } from "@/lib/pricing/types";
 import { getCompatibleAddonsForProduct } from "@/lib/admin/products/addonMutations";
+import { getActiveAccessories, type ActiveAccessoryProduct } from "@/lib/products/getActiveAccessories";
+import type { SelectedAccessoryState } from "@/lib/visualization/types";
+import type { AccessoryCategory, AccessoryPositionOptions, HorizontalPosition, VerticalPosition } from "@/lib/admin/products/types";
 
 export type AddonSelectionType = "none" | "screen" | "grill";
 import {
@@ -243,6 +246,13 @@ const MAX_MODEL_RENDER_SIDE = 2048;
 const MIN_MODEL_RENDER_SIDE = 512;
 const MODEL_CONTROLS_PADDING_PX = 8;
 
+const HARDWARE_FINISH_OPTIONS = [
+  { id: "Matte Black", label: "Matte Black", previewHex: "#18191a" },
+  { id: "Brushed Chrome", label: "Brushed Chrome", previewHex: "#c5c6c7" },
+  { id: "Satin Brass", label: "Satin Brass", previewHex: "#d4af37" },
+  { id: "Stainless Steel", label: "Stainless Steel", previewHex: "#e5e5ea" },
+];
+
 export function ProductModelWorkspace({
   assetSessionId,
   uploadedImage,
@@ -343,6 +353,23 @@ export function ProductModelWorkspace({
     }
     return "analok";
   });
+
+  // Hardware Accessories Customization State (IMP-MS76)
+  const [selectedAccessories, setSelectedAccessories] = useState<Record<string, SelectedAccessoryState>>(() => {
+    return initialConfiguration?.swappedAccessories ?? {};
+  });
+  const [availableAccessories, setAvailableAccessories] = useState<ActiveAccessoryProduct[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    getActiveAccessories().then((accs) => {
+      if (active) setAvailableAccessories(accs);
+    }).catch((err: unknown) => {
+      console.warn("Could not load catalog accessories:", err);
+    });
+    return () => { active = false; };
+  }, []);
+
   const [panelCount, setPanelCount] = useState<number>(
     initialConfiguration?.panelCount ?? 2,
   );
@@ -445,6 +472,158 @@ export function ProductModelWorkspace({
     }
     return list[0] ?? null;
   }, [effectiveSelectedAddon, screenAddons, grillAddons, selectedAddonProductId]);
+
+  // Identify swappable hardware accessory slots on active product (IMP-MS76)
+  const accessorySlots = useMemo(() => {
+    if (!structuralDefinition?.components) return [];
+    const explicit = structuralDefinition.components.filter(
+      (c) => (c.isAccessorySlot || (c as Record<string, unknown>).is_accessory_slot) && (c.accessoryCategory || (c as Record<string, unknown>).accessory_category)
+    );
+    if (explicit.length > 0) return explicit;
+
+    // Fallback auto-detection for hardware components:
+    return structuralDefinition.components.filter((c) => {
+      const key = (c.componentKey || "").toLowerCase();
+      const name = (c.componentName || "").toLowerCase();
+      const cat = (c.presentationCategory || "").toLowerCase();
+      return (
+        cat === "hardware" ||
+        key.includes("handle") || name.includes("handle") ||
+        key.includes("knob") || name.includes("knob") ||
+        key.includes("lever") || name.includes("lever") ||
+        key.includes("lock") || name.includes("lock")
+      );
+    }).map((c) => {
+      const isLock = /lock|deadbolt|smartlock/i.test(c.componentKey + " " + c.componentName);
+      return {
+        ...c,
+        isAccessorySlot: true,
+        accessoryCategory: (isLock ? "lock" : "handle") as AccessoryCategory,
+        positionOptions: {
+          allowHorizontalToggle: true,
+          defaultHorizontal: "right" as const,
+          horizontalOffsetMm: 45,
+          allowVerticalToggle: isLock,
+          defaultVertical: "up" as const,
+          verticalOffsetMm: 1000,
+        },
+      };
+    });
+  }, [structuralDefinition]);
+
+  // Real-time Total Accessory Price Delta
+  const totalAccessoryPriceDelta = useMemo(() => {
+    return Object.values(selectedAccessories).reduce((sum, acc) => {
+      return sum + (acc.priceDelta ?? (acc.accessoryId !== "default" ? acc.price : 0));
+    }, 0);
+  }, [selectedAccessories]);
+
+  // Handler for selecting an accessory for a slot
+  const handleSelectAccessory = useCallback((
+    slotComponentId: string,
+    slotCategory: string,
+    accessory: { id: string; name: string; price: number; glbUrl?: string | null },
+  ) => {
+    setSelectedAccessories((prev) => {
+      const current = prev[slotComponentId];
+      const slot = accessorySlots.find((s) => s.componentId === slotComponentId || s.componentKey === slotComponentId);
+      const posOptions = slot?.positionOptions ?? ((slot as Record<string, unknown> | undefined)?.position_options as AccessoryPositionOptions | undefined);
+      const defaultHoriz = posOptions?.defaultHorizontal ?? "right";
+      const defaultVert = posOptions?.defaultVertical ?? "up";
+
+      return {
+        ...prev,
+        [slotComponentId]: {
+          slotComponentId,
+          slotCategory,
+          accessoryId: accessory.id,
+          accessoryName: accessory.name,
+          category: slotCategory,
+          price: accessory.price,
+          priceDelta: accessory.id === "default" ? 0 : accessory.price,
+          finish: current?.finish ?? (alumFinish === "white" ? "Brushed Chrome" : "Matte Black"),
+          horizontalPosition: current?.horizontalPosition ?? defaultHoriz,
+          verticalPosition: current?.verticalPosition ?? defaultVert,
+          glbUrl: accessory.glbUrl ?? null,
+        },
+      };
+    });
+  }, [accessorySlots, alumFinish]);
+
+  // Handler for toggling accessory handing (Left vs Right)
+  const handleToggleAccessoryHanding = useCallback((slotComponentId: string, horizontalPosition: HorizontalPosition) => {
+    setSelectedAccessories((prev) => {
+      const current = prev[slotComponentId];
+      const slot = accessorySlots.find((s) => s.componentId === slotComponentId || s.componentKey === slotComponentId);
+      const posOptions = slot?.positionOptions ?? ((slot as Record<string, unknown> | undefined)?.position_options as AccessoryPositionOptions | undefined);
+
+      return {
+        ...prev,
+        [slotComponentId]: {
+          slotComponentId,
+          slotCategory: current?.slotCategory ?? slot?.accessoryCategory ?? "handle",
+          accessoryId: current?.accessoryId ?? "default",
+          accessoryName: current?.accessoryName ?? (slot?.componentName || "Default Handle"),
+          category: current?.category ?? slot?.accessoryCategory ?? "handle",
+          price: current?.price ?? 0,
+          priceDelta: current?.priceDelta ?? 0,
+          finish: current?.finish ?? (alumFinish === "white" ? "Brushed Chrome" : "Matte Black"),
+          horizontalPosition,
+          verticalPosition: current?.verticalPosition ?? posOptions?.defaultVertical ?? "up",
+        },
+      };
+    });
+  }, [accessorySlots, alumFinish]);
+
+  // Handler for toggling accessory vertical height (Bottom vs Up)
+  const handleToggleAccessoryElevation = useCallback((slotComponentId: string, verticalPosition: VerticalPosition) => {
+    setSelectedAccessories((prev) => {
+      const current = prev[slotComponentId];
+      const slot = accessorySlots.find((s) => s.componentId === slotComponentId || s.componentKey === slotComponentId);
+      const posOptions = slot?.positionOptions ?? ((slot as Record<string, unknown> | undefined)?.position_options as AccessoryPositionOptions | undefined);
+
+      return {
+        ...prev,
+        [slotComponentId]: {
+          slotComponentId,
+          slotCategory: current?.slotCategory ?? slot?.accessoryCategory ?? "handle",
+          accessoryId: current?.accessoryId ?? "default",
+          accessoryName: current?.accessoryName ?? (slot?.componentName || "Default Handle"),
+          category: current?.category ?? slot?.accessoryCategory ?? "handle",
+          price: current?.price ?? 0,
+          priceDelta: current?.priceDelta ?? 0,
+          finish: current?.finish ?? (alumFinish === "white" ? "Brushed Chrome" : "Matte Black"),
+          horizontalPosition: current?.horizontalPosition ?? posOptions?.defaultHorizontal ?? "right",
+          verticalPosition,
+        },
+      };
+    });
+  }, [accessorySlots, alumFinish]);
+
+  // Handler for changing accessory finish
+  const handleChangeAccessoryFinish = useCallback((slotComponentId: string, finish: string) => {
+    setSelectedAccessories((prev) => {
+      const current = prev[slotComponentId];
+      const slot = accessorySlots.find((s) => s.componentId === slotComponentId || s.componentKey === slotComponentId);
+      const posOptions = slot?.positionOptions ?? ((slot as Record<string, unknown> | undefined)?.position_options as AccessoryPositionOptions | undefined);
+
+      return {
+        ...prev,
+        [slotComponentId]: {
+          slotComponentId,
+          slotCategory: current?.slotCategory ?? slot?.accessoryCategory ?? "handle",
+          accessoryId: current?.accessoryId ?? "default",
+          accessoryName: current?.accessoryName ?? (slot?.componentName || "Default Handle"),
+          category: current?.category ?? slot?.accessoryCategory ?? "handle",
+          price: current?.price ?? 0,
+          priceDelta: current?.priceDelta ?? 0,
+          finish,
+          horizontalPosition: current?.horizontalPosition ?? posOptions?.defaultHorizontal ?? "right",
+          verticalPosition: current?.verticalPosition ?? posOptions?.defaultVertical ?? "up",
+        },
+      };
+    });
+  }, [accessorySlots]);
 
   const pendingComparisonOverlaysRef = useRef<PlacedOverlay[]>([]);
 
@@ -1349,28 +1528,32 @@ export function ProductModelWorkspace({
         ? bomCalc.finalQuotation
         : (structuralDefinition.product.basePrice ?? 0);
 
-      const unitPrice = baseUnitPrice + addonPrice;
+      const unitPrice = baseUnitPrice + addonPrice + totalAccessoryPriceDelta;
       const totalPrice = unitPrice * Math.max(1, quantity);
 
       return {
         baseUnitPrice,
         addonPrice,
+        accessoryPriceDelta: totalAccessoryPriceDelta,
         unitPrice,
         totalPrice,
         bomCalc,
         addonBOM,
         grilleBOM: activeGrilleBOM,
+        swappedAccessories: selectedAccessories,
       };
     }
 
     return {
       baseUnitPrice: 0,
       addonPrice: 0,
+      accessoryPriceDelta: 0,
       unitPrice: 0,
       totalPrice: 0,
       bomCalc: null,
       addonBOM: null,
       grilleBOM: null,
+      swappedAccessories: {},
     };
   }, [
     structuralDefinition,
@@ -1388,6 +1571,8 @@ export function ProductModelWorkspace({
     structuralWaiver,
     selectedMaterials,
     candidateMaterialsMap,
+    totalAccessoryPriceDelta,
+    selectedAccessories,
   ]);
 
   const formattedPrice = useMemo(() => {
@@ -1550,7 +1735,8 @@ export function ProductModelWorkspace({
 
   useEffect(() => {
     if (!mvpRendererRef.current || !structuralDefinition) return;
-    const buildKey = `${structuralDefinition.product.productId}:${widthCm}:${heightCm}:${panelCount}:${includeSill}:${selectedAddon}:${selectedAddonProductId}:${addonAlumFinish}:${alumFinish}:${glassAppearance}:${glassColor}:${glassThicknessMm}`;
+    const accessoriesKey = JSON.stringify(selectedAccessories);
+    const buildKey = `${structuralDefinition.product.productId}:${widthCm}:${heightCm}:${panelCount}:${includeSill}:${selectedAddon}:${selectedAddonProductId}:${addonAlumFinish}:${alumFinish}:${glassAppearance}:${glassColor}:${glassThicknessMm}:${accessoriesKey}`;
     if (skipPreparedBuildRef.current === buildKey) {
       skipPreparedBuildRef.current = null;
       return;
@@ -1580,6 +1766,7 @@ export function ProductModelWorkspace({
         includeSill,
         activeAddon: selectedAddon,
         addonProductId: selectedAddonProductId,
+        swappedAccessories: selectedAccessories,
       },
       {
         selectedMaterials,
@@ -1597,7 +1784,7 @@ export function ProductModelWorkspace({
       if (!cancelled) setProductBuildError(error instanceof Error ? error.message : "Could not build the product model.");
     });
     return () => { cancelled = true; };
-  }, [structuralDefinition, widthCm, heightCm, panelCount, includeSill, selectedAddon, selectedAddonProductId, addonAlumFinish, glassAppearance, glassColor, glassThicknessMm, alumFinish, hasExplicitOverrides, selectedMaterials, candidateMaterialsMap]);
+  }, [structuralDefinition, widthCm, heightCm, panelCount, includeSill, selectedAddon, selectedAddonProductId, addonAlumFinish, glassAppearance, glassColor, glassThicknessMm, alumFinish, hasExplicitOverrides, selectedMaterials, candidateMaterialsMap, selectedAccessories]);
 
   useEffect(() => {
     if (!mvpRendererRef.current) return;
@@ -1811,6 +1998,8 @@ export function ProductModelWorkspace({
       addonAluminumFinish: effectiveSelectedAddon !== "none" ? addonAlumFinish : undefined,
       grilleBOM: activeGrilleBOM ?? null,
       baseUnitPrice: realtimePricing.baseUnitPrice,
+      swappedAccessories: selectedAccessories,
+      accessoryPriceDelta: totalAccessoryPriceDelta,
       visualParameterValues: {
         width: width * 10,
         height: height * 10,
@@ -1827,6 +2016,17 @@ export function ProductModelWorkspace({
           price: addonPrice,
           grille_bom: activeGrilleBOM ?? null,
         } : null,
+        swapped_accessories: Object.values(selectedAccessories).map((acc) => ({
+          slot_component_id: acc.slotComponentId,
+          slot_category: acc.category,
+          accessory_id: acc.accessoryId,
+          accessory_name: acc.accessoryName,
+          finish: acc.finish,
+          horizontal_position: acc.horizontalPosition,
+          vertical_position: acc.verticalPosition,
+          unit_price: acc.price,
+          price_delta: acc.priceDelta ?? (acc.accessoryId !== "default" ? acc.price : 0),
+        })),
         dimension_source: manualDimensions ? "manual_tape" : isVerifiedCalibrated ? "planar_paper_estimate" : "heuristic",
         calibration_provenance: isVerifiedCalibrated ? activeMeasurementRecord : null,
         metric_measurement: isVerifiedCalibrated ? activeMetricMeasurement : null,
@@ -1869,6 +2069,8 @@ export function ProductModelWorkspace({
     addonBOM,
     activeGrilleBOM,
     realtimePricing.baseUnitPrice,
+    selectedAccessories,
+    totalAccessoryPriceDelta,
     isFlipped,
     overlayPosition.x,
     overlayPosition.y,
@@ -5149,6 +5351,284 @@ export function ProductModelWorkspace({
                                 </div>
                               </div>
                             )}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                )}
+
+                {/* Hardware & Accessories Accordion (IMP-MS76) */}
+                {accessorySlots.length > 0 && (
+                  <div className="bg-[#f5f5f5]/30 border border-white rounded-[20px] shadow-[0px_0px_5px_0px_rgba(0,0,0,0.25)] overflow-hidden transition-colors">
+                    <button
+                      type="button"
+                      onClick={() => toggleAccordion("Hardware & Accessories")}
+                      className="w-full p-6 flex justify-between items-center text-left cursor-pointer"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="text-[#0f1422] text-[18px] font-medium tracking-[-0.342px]">
+                          Hardware & Accessories
+                        </span>
+                        {totalAccessoryPriceDelta !== 0 && (
+                          <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-cyan-50 text-[#07b6d3] border border-cyan-200">
+                            {totalAccessoryPriceDelta > 0
+                              ? `+₱${totalAccessoryPriceDelta.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                              : `-₱${Math.abs(totalAccessoryPriceDelta).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                          </span>
+                        )}
+                      </div>
+                      <motion.div
+                        animate={{ rotate: openAccordions.includes("Hardware & Accessories") ? 180 : 0 }}
+                        transition={{ duration: 0.25, ease: "easeInOut" }}
+                      >
+                        <Image
+                          src="/visualization/dropdown-btn.svg"
+                          alt="Toggle"
+                          width={20}
+                          height={20}
+                        />
+                      </motion.div>
+                    </button>
+
+                    <AnimatePresence initial={false}>
+                      {openAccordions.includes("Hardware & Accessories") && (
+                        <motion.div
+                          key="hardware-content"
+                          initial={{ height: 0 }}
+                          animate={{ height: "auto" }}
+                          exit={{ height: 0 }}
+                          transition={{ duration: 0.3, ease: [0.04, 0.62, 0.23, 0.98] }}
+                          className="overflow-hidden"
+                        >
+                          <div className="px-6 pb-6 flex flex-col gap-6">
+                            {accessorySlots.map((slot) => {
+                              const slotId = slot.componentId || slot.componentKey;
+                              const currentSelected = selectedAccessories[slotId];
+                              const slotCategory = slot.accessoryCategory || "handle";
+                              const slotAllowedIds = slot.allowedAccessoryIds ?? ((slot as Record<string, unknown>).allowed_accessory_ids as string[] | undefined);
+                              const posOptions = slot.positionOptions ?? ((slot as Record<string, unknown>).position_options as AccessoryPositionOptions | undefined);
+
+                              const matchingAccessories = availableAccessories.filter((acc) => {
+                                if (slotAllowedIds && slotAllowedIds.length > 0) {
+                                  return slotAllowedIds.includes(acc.productId);
+                                }
+                                return !acc.accessoryCategory || acc.accessoryCategory === slotCategory;
+                              });
+
+                              const selectedAccessoryId = currentSelected?.accessoryId ?? "default";
+                              const selectedFinish = currentSelected?.finish ?? (alumFinish === "white" ? "Brushed Chrome" : "Matte Black");
+                              const currentHoriz = currentSelected?.horizontalPosition ?? posOptions?.defaultHorizontal ?? "right";
+                              const currentVert = currentSelected?.verticalPosition ?? posOptions?.defaultVertical ?? "up";
+
+                              return (
+                                <div key={slotId} className="flex flex-col gap-4 p-4 rounded-[16px] bg-white border border-neutral-200/80 shadow-xs">
+                                  <div className="flex items-center justify-between border-b border-neutral-100 pb-2">
+                                    <div className="flex flex-col">
+                                      <span className="text-sm font-semibold text-[#0f1422]">
+                                        {slot.componentName || "Hardware Slot"}
+                                      </span>
+                                      <span className="text-[11px] text-neutral-500 capitalize">
+                                        Category: {slotCategory}
+                                      </span>
+                                    </div>
+                                    {currentSelected && currentSelected.accessoryId !== "default" && currentSelected.price > 0 && (
+                                      <span className="text-xs font-semibold text-[#07b6d3]">
+                                        +₱{currentSelected.price.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <div className="flex flex-col gap-2">
+                                    <span className="text-xs font-medium text-neutral-700">Model Selection</span>
+                                    <div className="grid grid-cols-1 gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleSelectAccessory(slotId, slotCategory, {
+                                          id: "default",
+                                          name: slot.componentName || "Standard Hardware",
+                                          price: 0,
+                                        })}
+                                        aria-pressed={selectedAccessoryId === "default"}
+                                        className={cn(
+                                          "flex items-center justify-between p-3 rounded-[10px] border text-left transition-all cursor-pointer",
+                                          selectedAccessoryId === "default"
+                                            ? "border-[#07b6d3] bg-[#07b6d3]/5 ring-1 ring-[#07b6d3]/30"
+                                            : "border-neutral-200 bg-white hover:border-neutral-300"
+                                        )}
+                                      >
+                                        <div className="flex flex-col">
+                                          <span className="text-xs font-semibold text-[#0f1422]">
+                                            Standard Hardware (Included)
+                                          </span>
+                                          <span className="text-[11px] text-neutral-500">
+                                            Default catalog component
+                                          </span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                          <span className="text-xs font-medium text-neutral-600">Included</span>
+                                          <div
+                                            className={cn(
+                                              "size-4 rounded-full border flex items-center justify-center",
+                                              selectedAccessoryId === "default" ? "border-[#07b6d3] bg-[#07b6d3]" : "border-neutral-300"
+                                            )}
+                                          >
+                                            {selectedAccessoryId === "default" && <div className="size-1.5 rounded-full bg-white" />}
+                                          </div>
+                                        </div>
+                                      </button>
+
+                                      {matchingAccessories.map((acc) => {
+                                        const isSelected = selectedAccessoryId === acc.productId;
+                                        return (
+                                          <button
+                                            key={acc.productId}
+                                            type="button"
+                                            onClick={() => handleSelectAccessory(slotId, slotCategory, {
+                                              id: acc.productId,
+                                              name: acc.productName,
+                                              price: acc.basePrice,
+                                              glbUrl: acc.previewGlbUrl,
+                                            })}
+                                            aria-pressed={isSelected}
+                                            className={cn(
+                                              "flex items-center justify-between p-3 rounded-[10px] border text-left transition-all cursor-pointer",
+                                              isSelected
+                                                ? "border-[#07b6d3] bg-[#07b6d3]/5 ring-1 ring-[#07b6d3]/30"
+                                                : "border-neutral-200 bg-white hover:border-neutral-300"
+                                            )}
+                                          >
+                                            <div className="flex flex-col">
+                                              <span className="text-xs font-semibold text-[#0f1422]">
+                                                {acc.productName}
+                                              </span>
+                                              <span className="text-[11px] text-neutral-500">
+                                                {acc.description || "Modular upgrade"}
+                                              </span>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                              <span className="text-xs font-medium text-neutral-800">
+                                                +₱{acc.basePrice.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                                              </span>
+                                              <div
+                                                className={cn(
+                                                  "size-4 rounded-full border flex items-center justify-center",
+                                                  isSelected ? "border-[#07b6d3] bg-[#07b6d3]" : "border-neutral-300"
+                                                )}
+                                              >
+                                                {isSelected && <div className="size-1.5 rounded-full bg-white" />}
+                                              </div>
+                                            </div>
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+
+                                  {posOptions?.allowHorizontalToggle && (
+                                    <div className="flex items-center justify-between pt-2 border-t border-neutral-100">
+                                      <span className="text-xs font-medium text-neutral-700">
+                                        Handing / Side:
+                                      </span>
+                                      <div className="flex rounded-[8px] border border-neutral-200 overflow-hidden bg-neutral-100 p-0.5">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleToggleAccessoryHanding(slotId, "left")}
+                                          className={cn(
+                                            "px-3 py-1 text-xs font-medium rounded-[6px] transition-all cursor-pointer",
+                                            currentHoriz === "left"
+                                              ? "bg-[#0f1422] text-white shadow-xs"
+                                              : "text-neutral-600 hover:text-black"
+                                          )}
+                                        >
+                                          Left Side
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleToggleAccessoryHanding(slotId, "right")}
+                                          className={cn(
+                                            "px-3 py-1 text-xs font-medium rounded-[6px] transition-all cursor-pointer",
+                                            currentHoriz === "right"
+                                              ? "bg-[#0f1422] text-white shadow-xs"
+                                              : "text-neutral-600 hover:text-black"
+                                          )}
+                                        >
+                                          Right Side
+                                        </button>
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {posOptions?.allowVerticalToggle && (
+                                    <div className="flex items-center justify-between pt-2 border-t border-neutral-100">
+                                      <span className="text-xs font-medium text-neutral-700">
+                                        Mounting Height:
+                                      </span>
+                                      <div className="flex rounded-[8px] border border-neutral-200 overflow-hidden bg-neutral-100 p-0.5">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleToggleAccessoryElevation(slotId, "bottom")}
+                                          className={cn(
+                                            "px-3 py-1 text-xs font-medium rounded-[6px] transition-all cursor-pointer",
+                                            currentVert === "bottom"
+                                              ? "bg-[#0f1422] text-white shadow-xs"
+                                              : "text-neutral-600 hover:text-black"
+                                          )}
+                                        >
+                                          Bottom
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleToggleAccessoryElevation(slotId, "up")}
+                                          className={cn(
+                                            "px-3 py-1 text-xs font-medium rounded-[6px] transition-all cursor-pointer",
+                                            currentVert === "up"
+                                              ? "bg-[#0f1422] text-white shadow-xs"
+                                              : "text-neutral-600 hover:text-black"
+                                          )}
+                                        >
+                                          Up / Mid
+                                        </button>
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  <div className="flex flex-col gap-2 pt-2 border-t border-neutral-100">
+                                    <span className="text-xs font-medium text-neutral-700">
+                                      Hardware Finish
+                                    </span>
+                                    <div className="grid grid-cols-2 gap-2">
+                                      {HARDWARE_FINISH_OPTIONS.map((fOption) => {
+                                        const isSelected = selectedFinish === fOption.id;
+                                        return (
+                                          <button
+                                            key={fOption.id}
+                                            type="button"
+                                            onClick={() => handleChangeAccessoryFinish(slotId, fOption.id)}
+                                            aria-pressed={isSelected}
+                                            className={cn(
+                                              "flex items-center gap-2 rounded-[10px] border p-2 text-left transition-all cursor-pointer",
+                                              isSelected
+                                                ? "border-[#07b6d3] bg-[#07b6d3]/5 ring-1 ring-[#07b6d3]/30"
+                                                : "border-neutral-200 bg-white hover:border-neutral-300"
+                                            )}
+                                          >
+                                            <span
+                                              className="size-4 shrink-0 rounded-full border border-black/15 shadow-2xs"
+                                              style={{ backgroundColor: fOption.previewHex }}
+                                              aria-hidden="true"
+                                            />
+                                            <span className="truncate text-xs font-medium text-[#0f1422]">
+                                              {fOption.label}
+                                            </span>
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
                         </motion.div>
                       )}

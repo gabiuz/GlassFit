@@ -52,7 +52,9 @@ export function filterAdminProducts(
         ? true
         : scope === "addon"
           ? Boolean(product.isAddon)
-          : !product.isAddon;
+          : scope === "accessory"
+            ? Boolean(product.isAccessory)
+            : !product.isAddon && !product.isAccessory;
 
     return matchesSearch && matchesProductType && matchesStatus && matchesScope;
   });

@@ -16,7 +16,18 @@ export async function activateProduct(productId: string) {
     const template = Array.isArray(draft.product_templates) ? draft.product_templates[0] : draft.product_templates;
     if (!template) throw new Error("Product template not found.");
 
-    if (draft.is_addon) {
+    if (draft.is_accessory) {
+        // Modular hardware accessories (IMP-MS74):
+        // Bypasses 2D/3D assets and scalar parametric dimension rules.
+        const unassignedComponent = template.product_components?.find((comp) => {
+            const hasRawMat = Boolean(comp.raw_material_id);
+            const hasBindings = Array.isArray(comp.product_component_materials) && comp.product_component_materials.length > 0;
+            return !hasRawMat && !hasBindings;
+        });
+        if (unassignedComponent) {
+            throw new Error(`Activation Blocked: Component "${unassignedComponent.component_name || unassignedComponent.component_key}" has zero materials assigned.`);
+        }
+    } else if (draft.is_addon) {
         // Procedural add-on accessories (IMP-MS70):
         // Bypasses 2D/3D assets and 3D component model requirements.
     } else if (template.model_strategy === "Parametric") {

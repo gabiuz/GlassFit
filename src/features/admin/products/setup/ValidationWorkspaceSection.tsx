@@ -11,13 +11,17 @@ import {
   ShieldAlert,
   Sparkles,
   Layers,
+  Sliders,
 } from "lucide-react";
 import { fetchDraftStructuralDefinition } from "@/lib/admin/products/validationMutations";
-import { ProductStructuralDefinition, ResolvedStructure } from "@/lib/visualization/types";
+import { ProductStructuralDefinition, ResolvedStructure, SelectedAccessoryState } from "@/lib/visualization/types";
 import { ComponentModelCache, preloadComponentModels } from "@/lib/visualization/componentModelCache";
 import { resolveProductStructure } from "@/lib/visualization/structuralResolver";
 import { buildParametricProduct } from "@/lib/visualization/parametricProductBuilder";
 import { getRawMaterials } from "@/lib/admin/materials/materialActions";
+import type { AccessoryCategory, HorizontalPosition, VerticalPosition } from "@/lib/admin/products/types";
+import { CANONICAL_ACCESSORIES_CATALOG } from "@/lib/visualization/accessoryMeshFactory";
+import { fetchActiveCatalogAccessories, type CatalogAccessoryItem } from "@/lib/admin/products/accessoryActions";
 import { calculateParametricBOM, type ComponentPricingInput, type CalculatedBOMResult } from "@/lib/pricing/pricingEngine";
 import { calculateGrilleLinearBOM } from "@/lib/pricing/grillePricingEngine";
 import {
@@ -52,6 +56,7 @@ function ParametricModelView({
   rawMaterials,
   activeAddon = "none",
   addonAluminumFinish = "analok",
+  swappedAccessories,
 }: {
   definition: ProductStructuralDefinition;
   resolved: ResolvedStructure;
@@ -62,6 +67,7 @@ function ParametricModelView({
   rawMaterials: RawMaterial[];
   activeAddon?: "screen" | "grill" | "none" | null;
   addonAluminumFinish?: string;
+  swappedAccessories?: Record<string, SelectedAccessoryState>;
 }) {
   const group = useMemo(() => {
     if (definition.product.isAddon) {
@@ -85,6 +91,7 @@ function ParametricModelView({
       includeSill: hasSill,
       activeAddon,
       addonAluminumFinish,
+      swappedAccessories,
     });
 
     // Apply visibility overrides from the debugger
@@ -99,7 +106,7 @@ function ParametricModelView({
     });
 
     return built.group;
-  }, [definition, resolved, cache, hasSill, hiddenComponents, activeAddon, addonAluminumFinish]);
+  }, [definition, resolved, cache, hasSill, hiddenComponents, activeAddon, addonAluminumFinish, swappedAccessories]);
 
   // Dynamic Three.js Material Shading: Update mesh materials in place without reloading geometry
   useEffect(() => {
@@ -195,6 +202,15 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
   const [activeAddon, setActiveAddon] = useState<"screen" | "grill" | "none">("none");
   const [addonAlumFinish, setAddonAlumFinish] = useState<string>("analok");
 
+  // Step 6 Modular Hardware Accessory Swapping State (IMP-MS75)
+  const [swappedAccessories, setSwappedAccessories] = useState<Record<string, SelectedAccessoryState>>({});
+  const [catalogAccessories, setCatalogAccessories] = useState<CatalogAccessoryItem[]>([]);
+
+  const accessorySlots = useMemo(
+    () => definition?.components.filter((c) => c.isAccessorySlot) ?? [],
+    [definition],
+  );
+
   useEffect(() => {
     async function load() {
       try {
@@ -237,6 +253,32 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
           initialOverrides[comp.componentKey] = defaultMatId;
         });
         setMaterialOverrides(initialOverrides);
+
+        // Initialize accessory slot overrides with defaults (IMP-MS75)
+        const initialSwapped: Record<string, SelectedAccessoryState> = {};
+        def.components.forEach((comp) => {
+          if (comp.isAccessorySlot) {
+            initialSwapped[comp.componentId] = {
+              slotComponentId: comp.componentId,
+              accessoryId: "default",
+              accessoryName: comp.componentName || "Default Sub-Mesh",
+              category: (comp.accessoryCategory as AccessoryCategory) || "handle",
+              price: 0,
+              priceDelta: 0,
+              finish: "satin",
+              horizontalPosition: comp.positionOptions?.defaultHorizontal || "right",
+              verticalPosition: comp.positionOptions?.defaultVertical || "up",
+            };
+          }
+        });
+        setSwappedAccessories(initialSwapped);
+
+        try {
+          const dbAccessories = await fetchActiveCatalogAccessories();
+          setCatalogAccessories(dbAccessories);
+        } catch {
+          // Fall back gracefully to canonical catalog options
+        }
       } catch (e: unknown) {
         setErrorMsg(e instanceof Error ? e.message : "Failed to load workspace");
       } finally {
@@ -335,6 +377,106 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
       return updated;
     });
   };
+
+  // Hardware Accessory Swapping Handlers (IMP-MS75)
+  const handleSwapAccessory = (slotComponentId: string, accessoryId: string) => {
+    setSwappedAccessories((prev) => {
+      const existing = prev[slotComponentId];
+      const slot = definition?.components.find((c) => c.componentId === slotComponentId);
+      if (!existing && !slot) return prev;
+
+      const baseSlotHorizontal = slot?.positionOptions?.defaultHorizontal || "right";
+      const baseSlotVertical = slot?.positionOptions?.defaultVertical || "up";
+
+      if (accessoryId === "default") {
+        return {
+          ...prev,
+          [slotComponentId]: {
+            slotComponentId,
+            accessoryId: "default",
+            accessoryName: slot?.componentName || "Default Sub-Mesh",
+            category: (slot?.accessoryCategory as AccessoryCategory) || "handle",
+            price: 0,
+            priceDelta: 0,
+            finish: existing?.finish || "satin",
+            horizontalPosition: existing?.horizontalPosition || baseSlotHorizontal,
+            verticalPosition: existing?.verticalPosition || baseSlotVertical,
+          },
+        };
+      }
+
+      const canonical = CANONICAL_ACCESSORIES_CATALOG.find((o) => o.id === accessoryId);
+      if (canonical) {
+        return {
+          ...prev,
+          [slotComponentId]: {
+            slotComponentId,
+            accessoryId: canonical.id,
+            accessoryName: canonical.name,
+            category: canonical.category,
+            price: canonical.priceDelta,
+            priceDelta: canonical.priceDelta,
+            finish: existing?.finish || "satin",
+            horizontalPosition: existing?.horizontalPosition || baseSlotHorizontal,
+            verticalPosition: existing?.verticalPosition || baseSlotVertical,
+          },
+        };
+      }
+
+      const catalogItem = catalogAccessories.find((o) => o.id === accessoryId);
+      if (catalogItem) {
+        return {
+          ...prev,
+          [slotComponentId]: {
+            slotComponentId,
+            accessoryId: catalogItem.id,
+            accessoryName: catalogItem.name,
+            category: catalogItem.category,
+            price: catalogItem.price,
+            priceDelta: catalogItem.price,
+            glbUrl: catalogItem.glbUrl,
+            finish: existing?.finish || "satin",
+            horizontalPosition: existing?.horizontalPosition || baseSlotHorizontal,
+            verticalPosition: existing?.verticalPosition || baseSlotVertical,
+          },
+        };
+      }
+
+      return prev;
+    });
+  };
+
+  const handleUpdateAccessoryHorizontal = (slotComponentId: string, horizontal: HorizontalPosition) => {
+    setSwappedAccessories((prev) => {
+      const existing = prev[slotComponentId];
+      if (!existing) return prev;
+      return {
+        ...prev,
+        [slotComponentId]: {
+          ...existing,
+          horizontalPosition: horizontal,
+        },
+      };
+    });
+  };
+
+  const handleUpdateAccessoryVertical = (slotComponentId: string, vertical: VerticalPosition) => {
+    setSwappedAccessories((prev) => {
+      const existing = prev[slotComponentId];
+      if (!existing) return prev;
+      return {
+        ...prev,
+        [slotComponentId]: {
+          ...existing,
+          verticalPosition: vertical,
+        },
+      };
+    });
+  };
+
+  const accessoryTotalDelta = useMemo(() => {
+    return Object.values(swappedAccessories).reduce((acc, curr) => acc + (curr.priceDelta || 0), 0);
+  }, [swappedAccessories]);
 
   // Calculate real-time Parametric Bill of Materials (with active material overrides)
   const bomCalculation: CalculatedBOMResult | null = useMemo(() => {
@@ -724,6 +866,7 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
                     rawMaterials={rawMaterials}
                     activeAddon={activeAddon}
                     addonAluminumFinish={addonAlumFinish}
+                    swappedAccessories={swappedAccessories}
                   />
                 </Stage>
               </Suspense>
@@ -900,6 +1043,173 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
                 </div>
               )}
 
+              {/* Hardware Accessories Test Dock (IMP-MS75) */}
+              {accessorySlots.length > 0 && (
+                <div className="bg-white border border-neutral-200 rounded-[12px] p-4 shadow-xs space-y-3.5">
+                  <div className="flex items-center justify-between border-b border-neutral-100 pb-2.5">
+                    <div className="flex items-center gap-2">
+                      <Sliders className="size-4 text-[#07b6d3]" />
+                      <h3 className="font-semibold text-xs text-[#0f1422] uppercase tracking-wider">
+                        Hardware Accessories Test Dock
+                      </h3>
+                    </div>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-50 text-[#07b6d3] font-medium border border-cyan-100">
+                      IMP-MS75
+                    </span>
+                  </div>
+
+                  <p className="text-[11px] text-neutral-500">
+                    Test-drive hardware accessory swaps and verify Left/Right and Bottom/Up positional handings in real time (&lt; 16ms).
+                  </p>
+
+                  <div className="space-y-3.5">
+                    {accessorySlots.map((slot) => {
+                      const currentSelection = swappedAccessories[slot.componentId] ?? {
+                        slotComponentId: slot.componentId,
+                        accessoryId: "default",
+                        accessoryName: slot.componentName || "Default Sub-Mesh",
+                        category: slot.accessoryCategory || "handle",
+                        price: 0,
+                        finish: "satin",
+                        horizontalPosition: slot.positionOptions?.defaultHorizontal || "right",
+                        verticalPosition: slot.positionOptions?.defaultVertical || "up",
+                      };
+
+                      // Filter compatible accessories by category (QAD-TC90.7)
+                      const slotCategory = slot.accessoryCategory || "handle";
+                      const compatibleCanonical = CANONICAL_ACCESSORIES_CATALOG.filter(
+                        (o) => o.category === slotCategory
+                      );
+                      const compatibleCatalog = catalogAccessories.filter(
+                        (o) => o.category === slotCategory
+                      );
+
+                      return (
+                        <div
+                          key={slot.componentId}
+                          className="p-3 bg-neutral-50/70 border border-neutral-200/80 rounded-[10px] space-y-3"
+                        >
+                          {/* Slot Title and Category Badge */}
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-semibold text-[#0f1422] truncate max-w-[200px]">
+                              {slot.componentName || slot.componentKey}
+                            </span>
+                            <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-neutral-200/60 text-neutral-700">
+                              {slotCategory}
+                            </span>
+                          </div>
+
+                          {/* Accessory Picker Dropdown */}
+                          <div className="space-y-1">
+                            <label className="text-[11px] font-medium text-neutral-600 block">
+                              Active Hardware Accessory
+                            </label>
+                            <select
+                              value={currentSelection.accessoryId}
+                              onChange={(e) => handleSwapAccessory(slot.componentId, e.target.value)}
+                              className="w-full border border-neutral-200 rounded-[6px] px-2.5 py-1.5 text-xs focus:border-[#07b6d3] outline-none bg-white text-neutral-800"
+                            >
+                              <option value="default">Default: {slot.componentName || "Host Sub-Mesh"}</option>
+                              <optgroup label="Canonical Procedural Hardware">
+                                {compatibleCanonical.map((opt) => (
+                                  <option key={opt.id} value={opt.id}>
+                                    {opt.name} {opt.priceDelta > 0 ? `(+PHP ${opt.priceDelta})` : ""}
+                                  </option>
+                                ))}
+                              </optgroup>
+                              {compatibleCatalog.length > 0 && (
+                                <optgroup label="Catalog Registered Accessories">
+                                  {compatibleCatalog.map((item) => (
+                                    <option key={item.id} value={item.id}>
+                                      {item.name} {item.price > 0 ? `(+PHP ${item.price})` : ""}
+                                    </option>
+                                  ))}
+                                </optgroup>
+                              )}
+                            </select>
+                          </div>
+
+                          {/* Positional Placement Handing Controls */}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 border-t border-neutral-200/60">
+                            {/* Horizontal Handing (Left vs Right) */}
+                            {slot.positionOptions?.allowHorizontalToggle && (
+                              <div className="space-y-1.5">
+                                <div className="flex items-center justify-between text-[11px] font-medium text-neutral-700">
+                                  <span>Lateral Handing (X-Axis)</span>
+                                  <span className="text-[10px] text-neutral-400 capitalize">
+                                    {currentSelection.horizontalPosition}
+                                  </span>
+                                </div>
+                                <div className="grid grid-cols-2 gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleUpdateAccessoryHorizontal(slot.componentId, "left")}
+                                    className={`py-1 px-1.5 rounded-[6px] text-xs font-medium border text-center transition-all cursor-pointer ${
+                                      currentSelection.horizontalPosition === "left"
+                                        ? "border-[#07b6d3] bg-[#07b6d3]/10 text-[#07b6d3] font-semibold"
+                                        : "border-neutral-200 text-neutral-600 bg-white hover:bg-neutral-100"
+                                    }`}
+                                  >
+                                    Left Side
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleUpdateAccessoryHorizontal(slot.componentId, "right")}
+                                    className={`py-1 px-1.5 rounded-[6px] text-xs font-medium border text-center transition-all cursor-pointer ${
+                                      currentSelection.horizontalPosition === "right"
+                                        ? "border-[#07b6d3] bg-[#07b6d3]/10 text-[#07b6d3] font-semibold"
+                                        : "border-neutral-200 text-neutral-600 bg-white hover:bg-neutral-100"
+                                    }`}
+                                  >
+                                    Right Side
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Vertical Placement (Bottom vs Up) */}
+                            {slot.positionOptions?.allowVerticalToggle && (
+                              <div className="space-y-1.5">
+                                <div className="flex items-center justify-between text-[11px] font-medium text-neutral-700">
+                                  <span>Vertical Placement (Y-Axis)</span>
+                                  <span className="text-[10px] text-neutral-400 capitalize">
+                                    {currentSelection.verticalPosition}
+                                  </span>
+                                </div>
+                                <div className="grid grid-cols-2 gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleUpdateAccessoryVertical(slot.componentId, "bottom")}
+                                    className={`py-1 px-1.5 rounded-[6px] text-xs font-medium border text-center transition-all cursor-pointer ${
+                                      currentSelection.verticalPosition === "bottom"
+                                        ? "border-[#07b6d3] bg-[#07b6d3]/10 text-[#07b6d3] font-semibold"
+                                        : "border-neutral-200 text-neutral-600 bg-white hover:bg-neutral-100"
+                                    }`}
+                                  >
+                                    Bottom
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleUpdateAccessoryVertical(slot.componentId, "up")}
+                                    className={`py-1 px-1.5 rounded-[6px] text-xs font-medium border text-center transition-all cursor-pointer ${
+                                      currentSelection.verticalPosition === "up"
+                                        ? "border-[#07b6d3] bg-[#07b6d3]/10 text-[#07b6d3] font-semibold"
+                                        : "border-neutral-200 text-neutral-600 bg-white hover:bg-neutral-100"
+                                    }`}
+                                  >
+                                    Up / Mid
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {/* Interactive Parameter Controls */}
               <div className="bg-white border border-neutral-200 rounded-[12px] p-4 shadow-xs">
                 <h3 className="font-semibold text-xs text-[#0f1422] uppercase tracking-wider mb-3 flex items-center justify-between">
@@ -1018,9 +1328,19 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
                     PHP {(bomCalculation.hardwareSubtotal + bomCalculation.consumablesSubtotal).toFixed(2)}
                   </span>
                 </div>
+                {accessoryTotalDelta !== 0 && (
+                  <div className="flex justify-between items-center text-neutral-600">
+                    <span>Hardware Accessories Upgrades:</span>
+                    <span className="font-mono font-medium text-emerald-600">
+                      {accessoryTotalDelta > 0 ? `+ PHP ${accessoryTotalDelta.toFixed(2)}` : `- PHP ${Math.abs(accessoryTotalDelta).toFixed(2)}`}
+                    </span>
+                  </div>
+                )}
                 <div className="flex justify-between items-center text-neutral-500 pt-1 border-t border-neutral-100">
                   <span>Direct Materials Subtotal:</span>
-                  <span className="font-mono font-medium text-neutral-800">PHP {bomCalculation.directMaterialsSubtotal.toFixed(2)}</span>
+                  <span className="font-mono font-medium text-neutral-800">
+                    PHP {(bomCalculation.directMaterialsSubtotal + accessoryTotalDelta).toFixed(2)}
+                  </span>
                 </div>
                 <div className="flex justify-between items-center text-neutral-600">
                   <span>Workshop Fabrication Labor:</span>
@@ -1037,13 +1357,13 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
                 <div>
                   <span className="text-[10px] text-neutral-400 uppercase tracking-wider block">Estimated Quotation (PHP)</span>
                   <span className="text-lg font-bold text-[#07b6d3]">
-                    PHP {bomCalculation.finalQuotation.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    PHP {(bomCalculation.finalQuotation + accessoryTotalDelta).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
                 </div>
                 <div className="text-right text-[10px] text-neutral-300">
                   <span>Unit Rate:</span>
                   <div className="font-mono text-white">
-                    PHP {(bomCalculation.finalQuotation / (bomCalculation.glazingAreaSqm || 1.44)).toFixed(0)}/m²
+                    PHP {((bomCalculation.finalQuotation + accessoryTotalDelta) / (bomCalculation.glazingAreaSqm || 1.44)).toFixed(0)}/m²
                   </div>
                 </div>
               </div>

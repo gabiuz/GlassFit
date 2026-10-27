@@ -165,6 +165,10 @@ async function fetchCompatibleAddons(
           toggle_property_key,
           presentation_category,
           component_data,
+          is_accessory_slot,
+          accessory_category,
+          allowed_accessory_ids,
+          position_options,
           status,
           raw_materials:raw_material_id (
             id,
@@ -242,6 +246,10 @@ async function fetchCompatibleAddons(
         togglePropertyKey: (compRow.toggle_property_key as string) || null,
         presentationCategory: compRow.presentation_category || "Framing",
         componentData: compData,
+        isAccessorySlot: Boolean((compRow as Record<string, unknown>).is_accessory_slot),
+        accessoryCategory: ((compRow as Record<string, unknown>).accessory_category as import("@/lib/admin/products/types").AccessoryCategory) || null,
+        allowedAccessoryIds: ((compRow as Record<string, unknown>).allowed_accessory_ids as string[]) || null,
+        positionOptions: ((compRow as Record<string, unknown>).position_options as import("@/lib/admin/products/types").AccessoryPositionOptions) || null,
         model: {
           assetId: asset.asset_id,
           r2ObjectKey: asset.r2_object_key,
@@ -289,7 +297,7 @@ export async function getProductStructuralDefinition(
 
   const { data: product, error: productError } = await supabase
     .from("products")
-    .select("product_id, product_name, product_type, description, base_price, status, is_addon, addon_type")
+    .select("product_id, product_name, product_type, description, base_price, status, is_addon, addon_type, is_accessory, accessory_category, accessory_mounting_type")
     .eq("product_id", productId)
     .eq("status", "Active")
     .single();
@@ -351,6 +359,10 @@ export async function getProductStructuralDefinition(
         toggle_property_key,
         presentation_category,
         component_data,
+        is_accessory_slot,
+        accessory_category,
+        allowed_accessory_ids,
+        position_options,
         raw_materials:raw_material_id (
           id,
           material_code,
@@ -479,6 +491,10 @@ export async function getProductStructuralDefinition(
       togglePropertyKey: (row.toggle_property_key as string) || null,
       presentationCategory: row.presentation_category || "Framing",
       componentData,
+      isAccessorySlot: Boolean((row as Record<string, unknown>).is_accessory_slot),
+      accessoryCategory: ((row as Record<string, unknown>).accessory_category as import("@/lib/admin/products/types").AccessoryCategory) || null,
+      allowedAccessoryIds: ((row as Record<string, unknown>).allowed_accessory_ids as string[]) || null,
+      positionOptions: ((row as Record<string, unknown>).position_options as import("@/lib/admin/products/types").AccessoryPositionOptions) || null,
       model: {
         assetId: asset.asset_id,
         r2ObjectKey: asset.r2_object_key,
@@ -521,6 +537,9 @@ export async function getProductStructuralDefinition(
       catalogImageUrl: catalogAsset?.url ?? null,
       isAddon: Boolean(product.is_addon),
       addonType: (product.addon_type as "screen" | "grill") || null,
+      isAccessory: Boolean(product.is_accessory),
+      accessoryCategory: product.accessory_category || null,
+      accessoryMountingType: product.accessory_mounting_type || null,
     },
     template: {
       templateId,
@@ -563,7 +582,7 @@ export async function getDraftStructuralDefinition(
   // Same as getProductStructuralDefinition but without eq("status", "Active") for product and template
   const { data: product, error: productError } = await supabase
     .from("products")
-    .select("product_id, product_name, product_type, description, base_price, status, is_addon, addon_type")
+    .select("product_id, product_name, product_type, description, base_price, status, is_addon, addon_type, is_accessory, accessory_category, accessory_mounting_type")
     .eq("product_id", productId)
     .single();
 
@@ -622,6 +641,10 @@ export async function getDraftStructuralDefinition(
         toggle_property_key,
         presentation_category,
         component_data,
+        is_accessory_slot,
+        accessory_category,
+        allowed_accessory_ids,
+        position_options,
         raw_materials:raw_material_id (
           id,
           material_code,
@@ -733,6 +756,10 @@ export async function getDraftStructuralDefinition(
       togglePropertyKey: (row.toggle_property_key as string) || null,
       presentationCategory: row.presentation_category || "Framing",
       componentData,
+      isAccessorySlot: Boolean((row as Record<string, unknown>).is_accessory_slot),
+      accessoryCategory: ((row as Record<string, unknown>).accessory_category as import("@/lib/admin/products/types").AccessoryCategory) || null,
+      allowedAccessoryIds: ((row as Record<string, unknown>).allowed_accessory_ids as string[]) || null,
+      positionOptions: ((row as Record<string, unknown>).position_options as import("@/lib/admin/products/types").AccessoryPositionOptions) || null,
       model: {
         assetId: asset.asset_id,
         r2ObjectKey: asset.r2_object_key,
@@ -761,6 +788,9 @@ export async function getDraftStructuralDefinition(
       catalogImageUrl: catalogAsset?.url ?? null,
       isAddon: Boolean(product.is_addon),
       addonType: (product.addon_type as "screen" | "grill") || null,
+      isAccessory: Boolean(product.is_accessory),
+      accessoryCategory: product.accessory_category || null,
+      accessoryMountingType: product.accessory_mounting_type || null,
     },
     template: {
       templateId,

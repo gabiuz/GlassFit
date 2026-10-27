@@ -44,8 +44,9 @@ export interface GeneratedPdfDocument {
   totalEstimatedAmount: number;
 }
 
-export function escapeHtml(value: string): string {
-  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;").replace(/'/g, "&#39;");
+export function escapeHtml(value: string | null | undefined): string {
+  if (!value) return "";
+  return String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
 export function sanitizeImageSource(value: string | null | undefined, allowedOrigins: readonly string[]): string | null {
@@ -107,17 +108,29 @@ function canonicalGroupsTable(item: QuotationDocumentViewModel["items"][number],
     ? `<span><b>Add-on Attachment:</b> ${escapeHtml(addonLabel)}${addonPriceFormatted > 0 ? ` (+${money(addonPriceFormatted)})` : ""}</span>`
     : `<span><b>Add-on Attachment:</b> None</span>`;
 
-  const basePrice = item.baseUnitPrice ?? (item.unitPrice - addonPriceFormatted);
+  const hardwareSpecs = item.swappedAccessories && item.swappedAccessories.length > 0
+    ? item.swappedAccessories.map((acc) => {
+        const handingLabel = acc.horizontalPosition === "left" ? "Left-Hand Side" : "Right-Hand Side";
+        const verticalLabel = acc.verticalPosition === "bottom" ? "Bottom Rail" : "Mid-Height";
+        const deltaFormatted = (acc.priceDelta ?? 0) > 0 ? ` (+${money(acc.priceDelta!)})` : "";
+        return `<span><b>Hardware / Handle:</b> ${escapeHtml(acc.accessoryName)} | <b>Handing:</b> ${handingLabel} (${verticalLabel}) | <b>Finish:</b> ${escapeHtml(acc.finish ?? "Standard")}${deltaFormatted}</span>`;
+      }).join("")
+    : "";
+
+  const accessoryPriceFormatted = (item.accessoryPriceDelta ?? 0) > 0 ? (item.accessoryPriceDelta ?? 0) : 0;
+  const basePrice = item.baseUnitPrice ?? (item.unitPrice - addonPriceFormatted - accessoryPriceFormatted);
   const addonNameShort = item.selectedAddon === "screen"
     ? `Insect Screen${addonFinishSuffix}`
     : item.selectedAddon === "grill"
       ? `Security Grille${addonFinishSuffix}`
       : (item.addonName ? `${item.addonName}${addonFinishSuffix}` : "Add-on");
 
-  const subtotalContent = hasAddon && addonPriceFormatted > 0
+  const hasUpgrades = (addonPriceFormatted > 0) || (accessoryPriceFormatted > 0);
+  const subtotalContent = hasUpgrades
     ? `<div class="item-pricing-breakdown" style="display:flex;flex-direction:column;gap:3px;font-size:11px;color:#475569;">
-        <span>Base Window Fixture: ${money(basePrice)}</span>
-        <span>Add-on (${escapeHtml(addonNameShort)}): ${money(addonPriceFormatted)}</span>
+        <span>Base Fixture: ${money(basePrice)}</span>
+        ${addonPriceFormatted > 0 ? `<span>Add-on (${escapeHtml(addonNameShort)}): ${money(addonPriceFormatted)}</span>` : ""}
+        ${accessoryPriceFormatted > 0 ? `<span>Hardware Upgrades: ${money(accessoryPriceFormatted)}</span>` : ""}
       </div>
       <div style="text-align:right;">
         <span>Fixture Total</span>
@@ -133,7 +146,7 @@ function canonicalGroupsTable(item: QuotationDocumentViewModel["items"][number],
     addonAluminumFinish: item.addonAluminumFinish,
   });
 
-  return `<section class="item-card item-card--compact"><header><h3>${escapeHtml(item.productName)}</h3><span class="numeric-value">Qty: ${item.quantity}</span></header><div class="fixture-specs"><span><b>Dimensions:</b> <span class="dimension-value">${escapeHtml(item.dimensionsFormatted)}</span></span><span><b>Measurement:</b> ${escapeHtml(dimensionSourceLabel(item.dimensionSource))}</span><span><b>Panels:</b> ${item.panelCount}</span><span><b>Finish:</b> ${escapeHtml(item.finishLabel)}</span><span><b>Glass:</b> ${escapeHtml(item.glassLabel)}</span><span><b>Sill:</b> ${item.hasSill ? "Standard sill" : "Flush sill omitted"}</span>${addonSpec}${customSpecs}${grilleCutListHtml}</div>${item.structuralWaiver ? `<p class="item-waiver">Structural waiver attached for this fixture.</p>` : ""}<div class="item-subtotal">${subtotalContent}</div></section>`;
+  return `<section class="item-card item-card--compact"><header><h3>${escapeHtml(item.productName)}</h3><span class="numeric-value">Qty: ${item.quantity}</span></header><div class="fixture-specs"><span><b>Dimensions:</b> <span class="dimension-value">${escapeHtml(item.dimensionsFormatted)}</span></span><span><b>Measurement:</b> ${escapeHtml(dimensionSourceLabel(item.dimensionSource))}</span><span><b>Panels:</b> ${item.panelCount}</span><span><b>Finish:</b> ${escapeHtml(item.finishLabel)}</span><span><b>Glass:</b> ${escapeHtml(item.glassLabel)}</span><span><b>Sill:</b> ${item.hasSill ? "Standard sill" : "Flush sill omitted"}</span>${addonSpec}${customSpecs}${hardwareSpecs}${grilleCutListHtml}</div>${item.structuralWaiver ? `<p class="item-waiver">Structural waiver attached for this fixture.</p>` : ""}<div class="item-subtotal">${subtotalContent}</div></section>`;
 }
 
 function renderGrilleCutListSummaryHtml(item: {
@@ -194,14 +207,16 @@ function canonicalToLegacy(view: QuotationDocumentViewModel): QuotationPdfMetada
     bomSummary: { total_estimated_amount: view.effectiveFinalPrice, currency: "PHP" as const, has_sill: item.hasSill, structural_waiver: item.structuralWaiver, groups: [] },
   } satisfies CalculatedBOMResult;
   return {
-    quotationNumber: view.quotationNumber,
-    referenceCode: view.referenceCode,
-    shareableUrl: view.shareableUrl,
+    quotationNumber: view.quotationNumber || "DRAFT",
+    referenceCode: view.referenceCode || "DRAFT",
+    shareableUrl: view.shareableUrl || "",
     customerName: view.customer.name,
     customerPhone: view.customer.phone,
     customerEmail: view.customer.email,
     siteLocation: view.customer.siteLocation,
-    createdAtFormatted: new Intl.DateTimeFormat("en-US", { dateStyle: "long" }).format(new Date(view.createdAt)),
+    createdAtFormatted: !view.createdAt || Number.isNaN(new Date(view.createdAt).getTime())
+      ? new Intl.DateTimeFormat("en-US", { dateStyle: "long" }).format(new Date())
+      : new Intl.DateTimeFormat("en-US", { dateStyle: "long" }).format(new Date(view.createdAt)),
     projectName: view.projectName,
     snapshotImageUrl: view.snapshotImageUrl,
     brandLogoUrl: view.brandLogoUrl,

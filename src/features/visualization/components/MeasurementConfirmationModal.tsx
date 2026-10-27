@@ -235,6 +235,55 @@ export function MeasurementConfirmationModal({
     ? (currentGrilleBOM?.finalPrice ?? 0)
     : (currentAddonBOM?.finalAddonPrice ?? 0);
 
+  interface SwappedAccessoryViewItem {
+    slotComponentId: string;
+    accessoryId: string;
+    accessoryName: string;
+    category: string;
+    price: number;
+    finish: string;
+    horizontalPosition: "left" | "right";
+    verticalPosition: "bottom" | "up";
+    priceDelta?: number;
+  }
+
+  const currentSwappedAccessories: SwappedAccessoryViewItem[] = (() => {
+    if (!currentEntry) return [];
+    if (currentEntry.overlayConfiguration.swappedAccessories) {
+      return Object.values(currentEntry.overlayConfiguration.swappedAccessories).map((acc) => ({
+        slotComponentId: acc.slotComponentId,
+        accessoryId: acc.accessoryId,
+        accessoryName: acc.accessoryName,
+        category: acc.category,
+        price: acc.price,
+        finish: acc.finish,
+        horizontalPosition: acc.horizontalPosition,
+        verticalPosition: acc.verticalPosition,
+        priceDelta: acc.priceDelta ?? 0,
+      }));
+    }
+    const fromParams = currentEntry.overlayConfiguration.visualParameterValues?.swapped_accessories as Array<Record<string, unknown>> | undefined;
+    if (Array.isArray(fromParams)) {
+      return fromParams.map((acc) => ({
+        slotComponentId: String(acc.slot_component_id ?? ""),
+        accessoryId: String(acc.accessory_id ?? ""),
+        accessoryName: String(acc.accessory_name ?? ""),
+        category: String(acc.slot_category ?? "handle"),
+        price: Number(acc.unit_price ?? 0),
+        finish: String(acc.finish ?? "Standard"),
+        horizontalPosition: ((acc.horizontal_position as "left" | "right") ?? "right"),
+        verticalPosition: ((acc.vertical_position as "bottom" | "up") ?? "up"),
+        priceDelta: Number(acc.price_delta ?? 0),
+      }));
+    }
+    return [];
+  })();
+
+  const currentTotalAccessoryDelta = currentSwappedAccessories.reduce(
+    (sum: number, acc: SwappedAccessoryViewItem) => sum + (acc.priceDelta ?? (acc.accessoryId !== "default" ? acc.price : 0)),
+    0
+  );
+
   const recalculatePrice = (
     entry: MeasurementConfirmationEntry,
     override: MeasurementOverride,
@@ -310,7 +359,20 @@ export function MeasurementConfirmationModal({
       addonPrice = addonBom.finalAddonPrice;
     }
 
-    const unitPrice = baseUnitPrice + addonPrice;
+    const swappedAccessoriesList = entry.overlayConfiguration.swappedAccessories
+      ? Object.values(entry.overlayConfiguration.swappedAccessories)
+      : ((entry.overlayConfiguration.visualParameterValues?.swapped_accessories as Array<Record<string, unknown>> | undefined)?.map((acc) => ({
+          accessoryId: String(acc.accessory_id ?? ""),
+          priceDelta: Number(acc.price_delta ?? 0),
+          price: Number(acc.unit_price ?? 0),
+        })) ?? []);
+
+    const accessoryPriceDelta = swappedAccessoriesList.reduce(
+      (sum, acc) => sum + (acc.priceDelta ?? (acc.accessoryId !== "default" ? (acc.price ?? 0) : 0)),
+      0
+    );
+
+    const unitPrice = baseUnitPrice + addonPrice + accessoryPriceDelta;
 
     const quantity = Math.max(1, entry.overlayConfiguration.quantity ?? 1);
     return unitPrice * quantity;
@@ -967,6 +1029,42 @@ export function MeasurementConfirmationModal({
                   </table>
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* Itemized Hardware & Accessories Line Card (IMP-MS76 / QAD-TC91.7) */}
+        {currentSwappedAccessories.length > 0 && (
+          <div className="mb-5 rounded-[16px] border border-amber-200 bg-amber-50/40 p-4 space-y-3">
+            <div className="flex items-center justify-between border-b border-amber-100 pb-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold uppercase tracking-wider text-[#0f1422]">
+                  Hardware & Accessories
+                </span>
+                <span className="text-[10px] font-semibold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full">
+                  Custom Hardware Spec
+                </span>
+              </div>
+              <span className="font-mono font-semibold text-amber-800">
+                {currentTotalAccessoryDelta > 0
+                  ? `+₱${currentTotalAccessoryDelta.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                  : "Included"}
+              </span>
+            </div>
+            <div className="space-y-1.5 text-xs">
+              {currentSwappedAccessories.map((acc: SwappedAccessoryViewItem, aIdx: number) => (
+                <div key={aIdx} className="flex justify-between items-center text-[#0f1422]">
+                  <div>
+                    <span className="font-medium block">{acc.accessoryName}</span>
+                    <span className="text-[11px] text-neutral-500">
+                      Handing: {acc.horizontalPosition === "left" ? "Left Side" : "Right Side"} ({acc.verticalPosition === "bottom" ? "Bottom" : "Mid-Height"}) | Finish: {acc.finish}
+                    </span>
+                  </div>
+                  <span className="font-mono text-neutral-600">
+                    {acc.priceDelta && acc.priceDelta > 0 ? `+₱${acc.priceDelta.toFixed(2)}` : "₱0.00"}
+                  </span>
+                </div>
+              ))}
             </div>
           </div>
         )}

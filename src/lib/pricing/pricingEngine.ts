@@ -962,7 +962,8 @@ export function calculateOverlayPricing(overlay: PlacedOverlay): {
     : calculateStandardSeries798(options);
 
   const addonPrice = Number(overlay.configuration.addonPrice) || 0;
-  const unitPrice = bomResult.finalQuotation + addonPrice;
+  const accessoryDelta = Number(overlay.configuration.accessoryPriceDelta) || 0;
+  const unitPrice = bomResult.finalQuotation + addonPrice + accessoryDelta;
   const totalPrice = unitPrice * quantity;
 
   return {
@@ -971,3 +972,40 @@ export function calculateOverlayPricing(overlay: PlacedOverlay): {
     totalPrice,
   };
 }
+
+export interface AccessoryBOMAdjustment {
+  slotComponentId: string;
+  defaultComponentCost: number;
+  selectedAccessoryPrice: number;
+  finishRateDelta: number;
+}
+
+/**
+ * Calculates hardware bill-of-materials adjustments for customer accessory substitutions.
+ * Deducts baseline hardware cost, applies chosen accessory unit price with finish delta,
+ * and incorporates scrap allowance and contractor margin.
+ * Traceability: PRD-F10, SDD-C7, BRD-M5, IMP-MS76, QAD-TC91.6
+ */
+export function applyAccessoryBOMAdjustments(
+  baseHardwareCost: number,
+  adjustments: AccessoryBOMAdjustment[],
+  scrapAllowance: number = 0.10,
+  contractorMargin: number = 0.25,
+): { netHardwareCost: number; priceDelta: number } {
+  let netCost = baseHardwareCost;
+
+  for (const adj of adjustments) {
+    // Deduct default hardware allowance
+    netCost -= adj.defaultComponentCost;
+    // Add chosen accessory base price and finish delta
+    const accessoryTotal = adj.selectedAccessoryPrice + adj.finishRateDelta;
+    netCost += accessoryTotal * (1 + scrapAllowance);
+  }
+
+  const finalHardwarePrice = netCost * (1 + contractorMargin);
+  return {
+    netHardwareCost: netCost,
+    priceDelta: finalHardwarePrice - (baseHardwareCost * (1 + contractorMargin)),
+  };
+}
+

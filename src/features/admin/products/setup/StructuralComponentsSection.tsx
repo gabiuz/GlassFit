@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo, Suspense } from "react";
 import { UploadCloud, X, Loader2, CheckCircle, AlertCircle, Eye, CheckSquare, Square, Layers, Sparkles } from "lucide-react";
 import { upsertProductComponent } from "@/lib/admin/products/componentMutations";
-import type { ComponentType } from "@/lib/admin/products/types";
+import type { ComponentType, AccessoryCategory, AccessoryPositionOptions } from "@/lib/admin/products/types";
 import { generatePresignedUrl, confirmAssetUpload } from "@/lib/admin/products/assetUpload";
 import { autoDetectComponentSettings, suggestCandidateMaterials } from "@/lib/admin/products/autoDetection";
 import { decomposeWholeModel, type ExtractedComponentPart } from "@/lib/admin/products/modelDecomposer";
@@ -55,6 +55,10 @@ type MappedFile = {
     errorMsg?: string;
     previewMesh?: THREE.Group | null;
     sourceDimensions?: { x: number; y: number; z: number };
+    isAccessorySlot?: boolean;
+    accessoryCategory?: AccessoryCategory | null;
+    allowedAccessoryIds?: string[] | null;
+    positionOptions?: AccessoryPositionOptions;
 };
 
 function formatKeyFromName(name: string) {
@@ -458,6 +462,17 @@ export function StructuralComponentsSection({
                 togglePropertyKey: (comp.toggle_property_key as string) || detected.togglePropertyKey,
                 presentationCategory: (comp.presentation_category as PresentationCategory) || detected.presentationCategory,
                 glbFileUrl: (comp.glb_file_url as string) || null,
+                isAccessorySlot: typeof comp.is_accessory_slot === "boolean" ? comp.is_accessory_slot : Boolean(detected.isAccessorySlot),
+                accessoryCategory: (comp.accessory_category as AccessoryCategory) || detected.accessoryCategory || null,
+                allowedAccessoryIds: (comp.allowed_accessory_ids as string[]) || null,
+                positionOptions: (comp.position_options as AccessoryPositionOptions) || detected.positionOptions || {
+                    allowHorizontalToggle: true,
+                    defaultHorizontal: "right",
+                    horizontalOffsetMm: 45,
+                    allowVerticalToggle: false,
+                    defaultVertical: "up",
+                    verticalOffsetMm: 1000,
+                },
                 status: "success" as const,
             };
         });
@@ -491,6 +506,17 @@ export function StructuralComponentsSection({
                             togglePropertyKey: (comp.toggle_property_key as string) || detected.togglePropertyKey,
                             presentationCategory: (comp.presentation_category as PresentationCategory) || detected.presentationCategory,
                             glbFileUrl: (comp.glb_file_url as string) || null,
+                            isAccessorySlot: typeof comp.is_accessory_slot === "boolean" ? comp.is_accessory_slot : Boolean(detected.isAccessorySlot),
+                            accessoryCategory: (comp.accessory_category as AccessoryCategory) || detected.accessoryCategory || null,
+                            allowedAccessoryIds: (comp.allowed_accessory_ids as string[]) || null,
+                            positionOptions: (comp.position_options as AccessoryPositionOptions) || detected.positionOptions || {
+                                allowHorizontalToggle: true,
+                                defaultHorizontal: "right",
+                                horizontalOffsetMm: 45,
+                                allowVerticalToggle: false,
+                                defaultVertical: "up",
+                                verticalOffsetMm: 1000,
+                            },
                             status: "success" as const,
                         };
                     });
@@ -507,6 +533,10 @@ export function StructuralComponentsSection({
                             glbFileUrl: item.glbFileUrl || (found.glb_file_url as string) || null,
                             rawMaterialId: item.rawMaterialId !== undefined && item.status !== "success" ? item.rawMaterialId : remoteRawMaterialId,
                             materialBindings: item.materialBindings !== undefined && item.status !== "success" ? item.materialBindings : (foundBindings.length > 0 ? foundBindings : item.materialBindings),
+                            isAccessorySlot: typeof found.is_accessory_slot === "boolean" ? found.is_accessory_slot : item.isAccessorySlot,
+                            accessoryCategory: (found.accessory_category as AccessoryCategory) || item.accessoryCategory,
+                            allowedAccessoryIds: (found.allowed_accessory_ids as string[]) || item.allowedAccessoryIds,
+                            positionOptions: (found.position_options as AccessoryPositionOptions) || item.positionOptions,
                         };
                     }
                     return item;
@@ -606,6 +636,17 @@ export function StructuralComponentsSection({
                 previewMesh,
                 status: "idle" as const,
                 sourceDimensions: dims,
+                isAccessorySlot: Boolean(autoDetected.isAccessorySlot),
+                accessoryCategory: autoDetected.accessoryCategory || null,
+                allowedAccessoryIds: null,
+                positionOptions: autoDetected.positionOptions || {
+                    allowHorizontalToggle: true,
+                    defaultHorizontal: "right",
+                    horizontalOffsetMm: 45,
+                    allowVerticalToggle: false,
+                    defaultVertical: "up",
+                    verticalOffsetMm: 1000,
+                },
             };
         });
 
@@ -709,6 +750,17 @@ export function StructuralComponentsSection({
                     y: part.dimensionsMm.height / 1000,
                     z: part.dimensionsMm.depth / 1000,
                 },
+                isAccessorySlot: Boolean(part.isAccessorySlot),
+                accessoryCategory: part.accessoryCategory || null,
+                allowedAccessoryIds: null,
+                positionOptions: part.positionOptions || {
+                    allowHorizontalToggle: true,
+                    defaultHorizontal: "right",
+                    horizontalOffsetMm: 45,
+                    allowVerticalToggle: false,
+                    defaultVertical: "up",
+                    verticalOffsetMm: 1000,
+                },
             };
         });
 
@@ -761,6 +813,10 @@ export function StructuralComponentsSection({
                         ...(updates.presentationCategory !== undefined && { presentationCategory: updates.presentationCategory }),
                         ...(updates.baseQuantity !== undefined && { baseQuantity: updates.baseQuantity }),
                         ...(updates.assemblyGroup !== undefined && { assemblyGroup: updates.assemblyGroup }),
+                        ...(updates.isAccessorySlot !== undefined && { isAccessorySlot: updates.isAccessorySlot }),
+                        ...(updates.accessoryCategory !== undefined && { accessoryCategory: updates.accessoryCategory }),
+                        ...(updates.allowedAccessoryIds !== undefined && { allowedAccessoryIds: updates.allowedAccessoryIds }),
+                        ...(updates.positionOptions !== undefined && { positionOptions: updates.positionOptions }),
                         status: "idle" as const,
                     };
                 }
@@ -843,7 +899,11 @@ export function StructuralComponentsSection({
                 glbFileUrl: mapped.glbFileUrl || undefined,
                 componentData: {
                     source_dimensions_mm: dimensions
-                }
+                },
+                isAccessorySlot: mapped.isAccessorySlot,
+                accessoryCategory: mapped.accessoryCategory,
+                allowedAccessoryIds: mapped.allowedAccessoryIds,
+                positionOptions: mapped.positionOptions,
             });
 
             // 3. Request Presigned URL & upload only if file has content
@@ -934,6 +994,10 @@ export function StructuralComponentsSection({
                 presentationCategory: m.presentationCategory,
                 baseQuantity: m.baseQuantity,
                 assemblyGroup: m.assemblyGroup,
+                isAccessorySlot: m.isAccessorySlot,
+                accessoryCategory: m.accessoryCategory,
+                allowedAccessoryIds: m.allowedAccessoryIds,
+                positionOptions: m.positionOptions,
             }));
     }, [mappedFiles, selectedIds]);
 
@@ -1334,7 +1398,14 @@ export function StructuralComponentsSection({
                                                 )}
                                             </td>
                                             <td className="px-3 py-2 font-medium text-[#0f1422]">
-                                                <div>{mapped.componentName}</div>
+                                                <div className="flex items-center gap-1.5 flex-wrap">
+                                                    <span>{mapped.componentName}</span>
+                                                    {mapped.isAccessorySlot && (
+                                                        <span className="px-1.5 py-0.5 rounded-[4px] bg-cyan-50 text-[#07b6d3] font-semibold text-[9px] border border-cyan-200 uppercase tracking-tight">
+                                                            Accessory Slot ({mapped.accessoryCategory || "handle"})
+                                                        </span>
+                                                    )}
+                                                </div>
                                                 <div className="text-[10px] text-neutral-400 font-mono">{mapped.componentKey}</div>
                                             </td>
                                             <td className="px-3 py-2">

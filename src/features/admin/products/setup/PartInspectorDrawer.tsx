@@ -14,7 +14,13 @@ import type {
   RawMaterial,
   ComponentMaterialBinding,
 } from '@/lib/pricing/types';
-import type { ComponentType } from '@/lib/admin/products/types';
+import type {
+  ComponentType,
+  AccessoryCategory,
+  AccessoryPositionOptions,
+  HorizontalPosition,
+  VerticalPosition,
+} from '@/lib/admin/products/types';
 import { calculateGrilleLinearBOM } from '@/lib/pricing/grillePricingEngine';
 import type { GrilleGeometryAnalysis } from '@/lib/pricing/grilleGeometryAnalyzer';
 
@@ -32,6 +38,10 @@ export interface PartInspectorConfig {
   presentationCategory: PresentationCategory;
   baseQuantity: number;
   assemblyGroup: string;
+  isAccessorySlot?: boolean;
+  accessoryCategory?: AccessoryCategory | null;
+  allowedAccessoryIds?: string[] | null;
+  positionOptions?: AccessoryPositionOptions;
 }
 
 interface PartInspectorDrawerProps {
@@ -58,6 +68,23 @@ export function PartInspectorDrawer({
 
   const primary = selectedParts[0] as PartInspectorConfig | undefined;
   const isMulti = selectedParts.length > 1;
+
+  const updatePositionOptions = (opts: Partial<AccessoryPositionOptions>) => {
+    const current = primary?.positionOptions || {
+      allowHorizontalToggle: true,
+      defaultHorizontal: 'right',
+      horizontalOffsetMm: 45,
+      allowVerticalToggle: false,
+      defaultVertical: 'up',
+      verticalOffsetMm: 1000,
+    };
+    onUpdateParts({
+      positionOptions: {
+        ...current,
+        ...opts,
+      },
+    });
+  };
 
   // Derive current bindings from primary part
   const currentBindings: ComponentMaterialBinding[] = useMemo(() => {
@@ -695,6 +722,134 @@ export function PartInspectorDrawer({
                 placeholder="has_sill"
                 className="w-full border border-neutral-200 rounded-[6px] px-2.5 py-1.5 text-xs focus:border-[#07b6d3] outline-none bg-white"
               />
+            </div>
+          )}
+        </div>
+
+        {/* Section: Swappable Accessory Slot (IMP-MS75) */}
+        <div className="bg-neutral-50 p-3 rounded-[10px] border border-neutral-200 space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-medium text-[#0f1422]">Swappable with Accessories</p>
+              <p className="text-[10px] text-neutral-500">Allow customers to swap this part with catalog accessories</p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={Boolean(primary.isAccessorySlot)}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  onUpdateParts({
+                    isAccessorySlot: checked,
+                    ...(checked && !primary.accessoryCategory && { accessoryCategory: "handle" }),
+                    ...(checked && !primary.positionOptions && {
+                      positionOptions: {
+                        allowHorizontalToggle: true,
+                        defaultHorizontal: "right",
+                        horizontalOffsetMm: 45,
+                        allowVerticalToggle: false,
+                        defaultVertical: "up",
+                        verticalOffsetMm: 1000,
+                      },
+                    }),
+                    ...(checked && { presentationCategory: "Hardware" }),
+                  });
+                }}
+                className="sr-only peer"
+              />
+              <div className="w-8 h-4.5 bg-neutral-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-[#07b6d3]"></div>
+            </label>
+          </div>
+
+          {primary.isAccessorySlot && (
+            <div className="space-y-3 pt-2 border-t border-neutral-200/60 text-xs">
+              {/* Category Dropdown */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-medium text-neutral-700 block">
+                  Target Accessory Category <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={primary.accessoryCategory || "handle"}
+                  onChange={(e) => onUpdateParts({ accessoryCategory: e.target.value as AccessoryCategory })}
+                  className="w-full border border-neutral-200 rounded-[6px] px-2.5 py-1.5 text-xs focus:border-[#07b6d3] outline-none bg-white"
+                >
+                  <option value="handle">Handle / Knob / Pull</option>
+                  <option value="lock">Lock / Latch / Smart Lock</option>
+                  <option value="hinge">Hinge / Pivot</option>
+                  <option value="roller">Roller / Guide Wheel</option>
+                  <option value="other">Other Hardware</option>
+                </select>
+              </div>
+
+              {/* Horizontal Positioning Rule Controls */}
+              <div className="p-2.5 rounded-[8px] bg-white border border-neutral-200 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-[#0f1422]">Horizontal Handing (Left vs Right)</span>
+                  <label className="inline-flex items-center gap-1 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={primary.positionOptions?.allowHorizontalToggle ?? true}
+                      onChange={(e) => updatePositionOptions({ allowHorizontalToggle: e.target.checked })}
+                      className="size-3.5 accent-[#07b6d3]"
+                    />
+                    <span className="text-[10px] text-neutral-600">Client Selectable</span>
+                  </label>
+                </div>
+                <p className="text-[10px] text-neutral-400">
+                  Shifts the part along the lateral edge on the X axis, preserving height and depth.
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  {(["left", "right"] as HorizontalPosition[]).map((pos) => (
+                    <button
+                      key={pos}
+                      type="button"
+                      onClick={() => updatePositionOptions({ defaultHorizontal: pos })}
+                      className={`py-1 rounded-[6px] text-xs font-medium border text-center transition-all ${
+                        (primary.positionOptions?.defaultHorizontal ?? "right") === pos
+                          ? "border-[#07b6d3] bg-[#07b6d3]/10 text-[#07b6d3]"
+                          : "border-neutral-200 text-neutral-600 hover:bg-neutral-50"
+                      }`}
+                    >
+                      Default {pos === "left" ? "Left Side" : "Right Side"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Vertical Positioning Rule Controls */}
+              <div className="p-2.5 rounded-[8px] bg-white border border-neutral-200 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-[#0f1422]">Vertical Placement (Bottom vs Up)</span>
+                  <label className="inline-flex items-center gap-1 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={primary.positionOptions?.allowVerticalToggle ?? false}
+                      onChange={(e) => updatePositionOptions({ allowVerticalToggle: e.target.checked })}
+                      className="size-3.5 accent-[#07b6d3]"
+                    />
+                    <span className="text-[10px] text-neutral-600">Client Selectable</span>
+                  </label>
+                </div>
+                <p className="text-[10px] text-neutral-400">
+                  Shifts the part along the vertical Y axis, preserving lateral edge alignment and depth.
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  {(["bottom", "up"] as VerticalPosition[]).map((pos) => (
+                    <button
+                      key={pos}
+                      type="button"
+                      onClick={() => updatePositionOptions({ defaultVertical: pos })}
+                      className={`py-1 rounded-[6px] text-xs font-medium border text-center transition-all ${
+                        (primary.positionOptions?.defaultVertical ?? "up") === pos
+                          ? "border-[#07b6d3] bg-[#07b6d3]/10 text-[#07b6d3]"
+                          : "border-neutral-200 text-neutral-600 hover:bg-neutral-50"
+                      }`}
+                    >
+                      Default {pos === "bottom" ? "Bottom Position" : "Up / Mid Position"}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
         </div>

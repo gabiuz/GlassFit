@@ -6,6 +6,8 @@ import { revalidatePath } from "next/cache";
 import { getR2AssetUrl } from "@/lib/r2";
 import { deleteProductAssets } from "./assetUpload";
 
+import type { AccessoryCategory, AccessoryMountingType } from "./types";
+
 export type CreateProductInput = {
     product_name: string;
     product_type: string;
@@ -13,6 +15,9 @@ export type CreateProductInput = {
     base_price: number;
     is_addon?: boolean;
     addon_type?: "screen" | "grill" | null;
+    is_accessory?: boolean;
+    accessory_category?: AccessoryCategory | null;
+    accessory_mounting_type?: AccessoryMountingType | null;
 };
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -79,6 +84,9 @@ export async function createProductDraft(input: CreateProductInput) {
             base_price: normalizedInput.base_price,
             is_addon: normalizedInput.is_addon ?? false,
             addon_type: normalizedInput.addon_type ?? null,
+            is_accessory: normalizedInput.is_accessory ?? false,
+            accessory_category: normalizedInput.accessory_category ?? null,
+            accessory_mounting_type: normalizedInput.accessory_mounting_type ?? null,
             status: "Inactive", // Draft state
             created_by: adminCtx.profileId,
             updated_by: adminCtx.profileId,
@@ -123,6 +131,9 @@ export async function updateProductDraft(productId: string, input: UpdateProduct
             base_price: normalizedInput.base_price,
             is_addon: normalizedInput.is_addon ?? false,
             addon_type: normalizedInput.addon_type ?? null,
+            is_accessory: normalizedInput.is_accessory ?? false,
+            accessory_category: normalizedInput.accessory_category ?? null,
+            accessory_mounting_type: normalizedInput.accessory_mounting_type ?? null,
             updated_by: adminCtx.profileId,
         })
         .eq("product_id", productId)
@@ -239,6 +250,9 @@ export async function getProductDraft(productId: string) {
             status,
             is_addon,
             addon_type,
+            is_accessory,
+            accessory_category,
+            accessory_mounting_type,
             product_templates (
                 template_id,
                 model_strategy,

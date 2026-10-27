@@ -19,6 +19,10 @@ import {
 
 import { calculateGrilleLinearBOM } from "../pricing/grillePricingEngine";
 import type { GrilleLinearBOMResult } from "../pricing/types";
+import type { AccessoryPositionOptions } from "@/lib/admin/products/types";
+import type { SelectedAccessoryState } from "./types";
+import { createAccessoryMeshById } from "./accessoryMeshFactory";
+
 export {
   createWindowGlassMaterial,
   createMaterialPalette,
@@ -53,6 +57,8 @@ export interface ParametricProductBuilderOptions {
   addonAluminumFinish?: string;
   addonConfig?: AddonGeometryConfig;
   grilleBOM?: GrilleLinearBOMResult;
+  swappedAccessories?: Record<string, SelectedAccessoryState>;
+  accessoryModels?: Map<string, THREE.Object3D>;
 }
 
 export function buildParametricProduct(
@@ -107,6 +113,198 @@ export function buildParametricProduct(
     group: buildAssembledProduct(definition, resolved, cache, options),
     resolved,
   };
+}
+
+/**
+ * Resolves a PBR finish material for metallic and coated hardware.
+ * Traceability: PRD-F2, SDD-C5, IMP-MS76, QAD-TC91.5
+ */
+export function createHardwareFinishMaterial(finishKey: string): THREE.MeshStandardMaterial {
+  const lower = (finishKey || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (lower.includes("brass") || lower.includes("gold") || lower.includes("satinbrass")) {
+    return new THREE.MeshStandardMaterial({
+      color: 0xd4af37,
+      metalness: 0.85,
+      roughness: 0.35,
+    });
+  }
+  if (lower.includes("black") || lower.includes("matteblack") || lower.includes("analok")) {
+    return new THREE.MeshStandardMaterial({
+      color: 0x18191a,
+      metalness: 0.3,
+      roughness: 0.75,
+    });
+  }
+  if (lower.includes("chrome") || lower.includes("silver") || lower.includes("steel") || lower.includes("stainless")) {
+    return new THREE.MeshStandardMaterial({
+      color: 0xd2d6dc,
+      metalness: 0.9,
+      roughness: 0.22,
+    });
+  }
+  if (lower.includes("white")) {
+    return new THREE.MeshStandardMaterial({
+      color: 0xf3f4f6,
+      metalness: 0.15,
+      roughness: 0.45,
+    });
+  }
+  return new THREE.MeshStandardMaterial({
+    color: 0x22262a,
+    metalness: 0.7,
+    roughness: 0.35,
+  });
+}
+
+/**
+ * Creates procedural 3D geometry for modular accessories when external GLB models are not uploaded.
+ * Supports ergonomic lever handles, round knobs, and biometric smart locks.
+ * Traceability: PRD-F5, SDD-C4, IMP-MS76, QAD-TC91.2
+ */
+export function createProceduralAccessoryMesh(
+  category: string,
+  modelName: string,
+  finishKey: string = "matte_black",
+): THREE.Object3D {
+  const group = new THREE.Group();
+  group.name = `ProceduralAccessory_${modelName}`;
+  const mat = createHardwareFinishMaterial(finishKey);
+  const lower = (modelName + " " + category).toLowerCase();
+
+  if (lower.includes("smart") || lower.includes("electric") || lower.includes("digital") || lower.includes("keyless")) {
+    // Smart Digital Lock: tall keypad escutcheon + handle lever
+    const bodyGeom = new THREE.BoxGeometry(0.065, 0.28, 0.025);
+    const bodyMesh = new THREE.Mesh(bodyGeom, mat);
+    bodyMesh.castShadow = true;
+    bodyMesh.receiveShadow = true;
+    group.add(bodyMesh);
+
+    // Keypad screen plate (glossy dark)
+    const keypadGeom = new THREE.BoxGeometry(0.05, 0.12, 0.004);
+    const keypadMat = new THREE.MeshStandardMaterial({ color: 0x0a0a0c, roughness: 0.1, metalness: 0.9 });
+    const keypadMesh = new THREE.Mesh(keypadGeom, keypadMat);
+    keypadMesh.position.set(0, 0.06, 0.014);
+    group.add(keypadMesh);
+
+    // Integrated lever handle
+    const leverStemGeom = new THREE.CylinderGeometry(0.012, 0.012, 0.035, 16);
+    leverStemGeom.rotateX(Math.PI / 2);
+    const leverStem = new THREE.Mesh(leverStemGeom, mat);
+    leverStem.position.set(0, -0.04, 0.025);
+    group.add(leverStem);
+
+    const leverArmGeom = new THREE.BoxGeometry(0.12, 0.02, 0.015);
+    const leverArm = new THREE.Mesh(leverArmGeom, mat);
+    leverArm.position.set(0.05, -0.04, 0.04);
+    leverArm.castShadow = true;
+    group.add(leverArm);
+  } else if (lower.includes("knob")) {
+    // Round Privacy Doorknob: round rosette plate + spherical knob
+    const rosetteGeom = new THREE.CylinderGeometry(0.038, 0.038, 0.008, 24);
+    rosetteGeom.rotateX(Math.PI / 2);
+    const rosette = new THREE.Mesh(rosetteGeom, mat);
+    rosette.castShadow = true;
+    group.add(rosette);
+
+    const stemGeom = new THREE.CylinderGeometry(0.012, 0.012, 0.025, 16);
+    stemGeom.rotateX(Math.PI / 2);
+    const stem = new THREE.Mesh(stemGeom, mat);
+    stem.position.set(0, 0, 0.015);
+    group.add(stem);
+
+    const knobGeom = new THREE.SphereGeometry(0.026, 24, 16);
+    const knob = new THREE.Mesh(knobGeom, mat);
+    knob.position.set(0, 0, 0.035);
+    knob.castShadow = true;
+    group.add(knob);
+  } else if (lower.includes("roller") || lower.includes("wheel")) {
+    // Roller: housing bracket + small wheel
+    const housingGeom = new THREE.BoxGeometry(0.08, 0.025, 0.018);
+    const housing = new THREE.Mesh(housingGeom, mat);
+    group.add(housing);
+
+    const wheelGeom = new THREE.CylinderGeometry(0.014, 0.014, 0.012, 20);
+    wheelGeom.rotateZ(Math.PI / 2);
+    const wheel = new THREE.Mesh(wheelGeom, mat);
+    wheel.position.set(0, -0.01, 0);
+    group.add(wheel);
+  } else {
+    // Standard Door Lever Handle: escutcheon plate + stem + horizontal lever
+    const plateGeom = new THREE.BoxGeometry(0.042, 0.18, 0.01);
+    const plate = new THREE.Mesh(plateGeom, mat);
+    plate.castShadow = true;
+    group.add(plate);
+
+    const stemGeom = new THREE.CylinderGeometry(0.012, 0.012, 0.03, 16);
+    stemGeom.rotateX(Math.PI / 2);
+    const stem = new THREE.Mesh(stemGeom, mat);
+    stem.position.set(0, 0.02, 0.02);
+    group.add(stem);
+
+    const leverGeom = new THREE.BoxGeometry(0.12, 0.018, 0.014);
+    const lever = new THREE.Mesh(leverGeom, mat);
+    lever.position.set(0.05, 0.02, 0.035);
+    lever.castShadow = true;
+    group.add(lever);
+  }
+
+  return group;
+}
+
+/**
+ * Mounts and transforms an accessory mesh to a host product assembly.
+ * Strictly enforces lateral X-axis translation for Left/Right handings
+ * and vertical Y-axis translation for Bottom/Up elevations.
+ * Traceability: PRD-F2, PRD-F5, SDD-C4, IMP-MS76, QAD-TC91.2, QAD-TC91.3, QAD-TC91.4, QAD-TC91.5
+ */
+export function mountAccessoryMesh(
+  parentGroup: THREE.Group,
+  accessoryModel: THREE.Object3D,
+  hostBounds: { widthM: number; heightM: number; depthM: number },
+  positionOptions?: AccessoryPositionOptions | null,
+  horizontal: "left" | "right" = "right",
+  vertical: "bottom" | "up" = "up",
+  finishKey: string = "matte_black",
+): THREE.Object3D {
+  const clone = accessoryModel.clone(true);
+
+  // Apply PBR finish material (Matte Black, Brushed Chrome, Satin Brass, Stainless Steel, etc.)
+  const hardwareMaterial = createHardwareFinishMaterial(finishKey);
+  clone.traverse((child) => {
+    if (child instanceof THREE.Mesh) {
+      child.material = hardwareMaterial;
+      child.castShadow = true;
+      child.receiveShadow = true;
+    }
+  });
+
+  // Calculate strict lateral X-axis coordinate for Left vs Right handings
+  const lateralMarginM = (positionOptions?.horizontalOffsetMm ?? 45) / 1000;
+  const targetXM = horizontal === "left"
+    ? -hostBounds.widthM / 2 + lateralMarginM
+    : hostBounds.widthM / 2 - lateralMarginM;
+
+  // Calculate strict vertical Y-axis coordinate for Bottom vs Up elevations
+  const verticalMarginM = (positionOptions?.verticalOffsetMm ?? 1000) / 1000;
+  const targetYM = vertical === "bottom"
+    ? -hostBounds.heightM / 2 + verticalMarginM
+    : hostBounds.heightM * 0.05; // Standard mid-height elevation
+
+  // Maintain Z depth flush to the front surface of the door stile
+  const targetZM = hostBounds.depthM / 2 + 0.002;
+
+  // Apply translation matrix
+  clone.position.set(targetXM, targetYM, targetZM);
+
+  // If positioned on the left side, mirror orientation if required by handle geometry
+  if (horizontal === "left" && (positionOptions?.defaultHorizontal ?? "right") === "right") {
+    clone.rotation.y = Math.PI;
+  } else {
+    clone.rotation.y = 0;
+  }
+
+  parentGroup.add(clone);
+  return clone;
 }
 
 function buildWindowLikeProduct(
@@ -334,6 +532,50 @@ function buildWindowLikeProduct(
     group.updateMatrixWorld(true);
   }
 
+  // Mount swapped accessories if active (IMP-MS76)
+  if (options.swappedAccessories) {
+    for (const [slotId, swapped] of Object.entries(options.swappedAccessories)) {
+      if (!swapped || swapped.accessoryId === "default") continue;
+      let accMesh = options.accessoryModels?.get(swapped.accessoryId);
+      if (!accMesh) {
+        try {
+          accMesh = cache.getClone(swapped.accessoryId);
+        } catch {
+          // fallback
+        }
+      }
+      if (!accMesh && (swapped.accessoryId.startsWith("canonical_") || swapped.accessoryId.startsWith("acc_"))) {
+        try {
+          accMesh = createAccessoryMeshById(swapped.accessoryId);
+        } catch {
+          // fallback
+        }
+      }
+      if (!accMesh) {
+        accMesh = createProceduralAccessoryMesh(swapped.category, swapped.accessoryName, swapped.finish);
+      }
+      const matchingComp = definition.components.find((c) => c.componentId === slotId || c.componentKey === slotId);
+      const posOptions: AccessoryPositionOptions = matchingComp?.positionOptions ??
+        ((matchingComp as Record<string, unknown> | undefined)?.position_options as AccessoryPositionOptions | undefined) ?? {
+          allowHorizontalToggle: true,
+          defaultHorizontal: "right",
+          horizontalOffsetMm: 45,
+          allowVerticalToggle: swapped.category === "lock",
+          defaultVertical: "up",
+          verticalOffsetMm: 1000,
+        };
+      mountAccessoryMesh(
+        accessories,
+        accMesh,
+        { widthM: widthMm / 1000, heightM: heightMm / 1000, depthM: profile.glassDepthMm / 1000 },
+        posOptions,
+        swapped.horizontalPosition,
+        swapped.verticalPosition,
+        swapped.finish,
+      );
+    }
+  }
+
   accessories.traverse((child) => {
     if (child instanceof THREE.Mesh) {
       child.renderOrder = 0;
@@ -456,6 +698,55 @@ function buildAssembledProduct(
       });
     }
 
+    const isAccessorySlot = Boolean(
+      component.isAccessorySlot ||
+      (component as Record<string, unknown>).is_accessory_slot ||
+      compIdentity.includes("handle") ||
+      compIdentity.includes("knob") ||
+      compIdentity.includes("lever") ||
+      compIdentity.includes("smartlock") ||
+      compIdentity.includes("lock")
+    );
+
+    const swapped = options.swappedAccessories?.[component.componentId] ??
+      options.swappedAccessories?.[component.componentKey] ??
+      (isAccessorySlot && options.swappedAccessories ? Object.values(options.swappedAccessories)[0] : undefined);
+
+    const isAlternativeAccessory = Boolean(
+      swapped &&
+      swapped.accessoryId !== "default" &&
+      swapped.accessoryId !== component.componentId
+    );
+
+    // If an alternative accessory mesh will be mounted dynamically, skip adding default sub-mesh (IMP-MS76)
+    if (isAccessorySlot && isAlternativeAccessory) {
+      continue;
+    }
+
+    // If default hardware mesh is active, apply position options and finish
+    if (isAccessorySlot && swapped) {
+      if (swapped.finish) {
+        const hwMat = createHardwareFinishMaterial(swapped.finish);
+        clone.traverse((c) => {
+          if (c instanceof THREE.Mesh) {
+            c.material = hwMat;
+          }
+        });
+      }
+      if (swapped.horizontalPosition === "left") {
+        clone.position.x = -Math.abs(clone.position.x || 0.45);
+        clone.rotation.y = Math.PI;
+      } else if (swapped.horizontalPosition === "right") {
+        clone.position.x = Math.abs(clone.position.x || 0.45);
+        clone.rotation.y = 0;
+      }
+      if (swapped.verticalPosition === "bottom") {
+        clone.position.y = -0.45;
+      } else if (swapped.verticalPosition === "up") {
+        clone.position.y = 0.05;
+      }
+    }
+
     group.add(clone);
   }
 
@@ -517,6 +808,67 @@ function buildAssembledProduct(
     addonGroup.position.set(localX, localY, localZ);
     group.add(addonGroup);
     group.updateMatrixWorld(true);
+  }
+
+  // Mount swapped modular accessories if configured (IMP-MS76)
+  if (options.swappedAccessories && Object.keys(options.swappedAccessories).length > 0) {
+    const hostBounds = new THREE.Box3().setFromObject(group);
+    const hostSize = new THREE.Vector3();
+    hostBounds.getSize(hostSize);
+
+    for (const [slotKey, swapped] of Object.entries(options.swappedAccessories)) {
+      if (!swapped) continue;
+      const matchingComp = definition.components.find((c) => c.componentId === slotKey || c.componentKey === slotKey);
+      const isDefault = swapped.accessoryId === "default" || (matchingComp && swapped.accessoryId === matchingComp.componentId);
+
+      if (!isDefault) {
+        let accMesh = options.accessoryModels?.get(swapped.accessoryId);
+        if (!accMesh) {
+          try {
+            accMesh = cache.getClone(swapped.accessoryId);
+          } catch {
+            // fallback
+          }
+        }
+        if (!accMesh && (swapped.accessoryId.startsWith("canonical_") || swapped.accessoryId.startsWith("acc_"))) {
+          try {
+            accMesh = createAccessoryMeshById(swapped.accessoryId);
+          } catch {
+            // fallback
+          }
+        }
+        if (!accMesh) {
+          accMesh = createProceduralAccessoryMesh(swapped.category, swapped.accessoryName, swapped.finish);
+        }
+
+        const posOptions: AccessoryPositionOptions = matchingComp?.positionOptions ??
+          ((matchingComp as Record<string, unknown> | undefined)?.position_options as AccessoryPositionOptions | undefined) ?? {
+            allowHorizontalToggle: true,
+            defaultHorizontal: "right",
+            horizontalOffsetMm: 45,
+            allowVerticalToggle: swapped.category === "lock",
+            defaultVertical: "up",
+            verticalOffsetMm: 1000,
+          };
+
+        const mounted = mountAccessoryMesh(
+          group,
+          accMesh,
+          { widthM: hostSize.x || 1.2, heightM: hostSize.y || 2.1, depthM: hostSize.z || 0.08 },
+          posOptions,
+          swapped.horizontalPosition,
+          swapped.verticalPosition,
+          swapped.finish,
+        );
+
+        // Cancel out group scaling on mounted accessory so it preserves exact dimensions
+        mounted.scale.set(
+          scaleX > 0 ? 1 / scaleX : 1,
+          scaleY > 0 ? 1 / scaleY : 1,
+          scaleZ > 0 ? 1 / scaleZ : 1,
+        );
+      }
+    }
   }
 
   applyPresentationMaterials(group, {

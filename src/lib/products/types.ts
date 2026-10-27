@@ -18,6 +18,9 @@ export type DatabaseProduct = {
   status: "Active" | "Inactive";
   is_addon?: boolean;
   addon_type?: "screen" | "grill" | null;
+  is_accessory?: boolean;
+  accessory_category?: "handle" | "lock" | "hinge" | "roller" | "other" | null;
+  accessory_mounting_type?: "surface_mount" | "mortise" | "recessed" | "clamp" | null;
   created_at: string;
   updated_at: string;
 

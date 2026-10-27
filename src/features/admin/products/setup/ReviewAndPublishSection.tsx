@@ -38,8 +38,14 @@ export function ReviewAndPublishSection({ productId }: ReviewAndPublishSectionPr
         setErrorMsg(null);
         try {
             await activateProduct(productId);
-            // Redirect to admin product list
-            router.push("/admin/products");
+            // Redirect to admin product list tab
+            if (isAccessory) {
+                router.push("/admin/products?tab=accessory");
+            } else if (isAddon) {
+                router.push("/admin/products?tab=addon");
+            } else {
+                router.push("/admin/products");
+            }
             router.refresh();
         } catch (e: unknown) {
             setErrorMsg(e instanceof Error ? e.message : "Failed to activate product");
@@ -64,6 +70,7 @@ export function ReviewAndPublishSection({ productId }: ReviewAndPublishSectionPr
         );
     }
 
+    const isAccessory = Boolean(draft?.product?.isAccessory);
     const isAddon = Boolean(draft?.product?.isAddon);
     const isParametric = draft?.template?.modelStrategy === "Parametric";
     const hasAssets = (draft?.assets?.length ?? 0) > 0;
@@ -73,7 +80,19 @@ export function ReviewAndPublishSection({ productId }: ReviewAndPublishSectionPr
     let canActivate = true;
     const missingErrors: string[] = [];
 
-    if (isAddon) {
+    if (isAccessory) {
+        // Hardware accessories (IMP-MS74):
+        // Bypass 2D/3D assets and parameters. Require material mapping on all uploaded components.
+        const unassignedComponents = draft?.components?.filter(
+            (c) => !c.rawMaterialId && (!c.allowedMaterials || c.allowedMaterials.length === 0)
+        ) ?? [];
+        if (unassignedComponents.length > 0) {
+            canActivate = false;
+            missingErrors.push(
+                `Activation Blocked: ${unassignedComponents.length} component${unassignedComponents.length > 1 ? "s have" : " has"} zero materials assigned. Return to Step 3 to complete material mapping.`
+            );
+        }
+    } else if (isAddon) {
         // Add-on accessories (IMP-MS70):
         // Bypass 2D/3D assets. Support procedural generation or custom components.
         const unassignedComponents = draft?.components?.filter(
@@ -135,7 +154,11 @@ export function ReviewAndPublishSection({ productId }: ReviewAndPublishSectionPr
                 <div className="border border-neutral-200 rounded-[12px] p-5 bg-white shadow-sm flex flex-col gap-2">
                     <div className="text-sm font-medium text-neutral-500">Strategy</div>
                     <div className="text-lg text-[#0f1422]">
-                        {isAddon ? "Parametric Frame + Panels" : (draft?.template?.modelStrategy || "Unknown")}
+                        {isAccessory
+                            ? (draft?.template?.modelStrategy || "Hardware Model")
+                            : isAddon
+                                ? "Parametric Frame + Panels"
+                                : (draft?.template?.modelStrategy || "Unknown")}
                     </div>
                 </div>
                 

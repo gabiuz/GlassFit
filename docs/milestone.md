@@ -553,5 +553,30 @@ Replaces area-based approximations with precise per-piece and per-meter measurem
 
 Streamlines administrative grille authoring in the Product Setup Wizard by introducing the `GRILLE_LINEAR` dimension binding across database check constraints, TypeScript schemas, and automated filename classification (`window_center_grille`, `grill_bars`, `grille_infill`, `middle_bars`, `picket_lattice`). Enables single-click material assignment per linear meter for the entire center grille assembly without manual one-by-one bar selection. Filters candidate materials to linear extrusion profiles (`/m`) and validates against non-linear material assignment. Renders live 3D bar breakdown summary card in Part Inspector with discrete vertical/horizontal piece counts and cut lengths. Embeds real-time Grille Linear Extrusion Cut List table in Validation Workspace Section updating in under 16ms during width and height slider manipulation. All 10 acceptance scenarios in QAD-TC87 verified.
 
+## MS73: Customer Visualization Workspace Dynamic Grille Sizing, Real-Time Linear BOM Recalculation, and Itemized Quotation/PDF Handoff
+
+**Status:** Implemented (October 26, 2026); automated unit test suite passing (`npm run test:ms73`). **Specification:** [IMP-MS73](implementation/ms73.md). **Traceability:** BRD-M2, BRD-M3, BRD-M4, BRD-M5; PRD-F2, PRD-F5, PRD-F6, PRD-F10, PRD-F11; SDD-C4, SDD-C5, SDD-C7, SDD-C8; DSD-UI4, DSD-UI7, DSD-UI16; ERD-E13, ERD-E14; QAD-TC88.1 through QAD-TC88.10.
+
+Integrates dynamic procedural security grille attachments into customer 3D visualization, interactive dimensional resizing, sub-50ms linear extrusion BOM recalculation, and Philippine fabricator consultation PDF exports. Dynamically generates parametric 3D grille assemblies with adaptive pattern repetition and independent frame finish swatches in under 16ms. Updates real-time pricing factoring linear meters, pickets, divider rails, scrap allowance, and contractor margins. Itemizes grille extrusion specifications in customer quotation modals and consultation PDFs.
+
+## MS74: Admin Accessory Product Role and 5-Step Authoring Workflow
+
+**Status:** Implemented (October 26, 2026); automated unit test suite passing (`npm run test:ms74`). **Specification:** [IMP-MS74](implementation/ms74.md). **Traceability:** BRD-M2, BRD-M4, BRD-M5; PRD-F14, PRD-F19; SDD-C4, SDD-C9; DSD-UI10; ERD-E3, ERD-E6; QAD-TC89.1 through QAD-TC89.10.
+
+Introduces the dedicated Accessory Product Role in admin product authoring, separating standalone modular hardware (handles, locks, doorknobs, rollers, and hinges) from primary architectural fixtures and add-on attachments. Condenses the 7-step wizard into a focused 5-step workflow (Basic Info, Visualization Strategy, Structural Components, Validation Workspace, Review & Publish) omitting irrelevant dimensional parameters and asset uploads. Enforces mutual role exclusivity, provides category-scoped administrative catalog filtering, and enables direct publishing for modular accessories.
+
+## MS75: Admin Part Inspector Swappable Accessory Binding and Position Configuration
+
+**Status:** Implemented (October 26, 2026); automated unit test suite passing (`npm run test:ms75`). **Specification:** [IMP-MS75](implementation/ms75.md). **Traceability:** BRD-M2, BRD-M4, BRD-M5; PRD-F14, PRD-F19; SDD-C4, SDD-C9; DSD-UI10; ERD-E6; QAD-TC90.1 through QAD-TC90.10.
+
+Extends the admin Part Inspector drawer to designate decomposed 3D sub-components as swappable accessory slots. Enables administrators to select accessory categories (handle, lock, roller, hinge), whitelist compatible accessory products, and configure spatial position constraints including horizontal Left/Right and vertical Bottom/Up elevation toggles with millimeter offsets. Automatically maps component classifications to accessory slots and validates configuration before publishing.
+
+## MS76: Customer Visualization Workspace Dynamic Accessory Swapping, Positional Matrix Alignment, and Real-Time Quotation/PDF BOM Handoff
+
+**Status:** Implemented (October 26, 2026); automated unit test suite passing (`npm run test:ms76`). **Specification:** [IMP-MS76](implementation/ms76.md). **Traceability:** BRD-M2, BRD-M3, BRD-M4, BRD-M5; PRD-F2, PRD-F5, PRD-F6, PRD-F10, PRD-F11; SDD-C4, SDD-C5, SDD-C7, SDD-C8; DSD-UI4, DSD-UI7, DSD-UI16; ERD-E3, ERD-E6, ERD-E13, ERD-E14; QAD-TC91.1 through QAD-TC91.10.
+
+Enables customer dynamic hardware accessory swapping inside the 3D visualization workspace (`ProductModelWorkspace.tsx`). Features an interactive Hardware & Accessories dock displaying compatible handles, knobs, and smart digital locks with price deltas and PBR finish swatches (Matte Black, Brushed Chrome, Satin Brass, Stainless Steel). Executes sub-16ms runtime 3D mesh replacement with strict lateral X-axis translation for Left vs Right handings and strict vertical Y-axis translation for Bottom vs Up elevations. Recalculates hardware BOM pricing in under 50ms, itemizes hardware selections in quotation confirmation modals, and prints exact accessory model, finish, and handing in consultation PDF exports for Philippine fabricators. All 10 acceptance scenarios in QAD-TC91 verified.
+
+
 
 

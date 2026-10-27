@@ -1,6 +1,19 @@
 import type { SpaceImageSession } from "@/lib/imageApi";
 import type { RawMaterial, CalculatedBOMResult, ComponentMaterialBinding, DimensionBinding } from "@/lib/pricing/types";
 import type { AluminumFinishKey, RrdAluminumFinishKey } from "./colorVariations";
+import type {
+  AccessoryCategory,
+  AccessoryPositionOptions,
+  HorizontalPosition,
+  VerticalPosition,
+} from "@/lib/admin/products/types";
+
+export type {
+  AccessoryCategory,
+  AccessoryPositionOptions,
+  HorizontalPosition,
+  VerticalPosition,
+};
 
 export type JsonObject = Record<string, unknown>;
 
@@ -94,7 +107,36 @@ export type ProductComponentDefinition = {
   finishGroup?: string;
   lengthFormula?: string;
   quantityFormula?: string;
+  isAccessorySlot?: boolean;
+  accessoryCategory?: AccessoryCategory | null;
+  allowedAccessoryIds?: string[] | null;
+  positionOptions?: AccessoryPositionOptions | null;
 };
+
+export interface AccessorySlotOverride {
+  slotComponentKey?: string;
+  accessoryProductId?: string | null;
+  accessoryProductName?: string | null;
+  accessoryModelUrl?: string | null;
+  accessoryMesh?: unknown; // THREE.Group
+  horizontalPosition?: HorizontalPosition;
+  verticalPosition?: VerticalPosition;
+}
+
+export interface SelectedAccessoryState {
+  slotComponentId: string;
+  slotCategory?: AccessoryCategory | string;
+  accessoryId: string;
+  accessoryName: string;
+  category: AccessoryCategory | string;
+  price: number;
+  finish: string;
+  horizontalPosition: HorizontalPosition;
+  verticalPosition: VerticalPosition;
+  priceDelta?: number;
+  glbUrl?: string | null;
+  imageUrl?: string | null;
+}
 
 export type ProductStructuralAsset = {
   assetId: string;
@@ -125,6 +167,9 @@ export type ProductStructuralDefinition = {
     preview_glb_url?: string | null;
     isAddon?: boolean;
     addonType?: "screen" | "grill" | null;
+    isAccessory?: boolean;
+    accessoryCategory?: "handle" | "lock" | "hinge" | "roller" | "other" | null;
+    accessoryMountingType?: "surface_mount" | "mortise" | "recessed" | "clamp" | null;
   };
   template: {
     templateId: string;
@@ -331,6 +376,8 @@ export type ProductConfigurationSnapshot = {
   addonAluminumFinish?: string;
   baseUnitPrice?: number;
   grilleBOM?: import("@/lib/pricing/types").GrilleLinearBOMResult | null;
+  swappedAccessories?: Record<string, SelectedAccessoryState>;
+  accessoryPriceDelta?: number;
   visualParameterValues: Record<string, unknown>;
 };
 

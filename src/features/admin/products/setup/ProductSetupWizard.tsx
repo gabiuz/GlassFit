@@ -14,6 +14,8 @@ import { ReviewAndPublishSection } from "./ReviewAndPublishSection";
 import type { UpsertParameterInput, UpsertRuleInput } from "@/lib/admin/products/parameterMutations";
 import { buildProductSetupUrl, getStepsForProduct, type StepKey } from "@/lib/admin/products/wizardSteps";
 
+import type { AccessoryCategory, AccessoryMountingType } from "@/lib/admin/products/types";
+
 export interface ProductAssetSummary {
     asset_id?: string;
     asset_type?: string;
@@ -49,6 +51,9 @@ export interface ProductSetupData {
     status?: string;
     is_addon?: boolean;
     addon_type?: "screen" | "grill" | null;
+    is_accessory?: boolean;
+    accessory_category?: AccessoryCategory | null;
+    accessory_mounting_type?: AccessoryMountingType | null;
     product_templates?: ProductTemplateSummary[] | ProductTemplateSummary;
     product_assets?: ProductAssetSummary[];
     [key: string]: unknown;
@@ -71,7 +76,8 @@ export function ProductSetupWizard({ productId, initialData, initialStep }: Prod
     const isDraft = !draftId;
     const currentProductId = draftId || productId;
     const isAddon = Boolean(productData?.is_addon);
-    const steps = getStepsForProduct(isAddon);
+    const isAccessory = Boolean(productData?.is_accessory);
+    const steps = getStepsForProduct(isAddon, isAccessory);
 
     useEffect(() => {
         // Route state is authoritative when the server provides a new validated step.
@@ -122,8 +128,9 @@ export function ProductSetupWizard({ productId, initialData, initialStep }: Prod
             ...productData,
             product_templates: Array.isArray(productData?.product_templates) ? [mergedTemplate] : mergedTemplate,
         });
-        setActiveStep("assets");
-        router.replace(buildProductSetupUrl(currentProductId, "assets"), { scroll: false });
+        const nextStep = isAccessory ? "components" : "assets";
+        setActiveStep(nextStep);
+        router.replace(buildProductSetupUrl(currentProductId, nextStep), { scroll: false });
         if (draftId) refreshDraft(draftId);
     };
 
@@ -206,11 +213,11 @@ export function ProductSetupWizard({ productId, initialData, initialStep }: Prod
                     <StructuralComponentsSection
                         productId={draftId}
                         templateId={(Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.template_id : productData?.product_templates?.template_id) || ""}
-                        modelStrategy={(Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.model_strategy : productData?.product_templates?.model_strategy) || (isAddon ? "Parametric" : null)}
+                        modelStrategy={(Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.model_strategy : productData?.product_templates?.model_strategy) || (isAddon || isAccessory ? "Parametric" : null)}
                         productType={productData?.product_type || "Window"}
                         initialData={Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.product_components : productData?.product_templates?.product_components}
                         wholeModelAsset={productData?.product_assets?.find?.((a: ProductAssetSummary) => a.asset_type === "Catalog 3D Preview" && a.is_primary !== false) || null}
-                        onSave={() => handleStepChange("parameters")}
+                        onSave={() => handleStepChange(isAccessory ? "validation" : "parameters")}
                     />
                 )}
                 {activeStep === "parameters" && (

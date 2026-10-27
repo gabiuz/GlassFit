@@ -26,6 +26,9 @@ export async function getActiveProducts(): Promise<DatabaseProduct[]> {
       status,
       is_addon,
       addon_type,
+      is_accessory,
+      accessory_category,
+      accessory_mounting_type,
       created_at,
       updated_at,
       product_assets (
@@ -39,6 +42,7 @@ export async function getActiveProducts(): Promise<DatabaseProduct[]> {
     `)
     .eq("status", "Active")
     .eq("is_addon", false)
+    .eq("is_accessory", false)
     .eq("product_assets.status", "Active")
     .order("product_type", { ascending: true })
     .order("product_name", { ascending: true });
@@ -108,7 +112,7 @@ export async function getActiveProducts(): Promise<DatabaseProduct[]> {
       continue;
     }
 
-    if (status !== "Active" || row.is_addon === true) {
+    if (status !== "Active" || row.is_addon === true || row.is_accessory === true) {
       continue;
     }
 
@@ -174,6 +178,9 @@ export async function getActiveProducts(): Promise<DatabaseProduct[]> {
       status: "Active",
       is_addon: false,
       addon_type: null,
+      is_accessory: false,
+      accessory_category: null,
+      accessory_mounting_type: null,
       created_at:
         typeof row.created_at === "string"
           ? row.created_at

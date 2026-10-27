@@ -28,7 +28,8 @@ export default async function ProductSetupRoute({
   }
 
   const isAddon = Boolean(initialData?.is_addon) || resolvedSearchParams.role === "addon";
-  const initialStep = resolveWizardStep(productId, resolvedSearchParams.step, isAddon);
+  const isAccessory = Boolean(initialData?.is_accessory) || resolvedSearchParams.role === "accessory";
+  const initialStep = resolveWizardStep(productId, resolvedSearchParams.step, isAddon, isAccessory);
 
   return (
     <ProductSetupWizard

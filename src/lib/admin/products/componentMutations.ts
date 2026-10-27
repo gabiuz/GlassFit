@@ -54,6 +54,17 @@ export async function upsertProductComponent(input: UpsertComponentInput): Promi
         presentation_category: input.presentationCategory || "Framing",
         glb_file_url: input.glbFileUrl || null,
         component_data: mergedComponentData,
+        is_accessory_slot: Boolean(input.isAccessorySlot),
+        accessory_category: input.isAccessorySlot ? (input.accessoryCategory || null) : null,
+        allowed_accessory_ids: input.isAccessorySlot ? (input.allowedAccessoryIds || null) : null,
+        position_options: input.positionOptions || {
+            allowHorizontalToggle: true,
+            defaultHorizontal: "right",
+            horizontalOffsetMm: 45,
+            allowVerticalToggle: false,
+            defaultVertical: "up",
+            verticalOffsetMm: 1000,
+        },
         updated_by: adminCtx.profileId,
     };
 
@@ -209,6 +220,10 @@ export async function upsertProductComponentWithMaterials(
             assemblyGroup: payload.assemblyGroup,
             componentData: payload.componentData,
             materialBindings: payload.materialBindings,
+            isAccessorySlot: payload.isAccessorySlot,
+            accessoryCategory: payload.accessoryCategory,
+            allowedAccessoryIds: payload.allowedAccessoryIds,
+            positionOptions: payload.positionOptions,
         });
 
         return {
