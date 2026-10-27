@@ -4,6 +4,8 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { requirePermission } from "@/lib/auth/admin";
 import { revalidatePath } from "next/cache";
 import { getProductDraft } from "./productMutations";
+import { validateAccessoryApprovalIds } from "./accessoryActions";
+import type { AccessoryCategory } from "./types";
 
 export async function activateProduct(productId: string) {
     const adminCtx = await requirePermission("manage_products");
@@ -15,6 +17,22 @@ export async function activateProduct(productId: string) {
 
     const template = Array.isArray(draft.product_templates) ? draft.product_templates[0] : draft.product_templates;
     if (!template) throw new Error("Product template not found.");
+
+    // IMP-MS77 / QAD-TC92.5-.8: publication always rechecks current approval state.
+    const { data: slots, error: slotsError } = await supabase
+        .from("product_components")
+        .select("component_name, component_key, accessory_category, allowed_accessory_ids")
+        .eq("template_id", template.template_id)
+        .eq("is_accessory_slot", true);
+    if (slotsError) throw new Error(`Accessory slots could not be checked: ${slotsError.message}`);
+    for (const slot of slots || []) {
+        await validateAccessoryApprovalIds(
+            slot.accessory_category as AccessoryCategory | null,
+            slot.allowed_accessory_ids as string[] | null,
+            slot.component_name || slot.component_key,
+            true,
+        );
+    }
 
     if (draft.is_accessory) {
         // Modular hardware accessories (IMP-MS74):

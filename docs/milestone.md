@@ -577,6 +577,12 @@ Extends the admin Part Inspector drawer to designate decomposed 3D sub-component
 
 Enables customer dynamic hardware accessory swapping inside the 3D visualization workspace (`ProductModelWorkspace.tsx`). Features an interactive Hardware & Accessories dock displaying compatible handles, knobs, and smart digital locks with price deltas and PBR finish swatches (Matte Black, Brushed Chrome, Satin Brass, Stainless Steel). Executes sub-16ms runtime 3D mesh replacement with strict lateral X-axis translation for Left vs Right handings and strict vertical Y-axis translation for Bottom vs Up elevations. Recalculates hardware BOM pricing in under 50ms, itemizes hardware selections in quotation confirmation modals, and prints exact accessory model, finish, and handing in consultation PDF exports for Philippine fabricators. All 10 acceptance scenarios in QAD-TC91 verified.
 
+## MS77: Admin Part Replacement Binding to Registered Accessories
+
+**Status:** Implemented (October 27, 2026); browser acceptance pending. **Specification:** [IMP-MS77](implementation/ms77.md). **Traceability:** BRD-M2, BRD-M4, BRD-M5; PRD-F5, PRD-F14; SDD-C4, SDD-C9; DSD-UI10; ERD-E3, ERD-E6; QAD-TC92.1 through QAD-TC92.10.
+
+Administrators explicitly approve published, renderable Accessories products for each replaceable part. Empty allowlists keep the original part only. Save, publication, customer preview, and new quotation submission enforce current catalog eligibility and the approved part binding. Migration 021 normalizes legacy null allowlists for review.
+
 
 
 

@@ -7,7 +7,8 @@
 
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { fetchActiveCatalogAccessories, type CatalogAccessoryItem } from '@/lib/admin/products/accessoryActions';
 import type {
   DimensionBinding,
   PresentationCategory,
@@ -65,9 +66,41 @@ export function PartInspectorDrawer({
   const [categoryFilter, setCategoryFilter] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [validationWarning, setValidationWarning] = useState<string | null>(null);
+  const [accessorySearch, setAccessorySearch] = useState('');
+  const [catalogAccessories, setCatalogAccessories] = useState<CatalogAccessoryItem[]>([]);
+  const [accessoryLoading, setAccessoryLoading] = useState(false);
+  const [accessoryError, setAccessoryError] = useState<string | null>(null);
+  const [categoryNotice, setCategoryNotice] = useState<string | null>(null);
 
   const primary = selectedParts[0] as PartInspectorConfig | undefined;
   const isMulti = selectedParts.length > 1;
+  const slotCategory = primary?.accessoryCategory || 'handle';
+  const selectedAccessoryIds = primary?.allowedAccessoryIds || [];
+
+  useEffect(() => {
+    if (!primary?.isAccessorySlot) return;
+    let cancelled = false;
+    Promise.resolve().then(() => {
+      if (cancelled) return [];
+      setAccessoryLoading(true);
+      setAccessoryError(null);
+      return fetchActiveCatalogAccessories(slotCategory);
+    }).then((items) => {
+      if (!cancelled) setCatalogAccessories(items);
+    }).catch((error: unknown) => {
+      if (!cancelled) {
+        setCatalogAccessories([]);
+        setAccessoryError(error instanceof Error ? error.message : 'Could not load registered accessories.');
+      }
+    }).finally(() => {
+      if (!cancelled) setAccessoryLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [primary?.isAccessorySlot, slotCategory]);
+
+  const filteredAccessories = catalogAccessories.filter((item) =>
+    item.category === slotCategory && item.name.toLowerCase().includes(accessorySearch.trim().toLowerCase()),
+  );
 
   const updatePositionOptions = (opts: Partial<AccessoryPositionOptions>) => {
     const current = primary?.positionOptions || {
@@ -741,6 +774,7 @@ export function PartInspectorDrawer({
                   const checked = e.target.checked;
                   onUpdateParts({
                     isAccessorySlot: checked,
+                    ...(!checked && { allowedAccessoryIds: [] }),
                     ...(checked && !primary.accessoryCategory && { accessoryCategory: "handle" }),
                     ...(checked && !primary.positionOptions && {
                       positionOptions: {
@@ -770,7 +804,15 @@ export function PartInspectorDrawer({
                 </label>
                 <select
                   value={primary.accessoryCategory || "handle"}
-                  onChange={(e) => onUpdateParts({ accessoryCategory: e.target.value as AccessoryCategory })}
+                  onChange={(e) => {
+                    const nextCategory = e.target.value as AccessoryCategory;
+                    if (nextCategory === slotCategory) return;
+                    onUpdateParts({ accessoryCategory: nextCategory, allowedAccessoryIds: [] });
+                    setAccessorySearch('');
+                    setCategoryNotice(selectedAccessoryIds.length > 0
+                      ? 'Previously approved replacements were cleared because the category changed.'
+                      : null);
+                  }}
                   className="w-full border border-neutral-200 rounded-[6px] px-2.5 py-1.5 text-xs focus:border-[#07b6d3] outline-none bg-white"
                 >
                   <option value="handle">Handle / Knob / Pull</option>
@@ -779,6 +821,56 @@ export function PartInspectorDrawer({
                   <option value="roller">Roller / Guide Wheel</option>
                   <option value="other">Other Hardware</option>
                 </select>
+              </div>
+
+              {categoryNotice && <p role="status" className="text-[11px] text-amber-700">{categoryNotice}</p>}
+              <div className="space-y-2 rounded-[8px] border border-neutral-200 bg-white p-2.5">
+                <label htmlFor="registered-accessory-search" className="block text-[11px] font-medium text-neutral-700">
+                  Approved registered replacements
+                </label>
+                <input
+                  id="registered-accessory-search"
+                  type="search"
+                  value={accessorySearch}
+                  onChange={(event) => setAccessorySearch(event.target.value)}
+                  placeholder="Search registered Accessories"
+                  className="w-full border border-neutral-200 rounded-[6px] px-2.5 py-1.5 text-xs focus:border-[#07b6d3] outline-none"
+                />
+                {accessoryLoading ? (
+                  <p role="status" className="text-[11px] text-neutral-500">Loading eligible Accessories...</p>
+                ) : accessoryError ? (
+                  <p role="alert" className="text-[11px] text-red-600">{accessoryError}</p>
+                ) : filteredAccessories.length === 0 ? (
+                  <p className="text-[11px] text-neutral-500">No eligible Accessories found. Register and publish a model in Accessories first.</p>
+                ) : (
+                  <div className="max-h-40 overflow-y-auto space-y-1" aria-label="Available registered accessories">
+                    {filteredAccessories.map((item) => {
+                      const checked = selectedAccessoryIds.includes(item.id);
+                      return <label key={item.id} className="flex items-center gap-2 rounded-[6px] px-2 py-1.5 hover:bg-neutral-50 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => onUpdateParts({ allowedAccessoryIds: checked
+                            ? selectedAccessoryIds.filter((id) => id !== item.id)
+                            : [...selectedAccessoryIds, item.id] })}
+                          className="size-3.5 accent-[#07b6d3]"
+                        />
+                        <span className="min-w-0 flex-1 truncate text-neutral-700">{item.name}</span>
+                        <span className="text-[10px] text-neutral-500">₱{item.price.toLocaleString('en-PH')}</span>
+                      </label>;
+                    })}
+                  </div>
+                )}
+                <div className="border-t border-neutral-100 pt-2 space-y-1">
+                  <p className="text-[11px] font-medium text-neutral-700">Selected ({selectedAccessoryIds.length})</p>
+                  {selectedAccessoryIds.length === 0 ? <p className="text-[11px] text-amber-700">Select at least one replacement before publishing this product.</p> : selectedAccessoryIds.map((id) => {
+                    const item = catalogAccessories.find((entry) => entry.id === id);
+                    return <div key={id} className="flex items-center justify-between gap-2 text-[11px]">
+                      <span className={item ? 'text-neutral-700' : 'text-red-600'}>{item?.name || `Unavailable accessory (${id})`}</span>
+                      <button type="button" onClick={() => onUpdateParts({ allowedAccessoryIds: selectedAccessoryIds.filter((entry) => entry !== id) })} className="text-[#07b6d3] hover:underline">Remove</button>
+                    </div>;
+                  })}
+                </div>
               </div>
 
               {/* Horizontal Positioning Rule Controls */}

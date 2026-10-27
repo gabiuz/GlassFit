@@ -10,10 +10,31 @@ import type {
     UpsertComponentInput,
     UpsertComponentPayload,
 } from "./types";
+import { validateAccessoryApprovalIds } from "./accessoryActions";
 
 export async function upsertProductComponent(input: UpsertComponentInput): Promise<string> {
     const adminCtx = await requirePermission("manage_products");
     const supabase = await createSupabaseServerClient();
+
+    let requireAccessoryOptions = false;
+    if (input.isAccessorySlot) {
+        const { data: template, error: templateError } = await supabase
+            .from("product_templates")
+            .select("product_id")
+            .eq("template_id", input.templateId)
+            .single();
+        if (templateError || !template) throw new Error("Product template could not be checked before saving its accessory slot.");
+        const { data: product, error: productError } = await supabase
+            .from("products")
+            .select("status")
+            .eq("product_id", template.product_id)
+            .single();
+        if (productError || !product) throw new Error("Product status could not be checked before saving its accessory slot.");
+        requireAccessoryOptions = product.status === "Active";
+    }
+    const approvedAccessoryIds = input.isAccessorySlot
+        ? await validateAccessoryApprovalIds(input.accessoryCategory, input.allowedAccessoryIds, input.componentName, requireAccessoryOptions)
+        : [];
 
     // Check if component already exists for this template/key
     const { data: existing } = await supabase
@@ -56,7 +77,7 @@ export async function upsertProductComponent(input: UpsertComponentInput): Promi
         component_data: mergedComponentData,
         is_accessory_slot: Boolean(input.isAccessorySlot),
         accessory_category: input.isAccessorySlot ? (input.accessoryCategory || null) : null,
-        allowed_accessory_ids: input.isAccessorySlot ? (input.allowedAccessoryIds || null) : null,
+        allowed_accessory_ids: approvedAccessoryIds,
         position_options: input.positionOptions || {
             allowHorizontalToggle: true,
             defaultHorizontal: "right",

@@ -464,7 +464,7 @@ export function StructuralComponentsSection({
                 glbFileUrl: (comp.glb_file_url as string) || null,
                 isAccessorySlot: typeof comp.is_accessory_slot === "boolean" ? comp.is_accessory_slot : Boolean(detected.isAccessorySlot),
                 accessoryCategory: (comp.accessory_category as AccessoryCategory) || detected.accessoryCategory || null,
-                allowedAccessoryIds: (comp.allowed_accessory_ids as string[]) || null,
+                allowedAccessoryIds: (comp.allowed_accessory_ids as string[]) || [],
                 positionOptions: (comp.position_options as AccessoryPositionOptions) || detected.positionOptions || {
                     allowHorizontalToggle: true,
                     defaultHorizontal: "right",
@@ -508,7 +508,7 @@ export function StructuralComponentsSection({
                             glbFileUrl: (comp.glb_file_url as string) || null,
                             isAccessorySlot: typeof comp.is_accessory_slot === "boolean" ? comp.is_accessory_slot : Boolean(detected.isAccessorySlot),
                             accessoryCategory: (comp.accessory_category as AccessoryCategory) || detected.accessoryCategory || null,
-                            allowedAccessoryIds: (comp.allowed_accessory_ids as string[]) || null,
+                            allowedAccessoryIds: (comp.allowed_accessory_ids as string[]) || [],
                             positionOptions: (comp.position_options as AccessoryPositionOptions) || detected.positionOptions || {
                                 allowHorizontalToggle: true,
                                 defaultHorizontal: "right",
@@ -535,7 +535,7 @@ export function StructuralComponentsSection({
                             materialBindings: item.materialBindings !== undefined && item.status !== "success" ? item.materialBindings : (foundBindings.length > 0 ? foundBindings : item.materialBindings),
                             isAccessorySlot: typeof found.is_accessory_slot === "boolean" ? found.is_accessory_slot : item.isAccessorySlot,
                             accessoryCategory: (found.accessory_category as AccessoryCategory) || item.accessoryCategory,
-                            allowedAccessoryIds: (found.allowed_accessory_ids as string[]) || item.allowedAccessoryIds,
+                            allowedAccessoryIds: Array.isArray(found.allowed_accessory_ids) ? found.allowed_accessory_ids as string[] : item.allowedAccessoryIds,
                             positionOptions: (found.position_options as AccessoryPositionOptions) || item.positionOptions,
                         };
                     }
@@ -638,7 +638,7 @@ export function StructuralComponentsSection({
                 sourceDimensions: dims,
                 isAccessorySlot: Boolean(autoDetected.isAccessorySlot),
                 accessoryCategory: autoDetected.accessoryCategory || null,
-                allowedAccessoryIds: null,
+                allowedAccessoryIds: [],
                 positionOptions: autoDetected.positionOptions || {
                     allowHorizontalToggle: true,
                     defaultHorizontal: "right",
@@ -752,7 +752,7 @@ export function StructuralComponentsSection({
                 },
                 isAccessorySlot: Boolean(part.isAccessorySlot),
                 accessoryCategory: part.accessoryCategory || null,
-                allowedAccessoryIds: null,
+                allowedAccessoryIds: [],
                 positionOptions: part.positionOptions || {
                     allowHorizontalToggle: true,
                     defaultHorizontal: "right",

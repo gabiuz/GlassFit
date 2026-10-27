@@ -22,61 +22,6 @@ export interface ActiveAccessoryProduct {
 }
 
 /**
- * Built-in fallback accessories to guarantee real-time customer testing and demo availability
- * when the master catalog accessories table is in setup or authoring phase.
- */
-export const DEFAULT_FALLBACK_ACCESSORIES: ActiveAccessoryProduct[] = [
-  {
-    productId: "default-lever-handle",
-    productName: "Ergonomic Architectural Lever Handle",
-    productType: "Other",
-    description: "Solid zinc alloy ergonomic door handle with sleek horizontal lever.",
-    basePrice: 850.0,
-    accessoryCategory: "handle",
-    accessoryMountingType: "surface_mount",
-    imageUrl: null,
-    previewGlbUrl: null,
-    status: "Active",
-  },
-  {
-    productId: "privacy-round-knob",
-    productName: "Privacy Round Doorknob",
-    productType: "Other",
-    description: "Classic round spherical doorknob with turn-button interior privacy lock.",
-    basePrice: 350.0,
-    accessoryCategory: "handle",
-    accessoryMountingType: "mortise",
-    imageUrl: null,
-    previewGlbUrl: null,
-    status: "Active",
-  },
-  {
-    productId: "keyless-smart-lock",
-    productName: "Keyless Smart Digital Lock",
-    productType: "Other",
-    description: "Biometric fingerprint, digital passcode, and RFID card electronic door lock.",
-    basePrice: 4500.0,
-    accessoryCategory: "lock",
-    accessoryMountingType: "mortise",
-    imageUrl: null,
-    previewGlbUrl: null,
-    status: "Active",
-  },
-  {
-    productId: "heavy-duty-roller",
-    productName: "Heavy Duty Dual Ball-Bearing Roller",
-    productType: "Other",
-    description: "Stainless steel dual ball-bearing roller assembly for smooth door and window sliding.",
-    basePrice: 420.0,
-    accessoryCategory: "roller",
-    accessoryMountingType: "recessed",
-    imageUrl: null,
-    previewGlbUrl: null,
-    status: "Active",
-  },
-];
-
-/**
  * Fetches all active accessory products from public.products.
  * Includes each accessory's primary active catalog image and 3D preview model asset.
  */
@@ -112,12 +57,11 @@ export async function getActiveAccessories(): Promise<ActiveAccessoryProduct[]> 
       .order("product_name", { ascending: true });
 
     if (error) {
-      console.warn("[getActiveAccessories] Query error, falling back to defaults:", error.message);
-      return DEFAULT_FALLBACK_ACCESSORIES;
+      throw new Error(`Could not load registered accessories: ${error.message}`);
     }
 
     if (!data || data.length === 0) {
-      return DEFAULT_FALLBACK_ACCESSORIES;
+      return [];
     }
 
     const accessories: ActiveAccessoryProduct[] = [];
@@ -127,6 +71,7 @@ export async function getActiveAccessories(): Promise<ActiveAccessoryProduct[]> 
       const primaryImage = assets.find((a) => a.asset_type === "Catalog Image" && a.is_primary && a.status === "Active")
         || assets.find((a) => a.asset_type === "Catalog Image" && a.status === "Active");
       const previewGlb = assets.find((a) => (a.asset_type === "Catalog 3D Preview" || a.asset_type === "Whole Model" || a.asset_type === "Component Model") && a.status === "Active");
+      if (!previewGlb?.r2_object_key) continue;
 
       accessories.push({
         productId: row.product_id,
@@ -142,17 +87,9 @@ export async function getActiveAccessories(): Promise<ActiveAccessoryProduct[]> 
       });
     }
 
-    // Merge fallback accessories if DB has none for a given category
-    const categoriesInDb = new Set(accessories.map((a) => a.accessoryCategory));
-    for (const fallback of DEFAULT_FALLBACK_ACCESSORIES) {
-      if (!categoriesInDb.has(fallback.accessoryCategory)) {
-        accessories.push(fallback);
-      }
-    }
-
     return accessories;
   } catch (err: unknown) {
-    console.warn("[getActiveAccessories] Unhandled error, returning defaults:", err);
-    return DEFAULT_FALLBACK_ACCESSORIES;
+    console.warn("[getActiveAccessories] Could not load catalog:", err);
+    throw err;
   }
 }

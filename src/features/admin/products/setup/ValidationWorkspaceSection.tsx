@@ -20,7 +20,6 @@ import { resolveProductStructure } from "@/lib/visualization/structuralResolver"
 import { buildParametricProduct } from "@/lib/visualization/parametricProductBuilder";
 import { getRawMaterials } from "@/lib/admin/materials/materialActions";
 import type { AccessoryCategory, HorizontalPosition, VerticalPosition } from "@/lib/admin/products/types";
-import { CANONICAL_ACCESSORIES_CATALOG } from "@/lib/visualization/accessoryMeshFactory";
 import { fetchActiveCatalogAccessories, type CatalogAccessoryItem } from "@/lib/admin/products/accessoryActions";
 import { calculateParametricBOM, type ComponentPricingInput, type CalculatedBOMResult } from "@/lib/pricing/pricingEngine";
 import { calculateGrilleLinearBOM } from "@/lib/pricing/grillePricingEngine";
@@ -205,6 +204,7 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
   // Step 6 Modular Hardware Accessory Swapping State (IMP-MS75)
   const [swappedAccessories, setSwappedAccessories] = useState<Record<string, SelectedAccessoryState>>({});
   const [catalogAccessories, setCatalogAccessories] = useState<CatalogAccessoryItem[]>([]);
+  const [accessoryCatalogError, setAccessoryCatalogError] = useState<string | null>(null);
 
   const accessorySlots = useMemo(
     () => definition?.components.filter((c) => c.isAccessorySlot) ?? [],
@@ -276,8 +276,8 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
         try {
           const dbAccessories = await fetchActiveCatalogAccessories();
           setCatalogAccessories(dbAccessories);
-        } catch {
-          // Fall back gracefully to canonical catalog options
+        } catch (error: unknown) {
+          setAccessoryCatalogError(error instanceof Error ? error.message : "Failed to load registered accessories.");
         }
       } catch (e: unknown) {
         setErrorMsg(e instanceof Error ? e.message : "Failed to load workspace");
@@ -405,25 +405,8 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
         };
       }
 
-      const canonical = CANONICAL_ACCESSORIES_CATALOG.find((o) => o.id === accessoryId);
-      if (canonical) {
-        return {
-          ...prev,
-          [slotComponentId]: {
-            slotComponentId,
-            accessoryId: canonical.id,
-            accessoryName: canonical.name,
-            category: canonical.category,
-            price: canonical.priceDelta,
-            priceDelta: canonical.priceDelta,
-            finish: existing?.finish || "satin",
-            horizontalPosition: existing?.horizontalPosition || baseSlotHorizontal,
-            verticalPosition: existing?.verticalPosition || baseSlotVertical,
-          },
-        };
-      }
-
-      const catalogItem = catalogAccessories.find((o) => o.id === accessoryId);
+      const allowedIds = slot?.allowedAccessoryIds ?? [];
+      const catalogItem = catalogAccessories.find((o) => o.id === accessoryId && allowedIds.includes(o.id) && o.category === slot?.accessoryCategory);
       if (catalogItem) {
         return {
           ...prev,
@@ -1075,14 +1058,13 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
                         verticalPosition: slot.positionOptions?.defaultVertical || "up",
                       };
 
-                      // Filter compatible accessories by category (QAD-TC90.7)
+                      // QAD-TC92.7: only explicitly approved, active catalog products.
                       const slotCategory = slot.accessoryCategory || "handle";
-                      const compatibleCanonical = CANONICAL_ACCESSORIES_CATALOG.filter(
-                        (o) => o.category === slotCategory
-                      );
+                      const allowedIds = slot.allowedAccessoryIds ?? [];
                       const compatibleCatalog = catalogAccessories.filter(
-                        (o) => o.category === slotCategory
+                        (o) => o.category === slotCategory && allowedIds.includes(o.id)
                       );
+                      const staleCount = allowedIds.filter((id) => !compatibleCatalog.some((item) => item.id === id)).length;
 
                       return (
                         <div
@@ -1110,13 +1092,6 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
                               className="w-full border border-neutral-200 rounded-[6px] px-2.5 py-1.5 text-xs focus:border-[#07b6d3] outline-none bg-white text-neutral-800"
                             >
                               <option value="default">Default: {slot.componentName || "Host Sub-Mesh"}</option>
-                              <optgroup label="Canonical Procedural Hardware">
-                                {compatibleCanonical.map((opt) => (
-                                  <option key={opt.id} value={opt.id}>
-                                    {opt.name} {opt.priceDelta > 0 ? `(+PHP ${opt.priceDelta})` : ""}
-                                  </option>
-                                ))}
-                              </optgroup>
                               {compatibleCatalog.length > 0 && (
                                 <optgroup label="Catalog Registered Accessories">
                                   {compatibleCatalog.map((item) => (
@@ -1127,6 +1102,12 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
                                 </optgroup>
                               )}
                             </select>
+                            {(staleCount > 0 || allowedIds.length === 0) && (
+                              <p className="text-[11px] text-amber-700" role="status">
+                                {staleCount > 0 ? `${staleCount} approved accessory binding(s) are unavailable. Repair this slot before publishing.` : "No approved replacement is bound to this slot. The original part remains available."}
+                              </p>
+                            )}
+                            {accessoryCatalogError && <p className="text-[11px] text-red-700" role="alert">{accessoryCatalogError}</p>}
                           </div>
 
                           {/* Positional Placement Handing Controls */}

@@ -430,6 +430,23 @@ The implementation adds client test suite `npm run test:ms63` and FastAPI CV ser
 | QAD-TC88.9 | Standalone Grille product workspace dynamic calculation | Customer opens a standalone Grille catalog product | 1. Adjust dimensions in workspace | Dynamic linear engine calculates full aperture BOM without host window dependencies | P0 |
 | QAD-TC88.10 | Offline and network error resilience | Catalog raw material query fails or is delayed | 1. Trigger dimension change with network paused | Engine gracefully falls back to default linear rates (PHP 160/m) without throwing runtime exceptions | P1 |
 
+## QAD-TC92: Approved Registered Accessory Bindings (IMP-MS77)
+
+**Status:** Focused quotation validation tests and MS75/MS76 regressions pass; browser acceptance pending. Traces to PRD-F5, PRD-F14, SDD-C4, SDD-C9, DSD-UI10, ERD-E3, ERD-E6, BRD-M2, BRD-M4, and BRD-M5. See [MS77](implementation/ms77.md).
+
+| ID | Scenario | Expected result | Priority |
+|---|---|---|---|
+| QAD-TC92.1 | Bind a registered handle to a replaceable uploaded part, save, and reload | The selected product ID persists and appears in the inspector | P0 |
+| QAD-TC92.2 | Include draft, inactive, incompatible, and model-less products in catalog | Only active, same-category Accessories products with usable 3D assets are selectable | P0 |
+| QAD-TC92.3 | Search for a missing accessory | Empty guidance directs registration through Accessories, without inline creation | P0 |
+| QAD-TC92.4 | Change slot category after selecting options | Incompatible IDs clear and the inspector explains the reset | P0 |
+| QAD-TC92.5 | Save or publish duplicate, forged, stale, or nonexistent IDs | Server rejects invalid binding before publication | P0 |
+| QAD-TC92.6 | Leave an auto-detected draft slot without options | Draft can be edited; publication identifies and blocks the slot | P0 |
+| QAD-TC92.7 | Preview a slot with two approved options | Admin and customer see the original plus exactly those two active registered products | P0 |
+| QAD-TC92.8 | Deactivate or recategorize an approved accessory | Customer choice disappears; admin sees repair state; republish blocks | P0 |
+| QAD-TC92.9 | Submit quotation with unapproved, revoked, or altered accessory data | New quotation is rejected before persistence | P0 |
+| QAD-TC92.10 | Restore original part | Original mesh returns and accessory price delta is zero | P0 |
+
 
 
 

@@ -70,7 +70,7 @@ import type { GrilleLinearBOMResult } from "@/lib/pricing/types";
 import { getCompatibleAddonsForProduct } from "@/lib/admin/products/addonMutations";
 import { getActiveAccessories, type ActiveAccessoryProduct } from "@/lib/products/getActiveAccessories";
 import type { SelectedAccessoryState } from "@/lib/visualization/types";
-import type { AccessoryCategory, AccessoryPositionOptions, HorizontalPosition, VerticalPosition } from "@/lib/admin/products/types";
+import type { AccessoryPositionOptions, HorizontalPosition, VerticalPosition } from "@/lib/admin/products/types";
 
 export type AddonSelectionType = "none" | "screen" | "grill";
 import {
@@ -359,13 +359,18 @@ export function ProductModelWorkspace({
     return initialConfiguration?.swappedAccessories ?? {};
   });
   const [availableAccessories, setAvailableAccessories] = useState<ActiveAccessoryProduct[]>([]);
+  const [accessoriesLoaded, setAccessoriesLoaded] = useState(false);
 
   useEffect(() => {
     let active = true;
     getActiveAccessories().then((accs) => {
-      if (active) setAvailableAccessories(accs);
+      if (active) {
+        setAvailableAccessories(accs);
+        setAccessoriesLoaded(true);
+      }
     }).catch((err: unknown) => {
       console.warn("Could not load catalog accessories:", err);
+      if (active) setAccessoriesLoaded(true);
     });
     return () => { active = false; };
   }, []);
@@ -479,37 +484,35 @@ export function ProductModelWorkspace({
     const explicit = structuralDefinition.components.filter(
       (c) => (c.isAccessorySlot || (c as Record<string, unknown>).is_accessory_slot) && (c.accessoryCategory || (c as Record<string, unknown>).accessory_category)
     );
-    if (explicit.length > 0) return explicit;
-
-    // Fallback auto-detection for hardware components:
-    return structuralDefinition.components.filter((c) => {
-      const key = (c.componentKey || "").toLowerCase();
-      const name = (c.componentName || "").toLowerCase();
-      const cat = (c.presentationCategory || "").toLowerCase();
-      return (
-        cat === "hardware" ||
-        key.includes("handle") || name.includes("handle") ||
-        key.includes("knob") || name.includes("knob") ||
-        key.includes("lever") || name.includes("lever") ||
-        key.includes("lock") || name.includes("lock")
-      );
-    }).map((c) => {
-      const isLock = /lock|deadbolt|smartlock/i.test(c.componentKey + " " + c.componentName);
-      return {
-        ...c,
-        isAccessorySlot: true,
-        accessoryCategory: (isLock ? "lock" : "handle") as AccessoryCategory,
-        positionOptions: {
-          allowHorizontalToggle: true,
-          defaultHorizontal: "right" as const,
-          horizontalOffsetMm: 45,
-          allowVerticalToggle: isLock,
-          defaultVertical: "up" as const,
-          verticalOffsetMm: 1000,
-        },
-      };
-    });
+    return explicit;
   }, [structuralDefinition]);
+
+  useEffect(() => {
+    if (!accessoriesLoaded || !structuralDefinition) return;
+    const timer = window.setTimeout(() => setSelectedAccessories((current) => {
+      let changed = false;
+      const next = { ...current };
+      for (const [slotId, selected] of Object.entries(current)) {
+        if (selected.accessoryId === "default") continue;
+        const slot = accessorySlots.find((item) => item.componentId === slotId || item.componentKey === slotId);
+        const allowed = slot?.allowedAccessoryIds ?? [];
+        const eligible = availableAccessories.some((item) => item.productId === selected.accessoryId && item.accessoryCategory === slot?.accessoryCategory && Boolean(item.previewGlbUrl));
+        if (!slot || !allowed.includes(selected.accessoryId) || !eligible) {
+          next[slotId] = {
+            ...selected,
+            accessoryId: "default",
+            accessoryName: slot?.componentName || "Standard Hardware",
+            price: 0,
+            priceDelta: 0,
+            glbUrl: null,
+          };
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    }), 0);
+    return () => window.clearTimeout(timer);
+  }, [accessoriesLoaded, accessorySlots, availableAccessories, structuralDefinition]);
 
   // Real-time Total Accessory Price Delta
   const totalAccessoryPriceDelta = useMemo(() => {
@@ -527,6 +530,12 @@ export function ProductModelWorkspace({
     setSelectedAccessories((prev) => {
       const current = prev[slotComponentId];
       const slot = accessorySlots.find((s) => s.componentId === slotComponentId || s.componentKey === slotComponentId);
+      if (!slot) return prev;
+      if (accessory.id !== "default") {
+        const allowedIds = slot.allowedAccessoryIds ?? [];
+        const currentCatalogItem = availableAccessories.find((item) => item.productId === accessory.id && item.accessoryCategory === slotCategory);
+        if (!allowedIds.includes(accessory.id) || !currentCatalogItem) return prev;
+      }
       const posOptions = slot?.positionOptions ?? ((slot as Record<string, unknown> | undefined)?.position_options as AccessoryPositionOptions | undefined);
       const defaultHoriz = posOptions?.defaultHorizontal ?? "right";
       const defaultVert = posOptions?.defaultVertical ?? "up";
@@ -548,7 +557,7 @@ export function ProductModelWorkspace({
         },
       };
     });
-  }, [accessorySlots, alumFinish]);
+  }, [accessorySlots, alumFinish, availableAccessories]);
 
   // Handler for toggling accessory handing (Left vs Right)
   const handleToggleAccessoryHanding = useCallback((slotComponentId: string, horizontalPosition: HorizontalPosition) => {
@@ -5409,12 +5418,9 @@ export function ProductModelWorkspace({
                               const slotAllowedIds = slot.allowedAccessoryIds ?? ((slot as Record<string, unknown>).allowed_accessory_ids as string[] | undefined);
                               const posOptions = slot.positionOptions ?? ((slot as Record<string, unknown>).position_options as AccessoryPositionOptions | undefined);
 
-                              const matchingAccessories = availableAccessories.filter((acc) => {
-                                if (slotAllowedIds && slotAllowedIds.length > 0) {
-                                  return slotAllowedIds.includes(acc.productId);
-                                }
-                                return !acc.accessoryCategory || acc.accessoryCategory === slotCategory;
-                              });
+                              const matchingAccessories = availableAccessories.filter((acc) =>
+                                (slotAllowedIds ?? []).includes(acc.productId) && acc.accessoryCategory === slotCategory && Boolean(acc.previewGlbUrl)
+                              );
 
                               const selectedAccessoryId = currentSelected?.accessoryId ?? "default";
                               const selectedFinish = currentSelected?.finish ?? (alumFinish === "white" ? "Brushed Chrome" : "Matte Black");

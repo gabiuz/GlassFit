@@ -20,9 +20,6 @@ import {
   mountAccessoryMesh,
 } from "../../src/lib/visualization/parametricProductBuilder.js";
 import {
-  DEFAULT_FALLBACK_ACCESSORIES,
-} from "../../src/lib/products/getActiveAccessories.js";
-import {
   createQuotationDocumentSnapshotV1,
   createQuotationDocumentViewModel,
   QuotationDocumentSnapshotV1Schema,
@@ -232,25 +229,7 @@ describe("IMP-MS76: Customer Visualization Workspace Dynamic Accessory Swapping 
   });
 
   // --------------------------------------------------------------------------
-  // Scenario 4: Master Catalog Fallback Accessories Catalog Contract
-  // --------------------------------------------------------------------------
-  describe("4. Master Catalog Fallback Accessories Catalog Contract", () => {
-    it("provides active fallback accessories for handles and locks with valid pricing and categories", () => {
-      assert.ok(DEFAULT_FALLBACK_ACCESSORIES.length >= 3, "At least 3 fallback accessories must be available for testing");
-
-      for (const item of DEFAULT_FALLBACK_ACCESSORIES) {
-        assert.ok(item.productId.length > 0, "Accessory productId must not be empty");
-        assert.ok(item.productName.length > 0, "Accessory productName must not be empty");
-        assert.ok(item.basePrice > 0, "Accessory basePrice must be positive");
-        assert.ok(
-          ["handle", "lock", "roller", "hinge", "other"].includes(item.accessoryCategory),
-          `Category ${item.accessoryCategory} must be a recognized accessory category`
-        );
-        assert.equal(item.status, "Active", "Fallback items must be Active");
-      }
-    });
-  });
-
+  // Scenario 4: Catalog choices now require an explicit MS77 slot approval.
   // --------------------------------------------------------------------------
   // Scenario 5: Quotation Document Snapshot and Consultation PDF Itemization (QAD-TC91.7, QAD-TC91.8)
   // --------------------------------------------------------------------------

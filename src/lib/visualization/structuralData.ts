@@ -248,7 +248,7 @@ async function fetchCompatibleAddons(
         componentData: compData,
         isAccessorySlot: Boolean((compRow as Record<string, unknown>).is_accessory_slot),
         accessoryCategory: ((compRow as Record<string, unknown>).accessory_category as import("@/lib/admin/products/types").AccessoryCategory) || null,
-        allowedAccessoryIds: ((compRow as Record<string, unknown>).allowed_accessory_ids as string[]) || null,
+        allowedAccessoryIds: ((compRow as Record<string, unknown>).allowed_accessory_ids as string[]) || [],
         positionOptions: ((compRow as Record<string, unknown>).position_options as import("@/lib/admin/products/types").AccessoryPositionOptions) || null,
         model: {
           assetId: asset.asset_id,
@@ -493,7 +493,7 @@ export async function getProductStructuralDefinition(
       componentData,
       isAccessorySlot: Boolean((row as Record<string, unknown>).is_accessory_slot),
       accessoryCategory: ((row as Record<string, unknown>).accessory_category as import("@/lib/admin/products/types").AccessoryCategory) || null,
-      allowedAccessoryIds: ((row as Record<string, unknown>).allowed_accessory_ids as string[]) || null,
+      allowedAccessoryIds: ((row as Record<string, unknown>).allowed_accessory_ids as string[]) || [],
       positionOptions: ((row as Record<string, unknown>).position_options as import("@/lib/admin/products/types").AccessoryPositionOptions) || null,
       model: {
         assetId: asset.asset_id,
@@ -758,7 +758,7 @@ export async function getDraftStructuralDefinition(
       componentData,
       isAccessorySlot: Boolean((row as Record<string, unknown>).is_accessory_slot),
       accessoryCategory: ((row as Record<string, unknown>).accessory_category as import("@/lib/admin/products/types").AccessoryCategory) || null,
-      allowedAccessoryIds: ((row as Record<string, unknown>).allowed_accessory_ids as string[]) || null,
+      allowedAccessoryIds: ((row as Record<string, unknown>).allowed_accessory_ids as string[]) || [],
       positionOptions: ((row as Record<string, unknown>).position_options as import("@/lib/admin/products/types").AccessoryPositionOptions) || null,
       model: {
         assetId: asset.asset_id,

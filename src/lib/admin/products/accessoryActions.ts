@@ -2,52 +2,51 @@
 
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { requirePermission } from "@/lib/auth/admin";
+import { getEligibleAccessories, type EligibleAccessory } from "./accessoryEligibility";
 import type { AccessoryCategory } from "./types";
 
-export interface CatalogAccessoryItem {
-  id: string;
-  name: string;
-  category: AccessoryCategory;
-  price: number;
-  description: string;
-  glbUrl?: string | null;
-}
+export type CatalogAccessoryItem = EligibleAccessory;
 
-/**
- * Fetches active accessories from the catalog, optionally filtered by category.
- * Traceability: PRD-F14, SDD-C9, IMP-MS75, QAD-TC90.7, QAD-TC90.8
- */
+/** IMP-MS77, QAD-TC92.2-.3: authorized accessory picker with distinct errors. */
 export async function fetchActiveCatalogAccessories(
   category?: AccessoryCategory,
 ): Promise<CatalogAccessoryItem[]> {
   await requirePermission("manage_products");
   const supabase = await createSupabaseServerClient();
+  return getEligibleAccessories(supabase, category);
+}
 
-  let query = supabase
-    .from("products")
-    .select("product_id, product_name, description, base_price, accessory_category, preview_image_url")
-    .eq("is_accessory", true)
-    .eq("status", "Active");
-
-  if (category) {
-    query = query.eq("accessory_category", category);
+/** Validate an administrator's explicit approval list against the current catalog. */
+export async function validateAccessoryApprovalIds(
+  category: AccessoryCategory | null | undefined,
+  ids: string[] | null | undefined,
+  partName: string,
+  requireOptions = false,
+): Promise<string[]> {
+  await requirePermission("manage_products");
+  if (!category || !(["handle", "lock", "hinge", "roller", "other"] as string[]).includes(category)) {
+    throw new Error(`Part "${partName}" needs a valid accessory category.`);
   }
-
-  const { data, error } = await query;
-
-  if (error) {
-    console.error("Failed to fetch catalog accessories:", error.message);
+  if (!Array.isArray(ids)) {
+    if (requireOptions) throw new Error(`Part "${partName}" needs at least one approved accessory.`);
     return [];
   }
-
-  if (!data) return [];
-
-  return data.map((item) => ({
-    id: item.product_id,
-    name: item.product_name,
-    category: (item.accessory_category as AccessoryCategory) || "other",
-    price: Number(item.base_price) || 0,
-    description: item.description || "",
-    glbUrl: item.preview_image_url,
-  }));
+  if (new Set(ids).size !== ids.length) {
+    throw new Error(`Part "${partName}" has duplicate approved accessories.`);
+  }
+  if (ids.some((id) => !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id))) {
+    throw new Error(`Part "${partName}" has an invalid accessory ID.`);
+  }
+  if (requireOptions && ids.length === 0) {
+    throw new Error(`Part "${partName}" needs at least one approved accessory.`);
+  }
+  if (ids.length === 0) return [];
+  const supabase = await createSupabaseServerClient();
+  const eligible = await getEligibleAccessories(supabase, category, ids);
+  const eligibleIds = new Set(eligible.map((item) => item.id));
+  const unavailable = ids.find((id) => !eligibleIds.has(id));
+  if (unavailable) {
+    throw new Error(`Part "${partName}" has an unavailable or incompatible approved accessory (${unavailable}). Select an active ${category} accessory with a 3D model.`);
+  }
+  return ids;
 }

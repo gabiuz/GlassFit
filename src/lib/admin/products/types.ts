@@ -30,7 +30,7 @@ export interface AccessoryPositionOptions {
 export interface AccessorySlotConfig {
   isAccessorySlot: boolean;
   accessoryCategory: AccessoryCategory | null;
-  allowedAccessoryIds: string[] | null; // null indicates all accessories in category are permitted
+  allowedAccessoryIds: string[] | null; // Legacy null is treated as an empty approval list
   positionOptions: AccessoryPositionOptions;
 }
 

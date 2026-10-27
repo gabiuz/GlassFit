@@ -113,6 +113,7 @@ MS57 traceability: BRD-M1, BRD-M5, BRD-M6 -> PRD-F3, PRD-F4, PRD-F5, PRD-F6, PRD
 | Revision Date | Target Document | Author | Nature of Revision | Pull Request Ref |
 |---|---|---|---|---|
 | October 26, 2026 | `docs/implementation/ms76.md`, `src/features/visualization/`, `src/lib/visualization/`, `src/lib/pricing/` | GlassFit Capstone Team | Implemented Customer Visualization Workspace Dynamic Accessory Swapping, Positional Matrix Alignment, Real-Time BOM Recalculation, and Itemized Quotation/PDF Handoff (QAD-TC91) | Pending |
+| October 27, 2026 | `docs/implementation/ms77.md`, admin component actions and inspector, visualization workspace, booking validation, migration 021 | GlassFit Capstone Team | Implemented explicit registered accessory allowlists and current eligibility checks (QAD-TC92); browser acceptance pending | Pending |
 | October 26, 2026 | `docs/implementation/ms75.md`, `src/features/admin/products/setup/` | GlassFit Capstone Team | Implemented Admin Part Inspector Swappable Accessory Binding and Position Configuration (QAD-TC90) | Pending |
 | October 26, 2026 | `docs/implementation/ms74.md`, `src/features/admin/products/` | GlassFit Capstone Team | Implemented Admin Accessory Product Role and 5-Step Authoring Workflow (QAD-TC89) | Pending |
 | October 26, 2026 | `docs/implementation/ms73.md`, `src/features/visualization/`, `src/lib/pricing/` | GlassFit Capstone Team | Implemented Customer Visualization Workspace Dynamic Grille Sizing, Real-Time Linear BOM Recalculation, and Itemized Quotation/PDF Handoff (QAD-TC88) | Pending |
