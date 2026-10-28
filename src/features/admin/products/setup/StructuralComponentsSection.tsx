@@ -2,9 +2,11 @@
 
 import React, { useState, useEffect, useMemo, Suspense } from "react";
 import { UploadCloud, X, Loader2, CheckCircle, AlertCircle, Eye, CheckSquare, Square, Layers, Sparkles } from "lucide-react";
-import { upsertProductComponent } from "@/lib/admin/products/componentMutations";
+import { upsertProductComponent, deleteProductComponent } from "@/lib/admin/products/componentMutations";
 import type { ComponentType, AccessoryCategory, AccessoryPositionOptions } from "@/lib/admin/products/types";
-import { generatePresignedUrl, confirmAssetUpload } from "@/lib/admin/products/assetUpload";
+import { generatePresignedUrl, confirmAssetUpload, hasQualifyingProductModelAsset, deleteProductAssets } from "@/lib/admin/products/assetUpload";
+import { getComponentIssues, getProductComponentIssue } from "@/lib/admin/products/componentEligibility";
+import type { UpsertComponentInput } from "@/lib/admin/products/types";
 import { autoDetectComponentSettings, suggestCandidateMaterials } from "@/lib/admin/products/autoDetection";
 import { decomposeWholeModel, type ExtractedComponentPart } from "@/lib/admin/products/modelDecomposer";
 import { DecompositionPreviewModal } from "./DecompositionPreviewModal";
@@ -12,8 +14,9 @@ import { PartInspectorDrawer, type PartInspectorConfig } from "./PartInspectorDr
 import { analyzeGrilleGeometry, type GrilleGeometryAnalysis } from "@/lib/pricing/grilleGeometryAnalyzer";
 import { getRawMaterials } from "@/lib/admin/materials/materialActions";
 import type { RawMaterial, DimensionBinding, PresentationCategory, ComponentMaterialBinding } from "@/lib/pricing/types";
-import { Canvas } from "@react-three/fiber";
-import { OrbitControls, Stage } from "@react-three/drei";
+import { Canvas, type ThreeEvent } from "@react-three/fiber";
+import { useThree } from "@react-three/fiber";
+import { Html, OrbitControls, Stage } from "@react-three/drei";
 import * as THREE from "three";
 import {
     classifySceneMesh,
@@ -37,6 +40,7 @@ export type StructuralComponentsSectionProps = {
         byte_size?: number;
     } | null;
     isAccessory?: boolean;
+    isAddon?: boolean;
     initialAccessoryCategory?: AccessoryCategory | null;
     productBasePrice?: number;
     onSave: () => void;
@@ -62,6 +66,7 @@ type MappedFile = {
     errorMsg?: string;
     previewMesh?: THREE.Group | null;
     sourceDimensions?: { x: number; y: number; z: number };
+    persisted?: boolean;
     isAccessorySlot?: boolean;
     accessoryCategory?: AccessoryCategory | null;
     allowedAccessoryIds?: string[] | null;
@@ -133,6 +138,8 @@ function PartViewer3D({
     viewMode?: "assembled" | "exploded";
     onSelectId: (id: string, isShift: boolean) => void;
 }) {
+    const [hoveredId, setHoveredId] = useState<string | null>(null);
+    const [overlapChoice, setOverlapChoice] = useState<{ ids: string[]; point: THREE.Vector3 } | null>(null);
     const group = useMemo(() => {
         const root = new THREE.Group();
         root.name = "AssembledProductRoot";
@@ -198,9 +205,13 @@ function PartViewer3D({
             });
         };
 
-        const highlightPart = (clone: THREE.Object3D, isSelected: boolean) => {
+        const highlightPart = (clone: THREE.Object3D, isSelected: boolean, isHovered: boolean) => {
+            const selectedMeshes: THREE.Mesh[] = [];
             clone.traverse((child) => {
                 if (child instanceof THREE.Mesh) {
+                    if (isSelected || isHovered) {
+                        selectedMeshes.push(child);
+                    }
                     if (isSelected) {
                         const isGlass = classifySceneMesh(child) === "Glass";
                         if (Array.isArray(child.material)) {
@@ -227,6 +238,19 @@ function PartViewer3D({
                     }
                 }
             });
+            for (const mesh of selectedMeshes) {
+                const outline = new THREE.LineSegments(
+                    new THREE.EdgesGeometry(mesh.geometry, 25),
+                    new THREE.LineBasicMaterial({ color: isSelected ? "#0f1422" : "#07b6d3", depthTest: false, transparent: true, opacity: 0.95 }),
+                );
+                // Visual outlines must never become picking targets. Three.js line
+                // raycasts use a broad world-space threshold that can capture a
+                // click over neighboring glass or narrow framing members.
+                outline.raycast = () => {};
+                outline.renderOrder = 100;
+                outline.scale.setScalar(1.004);
+                mesh.add(outline);
+            }
         };
 
         const createPreviewPart = (
@@ -257,7 +281,7 @@ function PartViewer3D({
                 isFixed ? 1 : getPartScale(targetDepthM ?? 0, sourceSize.z)
             );
 
-            highlightPart(wrapper, selectedIds.has(file.id));
+            highlightPart(wrapper, selectedIds.has(file.id), hoveredId === file.id);
             return wrapper;
         };
 
@@ -276,7 +300,7 @@ function PartViewer3D({
                 wrapper.add(clone);
                 wrapper.position.set(offsetX, 0, 0);
 
-                highlightPart(wrapper, selectedIds.has(file.id));
+                highlightPart(wrapper, selectedIds.has(file.id), hoveredId === file.id);
                 root.add(wrapper);
 
                 const size = file.sourceDimensions || { x: 0.4, y: 0.4, z: 0.4 };
@@ -440,18 +464,18 @@ function PartViewer3D({
 
                     if (targetHanding === modeledHanding) {
                         applyPreviewMaterials(clone, file);
-                        highlightPart(clone, selectedIds.has(file.id));
+                        highlightPart(clone, selectedIds.has(file.id), hoveredId === file.id);
                         root.add(clone);
                     } else {
                         // Mirrored across lateral center: preserves exact same Y axis and Z depth (IMP-MS78)
                         const mirrored = mirrorPartAcrossCenterline(clone, baseCenterX, targetHanding);
                         applyPreviewMaterials(mirrored, file);
-                        highlightPart(mirrored, selectedIds.has(file.id));
+                        highlightPart(mirrored, selectedIds.has(file.id), hoveredId === file.id);
                         root.add(mirrored);
                     }
                 } else {
                     applyPreviewMaterials(clone, file);
-                    highlightPart(clone, selectedIds.has(file.id));
+                    highlightPart(clone, selectedIds.has(file.id), hoveredId === file.id);
                     root.add(clone);
                 }
             });
@@ -459,23 +483,61 @@ function PartViewer3D({
 
         recenterGroup(root);
         return root;
-    }, [files, selectedIds, rawMaterials, productType, viewMode]);
+    }, [files, selectedIds, hoveredId, rawMaterials, productType, viewMode]);
+
+    const partIdForObject = (object: THREE.Object3D): string | null => {
+        let current: THREE.Object3D | null = object;
+        while (current && !current.userData.fileId) current = current.parent;
+        return current?.userData.fileId || null;
+    };
 
     return (
+        <>
         <primitive
             object={group}
-            onClick={(e: { stopPropagation: () => void; object: THREE.Object3D; shiftKey?: boolean }) => {
+            onPointerOver={(e: ThreeEvent<PointerEvent>) => {
+                const firstMesh = e.intersections.find(hit => hit.object instanceof THREE.Mesh);
+                setHoveredId(firstMesh ? partIdForObject(firstMesh.object) : null);
+            }}
+            onPointerOut={() => setHoveredId(null)}
+            onClick={(e: ThreeEvent<MouseEvent>) => {
                 e.stopPropagation();
-                let curr: THREE.Object3D | null = e.object;
-                while (curr && !curr.userData.fileId && curr.parent) {
-                    curr = curr.parent;
-                }
-                if (curr && curr.userData.fileId) {
-                    onSelectId(curr.userData.fileId, Boolean(e.shiftKey));
+                const ids = Array.from(new Set(e.intersections.filter(hit => hit.object instanceof THREE.Mesh).map(hit => partIdForObject(hit.object)).filter((id): id is string => Boolean(id))));
+                if (ids.length > 1) {
+                    setOverlapChoice({ ids, point: e.point.clone() });
+                } else if (ids.length === 1) {
+                    setOverlapChoice(null);
+                    onSelectId(ids[0], e.shiftKey);
                 }
             }}
         />
+        {overlapChoice && <Html position={overlapChoice.point} center>
+            <div className="min-w-40 rounded-lg border border-neutral-200 bg-white p-2 text-xs shadow-lg" role="group" aria-label="Choose overlapping part">
+                <p className="mb-1 font-semibold text-[#0f1422]">Choose part</p>
+                {overlapChoice.ids.map(id => <button key={id} type="button" onClick={() => { onSelectId(id, false); setOverlapChoice(null); }} className="block w-full rounded px-2 py-1 text-left text-neutral-700 hover:bg-neutral-100">{files.find(file => file.id === id)?.componentName || id}</button>)}
+            </div>
+        </Html>}
+        </>
     );
+}
+
+function ViewerCameraControls({ action }: { action: { kind: "fit" | "reset" | "front"; serial: number } | null }) {
+    const { camera, scene, controls, invalidate } = useThree();
+    useEffect(() => {
+        if (!action) return;
+        const bounds = new THREE.Box3().setFromObject(scene.getObjectByName("AssembledProductRoot") || scene);
+        if (bounds.isEmpty()) return;
+        const center = bounds.getCenter(new THREE.Vector3());
+        const radius = Math.max(bounds.getSize(new THREE.Vector3()).length() * 0.8, 1.5);
+        camera.position.set(center.x + (action.kind === "front" ? 0 : radius * 0.65), center.y + (action.kind === "front" ? 0 : radius * 0.35), center.z + radius);
+        camera.lookAt(center);
+        camera.updateProjectionMatrix();
+        const orbit = controls as { target?: THREE.Vector3; update?: () => void } | undefined;
+        orbit?.target?.copy(center);
+        orbit?.update?.();
+        invalidate();
+    }, [action, camera, controls, invalidate, scene]);
+    return null;
 }
 
 export function StructuralComponentsSection({
@@ -486,6 +548,7 @@ export function StructuralComponentsSection({
     initialData,
     wholeModelAsset,
     isAccessory = false,
+    isAddon = false,
     initialAccessoryCategory = null,
     productBasePrice,
     onSave,
@@ -513,6 +576,25 @@ export function StructuralComponentsSection({
 
     const [rawMaterials, setRawMaterials] = useState<RawMaterial[]>([]);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const [removedFiles, setRemovedFiles] = useState<MappedFile[]>([]);
+    const [saveError, setSaveError] = useState<string | null>(null);
+    const [saveState, setSaveState] = useState<"clean" | "dirty" | "saving" | "saved" | "error">("clean");
+    const [partSearch, setPartSearch] = useState("");
+    const [showIssuesOnly, setShowIssuesOnly] = useState(false);
+    const [cameraAction, setCameraAction] = useState<{ kind: "fit" | "reset" | "front"; serial: number } | null>(null);
+    const [showUpload, setShowUpload] = useState(false);
+    const [uploadErrors, setUploadErrors] = useState<string[]>([]);
+    const eligibilityContext = { modelStrategy, isAccessory, isAddon };
+    const issuesForPart = (part: MappedFile) => getComponentIssues({
+        pricingMethod: part.pricingMethod,
+        unitPrice: part.unitPrice,
+        dimensionBinding: part.dimensionBinding,
+        rawMaterialId: part.rawMaterialId,
+        materialBindings: part.materialBindings,
+        isAccessorySlot: part.isAccessorySlot,
+        hasModelPreview: Boolean(part.glbFileUrl || part.previewMesh),
+    }, eligibilityContext);
+    const hasPartIssue = (part: MappedFile) => part.status !== "success" || issuesForPart(part).length > 0;
 
     // Fetch master raw materials
     useEffect(() => {
@@ -563,6 +645,8 @@ export function StructuralComponentsSection({
                 unitPrice: resolvedUnitPrice,
                 pricingMethod: resolvedPricingMethod,
                 handingMetadata: (compData.handing_metadata as ComponentHandingMetadata) || null,
+                sourceDimensions: compData.source_dimensions_mm as { x: number; y: number; z: number } | undefined,
+                persisted: true,
                 status: "success" as const,
             };
         });
@@ -606,6 +690,8 @@ export function StructuralComponentsSection({
                             })(),
                             pricingMethod: (comp.pricing_method as string) || (isAccessory ? "Fixed" : (typeof comp.unit_price === "number" && comp.unit_price > 0 ? "Fixed" : undefined)),
                             handingMetadata: (compData.handing_metadata as ComponentHandingMetadata) || null,
+                            sourceDimensions: compData.source_dimensions_mm as { x: number; y: number; z: number } | undefined,
+                            persisted: true,
                             status: "success" as const,
                         };
                     });
@@ -681,13 +767,15 @@ export function StructuralComponentsSection({
 
     const handleFilesAdded = async (files: FileList | null) => {
         if (!files) return;
-
+        const rejected = Array.from(files).filter(f => !f.name.toLowerCase().endsWith(".glb"));
+        setUploadErrors(rejected.map(f => `${f.name}: only .glb files are supported.`));
         const glbFiles = Array.from(files).filter(f => f.name.toLowerCase().endsWith(".glb"));
 
         const newMappedPromises = glbFiles.map(async (f) => {
             const autoDetected = autoDetectComponentSettings(f.name);
             let previewMesh: THREE.Group | null = null;
-            let dims = { x: 1, y: 1, z: 1 };
+            let dims: { x: number; y: number; z: number } | undefined;
+            let parseError: string | undefined;
 
             try {
                 const { GLTFLoader } = await import("three/addons/loaders/GLTFLoader.js");
@@ -701,7 +789,7 @@ export function StructuralComponentsSection({
                 dims = { x: size.x, y: size.y, z: size.z };
                 URL.revokeObjectURL(url);
             } catch (err) {
-                console.warn("Could not parse GLB preview locally:", err);
+                parseError = err instanceof Error ? err.message : "Could not parse GLB geometry.";
             }
 
             const suggested = suggestCandidateMaterials(autoDetected.presentationCategory, rawMaterials);
@@ -726,7 +814,8 @@ export function StructuralComponentsSection({
                 togglePropertyKey: autoDetected.togglePropertyKey,
                 presentationCategory: autoDetected.presentationCategory,
                 previewMesh,
-                status: "idle" as const,
+                status: parseError ? "error" as const : "idle" as const,
+                errorMsg: parseError,
                 sourceDimensions: dims,
                 isAccessorySlot: isAccessory ? false : Boolean(autoDetected.isAccessorySlot),
                 accessoryCategory: isAccessory ? (initialAccessoryCategory || autoDetected.accessoryCategory || "handle") : (autoDetected.accessoryCategory || null),
@@ -740,6 +829,7 @@ export function StructuralComponentsSection({
 
         const newMapped = await Promise.all(newMappedPromises);
         setMappedFiles(prev => [...prev, ...newMapped]);
+        if (newMapped.length) setSaveState("dirty");
         if (newMapped.length > 0 && selectedIds.size === 0) {
             setSelectedIds(new Set([newMapped[0].id]));
         }
@@ -861,7 +951,8 @@ export function StructuralComponentsSection({
 
     const handleSelectPart = (id: string, isShift: boolean) => {
         setSelectedIds(prev => {
-            const next = new Set(isShift ? prev : []);
+            if (!isShift) return new Set([id]);
+            const next = new Set(prev);
             if (next.has(id)) {
                 next.delete(id);
             } else {
@@ -872,6 +963,7 @@ export function StructuralComponentsSection({
     };
 
     const handleBatchUpdateSelected = (updates: Partial<PartInspectorConfig>) => {
+        setSaveState("dirty");
         setMappedFiles(prev =>
             prev.map(item => {
                 if (selectedIds.has(item.id)) {
@@ -923,6 +1015,7 @@ export function StructuralComponentsSection({
         defaultMaterialId: string | null
     ) => {
         if (!assemblyGroup) return;
+        setSaveState("dirty");
         setMappedFiles(prev =>
             prev.map(item => {
                 if (item.assemblyGroup.toLowerCase() === assemblyGroup.toLowerCase()) {
@@ -939,7 +1032,10 @@ export function StructuralComponentsSection({
     };
 
     const removeMappedFile = (id: string) => {
+        const removed = mappedFiles.find(m => m.id === id);
+        if (removed) setRemovedFiles(prev => [...prev, removed]);
         setMappedFiles(prev => prev.filter(m => m.id !== id));
+        setSaveState("dirty");
         setSelectedIds(prev => {
             const next = new Set(prev);
             next.delete(id);
@@ -947,7 +1043,7 @@ export function StructuralComponentsSection({
         });
     };
 
-    const processSingleUpload = async (mapped: MappedFile) => {
+    const processSingleUpload = async (mapped: MappedFile): Promise<{ name: string; success: boolean; error?: string }> => {
         updateMappedFile(mapped.id, { status: "processing" });
 
         try {
@@ -955,7 +1051,7 @@ export function StructuralComponentsSection({
             const THREE = await import("three");
             const { GLTFLoader } = await import("three/addons/loaders/GLTFLoader.js");
 
-            let dimensions = mapped.sourceDimensions || { x: 1, y: 1, z: 1 };
+            let dimensions = mapped.sourceDimensions;
             if (mapped.file.size > 0) {
                 const url = URL.createObjectURL(mapped.file);
                 const loader = new GLTFLoader();
@@ -966,21 +1062,22 @@ export function StructuralComponentsSection({
                 URL.revokeObjectURL(url);
                 dimensions = { x: size.x, y: size.y, z: size.z };
             }
+            if (!dimensions && !mapped.glbFileUrl) throw new Error("GLB geometry could not be verified.");
 
             updateMappedFile(mapped.id, { status: "uploading" });
 
-            // 2. Upsert Component in DB with all MS-3 & MS64 & MS78 fields
-            const componentId = await upsertProductComponent({
+            // FIX13-V5: use one complete payload for initial and post-upload persistence.
+            const buildPayload = (glbFileUrl: string | null, handingMetadata = mapped.handingMetadata): UpsertComponentInput => ({
                 templateId,
                 componentKey: mapped.componentKey,
                 componentName: mapped.componentName,
                 componentType: mapped.componentType,
                 baseQuantity: mapped.baseQuantity,
                 rawMaterialId: mapped.rawMaterialId,
-                materialBindings: mapped.materialBindings?.map(b => ({
-                    rawMaterialId: b.rawMaterialId,
-                    isDefault: b.isDefault,
-                    displayOrder: b.displayOrder,
+                materialBindings: mapped.materialBindings?.map(binding => ({
+                    rawMaterialId: binding.rawMaterialId,
+                    isDefault: binding.isDefault,
+                    displayOrder: binding.displayOrder,
                 })),
                 dimensionBinding: mapped.dimensionBinding,
                 spanRatio: mapped.spanRatio,
@@ -988,10 +1085,10 @@ export function StructuralComponentsSection({
                 togglePropertyKey: mapped.togglePropertyKey,
                 presentationCategory: mapped.presentationCategory,
                 assemblyGroup: mapped.assemblyGroup || undefined,
-                glbFileUrl: mapped.glbFileUrl || undefined,
+                glbFileUrl,
                 componentData: {
-                    source_dimensions_mm: dimensions,
-                    ...(mapped.handingMetadata ? { handing_metadata: mapped.handingMetadata } : {}),
+                    ...(dimensions ? { source_dimensions_mm: dimensions } : {}),
+                    ...(handingMetadata ? { handing_metadata: handingMetadata } : {}),
                     ...(mapped.accessoryCategory ? { accessory_category: mapped.accessoryCategory } : {}),
                 },
                 isAccessorySlot: mapped.isAccessorySlot,
@@ -1000,41 +1097,46 @@ export function StructuralComponentsSection({
                 positionOptions: mapped.positionOptions || undefined,
                 unitPrice: mapped.unitPrice !== undefined ? mapped.unitPrice : (isAccessory ? productBasePrice : undefined),
                 pricingMethod: mapped.pricingMethod || (isAccessory ? "Fixed" : undefined),
-                handingMetadata: mapped.handingMetadata,
+                handingMetadata,
             });
+            const payload = buildPayload(mapped.glbFileUrl || null);
+            if (isAccessory && (!Number.isFinite(payload.unitPrice) || (payload.unitPrice ?? 0) <= 0)) {
+                throw new Error("Accessory unit price is missing. Set a positive price before saving.");
+            }
 
-            // 3. Request Presigned URL & upload only if file has content
+            // Object storage and PostgreSQL have separate commit boundaries. Upload first.
             let primaryGlbUrl = mapped.glbFileUrl || "";
+            let stagedAsset: { assetId: string; objectKey: string } | null = null;
             if (mapped.file.size > 0) {
                 const { uploadUrl, assetId, objectKey } = await generatePresignedUrl(
-                    productId,
-                    "Component Model",
-                    mapped.file.name,
-                    mapped.file.type || "model/gltf-binary",
-                    componentId
+                    productId, "Component Model", mapped.file.name, mapped.file.type || "model/gltf-binary"
                 );
-
                 const uploadRes = await fetch(uploadUrl, {
                     method: "PUT",
                     body: mapped.file,
-                    headers: { "Content-Type": mapped.file.type || "model/gltf-binary" }
+                    headers: { "Content-Type": mapped.file.type || "model/gltf-binary" },
                 });
-
-                if (!uploadRes.ok) {
-                    throw new Error(`R2 Upload failed: ${uploadRes.statusText}`);
-                }
-
-                await confirmAssetUpload(
-                    productId,
-                    assetId,
-                    objectKey,
-                    "Component Model",
-                    mapped.file.name,
-                    mapped.file.type || "model/gltf-binary",
-                    mapped.file.size,
-                    componentId
-                );
+                if (!uploadRes.ok) throw new Error(`R2 upload failed: ${uploadRes.statusText}`);
+                stagedAsset = { assetId, objectKey };
                 primaryGlbUrl = getR2AssetUrl(objectKey) || "";
+                if (!primaryGlbUrl) throw new Error("Uploaded model URL could not be resolved.");
+            }
+
+            let componentId: string;
+            try {
+                componentId = await upsertProductComponent(buildPayload(primaryGlbUrl || null));
+            } catch (saveError) {
+                if (stagedAsset) {
+                    try { await deleteProductAssets([stagedAsset.objectKey]); }
+                    catch (cleanupError) { console.error("Staged component asset cleanup failed:", cleanupError); }
+                }
+                throw saveError;
+            }
+            if (stagedAsset) {
+                await confirmAssetUpload(
+                    productId, stagedAsset.assetId, stagedAsset.objectKey, "Component Model",
+                    mapped.file.name, mapped.file.type || "model/gltf-binary", mapped.file.size, componentId
+                );
             }
 
             // 4. Bilateral Handing Mesh Mirroring for hardware accessories (IMP-MS78)
@@ -1077,35 +1179,16 @@ export function StructuralComponentsSection({
                             mirroredAt: new Date().toISOString(),
                         };
 
-                        await upsertProductComponent({
-                            templateId,
-                            componentKey: mapped.componentKey,
-                            componentName: mapped.componentName,
-                            componentType: mapped.componentType,
-                            baseQuantity: mapped.baseQuantity,
-                            rawMaterialId: mapped.rawMaterialId,
-                            dimensionBinding: mapped.dimensionBinding,
-                            spanRatio: mapped.spanRatio,
-                            isRemovable: mapped.isRemovable,
-                            presentationCategory: mapped.presentationCategory,
-                            glbFileUrl: primaryGlbUrl,
-                            componentData: {
-                                source_dimensions_mm: dimensions,
-                                handing_metadata: finalHandingMetadata,
-                            },
-                            unitPrice: mapped.unitPrice !== undefined ? mapped.unitPrice : (isAccessory ? productBasePrice : undefined),
-                            pricingMethod: mapped.pricingMethod || (isAccessory ? "Fixed" : undefined),
-                            handingMetadata: finalHandingMetadata,
-                        });
+                        await upsertProductComponent(buildPayload(primaryGlbUrl, finalHandingMetadata));
 
                         updateMappedFile(mapped.id, { handingMetadata: finalHandingMetadata });
                     }
                 } catch (mirrorErr) {
-                    console.warn("Mirrored accessory GLB export or upload error:", mirrorErr);
+                    throw new Error(`Accessory handing model could not be saved: ${mirrorErr instanceof Error ? mirrorErr.message : "Unknown error"}`);
                 }
             }
 
-            updateMappedFile(mapped.id, { status: "success", glbFileUrl: primaryGlbUrl || mapped.glbFileUrl });
+            updateMappedFile(mapped.id, { status: "success", persisted: true, glbFileUrl: primaryGlbUrl || mapped.glbFileUrl });
 
             if (isAccessory && mapped.accessoryCategory && productId && productId !== "draft") {
                 try {
@@ -1115,38 +1198,68 @@ export function StructuralComponentsSection({
                 }
             }
 
+            return { name: mapped.componentName, success: true };
+
         } catch (err: unknown) {
             console.error("Component upload failed:", err);
             const msg = err instanceof Error ? err.message : "Upload failed";
             updateMappedFile(mapped.id, { status: "error", errorMsg: msg });
+            return { name: mapped.componentName, success: false, error: msg };
         }
     };
 
-    const handleUploadAll = async () => {
+    const handleUploadAll = async (): Promise<boolean> => {
         setIsUploadingAll(true);
+        setSaveState("saving");
+        setSaveError(null);
         const pending = mappedFiles.filter(m => m.status === "idle" || m.status === "error");
-
+        const results: { name: string; success: boolean; error?: string }[] = [];
         const chunkSize = 3;
         for (let i = 0; i < pending.length; i += chunkSize) {
             const chunk = pending.slice(i, i + chunkSize);
-            await Promise.all(chunk.map(processSingleUpload));
+            results.push(...await Promise.all(chunk.map(processSingleUpload)));
         }
-
+        const successfullyRemoved: string[] = [];
+        for (const removed of removedFiles) {
+            if (removed.persisted) {
+                try {
+                    await deleteProductComponent(templateId, removed.componentKey);
+                    successfullyRemoved.push(removed.id);
+                } catch (error) {
+                    results.push({ name: removed.componentName, success: false, error: error instanceof Error ? error.message : "Delete failed" });
+                }
+            } else successfullyRemoved.push(removed.id);
+        }
+        setRemovedFiles(previous => previous.filter(item => !successfullyRemoved.includes(item.id)));
+        const failures = results.filter(result => !result.success);
+        if (failures.length) {
+            setSaveError(failures.map(result => `${result.name}: ${result.error}`).join("; "));
+            setSaveState("error");
+        } else {
+            setSaveState("saved");
+        }
         setIsUploadingAll(false);
+        return failures.length === 0;
     };
 
-    const hasPendingChanges = mappedFiles.some(m => m.status === "idle" || m.status === "error");
+    const hasPendingChanges = removedFiles.length > 0 || mappedFiles.some(m => m.status === "idle" || m.status === "error");
 
     const handleContinue = async () => {
-        const pending = mappedFiles.filter(m => m.status === "idle" || m.status === "error");
-        if (pending.length > 0) {
-            setIsUploadingAll(true);
-            const chunkSize = 3;
-            for (let i = 0; i < pending.length; i += chunkSize) {
-                const chunk = pending.slice(i, i + chunkSize);
-                await Promise.all(chunk.map(processSingleUpload));
-            }
-            setIsUploadingAll(false);
+        if (hasPendingChanges && !(await handleUploadAll())) return;
+        let hasQualifyingModelAsset = false;
+        try {
+            hasQualifyingModelAsset = await hasQualifyingProductModelAsset(productId);
+        } catch (error) {
+            setSaveError(error instanceof Error ? error.message : "Could not verify product model asset.");
+            setSaveState("error");
+            return;
+        }
+        const productIssue = getProductComponentIssue({ ...eligibilityContext, componentsCount: mappedFiles.length, hasQualifyingModelAsset });
+        const partIssues = mappedFiles.flatMap(part => issuesForPart(part).map(issue => `${part.componentName}: ${issue}`));
+        if (productIssue || partIssues.length) {
+            setSaveError([productIssue, ...partIssues].filter(Boolean).join("; "));
+            setSaveState("error");
+            return;
         }
         onSave();
     };
@@ -1251,6 +1364,9 @@ export function StructuralComponentsSection({
                 </div>
             )}
 
+            {mappedFiles.length > 0 && <button type="button" onClick={() => setShowUpload(value => !value)} className="self-start rounded-lg border border-neutral-200 px-3 py-2 text-sm font-medium text-[#0f1422]">{showUpload ? "Hide Add Parts" : "Add Parts"}</button>}
+            {uploadErrors.length > 0 && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{uploadErrors.map(error => <p key={error}>{error}</p>)}</div>}
+            {(mappedFiles.length === 0 || showUpload) && <>
             {/* Ingestion Mode Segmented Toggle */}
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="bg-slate-100 p-1.5 rounded-[14px] inline-flex border border-neutral-200">
@@ -1326,7 +1442,7 @@ export function StructuralComponentsSection({
                 >
                     <UploadCloud className="size-7 text-neutral-400 mb-1.5 pointer-events-none" />
                     <p className="text-[#0f1422] font-medium text-sm pointer-events-none">Drag & drop multiple .glb parts here</p>
-                    <p className="text-[11px] text-neutral-500 pointer-events-none">Auto-detects Series 798 heads, sills, jambs, rails, glass & rollers</p>
+                    <p className="text-xs text-neutral-500 pointer-events-none">Part names suggest categories and dimensions; review each assignment before saving.</p>
                     <input
                         type="file"
                         accept=".glb,model/gltf-binary"
@@ -1380,9 +1496,10 @@ export function StructuralComponentsSection({
                 </label>
             )}
 
+            </>}
             {/* Quick Material Mapping Summary Banner */}
             {mappedFiles.length > 0 && (
-                <div className="bg-gradient-to-r from-neutral-900 to-[#0f1422] text-white p-4 rounded-[16px] flex flex-wrap items-center justify-between gap-4 shadow-sm">
+                <div className="bg-[#0f1422] text-white p-3 rounded-[12px] flex flex-wrap items-center justify-between gap-4 shadow-sm">
                     <div className="flex items-center gap-6 text-xs sm:text-sm">
                         <div>
                             <span className="text-neutral-400 block text-[11px]">Total Parts</span>
@@ -1409,9 +1526,8 @@ export function StructuralComponentsSection({
                     </div>
                     <div className="text-right">
                         <span className="text-neutral-400 block text-[11px]">BOM Estimation Status</span>
-                        <span className="text-xs font-medium text-emerald-400 flex items-center gap-1.5">
-                            <span className="size-2 rounded-full bg-emerald-400 animate-pulse" />
-                            Ready for Test-Drive Simulator (Step 6)
+                        <span className="text-xs font-medium text-white flex items-center gap-1.5">
+                            {mappedFiles.every(m => !hasPartIssue(m)) && !removedFiles.length && (mappedFiles.length > 0 || modelStrategy === "Fixed" && Boolean(wholeModelAsset)) ? "Ready for Validation" : "Needs review"}
                         </span>
                     </div>
                 </div>
@@ -1562,9 +1678,9 @@ export function StructuralComponentsSection({
 
             {/* Split Screen 60/40 Layout */}
             {mappedFiles.length > 0 && (
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 border border-neutral-200 rounded-[16px] overflow-hidden bg-white shadow-sm min-h-[500px]">
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 border border-neutral-200 rounded-[16px] overflow-hidden bg-white shadow-sm lg:h-[min(760px,calc(100vh-150px))]">
                     {/* Left Side: 3D Viewport (60% / 7 cols) */}
-                    <div className="lg:col-span-7 bg-[#f2f4f7] relative min-h-[380px] lg:min-h-full flex flex-col justify-between border-b lg:border-b-0 lg:border-r border-neutral-200">
+                    <div className="lg:col-span-7 bg-[#f2f4f7] relative h-[480px] lg:h-full min-h-0 flex flex-col justify-between border-b lg:border-b-0 lg:border-r border-neutral-200">
                         <div className="absolute top-3 left-3 z-10 bg-white/90 backdrop-blur-md px-3 py-1 rounded-full text-[11px] font-medium text-neutral-700 shadow-xs border border-neutral-200 flex items-center gap-1.5">
                             <Eye className="size-3.5 text-[#07b6d3]" /> Click part to inspect (Shift+Click for multi-select)
                         </div>
@@ -1592,7 +1708,7 @@ export function StructuralComponentsSection({
                             </button>
                         </div>
 
-                        <div className="w-full h-full min-h-[360px] flex-1">
+                        <div className="w-full min-h-0 flex-1">
                             <Canvas shadows camera={{ position: [0, 1.5, 3], fov: 45 }}>
                                 <ambientLight intensity={0.7} />
                                 <directionalLight position={[5, 8, 5]} intensity={1.2} />
@@ -1609,11 +1725,16 @@ export function StructuralComponentsSection({
                                     </Stage>
                                 </Suspense>
                                 <OrbitControls makeDefault />
+                                <ViewerCameraControls action={cameraAction} />
                             </Canvas>
                         </div>
 
+                        <div className="flex gap-2 border-t border-neutral-200 bg-white px-3 py-2 text-xs">
+                            {(["fit", "reset", "front"] as const).map(kind => <button key={kind} type="button" onClick={() => setCameraAction(previous => ({ kind, serial: (previous?.serial || 0) + 1 }))} className="rounded-md border border-neutral-200 px-2 py-1 text-neutral-700 focus-visible:outline-2 focus-visible:outline-[#07b6d3]">{kind === "fit" ? "Fit Model" : kind === "reset" ? "Reset Camera" : "Front View"}</button>)}
+                        </div>
+
                         <div className="p-3 bg-white/90 border-t border-neutral-200/80 backdrop-blur-sm flex items-center justify-between text-xs text-neutral-500">
-                            <span>{mappedFiles.length} parts mapped ({selectedIds.size} selected)</span>
+                            <span aria-live="polite">{selectedIds.size === 1 ? mappedFiles.find(m => selectedIds.has(m.id))?.componentName : `${selectedIds.size} parts selected`} · {mappedFiles.length} parts</span>
                             <div className="flex gap-2">
                                 <button
                                     type="button"
@@ -1632,12 +1753,20 @@ export function StructuralComponentsSection({
                                 </button>
                             </div>
                         </div>
+                        <div className="max-h-44 overflow-y-auto border-t border-neutral-200 bg-white p-2" aria-label="Part navigator">
+                            <input aria-label="Search parts" value={partSearch} onChange={event => setPartSearch(event.target.value)} placeholder="Search parts" className="mb-2 w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" />
+                            <button type="button" aria-pressed={showIssuesOnly} onClick={() => setShowIssuesOnly(value => !value)} className="mb-2 rounded-lg border border-neutral-200 px-2 py-1 text-xs">{showIssuesOnly ? "Show all parts" : "Show issues only"}</button>
+                            <div className="grid grid-cols-2 gap-1 sm:grid-cols-3">
+                                {mappedFiles.filter(part => `${part.componentName} ${part.presentationCategory}`.toLowerCase().includes(partSearch.toLowerCase()) && (!showIssuesOnly || hasPartIssue(part))).map(part => <div key={part.id} className={`flex items-center gap-1 rounded-lg px-1 ${selectedIds.has(part.id) ? "bg-[#0f1422] text-white" : "bg-neutral-100 text-neutral-800"}`}><button type="button" aria-pressed={selectedIds.has(part.id)} onClick={() => handleSelectPart(part.id, false)} className="flex-1 px-1 py-1.5 text-left text-xs focus-visible:outline-2 focus-visible:outline-[#07b6d3]">{part.componentName}{part.status === "error" ? " · Error" : ""}</button><button type="button" aria-label={`Toggle ${part.componentName} in batch selection`} aria-pressed={selectedIds.has(part.id)} onClick={() => handleSelectPart(part.id, true)} className="rounded px-1 text-xs focus-visible:outline-2 focus-visible:outline-[#07b6d3]">{selectedIds.has(part.id) ? "✓" : "+"}</button></div>)}
+                            </div>
+                        </div>
                     </div>
 
                     {/* Right Side: Part Inspector Drawer (40% / 5 cols) */}
-                    <div className="lg:col-span-5 bg-white flex flex-col h-full min-h-[460px]">
+                    <div className="lg:col-span-5 bg-white flex flex-col min-h-0 lg:h-full lg:overflow-y-auto">
                         <PartInspectorDrawer
                             selectedParts={selectedPartConfigs}
+                            allParts={mappedFiles}
                             rawMaterials={rawMaterials}
                             analyzedGrilleData={analyzedGrilleData}
                             modelStrategy={modelStrategy}
@@ -1729,7 +1858,7 @@ export function StructuralComponentsSection({
                                             </td>
                                             <td className="px-3 py-2 font-medium text-[#0f1422]">
                                                 <div className="flex items-center gap-1.5 flex-wrap">
-                                                    <span>{mapped.componentName}</span>
+                                                    <button type="button" onClick={(e) => { e.stopPropagation(); handleSelectPart(mapped.id, false); }} className="text-left underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-[#07b6d3]">{mapped.componentName}</button>
                                                     {mapped.isAccessorySlot && (
                                                         <span className="px-1.5 py-0.5 rounded-[4px] bg-cyan-50 text-[#07b6d3] font-semibold text-[9px] border border-cyan-200 uppercase tracking-tight">
                                                             Accessory Slot ({mapped.accessoryCategory || "handle"})
@@ -1755,7 +1884,7 @@ export function StructuralComponentsSection({
                                                     <td className="px-3 py-2 max-w-[180px] truncate text-neutral-600">
                                                         {mat ? (
                                                             <span title={mat.description} className="text-[#07b6d3] font-medium flex items-center gap-1">
-                                                                <span>{mat.material_code}</span>
+                                                                <span>{mat.description} ({mat.material_code})</span>
                                                                 {mapped.materialBindings && mapped.materialBindings.length > 1 && (
                                                                     <span className="text-[10px] px-1 py-0.2 rounded bg-cyan-100 text-[#07b6d3] font-semibold">
                                                                         +{mapped.materialBindings.length - 1}
@@ -1791,7 +1920,7 @@ export function StructuralComponentsSection({
                                                 )}
                                                 {mapped.status === "success" && (
                                                     <span className="flex items-center gap-1 text-green-600 text-xs">
-                                                        <CheckCircle className="size-3" /> Ready
+                                                        <CheckCircle className="size-3" /> Saved
                                                     </span>
                                                 )}
                                                 {mapped.status === "error" && (
@@ -1803,6 +1932,7 @@ export function StructuralComponentsSection({
                                             <td className="px-3 py-2 text-right">
                                                 <button
                                                     type="button"
+                                                    aria-label={`Remove ${mapped.componentName}`}
                                                     onClick={(e) => { e.stopPropagation(); removeMappedFile(mapped.id); }}
                                                     className="text-neutral-400 hover:text-red-500 transition-colors"
                                                 >
@@ -1818,7 +1948,10 @@ export function StructuralComponentsSection({
                 </div>
             )}
 
-            <div className="flex justify-end pt-6 mt-2 border-t border-neutral-200">
+            {removedFiles.length > 0 && <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{removedFiles.length} part(s) pending removal. <button type="button" onClick={() => { setMappedFiles(prev => [...prev, ...removedFiles]); setRemovedFiles([]); }} className="font-semibold underline">Undo removal</button></div>}
+            {saveError && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{saveError}</div>}
+            <div className="sticky bottom-0 z-20 flex items-center justify-between gap-3 bg-white/95 pt-4 pb-2 mt-2 border-t border-neutral-200 backdrop-blur-sm">
+                <span role="status" aria-live="polite" className="text-sm font-medium text-neutral-700">{saveState === "dirty" ? "Unsaved changes" : saveState === "saving" ? "Saving changes" : saveState === "saved" ? "Saved" : saveState === "error" ? "Save failed" : hasPendingChanges ? "Unsaved changes" : "No unsaved changes"}</span>
                 <button
                     type="button"
                     onClick={handleContinue}

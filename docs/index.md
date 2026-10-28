@@ -5,7 +5,7 @@
 **Version:** 1.0 (Capstone Production Release)  
 **Owner:** Reynard John B. Rabanal (Lead Product / Systems Architect) & GlassFit Capstone Team (PUP CCIS)  
 **Status:** Locked  
-**Last reconciled:** October 21, 2026 (Implemented IMP-MS63 resilient HEIC ingestion, downscaled paper detection, and /snap-paper; QAD-TC78 verification)
+**Last reconciled:** October 28, 2026 (Registered planned IMP-MS79 admin Components workspace usability milestone)
 
 ---
 
@@ -60,6 +60,7 @@ GlassFit is a responsive, web-based photo-simulation and consultation-support pl
 | IMP-MS61 | Empirical Real-World Accuracy Benchmark and Comparative Release Protocol | `docs/implementation/ms61.md` | Implemented | October 19, 2026 | GlassFit Capstone Team |
 | IMP-MS62 | Separate Automatic Detection from Paper Reference Calibration | `docs/implementation/ms62.md` | Implemented; browser acceptance pending | October 21, 2026 | GlassFit Capstone Team |
 | IMP-MS63 | Resilient HEIC Space Image Ingestion, Network-Tolerant Conversion, and Low-Latency Paper Detection Pipeline | `docs/implementation/ms63.md` | Implemented | October 21, 2026 | GlassFit Capstone Team |
+| IMP-MS79 | Admin Components Workspace Usability, Material Assignment, Selection Clarity, and Save Integrity | `docs/implementation/ms79.md` | Ready for Implementation (plan only) | October 28, 2026 | GlassFit Capstone Team |
 
 ---
 
@@ -112,6 +113,7 @@ MS57 traceability: BRD-M1, BRD-M5, BRD-M6 -> PRD-F3, PRD-F4, PRD-F5, PRD-F6, PRD
 
 | Revision Date | Target Document | Author | Nature of Revision | Pull Request Ref |
 |---|---|---|---|---|
+| October 28, 2026 | `docs/implementation/ms79.md`, `docs/milestone.md`, `docs/index.md` | GlassFit Capstone Team | Planned admin Components workspace usability, material assignment, selection clarity, and save integrity with proposed QAD-TC94 acceptance; no implementation | Pending |
 | October 26, 2026 | `docs/implementation/ms76.md`, `src/features/visualization/`, `src/lib/visualization/`, `src/lib/pricing/` | GlassFit Capstone Team | Implemented Customer Visualization Workspace Dynamic Accessory Swapping, Positional Matrix Alignment, Real-Time BOM Recalculation, and Itemized Quotation/PDF Handoff (QAD-TC91) | Pending |
 | October 27, 2026 | `docs/implementation/ms77.md`, admin component actions and inspector, visualization workspace, booking validation, migration 021 | GlassFit Capstone Team | Implemented explicit registered accessory allowlists and current eligibility checks (QAD-TC92); browser acceptance pending | Pending |
 | October 26, 2026 | `docs/implementation/ms75.md`, `src/features/admin/products/setup/` | GlassFit Capstone Team | Implemented Admin Part Inspector Swappable Accessory Binding and Position Configuration (QAD-TC90) | Pending |

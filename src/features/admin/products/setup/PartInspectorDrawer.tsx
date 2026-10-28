@@ -63,6 +63,7 @@ interface PartInspectorDrawerProps {
 
 export function PartInspectorDrawer({
   selectedParts,
+  allParts,
   rawMaterials,
   analyzedGrilleData,
   modelStrategy,
@@ -74,6 +75,7 @@ export function PartInspectorDrawer({
 }: PartInspectorDrawerProps) {
   const [categoryFilter, setCategoryFilter] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [materialsOpen, setMaterialsOpen] = useState(false);
   const [validationWarning, setValidationWarning] = useState<string | null>(null);
   const [accessorySearch, setAccessorySearch] = useState('');
   const [catalogAccessories, setCatalogAccessories] = useState<CatalogAccessoryItem[]>([]);
@@ -83,6 +85,7 @@ export function PartInspectorDrawer({
 
   const primary = selectedParts[0] as PartInspectorConfig | undefined;
   const isMulti = selectedParts.length > 1;
+  const groupParts = (allParts || selectedParts).filter((part) => part.assemblyGroup === primary?.assemblyGroup);
   const slotCategory = primary?.accessoryCategory || 'handle';
   const selectedAccessoryIds = primary?.allowedAccessoryIds || [];
 
@@ -217,6 +220,10 @@ export function PartInspectorDrawer({
       return true;
     });
   }, [rawMaterials, categoryFilter, searchQuery, primary?.dimensionBinding]);
+
+  const suggestedCategory = primary?.presentationCategory === 'Glazing' ? 'Glass'
+    : primary?.presentationCategory === 'Hardware' ? 'Hardware'
+    : primary?.presentationCategory === 'Consumable' ? 'Consumable' : 'Aluminum';
 
   if (!primary || selectedParts.length === 0) {
     return (
@@ -363,7 +370,7 @@ export function PartInspectorDrawer({
             <p className="text-xs text-neutral-400 font-mono mt-0.5">{primary.componentKey}</p>
           ) : (
             <p className="text-xs text-neutral-400 mt-0.5">
-              Assembly: {primary.assemblyGroup || 'General Members'}
+              {selectedParts.map((part) => part.componentName).join(', ')}
             </p>
           )}
         </div>
@@ -377,7 +384,8 @@ export function PartInspectorDrawer({
       </div>
 
       {/* Main Configuration Content */}
-      <div className="p-4 overflow-y-auto space-y-4 flex-1">
+      <div className="p-4 overflow-y-auto space-y-4 flex-1 min-h-0">
+        {isMulti && <p className="text-sm text-neutral-700" role="status">Changes here apply to {selectedParts.length} selected parts: {selectedParts.map((part) => part.componentName).join(', ')}.</p>}
         {/* Multi-Part Symmetrical Synchronization Notification */}
         {primary.assemblyGroup && (
           <div className="flex items-center justify-between bg-neutral-50 px-3 py-2 rounded-[8px] border border-neutral-200 text-xs">
@@ -388,13 +396,14 @@ export function PartInspectorDrawer({
               <button
                 type="button"
                 onClick={handleSyncGroup}
-                className="text-[11px] font-medium text-[#07b6d3] hover:text-[#069bb4] hover:underline cursor-pointer whitespace-nowrap"
+                className="text-xs font-medium text-[#067f98] hover:underline cursor-pointer"
               >
-                Sync to Group Parts
+                Apply materials to {groupParts.length} {primary.assemblyGroup} parts
               </button>
             )}
           </div>
         )}
+        {primary.assemblyGroup && onSyncAssemblyGroup && <p className="text-xs text-neutral-600">Group scope: {groupParts.map((part) => part.componentName).join(', ')}.</p>}
 
         {/* Validation Warning Alert */}
         {validationWarning && (
@@ -573,203 +582,60 @@ export function PartInspectorDrawer({
           )}
         </div>
 
-        {/* Section 1: Multi-Material Selection Panel */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
+        {/* IMP-MS79 / DSD-UI10: one material chooser within the inspector scroll region. */}
+        <section className="rounded-[10px] border border-neutral-200 bg-neutral-50 p-3 space-y-3" aria-label="Materials">
+          <div className="flex items-start justify-between gap-3">
             <div>
-              <label className="text-xs font-semibold text-neutral-800 block">
-                {modelStrategy === "Fixed" || isAccessory ? "Allowed Raw Materials (Optional for Fixed Price)" : "Allowed Raw Materials (Catalog)"}
-              </label>
-              <p className="text-[10px] text-neutral-400 mt-0.5">
+              <h4 className="text-sm font-semibold text-[#0f1422]">Materials</h4>
+              <p className="text-xs text-neutral-600">
                 {modelStrategy === "Fixed" || isAccessory
-                  ? "Optionally assign catalog finishes for client 3D swatch preview without affecting fixed price."
-                  : "Select one or more materials. Designate one material as the default."}
+                  ? "Optional finish choices for the 3D preview; fixed pricing is unchanged."
+                  : "Choose allowed materials and one default."}
               </p>
             </div>
-            {currentBindings.length > 0 && (
-              <button
-                type="button"
-                onClick={() => onUpdateParts({ materialBindings: [], rawMaterialId: null })}
-                className="text-[10px] text-rose-500 hover:text-rose-700 hover:underline cursor-pointer"
-              >
-                Clear all
-              </button>
-            )}
+            <button type="button" aria-expanded={materialsOpen} aria-controls="material-chooser" onClick={() => setMaterialsOpen(!materialsOpen)} className="shrink-0 rounded-[8px] border border-[#07b6d3] px-3 py-2 text-sm font-medium text-[#067f98] hover:bg-[#07b6d3]/10 focus-visible:outline-2 focus-visible:outline-[#07b6d3]">
+              {materialsOpen ? 'Done' : 'Change Materials'}
+            </button>
           </div>
-
-          {/* Category Tabs */}
-          <div className="flex gap-1 overflow-x-auto pb-1 text-[11px]">
-            {['All', 'Aluminum', 'Glass', 'Hardware', 'Consumable'].map((cat) => (
-              <button
-                key={cat}
-                type="button"
-                onClick={() => setCategoryFilter(cat)}
-                className={`px-2.5 py-1 rounded-full font-medium transition-colors whitespace-nowrap cursor-pointer ${
-                  categoryFilter === cat
-                    ? 'bg-[#0f1422] text-white'
-                    : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
-                }`}
-              >
-                {cat}
-              </button>
-            ))}
+          <div className="rounded-[8px] border border-neutral-200 bg-white p-3 text-sm" aria-live="polite">
+            {currentDefaultMaterial ? <>
+              <p className="font-semibold text-[#0f1422]">{currentDefaultMaterial.description} <span className="font-normal text-neutral-600">({currentDefaultMaterial.material_code})</span></p>
+              <p className="mt-1 text-neutral-700">Default · {currentBindings.length} allowed · PHP {(currentDefaultMaterial.unit_price * (1 + currentDefaultMaterial.waste_allowance)).toFixed(2)} / {currentDefaultMaterial.billing_unit} effective</p>
+            </> : <p className="text-amber-800">{modelStrategy === 'Fixed' ? 'No optional material assigned' : 'No default material assigned'}</p>}
           </div>
-
-          {/* Search Filter */}
-          <div className="relative">
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search code, description, or finish..."
-              className="w-full border border-neutral-200 rounded-[8px] pl-3 pr-3 py-1.5 text-xs focus:border-[#07b6d3] outline-none bg-white"
-            />
-          </div>
-
-          {/* Candidate Material Checklist */}
-          <div className="max-h-56 overflow-y-auto divide-y divide-neutral-100 border border-neutral-200 rounded-[8px] bg-white">
-            {filteredMaterials.length === 0 ? (
-              <div className="p-4 text-center text-xs text-neutral-400">
-                No materials match the filter.
-              </div>
-            ) : (
-              filteredMaterials.map((mat) => {
-                const isChecked = checkedMaterialIds.has(mat.id);
+          {materialsOpen && <div id="material-chooser" className="space-y-3">
+            <div className="flex flex-wrap gap-1" aria-label="Material categories">
+              {['All', 'Aluminum', 'Glass', 'Hardware', 'Consumable'].map((cat) => <button key={cat} type="button" aria-pressed={categoryFilter === cat} onClick={() => setCategoryFilter(cat)} className={`rounded-full px-3 py-1.5 text-sm font-medium focus-visible:outline-2 focus-visible:outline-[#07b6d3] ${categoryFilter === cat ? 'bg-[#0f1422] text-white' : 'bg-white text-neutral-700 border border-neutral-200 hover:bg-neutral-100'}`}>{cat}</button>)}
+            </div>
+            <label htmlFor="material-search" className="block text-sm font-medium text-neutral-700">Search materials</label>
+            <input id="material-search" type="search" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Name, code, or finish" className="w-full rounded-[8px] border border-neutral-300 bg-white px-3 py-2 text-sm text-[#0f1422] focus-visible:outline-2 focus-visible:outline-[#07b6d3]" />
+            <p className="text-sm text-neutral-600" role="status">{filteredMaterials.length} candidates · Suggested category: {suggestedCategory}</p>
+            <div className="divide-y divide-neutral-200 rounded-[8px] border border-neutral-200 bg-white">
+              {filteredMaterials.length === 0 && <p className="p-3 text-sm text-neutral-600">No materials match this search.</p>}
+              {filteredMaterials.map((mat) => {
+                const allowed = checkedMaterialIds.has(mat.id);
                 const isDefault = defaultMaterialId === mat.id;
-
-                return (
-                  <div
-                    key={mat.id}
-                    className={`p-2.5 flex items-start justify-between gap-2.5 transition-colors ${
-                      isChecked ? 'bg-cyan-50/30' : 'hover:bg-neutral-50'
-                    }`}
-                  >
-                    {/* Checkbox & Details */}
-                    <div className="flex items-start gap-2.5 flex-1 min-w-0">
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        onChange={() => handleToggleMaterial(mat.id)}
-                        className="mt-0.5 size-4 rounded border-neutral-300 text-[#07b6d3] focus:ring-[#07b6d3] accent-[#07b6d3] cursor-pointer"
-                        id={`mat-${mat.id}`}
-                      />
-                      <label htmlFor={`mat-${mat.id}`} className="flex-1 cursor-pointer min-w-0">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="font-mono text-[11px] font-semibold text-neutral-800">
-                            {mat.material_code}
-                          </span>
-                          {mat.finish_type && mat.finish_type !== 'None' && (
-                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-neutral-100 text-neutral-600 font-medium">
-                              {mat.finish_type}
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-[11px] text-neutral-600 truncate mt-0.5" title={mat.description}>
-                          {mat.description}
-                        </p>
-                        <p className="text-[10px] text-neutral-400 mt-0.5">
-                          PHP {mat.unit_price.toFixed(2)} / {mat.billing_unit}
-                          {mat.waste_allowance > 0 && (
-                            <span className="text-amber-600 ml-1">
-                              (+{(mat.waste_allowance * 100).toFixed(0)}% scrap)
-                            </span>
-                          )}
-                        </p>
-                      </label>
+                const unusual = mat.category !== suggestedCategory;
+                return <div key={mat.id} className={`p-3 space-y-2 ${allowed ? 'bg-cyan-50/50' : ''}`}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-[#0f1422]">{mat.description}</p>
+                      <p className="text-sm text-neutral-600">{mat.material_code} · {mat.category} · {mat.finish_type}</p>
+                      <p className="text-sm text-neutral-700">PHP {mat.unit_price.toFixed(2)} / {mat.billing_unit} · {(mat.waste_allowance * 100).toFixed(0)}% scrap</p>
+                      {unusual && <p className="text-sm text-amber-800">Review category match for this part.</p>}
                     </div>
-
-                    {/* Default Selector */}
-                    <div className="flex-shrink-0 pt-0.5">
-                      {isChecked ? (
-                        <button
-                          type="button"
-                          onClick={() => handleSetDefault(mat.id)}
-                          className={`text-[10px] px-2 py-0.5 rounded font-medium transition-colors cursor-pointer flex items-center gap-1 ${
-                            isDefault
-                              ? 'bg-[#05b64b] text-white'
-                              : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
-                          }`}
-                          title={isDefault ? 'Active Default Material' : 'Click to designate as default'}
-                        >
-                          <span className={`size-1.5 rounded-full ${isDefault ? 'bg-white' : 'bg-neutral-400'}`} />
-                          {isDefault ? 'Default' : 'Set Default'}
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => handleSetDefault(mat.id)}
-                          className="text-[10px] text-neutral-400 hover:text-neutral-600 hover:underline cursor-pointer"
-                          title="Click to check and designate as default in one action"
-                        >
-                          Make Default
-                        </button>
-                      )}
-                    </div>
+                    {isDefault && <span className="shrink-0 rounded-full bg-[#05b64b] px-2 py-1 text-xs font-semibold text-white">Default</span>}
                   </div>
-                );
-              })
-            )}
-          </div>
-
-          {/* Active Selection Summary */}
-          <div className="pt-1">
-            {currentBindings.length === 0 ? (
-              <div className="flex items-center gap-1.5 px-3 py-2 rounded-[8px] bg-amber-50 border border-amber-200 text-amber-800 text-xs">
-                <span className="size-2 rounded-full bg-amber-500 flex-shrink-0" />
-                <span>Unassigned component (Free component: no material cost)</span>
-              </div>
-            ) : (
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between text-xs text-neutral-600">
-                  <span>
-                    <strong className="text-neutral-900 font-medium">{currentBindings.length}</strong>{' '}
-                    {currentBindings.length === 1 ? 'material allowed' : 'materials allowed'}
-                  </span>
-                  {currentDefaultMaterial && (
-                    <span className="text-[#05b64b] font-medium flex items-center gap-1">
-                      <span className="size-1.5 rounded-full bg-[#05b64b]" />
-                      Default: {currentDefaultMaterial.material_code}
-                    </span>
-                  )}
-                </div>
-
-                {currentDefaultMaterial && (
-                  <div className="text-[11px] text-neutral-600 bg-sky-50/50 p-2.5 rounded-[8px] border border-sky-100/80 space-y-1">
-                    <div className="flex justify-between items-center">
-                      <span>Default Material:</span>
-                      <span className="font-semibold text-[#0f1422] truncate ml-2">
-                        {currentDefaultMaterial.description}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center text-neutral-500">
-                      <span>Base Unit Rate:</span>
-                      <span className="font-medium text-[#0f1422]">
-                        PHP {currentDefaultMaterial.unit_price.toFixed(2)} / {currentDefaultMaterial.billing_unit}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center text-neutral-500">
-                      <span>Cutting Scrap Allowance:</span>
-                      <span className="font-medium text-amber-600">
-                        +{(currentDefaultMaterial.waste_allowance * 100).toFixed(1)}%
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center pt-1 border-t border-sky-100 text-[#07b6d3] font-medium">
-                      <span>Effective Rate:</span>
-                      <span>
-                        PHP{' '}
-                        {(
-                          currentDefaultMaterial.unit_price *
-                          (1 + currentDefaultMaterial.waste_allowance)
-                        ).toFixed(2)}{' '}
-                        / {currentDefaultMaterial.billing_unit}
-                      </span>
-                    </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" aria-pressed={allowed} onClick={() => handleToggleMaterial(mat.id)} className="rounded-[6px] border border-neutral-300 px-3 py-1.5 text-sm font-medium text-[#0f1422] hover:bg-neutral-100 focus-visible:outline-2 focus-visible:outline-[#07b6d3]">{allowed ? 'Remove allowed' : 'Allow material'}</button>
+                    {allowed ? <button type="button" aria-pressed={isDefault} disabled={isDefault} onClick={() => handleSetDefault(mat.id)} className="rounded-[6px] border border-[#07b6d3] px-3 py-1.5 text-sm font-medium text-[#067f98] disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-[#07b6d3]">{isDefault ? 'Current default' : 'Set as default'}</button> : <button type="button" onClick={() => handleSetDefault(mat.id)} className="rounded-[6px] border border-[#07b6d3] px-3 py-1.5 text-sm font-medium text-[#067f98] focus-visible:outline-2 focus-visible:outline-[#07b6d3]">Allow and set default</button>}
                   </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
+                </div>;
+              })}
+            </div>
+            {modelStrategy === 'Fixed' && currentBindings.length > 0 && <button type="button" onClick={() => onUpdateParts({ materialBindings: [], rawMaterialId: null })} className="text-sm font-medium text-rose-700 underline">Clear all allowed materials</button>}
+          </div>}
+        </section>
 
         {/* Section 2: Dimension Driver */}
         <div className="space-y-1.5 pt-2 border-t border-neutral-100">
@@ -781,6 +647,7 @@ export function PartInspectorDrawer({
               <button
                 key={driver}
                 type="button"
+                aria-pressed={primary.dimensionBinding === driver}
                 onClick={() => onUpdateParts({ dimensionBinding: driver })}
                 className={`${
                   driver === 'GRILLE_LINEAR' ? 'col-span-2 ' : ''

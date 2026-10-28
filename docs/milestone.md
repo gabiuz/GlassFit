@@ -583,6 +583,12 @@ Enables customer dynamic hardware accessory swapping inside the 3D visualization
 
 Administrators explicitly approve published, renderable Accessories products for each replaceable part. Empty allowlists keep the original part only. Save, publication, customer preview, and new quotation submission enforce current catalog eligibility and the approved part binding. Migration 021 normalizes legacy null allowlists for review.
 
+## MS79: Admin Components Workspace Usability, Material Assignment, Selection Clarity, and Save Integrity
+
+**Status:** Ready for Implementation (plan only, October 28, 2026). **Specification:** [IMP-MS79](implementation/ms79.md). **Traceability:** BRD-M2, BRD-M4, BRD-M5; PRD-F5, PRD-F10, PRD-F14, PRD-F19; SDD-C4, SDD-C7, SDD-C9; DSD-UI10; ERD-E6, ERD-E17; planned QAD-TC94.1 through QAD-TC94.18.
+
+Plans a bounded 60/40 admin Components workbench that keeps the model visible while browsing many materials, a focused allowed/default material chooser, exact part navigation, glass-safe selection outline, and responsive review layout. Also plans explicit save and removal persistence, truthful readiness and upload feedback, accessible controls, and browser acceptance using the existing 18-part Jalousie product. No application code is implemented by this milestone document.
+
 
 
 

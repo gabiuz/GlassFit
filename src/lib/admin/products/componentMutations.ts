@@ -36,23 +36,16 @@ export async function upsertProductComponent(input: UpsertComponentInput): Promi
         ? await validateAccessoryApprovalIds(input.accessoryCategory, input.allowedAccessoryIds, input.componentName, requireAccessoryOptions)
         : [];
 
-    // Check if component already exists for this template/key
-    const { data: existing } = await supabase
-        .from("product_components")
-        .select("component_id")
-        .eq("template_id", input.templateId)
-        .eq("component_key", input.componentKey)
-        .single();
-
-    let finalData: { component_id: string } | null = null;
-    let finalError: Error | { message: string } | null = null;
-
     // Normalize material bindings if provided
     let normalizedBindings: ComponentMaterialBindingInput[] | undefined = undefined;
     let resolvedRawMaterialId: string | null = input.rawMaterialId || null;
 
     if (input.materialBindings !== undefined) {
         normalizedBindings = normalizeMaterialBindings(input.materialBindings);
+        if (new Set(normalizedBindings.map((binding) => binding.rawMaterialId)).size !== normalizedBindings.length ||
+            normalizedBindings.some((binding) => !binding.rawMaterialId || !Number.isInteger(binding.displayOrder) || (binding.displayOrder ?? 0) < 0)) {
+            throw new Error("Component material bindings must have unique materials and valid display orders.");
+        }
         const defaultBinding = normalizedBindings.find((b) => b.isDefault);
         resolvedRawMaterialId = defaultBinding ? defaultBinding.rawMaterialId : null;
     }
@@ -92,113 +85,54 @@ export async function upsertProductComponent(input: UpsertComponentInput): Promi
         updated_by: adminCtx.profileId,
     };
 
-    if (existing) {
-        const { data, error } = await supabase
-            .from("product_components")
-            .update(payload)
-            .eq("component_id", existing.component_id)
-            .select("component_id")
-            .single();
-
-        finalData = data;
-        finalError = error;
-    } else {
-        const { data, error } = await supabase
-            .from("product_components")
-            .insert({
-                template_id: input.templateId,
-                created_by: adminCtx.profileId,
-                component_key: input.componentKey,
-                status: "Active",
-                ...payload,
-            })
-            .select("component_id")
-            .single();
-
-        finalData = data;
-        finalError = error;
-    }
-
-    if (finalError) {
-        console.error("Failed to upsert product component:", finalError);
-        throw new Error(finalError.message);
-    }
-
-    if (!finalData) {
-        throw new Error("Product component could not be saved.");
-    }
-
-    const componentId = finalData.component_id;
-
-    // Synchronize product_component_materials junction rows
-    if (normalizedBindings !== undefined) {
-        if (normalizedBindings.length === 0) {
-            // Delete all existing bindings
-            const { error: delError } = await supabase
-                .from("product_component_materials")
-                .delete()
-                .eq("product_component_id", componentId);
-
-            if (delError) {
-                console.error("Failed to clear product component materials:", delError);
-            }
-        } else {
-            const rawMaterialIds = normalizedBindings.map((b) => b.rawMaterialId);
-
-            // 1. Delete rows not in candidate list
-            await supabase
-                .from("product_component_materials")
-                .delete()
-                .eq("product_component_id", componentId)
-                .not("raw_material_id", "in", `(${rawMaterialIds.join(",")})`);
-
-            // 2. Clear default flag to avoid unique constraint collision
-            await supabase
-                .from("product_component_materials")
-                .update({ is_default: false })
-                .eq("product_component_id", componentId);
-
-            // 3. Upsert candidate bindings with target is_default
-            for (const binding of normalizedBindings) {
-                const { error: upsertMatError } = await supabase
-                    .from("product_component_materials")
-                    .upsert(
-                        {
-                            product_component_id: componentId,
-                            raw_material_id: binding.rawMaterialId,
-                            is_default: binding.isDefault,
-                            display_order: binding.displayOrder ?? 0,
-                            updated_at: new Date().toISOString(),
-                        },
-                        {
-                            onConflict: "product_component_id,raw_material_id",
-                        }
-                    );
-
-                if (upsertMatError) {
-                    console.error("Failed to upsert product component material row:", upsertMatError);
-                }
-            }
-        }
-    } else if (resolvedRawMaterialId) {
-        // Fallback for legacy calls: ensure single default entry exists
-        await supabase
-            .from("product_component_materials")
-            .upsert(
-                {
-                    product_component_id: componentId,
-                    raw_material_id: resolvedRawMaterialId,
-                    is_default: true,
-                    display_order: 0,
-                    updated_at: new Date().toISOString(),
-                },
-                {
-                    onConflict: "product_component_id,raw_material_id",
-                }
-            );
-    }
-
+    const bindings = normalizedBindings ?? (resolvedRawMaterialId
+        ? [{ rawMaterialId: resolvedRawMaterialId, isDefault: true, displayOrder: 0 }]
+        : []);
+    const { data: componentId, error } = await supabase.rpc("save_product_component_with_materials", {
+        p_template_id: input.templateId,
+        p_component_key: input.componentKey,
+        p_component: payload,
+        p_bindings: bindings.map((binding) => ({
+            raw_material_id: binding.rawMaterialId,
+            is_default: binding.isDefault,
+            display_order: binding.displayOrder ?? 0,
+        })),
+    });
+    if (error) throw new Error(`Product component could not be saved: ${error.message}`);
+    if (typeof componentId !== "string") throw new Error("Product component save was not confirmed.");
     return componentId;
+}
+
+/** Remove one persisted component in the authorized admin context (IMP-MS79, ERD-E6). */
+export async function deleteProductComponent(templateId: string, componentKey: string): Promise<void> {
+    await requirePermission("manage_products");
+    const supabase = await createSupabaseServerClient();
+    const { data: existing, error: lookupError } = await supabase
+        .from("product_components")
+        .select("component_id")
+        .eq("template_id", templateId)
+        .eq("component_key", componentKey)
+        .maybeSingle();
+    if (lookupError) throw new Error(`Could not check component before removal: ${lookupError.message}`);
+    if (!existing) return;
+
+    // Check dependent records before the database cascade. R2 objects are not purged here:
+    // the same object key can be referenced by another component or product asset.
+    const [{ error: bindingsError }, { error: assetsError }] = await Promise.all([
+        supabase.from("product_component_materials").select("id", { count: "exact", head: true }).eq("product_component_id", existing.component_id),
+        supabase.from("product_assets").select("asset_id", { count: "exact", head: true }).eq("component_id", existing.component_id),
+    ]);
+    if (bindingsError) throw new Error(`Could not check component material bindings: ${bindingsError.message}`);
+    if (assetsError) throw new Error(`Could not check component asset references: ${assetsError.message}`);
+
+    const { data: deleted, error: deleteError } = await supabase
+        .from("product_components")
+        .delete()
+        .eq("component_id", existing.component_id)
+        .eq("template_id", templateId)
+        .select("component_id");
+    if (deleteError) throw new Error(`Could not remove component: ${deleteError.message}`);
+    if (!deleted?.length) throw new Error("Component removal was not confirmed. Please retry.");
 }
 
 export async function upsertProductComponentWithMaterials(

@@ -7,6 +7,7 @@ import { getProductDraft } from "./productMutations";
 import { validateAccessoryApprovalIds } from "./accessoryActions";
 import { syncHardwareAccessoryToRawMaterial } from "@/lib/admin/materials/hardwareSync";
 import type { AccessoryCategory } from "./types";
+import { getProductComponentIssue, isQualifyingModelAsset, requiresComponentMaterial } from "./componentEligibility";
 
 export async function activateProduct(productId: string) {
     const adminCtx = await requirePermission("manage_products");
@@ -35,33 +36,32 @@ export async function activateProduct(productId: string) {
         );
     }
 
-    const isFixedComp = (comp: {
-        pricing_method?: string | null;
-        unit_price?: number | null;
-        dimension_binding?: string | null;
-    }) => {
-        return (
-            draft.is_accessory ||
-            template.model_strategy === "Fixed" ||
-            comp.pricing_method === "Fixed" ||
-            comp.dimension_binding === "FIXED" ||
-            (typeof comp.unit_price === "number" && comp.unit_price > 0)
-        );
+    const eligibilityContext = {
+        modelStrategy: template.model_strategy,
+        isAccessory: draft.is_accessory,
+        isAddon: draft.is_addon,
     };
+    const productIssue = getProductComponentIssue({
+        ...eligibilityContext,
+        componentsCount: template.product_components?.length ?? 0,
+        hasQualifyingModelAsset: draft.product_assets?.some(isQualifyingModelAsset) ?? false,
+    });
+    if (productIssue) throw new Error(productIssue);
+    const unassignedComponent = template.product_components?.find((comp) =>
+        requiresComponentMaterial({
+            pricingMethod: comp.pricing_method,
+            unitPrice: comp.unit_price,
+            dimensionBinding: comp.dimension_binding,
+        }, eligibilityContext) && !comp.raw_material_id
+    );
+    if (unassignedComponent) {
+        throw new Error(`Activation Blocked: Component "${unassignedComponent.component_name || unassignedComponent.component_key}" has no default material assigned.`);
+    }
 
     if (draft.is_accessory) {
         // Modular hardware accessories (IMP-MS74, IMP-MS78):
         // Bypasses 2D/3D assets and scalar parametric dimension rules.
         // Fixed hardware accessories do not require catalog raw material mappings.
-        const unassignedComponent = template.product_components?.find((comp) => {
-            if (isFixedComp(comp)) return false;
-            const hasRawMat = Boolean(comp.raw_material_id);
-            const hasBindings = Array.isArray(comp.product_component_materials) && comp.product_component_materials.length > 0;
-            return !hasRawMat && !hasBindings;
-        });
-        if (unassignedComponent) {
-            throw new Error(`Activation Blocked: Component "${unassignedComponent.component_name || unassignedComponent.component_key}" has zero materials assigned.`);
-        }
     } else if (draft.is_addon) {
         // Procedural add-on accessories (IMP-MS70):
         // Bypasses 2D/3D assets and 3D component model requirements.
@@ -69,28 +69,7 @@ export async function activateProduct(productId: string) {
         if (!template.product_parameters || template.product_parameters.length === 0) {
             throw new Error("Parametric products require at least one parameter.");
         }
-        if (!template.product_components || template.product_components.length === 0) {
-            throw new Error("Parametric products require at least one component.");
-        }
-        const unassignedComponent = template.product_components.find((comp) => {
-            if (isFixedComp(comp)) return false;
-            const hasRawMat = Boolean(comp.raw_material_id);
-            const hasBindings = Array.isArray(comp.product_component_materials) && comp.product_component_materials.length > 0;
-            return !hasRawMat && !hasBindings;
-        });
-        if (unassignedComponent) {
-            throw new Error(`Activation Blocked: Component "${unassignedComponent.component_name || unassignedComponent.component_key}" has zero materials assigned.`);
-        }
     } else if (template.model_strategy === "Fixed") {
-        const hasFixedModelAsset = draft.product_assets?.some((asset) =>
-            (asset.asset_type === "Whole Model" || asset.asset_type === "Catalog 3D Preview") &&
-            asset.status === "Active"
-        );
-        const hasComponents = Array.isArray(template.product_components) && template.product_components.length > 0;
-
-        if (!hasFixedModelAsset && !hasComponents) {
-             throw new Error("Fixed products require a 3D model asset or component parts.");
-        }
     }
 
 
