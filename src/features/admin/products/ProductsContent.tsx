@@ -20,7 +20,7 @@ import { Select } from "radix-ui";
 import { deleteProduct } from "@/lib/admin/products/productMutations";
 import { duplicateProductPreset } from "@/lib/admin/products/presetDuplication";
 import { DeleteProductModal } from "./DeleteProductModal";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 const statusBg: Record<AdminProductStatus, string> = {
   Published: "bg-[#05b64b]",
@@ -277,7 +277,13 @@ export function ProductsContent({ initialProducts }: { initialProducts: AdminPro
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedType, setSelectedType] = useState<ProductTypeFilter>(null);
   const [selectedStatus, setSelectedStatus] = useState<ProductStatusFilter>(null);
-  const [selectedScope, setSelectedScope] = useState<ProductScopeFilter>("standard");
+  const searchParams = useSearchParams();
+  const initialScopeFromQuery = searchParams.get("tab") as ProductScopeFilter | null;
+  const [selectedScope, setSelectedScope] = useState<ProductScopeFilter>(
+    initialScopeFromQuery === "accessory" || initialScopeFromQuery === "addon" || initialScopeFromQuery === "all"
+      ? initialScopeFromQuery
+      : "standard"
+  );
   const [productToDelete, setProductToDelete] = useState<AdminProductItem | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
@@ -379,6 +385,15 @@ export function ProductsContent({ initialProducts }: { initialProducts: AdminPro
                 Add-on Accessory
               </span>
             </Link>
+            <Link
+              href="/admin/products/draft/setup?role=accessory"
+              className="border border-[#0f1422] text-[#0f1422] bg-white rounded-[25px] px-3.5 sm:px-4 py-2.5 sm:py-3 flex items-center justify-center gap-1.5 cursor-pointer hover:bg-neutral-50 transition-colors shrink-0 shadow-xs"
+            >
+              <Plus className="size-3.5 text-[#07b6d3]" />
+              <span className="text-xs sm:text-sm font-medium whitespace-nowrap">
+                Add Accessory
+              </span>
+            </Link>
           </div>
         </div>
       </div>
@@ -420,6 +435,18 @@ export function ProductsContent({ initialProducts }: { initialProducts: AdminPro
           )}
         >
           Add-on Accessories
+        </button>
+        <button
+          type="button"
+          onClick={() => setSelectedScope("accessory")}
+          className={cn(
+            "px-4 py-1.5 rounded-[20px] text-xs sm:text-sm font-medium transition-colors cursor-pointer",
+            selectedScope === "accessory"
+              ? "bg-[#0f1422] text-white shadow-xs"
+              : "text-neutral-600 hover:text-black"
+          )}
+        >
+          Hardware Accessories
         </button>
       </div>
 
@@ -538,6 +565,13 @@ function ProductRow({
               )}
             >
               {product.addonType === "screen" ? "Add-on: Screen" : "Add-on: Grille"}
+            </span>
+          )}
+          {product.isAccessory && (
+            <span
+              className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border bg-purple-50 text-purple-700 border-purple-200 capitalize"
+            >
+              Accessory: {product.accessoryCategory || "Hardware"}
             </span>
           )}
         </div>

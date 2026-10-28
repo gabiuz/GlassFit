@@ -31,6 +31,7 @@ export type ModelPresentationOptions = {
   addonProductId?: string | null;
   addonAluminumFinish?: string;
   addonConfig?: AddonGeometryConfig;
+  swappedAccessories?: Record<string, import("./types").SelectedAccessoryState>;
 };
 
 export type LoadedModelResult = {
@@ -379,6 +380,7 @@ export class ProductModelRenderer {
       addonProductId: presentation.addonProductId,
       addonAluminumFinish: presentation.addonAluminumFinish,
       addonConfig: presentation.addonConfig,
+      swappedAccessories: presentation.swappedAccessories,
     });
 
     return group;

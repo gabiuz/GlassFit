@@ -7,14 +7,22 @@
 
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Sparkles } from 'lucide-react';
+import { fetchActiveCatalogAccessories, type CatalogAccessoryItem } from '@/lib/admin/products/accessoryActions';
 import type {
   DimensionBinding,
   PresentationCategory,
   RawMaterial,
   ComponentMaterialBinding,
 } from '@/lib/pricing/types';
-import type { ComponentType } from '@/lib/admin/products/types';
+import type {
+  ComponentType,
+  AccessoryCategory,
+  AccessoryPositionOptions,
+  HorizontalPosition,
+  VerticalPosition,
+} from '@/lib/admin/products/types';
 import { calculateGrilleLinearBOM } from '@/lib/pricing/grillePricingEngine';
 import type { GrilleGeometryAnalysis } from '@/lib/pricing/grilleGeometryAnalyzer';
 
@@ -32,6 +40,12 @@ export interface PartInspectorConfig {
   presentationCategory: PresentationCategory;
   baseQuantity: number;
   assemblyGroup: string;
+  isAccessorySlot?: boolean;
+  accessoryCategory?: AccessoryCategory | null;
+  allowedAccessoryIds?: string[] | null;
+  positionOptions?: AccessoryPositionOptions | null;
+  unitPrice?: number;
+  pricingMethod?: string;
 }
 
 interface PartInspectorDrawerProps {
@@ -39,6 +53,9 @@ interface PartInspectorDrawerProps {
   allParts?: PartInspectorConfig[];
   rawMaterials: RawMaterial[];
   analyzedGrilleData?: GrilleGeometryAnalysis | null;
+  modelStrategy?: string | null;
+  isAccessory?: boolean;
+  productBasePrice?: number;
   onUpdateParts: (updates: Partial<PartInspectorConfig>) => void;
   onSyncAssemblyGroup?: (assemblyGroup: string, bindings: ComponentMaterialBinding[], defaultMaterialId: string | null) => void;
   onDeselect: () => void;
@@ -48,6 +65,9 @@ export function PartInspectorDrawer({
   selectedParts,
   rawMaterials,
   analyzedGrilleData,
+  modelStrategy,
+  isAccessory = false,
+  productBasePrice,
   onUpdateParts,
   onSyncAssemblyGroup,
   onDeselect,
@@ -55,9 +75,58 @@ export function PartInspectorDrawer({
   const [categoryFilter, setCategoryFilter] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [validationWarning, setValidationWarning] = useState<string | null>(null);
+  const [accessorySearch, setAccessorySearch] = useState('');
+  const [catalogAccessories, setCatalogAccessories] = useState<CatalogAccessoryItem[]>([]);
+  const [accessoryLoading, setAccessoryLoading] = useState(false);
+  const [accessoryError, setAccessoryError] = useState<string | null>(null);
+  const [categoryNotice, setCategoryNotice] = useState<string | null>(null);
 
   const primary = selectedParts[0] as PartInspectorConfig | undefined;
   const isMulti = selectedParts.length > 1;
+  const slotCategory = primary?.accessoryCategory || 'handle';
+  const selectedAccessoryIds = primary?.allowedAccessoryIds || [];
+
+  useEffect(() => {
+    if (!primary?.isAccessorySlot) return;
+    let cancelled = false;
+    Promise.resolve().then(() => {
+      if (cancelled) return [];
+      setAccessoryLoading(true);
+      setAccessoryError(null);
+      return fetchActiveCatalogAccessories(slotCategory);
+    }).then((items) => {
+      if (!cancelled) setCatalogAccessories(items);
+    }).catch((error: unknown) => {
+      if (!cancelled) {
+        setCatalogAccessories([]);
+        setAccessoryError(error instanceof Error ? error.message : 'Could not load registered accessories.');
+      }
+    }).finally(() => {
+      if (!cancelled) setAccessoryLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [primary?.isAccessorySlot, slotCategory]);
+
+  const filteredAccessories = catalogAccessories.filter((item) =>
+    item.category === slotCategory && item.name.toLowerCase().includes(accessorySearch.trim().toLowerCase()),
+  );
+
+  const updatePositionOptions = (opts: Partial<AccessoryPositionOptions>) => {
+    const current = primary?.positionOptions || {
+      allowHorizontalToggle: true,
+      defaultHorizontal: 'right',
+      horizontalOffsetMm: 45,
+      allowVerticalToggle: false,
+      defaultVertical: 'up',
+      verticalOffsetMm: 1000,
+    };
+    onUpdateParts({
+      positionOptions: {
+        ...current,
+        ...opts,
+      },
+    });
+  };
 
   // Derive current bindings from primary part
   const currentBindings: ComponentMaterialBinding[] = useMemo(() => {
@@ -215,9 +284,15 @@ export function PartInspectorDrawer({
         },
       ];
       const newDefaultId = isFirst ? rawMaterialId : defaultMaterialId;
+      const isHardwareMaterial = targetMat?.category === "Hardware";
+
       onUpdateParts({
         materialBindings: newBindings,
         rawMaterialId: newDefaultId,
+        ...(isHardwareMaterial && (targetMat.billing_unit === "pc" || targetMat.billing_unit === "set") ? {
+          presentationCategory: "Hardware",
+          dimensionBinding: "FIXED",
+        } : {}),
       });
     }
   };
@@ -338,15 +413,177 @@ export function PartInspectorDrawer({
           </div>
         )}
 
+        {/* Hardware Accessory Specification Badge (Fixed Strategy, Base Price Inherited, Static 1:1 Metric) */}
+        {isAccessory ? (
+          <div className="bg-neutral-50 p-4 rounded-[12px] border border-neutral-200 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <label className="text-xs font-semibold text-[#0f1422] uppercase tracking-wider block">
+                  Hardware Accessory
+                </label>
+                <p className="text-[11px] text-neutral-500 mt-0.5">
+                  Static 1:1 metric scale. No dimension driver or raw material mapping needed.
+                </p>
+              </div>
+              <span className="px-2 py-0.5 rounded-full bg-cyan-50 text-[#07b6d3] text-[10px] font-semibold border border-cyan-100">
+                Fixed Component
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between p-3 rounded-[8px] bg-white border border-neutral-200 text-xs">
+              <div>
+                <span className="text-neutral-600 font-medium block">Price (Step 1 Basic Info)</span>
+                <span className="text-[10px] text-neutral-400">Directly inherited as fixed component price</span>
+              </div>
+              <div className="text-sm font-bold text-neutral-900 bg-neutral-100/70 px-2.5 py-1 rounded-[6px]">
+                PHP {(productBasePrice ?? 0).toFixed(2)}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between p-3 rounded-[8px] bg-white border border-neutral-200 text-xs">
+              <div>
+                <span className="text-neutral-600 font-medium block">Dimension Driver</span>
+                <span className="text-[10px] text-neutral-400">Non-parametric invariant sizing</span>
+              </div>
+              <span className="px-2 py-0.5 rounded bg-neutral-100 text-neutral-700 font-mono text-[10px] font-semibold">
+                FIXED (Static)
+              </span>
+            </div>
+          </div>
+        ) : (
+          <>
+        {/* Component Pricing & Connected Material Link */}
+        <div className="bg-neutral-50 p-4 rounded-[12px] border border-neutral-200 space-y-3">
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-semibold text-[#0f1422] uppercase tracking-wider">
+              Component Pricing
+            </label>
+            <span className="text-[11px] text-neutral-500">
+              {primary.pricingMethod === "Fixed"
+                ? (isAccessory ? "Inherited from Step 1 Base Price" : "Fixed price override")
+                : (currentDefaultMaterial ? `Linked to ${currentDefaultMaterial.category}` : "Pricing source")}
+            </span>
+          </div>
+
+          {currentDefaultMaterial && (
+            <div className="flex items-center justify-between p-2.5 rounded-[8px] bg-white border border-neutral-200 text-xs">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold border shrink-0 ${
+                  currentDefaultMaterial.category === "Hardware"
+                    ? "bg-amber-50 text-amber-700 border-amber-200"
+                    : currentDefaultMaterial.category === "Aluminum"
+                    ? "bg-blue-50 text-blue-700 border-blue-200"
+                    : currentDefaultMaterial.category === "Glass"
+                    ? "bg-cyan-50 text-cyan-700 border-cyan-200"
+                    : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                }`}>
+                  {currentDefaultMaterial.category}
+                </span>
+                <span className="font-medium text-neutral-800 truncate" title={currentDefaultMaterial.description}>
+                  {currentDefaultMaterial.description}
+                </span>
+              </div>
+              <div className="font-semibold text-neutral-900 shrink-0 ml-2">
+                PHP {currentDefaultMaterial.unit_price.toFixed(2)} / {currentDefaultMaterial.billing_unit}
+              </div>
+            </div>
+          )}
+
+          {/* Fixed Price Field or Toggle */}
+          {(modelStrategy === "Fixed" || primary.pricingMethod === "Fixed" || isAccessory) ? (
+            <div className="space-y-2 pt-1 border-t border-neutral-200/60">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-neutral-700">
+                  Fixed Price {currentDefaultMaterial && !isAccessory ? "Override" : ""} (PHP)
+                </span>
+                {currentDefaultMaterial && !isAccessory && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onUpdateParts({
+                        pricingMethod: "Material",
+                        unitPrice: undefined,
+                      });
+                    }}
+                    className="text-[11px] text-[#07b6d3] hover:text-[#069bb4] font-medium hover:underline cursor-pointer"
+                  >
+                    Use connected material rate (PHP {currentDefaultMaterial.unit_price.toFixed(2)})
+                  </button>
+                )}
+              </div>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-medium text-neutral-400">
+                  PHP
+                </span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={
+                    primary.unitPrice !== undefined && primary.unitPrice !== null
+                      ? primary.unitPrice
+                      : (isAccessory && productBasePrice !== undefined ? productBasePrice : "")
+                  }
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    const val = raw === "" ? undefined : parseFloat(raw);
+                    onUpdateParts({
+                      unitPrice: val !== undefined && !isNaN(val) ? val : undefined,
+                      pricingMethod: val !== undefined && !isNaN(val) ? "Fixed" : (currentDefaultMaterial ? "Material" : "Fixed"),
+                      dimensionBinding: "FIXED",
+                    });
+                  }}
+                  placeholder={
+                    isAccessory && productBasePrice !== undefined
+                      ? productBasePrice.toFixed(2)
+                      : (currentDefaultMaterial ? currentDefaultMaterial.unit_price.toFixed(2) : "0.00")
+                  }
+                  className="w-full pl-12 pr-4 py-2 bg-white border border-neutral-300 rounded-[8px] text-sm font-medium text-[#0f1422] focus:outline-none focus:border-[#07b6d3]"
+                />
+              </div>
+              <p className="text-[11px] text-neutral-500">
+                {isAccessory
+                  ? "Direct unit cost for this accessory, defaulted to the Step 1 base price so no re-entry is required."
+                  : currentDefaultMaterial
+                  ? "Overrides the connected catalog material rate with a fixed per-unit price."
+                  : "Direct unit cost for this component. Used in BOM summation and quotation generation."}
+              </p>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between pt-1 border-t border-neutral-200/60">
+              <span className="text-[11px] text-neutral-500">
+                {currentDefaultMaterial
+                  ? `Component price is connected to ${currentDefaultMaterial.description} (PHP ${currentDefaultMaterial.unit_price.toFixed(2)} / ${currentDefaultMaterial.billing_unit}).`
+                  : "Select an allowed catalog material below to connect this part to a pricing rate."}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  onUpdateParts({
+                    pricingMethod: "Fixed",
+                    unitPrice: currentDefaultMaterial ? currentDefaultMaterial.unit_price : 0,
+                    dimensionBinding: "FIXED",
+                  });
+                }}
+                className="text-[11px] text-[#07b6d3] hover:text-[#069bb4] font-medium hover:underline cursor-pointer whitespace-nowrap ml-2 shrink-0"
+              >
+                Set fixed override
+              </button>
+            </div>
+          )}
+        </div>
+
         {/* Section 1: Multi-Material Selection Panel */}
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <div>
               <label className="text-xs font-semibold text-neutral-800 block">
-                Allowed Raw Materials (Catalog)
+                {modelStrategy === "Fixed" || isAccessory ? "Allowed Raw Materials (Optional for Fixed Price)" : "Allowed Raw Materials (Catalog)"}
               </label>
               <p className="text-[10px] text-neutral-400 mt-0.5">
-                Select one or more materials. Designate one material as the default.
+                {modelStrategy === "Fixed" || isAccessory
+                  ? "Optionally assign catalog finishes for client 3D swatch preview without affecting fixed price."
+                  : "Select one or more materials. Designate one material as the default."}
               </p>
             </div>
             {currentBindings.length > 0 && (
@@ -664,40 +901,312 @@ export function PartInspectorDrawer({
             placeholder="Custom Ratio"
           />
         </div>
+        </>
+        )}
 
-        {/* Section 4: Removable Toggle */}
-        <div className="bg-neutral-50 p-3 rounded-[10px] border border-neutral-200 space-y-2.5">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs font-medium text-[#0f1422]">Allow Client to Remove</p>
-              <p className="text-[10px] text-neutral-500">Enables toggle switch in simulation</p>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={primary.isRemovable}
-                onChange={(e) => onUpdateParts({ isRemovable: e.target.checked })}
-                className="sr-only peer"
-              />
-              <div className="w-8 h-4.5 bg-neutral-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-[#07b6d3]"></div>
-            </label>
-          </div>
-
-          {primary.isRemovable && (
-            <div className="pt-2 border-t border-neutral-200/60 space-y-1">
-              <label className="text-[11px] font-medium text-neutral-600 block">
-                Toggle Property Key
+        {/* Section 4: Removable Toggle (Omitted for Hardware Accessories since all accessories are client-removable) */}
+        {!isAccessory && (
+          <div className="bg-neutral-50 p-3 rounded-[10px] border border-neutral-200 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-medium text-[#0f1422]">Allow Client to Remove</p>
+                <p className="text-[10px] text-neutral-500">Enables toggle switch in simulation</p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={primary.isRemovable}
+                  onChange={(e) => {
+                    const isRemovable = e.target.checked;
+                    const autoKey = isRemovable && !primary.togglePropertyKey
+                      ? `has_${(primary.componentKey || primary.componentName || 'part').toLowerCase().replace(/[^a-z0-9]+/g, '_')}`
+                      : primary.togglePropertyKey;
+                    onUpdateParts({ isRemovable, togglePropertyKey: autoKey });
+                  }}
+                  className="sr-only peer"
+                />
+                <div className="w-8 h-4.5 bg-neutral-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-[#07b6d3]"></div>
               </label>
-              <input
-                type="text"
-                value={primary.togglePropertyKey || ''}
-                onChange={(e) => onUpdateParts({ togglePropertyKey: e.target.value })}
-                placeholder="has_sill"
-                className="w-full border border-neutral-200 rounded-[6px] px-2.5 py-1.5 text-xs focus:border-[#07b6d3] outline-none bg-white"
-              />
             </div>
+
+            {primary.isRemovable && (
+              <div className="pt-2 border-t border-neutral-200/60 space-y-1">
+                <label className="text-[11px] font-medium text-neutral-600 block">
+                  Toggle Property Key
+                </label>
+                <input
+                  type="text"
+                  value={primary.togglePropertyKey || ''}
+                  onChange={(e) => onUpdateParts({ togglePropertyKey: e.target.value })}
+                  placeholder={`e.g. has_${(primary.componentKey || 'part').toLowerCase().replace(/[^a-z0-9]+/g, '_')}`}
+                  className="w-full border border-neutral-200 rounded-[6px] px-2.5 py-1.5 text-xs focus:border-[#07b6d3] outline-none bg-white"
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Section: Accessory Configuration */}
+        {isAccessory ? (
+          <div className="bg-neutral-50 p-3.5 rounded-[10px] border border-neutral-200 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Sparkles className="size-4 text-[#07b6d3]" />
+                <div>
+                  <p className="text-xs font-semibold text-[#0f1422]">Accessory Category</p>
+                  <p className="text-[10px] text-neutral-500">
+                    Template classification for this hardware model
+                  </p>
+                </div>
+              </div>
+              <span className="text-[10px] bg-[#07b6d3]/10 text-[#07b6d3] font-medium px-2 py-0.5 rounded-full">
+                Hardware Template
+              </span>
+            </div>
+
+            <div className="space-y-1.5 pt-1">
+              <label className="text-[11px] font-medium text-neutral-700 block">
+                Accessory Type <span className="text-red-500">*</span>
+              </label>
+              <select
+                value={primary.accessoryCategory || "handle"}
+                onChange={(e) => {
+                  const nextCategory = e.target.value as AccessoryCategory;
+                  onUpdateParts({ accessoryCategory: nextCategory });
+                }}
+                className="w-full border border-neutral-200 rounded-[8px] px-3 py-2 text-xs font-medium text-[#0f1422] focus:border-[#07b6d3] outline-none bg-white shadow-xs cursor-pointer"
+              >
+                <option value="handle">Handle / Knob / Pull</option>
+                <option value="lock">Lock / Latch / Smart Lock</option>
+                <option value="hinge">Hinge / Pivot</option>
+                <option value="roller">Roller / Guide Wheel</option>
+                <option value="other">Other Hardware</option>
+              </select>
+              <p className="text-[10px] text-neutral-500 leading-normal">
+                Specifies which fixture slot type (e.g. door handles or sliding locks) can mount this hardware template.
+              </p>
+            </div>
+          </div>
+        ) : (
+        <div className="space-y-3">
+          {/* Positional Placement & Handing Controls */}
+          {(!(
+            primary.presentationCategory === "Framing" ||
+            primary.componentType === "Model" ||
+            primary.componentKey.includes("frame") ||
+            primary.componentKey.includes("mesh") ||
+            primary.componentKey.includes("sill") ||
+            primary.componentKey.includes("bar")
+          ) || primary.isAccessorySlot) && (
+          <div className="bg-neutral-50 p-3 rounded-[10px] border border-neutral-200 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-medium text-[#0f1422]">Positional Handing & Placement</p>
+                <p className="text-[10px] text-neutral-500">Enable Left / Right orientation and placement rules</p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={Boolean(primary.positionOptions?.allowHorizontalToggle)}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    if (checked) {
+                      updatePositionOptions({
+                        allowHorizontalToggle: true,
+                        defaultHorizontal: primary.positionOptions?.defaultHorizontal || "right",
+                        horizontalOffsetMm: primary.positionOptions?.horizontalOffsetMm ?? 45,
+                        allowVerticalToggle: primary.positionOptions?.allowVerticalToggle ?? false,
+                        defaultVertical: primary.positionOptions?.defaultVertical || "up",
+                        verticalOffsetMm: primary.positionOptions?.verticalOffsetMm ?? 1000,
+                      });
+                    } else {
+                      onUpdateParts({ positionOptions: null });
+                    }
+                  }}
+                  className="sr-only peer"
+                />
+                <div className="w-8 h-4.5 bg-neutral-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-[#07b6d3]"></div>
+              </label>
+            </div>
+
+            {primary.positionOptions?.allowHorizontalToggle && (
+              <div className="space-y-2.5 pt-2 border-t border-neutral-200/60 text-xs">
+                {/* Horizontal Handing (Left vs Right) */}
+                <div className="p-2.5 rounded-[8px] bg-white border border-neutral-200 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium text-[#0f1422]">Lateral Handing (Left vs Right)</span>
+                    <span className="text-[10px] text-neutral-400 capitalize">
+                      Default: {primary.positionOptions?.defaultHorizontal === "left" ? "Left Side" : "Right Side"}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-neutral-400">
+                    Controls default mounting side on the X-axis and dynamic mirroring across centerline.
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {(["left", "right"] as HorizontalPosition[]).map((pos) => (
+                      <button
+                        key={pos}
+                        type="button"
+                        onClick={() => updatePositionOptions({ defaultHorizontal: pos })}
+                        className={`py-1.5 rounded-[6px] text-xs font-medium border text-center transition-all cursor-pointer ${
+                          (primary.positionOptions?.defaultHorizontal ?? "right") === pos
+                            ? "border-[#07b6d3] bg-[#07b6d3]/10 text-[#07b6d3] font-semibold"
+                            : "border-neutral-200 text-neutral-600 hover:bg-neutral-50"
+                        }`}
+                      >
+                        Default {pos === "left" ? "Left Side" : "Right Side"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Vertical Placement (Bottom vs Up) */}
+                <div className="p-2.5 rounded-[8px] bg-white border border-neutral-200 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium text-[#0f1422]">Vertical Placement (Bottom vs Up)</span>
+                    <label className="inline-flex items-center gap-1 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={primary.positionOptions?.allowVerticalToggle ?? false}
+                        onChange={(e) => updatePositionOptions({ allowVerticalToggle: e.target.checked })}
+                        className="size-3.5 accent-[#07b6d3]"
+                      />
+                      <span className="text-[10px] text-neutral-600">Client Selectable</span>
+                    </label>
+                  </div>
+                  <p className="text-[10px] text-neutral-400">
+                    Shifts the part along the vertical Y-axis, preserving lateral edge alignment and depth.
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {(["bottom", "up"] as VerticalPosition[]).map((pos) => (
+                      <button
+                        key={pos}
+                        type="button"
+                        onClick={() => updatePositionOptions({ defaultVertical: pos })}
+                        className={`py-1.5 rounded-[6px] text-xs font-medium border text-center transition-all cursor-pointer ${
+                          (primary.positionOptions?.defaultVertical ?? "up") === pos
+                            ? "border-[#07b6d3] bg-[#07b6d3]/10 text-[#07b6d3] font-semibold"
+                            : "border-neutral-200 text-neutral-600 hover:bg-neutral-50"
+                        }`}
+                      >
+                        Default {pos === "bottom" ? "Bottom Position" : "Up / Mid Position"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
           )}
+
+          {/* Swappable with Accessories */}
+          <div className="bg-neutral-50 p-3 rounded-[10px] border border-neutral-200 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-medium text-[#0f1422]">Swappable with Accessories</p>
+                <p className="text-[10px] text-neutral-500">Allow customers to swap this part with catalog accessories</p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={Boolean(primary.isAccessorySlot)}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    onUpdateParts({
+                      isAccessorySlot: checked,
+                      ...(!checked && { allowedAccessoryIds: [] }),
+                      ...(checked && !primary.accessoryCategory && { accessoryCategory: "handle" }),
+                      ...(checked && { presentationCategory: "Hardware" }),
+                    });
+                  }}
+                  className="sr-only peer"
+                />
+                <div className="w-8 h-4.5 bg-neutral-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-[#07b6d3]"></div>
+              </label>
+            </div>
+
+            {primary.isAccessorySlot && (
+              <div className="space-y-3 pt-2 border-t border-neutral-200/60 text-xs">
+                {/* Category Dropdown */}
+                <div className="space-y-1">
+                  <label className="text-[11px] font-medium text-neutral-700 block">
+                    Target Accessory Category <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={primary.accessoryCategory || "handle"}
+                    onChange={(e) => {
+                      const nextCategory = e.target.value as AccessoryCategory;
+                      if (nextCategory === slotCategory) return;
+                      onUpdateParts({ accessoryCategory: nextCategory, allowedAccessoryIds: [] });
+                      setAccessorySearch('');
+                      setCategoryNotice(selectedAccessoryIds.length > 0
+                        ? 'Previously approved replacements were cleared because the category changed.'
+                        : null);
+                    }}
+                    className="w-full border border-neutral-200 rounded-[6px] px-2.5 py-1.5 text-xs focus:border-[#07b6d3] outline-none bg-white"
+                  >
+                    <option value="handle">Handle / Knob / Pull</option>
+                    <option value="lock">Lock / Latch / Smart Lock</option>
+                    <option value="hinge">Hinge / Pivot</option>
+                    <option value="roller">Roller / Guide Wheel</option>
+                    <option value="other">Other Hardware</option>
+                  </select>
+                </div>
+
+                {categoryNotice && <p role="status" className="text-[11px] text-amber-700">{categoryNotice}</p>}
+                <div className="space-y-2 rounded-[8px] border border-neutral-200 bg-white p-2.5">
+                  <label htmlFor="registered-accessory-search" className="block text-[11px] font-medium text-neutral-700">
+                    Approved registered replacements
+                  </label>
+                  <input
+                    id="registered-accessory-search"
+                    type="search"
+                    value={accessorySearch}
+                    onChange={(event) => setAccessorySearch(event.target.value)}
+                    placeholder="Search registered Accessories"
+                    className="w-full border border-neutral-200 rounded-[6px] px-2.5 py-1.5 text-xs focus:border-[#07b6d3] outline-none"
+                  />
+                  {accessoryLoading ? (
+                    <p role="status" className="text-[11px] text-neutral-500">Loading eligible Accessories...</p>
+                  ) : accessoryError ? (
+                    <p role="alert" className="text-[11px] text-red-600">{accessoryError}</p>
+                  ) : filteredAccessories.length === 0 ? (
+                    <p className="text-[11px] text-neutral-500">No eligible Accessories found. Register and publish a model in Accessories first.</p>
+                  ) : (
+                    <div className="max-h-40 overflow-y-auto space-y-1" aria-label="Available registered accessories">
+                      {filteredAccessories.map((item) => {
+                        const checked = selectedAccessoryIds.includes(item.id);
+                        return <label key={item.id} className="flex items-center gap-2 rounded-[6px] px-2 py-1.5 hover:bg-neutral-50 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => onUpdateParts({ allowedAccessoryIds: checked
+                              ? selectedAccessoryIds.filter((id) => id !== item.id)
+                              : [...selectedAccessoryIds, item.id] })}
+                            className="size-3.5 accent-[#07b6d3]"
+                          />
+                          <span className="min-w-0 flex-1 truncate text-neutral-700">{item.name}</span>
+                          <span className="text-[10px] text-neutral-500">₱{item.price.toLocaleString('en-PH')}</span>
+                        </label>;
+                      })}
+                    </div>
+                  )}
+                  <div className="border-t border-neutral-100 pt-2 space-y-1">
+                    <p className="text-[11px] font-medium text-neutral-700">Selected ({selectedAccessoryIds.length})</p>
+                    {selectedAccessoryIds.length === 0 ? <p className="text-[11px] text-amber-700">Select at least one replacement before publishing this product.</p> : selectedAccessoryIds.map((id) => {
+                      const item = catalogAccessories.find((entry) => entry.id === id);
+                      return <div key={id} className="flex items-center justify-between gap-2 text-[11px]">
+                        <span className={item ? 'text-neutral-700' : 'text-red-600'}>{item?.name || `Unavailable accessory (${id})`}</span>
+                        <button type="button" onClick={() => onUpdateParts({ allowedAccessoryIds: selectedAccessoryIds.filter((entry) => entry !== id) })} className="text-[#07b6d3] hover:underline">Remove</button>
+                      </div>;
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
+        )}
 
         {/* Section 5: Base Quantity & Assembly Group */}
         <div className="grid grid-cols-2 gap-3">

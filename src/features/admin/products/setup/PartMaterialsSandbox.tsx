@@ -208,7 +208,20 @@ export function PartMaterialsSandbox({
                       </div>
 
                       {/* Material Option Selector */}
-                      {allowedList.length === 0 ? (
+                      {comp.pricingMethod === "Fixed" || comp.dimensionBinding === "FIXED" || (typeof comp.unitPrice === "number" && comp.unitPrice > 0) ? (
+                        <div className="flex items-center justify-between text-xs bg-cyan-50/70 border border-cyan-200 rounded-[8px] p-2 text-cyan-900">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <Lock className="size-3 text-[#07b6d3] shrink-0" />
+                            <span className="font-semibold text-[#07b6d3]">Fixed Component</span>
+                            <span className="text-neutral-500 text-[11px]">(Non-parametric)</span>
+                          </div>
+                          {typeof comp.unitPrice === "number" && comp.unitPrice > 0 && (
+                            <span className="text-[11px] font-mono font-medium text-neutral-700 shrink-0 ml-2">
+                              PHP {comp.unitPrice.toFixed(2)}
+                            </span>
+                          )}
+                        </div>
+                      ) : allowedList.length === 0 ? (
                         // Case C: Component has zero materials configured
                         <div className="flex items-center gap-1.5 text-amber-800 bg-amber-50 border border-amber-200 rounded-[8px] p-2 text-xs">
                           <AlertTriangle className="size-3.5 text-amber-600 shrink-0" />

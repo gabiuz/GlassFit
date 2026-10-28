@@ -38,8 +38,14 @@ export function ReviewAndPublishSection({ productId }: ReviewAndPublishSectionPr
         setErrorMsg(null);
         try {
             await activateProduct(productId);
-            // Redirect to admin product list
-            router.push("/admin/products");
+            // Redirect to admin product list tab
+            if (isAccessory) {
+                router.push("/admin/products?tab=accessory");
+            } else if (isAddon) {
+                router.push("/admin/products?tab=addon");
+            } else {
+                router.push("/admin/products");
+            }
             router.refresh();
         } catch (e: unknown) {
             setErrorMsg(e instanceof Error ? e.message : "Failed to activate product");
@@ -64,6 +70,7 @@ export function ReviewAndPublishSection({ productId }: ReviewAndPublishSectionPr
         );
     }
 
+    const isAccessory = Boolean(draft?.product?.isAccessory);
     const isAddon = Boolean(draft?.product?.isAddon);
     const isParametric = draft?.template?.modelStrategy === "Parametric";
     const hasAssets = (draft?.assets?.length ?? 0) > 0;
@@ -73,11 +80,43 @@ export function ReviewAndPublishSection({ productId }: ReviewAndPublishSectionPr
     let canActivate = true;
     const missingErrors: string[] = [];
 
-    if (isAddon) {
+    const isFixedComponent = (c: {
+        pricingMethod?: string | null;
+        unitPrice?: number | null;
+        dimensionBinding?: string | null;
+        dimension_binding?: string | null;
+        unit_price?: number | null;
+        pricing_method?: string | null;
+    }) => {
+        return (
+            isAccessory ||
+            c.pricingMethod === "Fixed" ||
+            c.pricing_method === "Fixed" ||
+            c.dimensionBinding === "FIXED" ||
+            c.dimension_binding === "FIXED" ||
+            (typeof c.unitPrice === "number" && c.unitPrice > 0) ||
+            (typeof c.unit_price === "number" && c.unit_price > 0)
+        );
+    };
+
+    if (isAccessory) {
+        // Hardware accessories (IMP-MS74, IMP-MS78):
+        // Standalone fixed hardware accessories bypass material mapping.
+        // Base price is defined in Basic Info (Step 1) and parts are static 1:1 metric scale.
+        const unassignedComponents = draft?.components?.filter(
+            (c) => !isFixedComponent(c) && !c.rawMaterialId && (!c.allowedMaterials || c.allowedMaterials.length === 0)
+        ) ?? [];
+        if (unassignedComponents.length > 0) {
+            canActivate = false;
+            missingErrors.push(
+                `Activation Blocked: ${unassignedComponents.length} component${unassignedComponents.length > 1 ? "s have" : " has"} zero materials assigned. Return to Step 2 to complete material mapping.`
+            );
+        }
+    } else if (isAddon) {
         // Add-on accessories (IMP-MS70):
         // Bypass 2D/3D assets. Support procedural generation or custom components.
         const unassignedComponents = draft?.components?.filter(
-            (c) => !c.rawMaterialId && (!c.allowedMaterials || c.allowedMaterials.length === 0)
+            (c) => !isFixedComponent(c) && !c.rawMaterialId && (!c.allowedMaterials || c.allowedMaterials.length === 0)
         ) ?? [];
         if (unassignedComponents.length > 0) {
             canActivate = false;
@@ -95,7 +134,7 @@ export function ReviewAndPublishSection({ productId }: ReviewAndPublishSectionPr
             missingErrors.push("Parametric products require at least one component.");
         }
         const unassignedComponents = draft?.components?.filter(
-            (c) => !c.rawMaterialId && (!c.allowedMaterials || c.allowedMaterials.length === 0)
+            (c) => !isFixedComponent(c) && !c.rawMaterialId && (!c.allowedMaterials || c.allowedMaterials.length === 0)
         ) ?? [];
         if (unassignedComponents.length > 0) {
             canActivate = false;
@@ -104,9 +143,9 @@ export function ReviewAndPublishSection({ productId }: ReviewAndPublishSectionPr
             );
         }
     } else {
-        if (!hasAssets) {
+        if (!hasAssets && !hasComponents) {
             canActivate = false;
-            missingErrors.push("Fixed products require a 3D model asset.");
+            missingErrors.push("Fixed products require a 3D model asset or component parts.");
         }
     }
 
@@ -135,7 +174,11 @@ export function ReviewAndPublishSection({ productId }: ReviewAndPublishSectionPr
                 <div className="border border-neutral-200 rounded-[12px] p-5 bg-white shadow-sm flex flex-col gap-2">
                     <div className="text-sm font-medium text-neutral-500">Strategy</div>
                     <div className="text-lg text-[#0f1422]">
-                        {isAddon ? "Parametric Frame + Panels" : (draft?.template?.modelStrategy || "Unknown")}
+                        {isAccessory
+                            ? (draft?.template?.modelStrategy || "Hardware Model")
+                            : isAddon
+                                ? "Parametric Frame + Panels"
+                                : (draft?.template?.modelStrategy || "Unknown")}
                     </div>
                 </div>
                 

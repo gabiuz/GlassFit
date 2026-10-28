@@ -27,6 +27,7 @@ export type {
 };
 
 export interface ComponentPricingInput {
+  componentId?: string;
   componentKey: string;
   componentName: string;
   dimensionBinding: DimensionBinding;
@@ -36,6 +37,8 @@ export interface ComponentPricingInput {
   togglePropertyKey?: string | null;
   presentationCategory: "Framing" | "Glazing" | "Hardware" | "Consumable" | "Other";
   rawMaterial?: RawMaterial | null;
+  unitPrice?: number;
+  pricingMethod?: string;
 }
 
 export interface CalculateBOMOptions {
@@ -43,6 +46,7 @@ export interface CalculateBOMOptions {
   heightMm: number;
   panelCount?: number;
   hasSill?: boolean;
+  removableStates?: Record<string, boolean>;
   aluminumScrapRate?: number; // default 0.12 (12%)
   glassScrapRate?: number; // default 0.10 (10%)
   laborFloor?: number; // default 750.00 PHP
@@ -100,65 +104,90 @@ export function calculateParametricBOM(
 
   // Process explicitly mapped components if provided
   for (const comp of components) {
-    if (comp.isRemovable && comp.togglePropertyKey === "has_sill" && !hasSill) {
-      // Component is omitted (e.g., bottom sill removed)
+    const toggleKey = comp.togglePropertyKey || `has_${comp.componentKey.replace(/-/g, "_")}`;
+    const isSillComponent =
+      comp.togglePropertyKey === "has_sill" ||
+      toggleKey.includes("sill") ||
+      comp.componentKey.includes("sill") ||
+      comp.componentName.toLowerCase().includes("sill");
+
+    const isExcluded =
+      (isSillComponent && hasSill === false) ||
+      (comp.isRemovable && options.removableStates && (
+        options.removableStates[comp.componentKey] === false ||
+        (comp.componentId && options.removableStates[comp.componentId] === false) ||
+        (comp.togglePropertyKey && options.removableStates[comp.togglePropertyKey] === false)
+      ));
+
+    if (isExcluded) {
+      // Component is omitted (e.g. bottom sill or custom configured removable part)
       continue;
     }
 
     const mat = comp.rawMaterial;
-    const unitPrice = mat ? mat.unit_price : 0;
-    const wasteFactor = mat ? mat.waste_allowance : 0;
+    const isFixedComponent = comp.pricingMethod === "Fixed" || (typeof comp.unitPrice === "number" && comp.unitPrice > 0);
 
-    let computedQty = 0;
-    let unitLabel = mat ? mat.billing_unit : "pc";
+    // Use direct component unit price if specified as fixed; otherwise use linked raw material rate
+    const unitPrice = isFixedComponent && typeof comp.unitPrice === "number"
+      ? comp.unitPrice
+      : (mat ? mat.unit_price : 0);
 
-    if (mat && mat.category === "Glass" && mat.billing_unit === "pc") {
+    const wasteFactor = isFixedComponent ? 0 : (mat ? mat.waste_allowance : 0);
+    let computedQty = comp.baseQuantity;
+    let unitLabel = "pc";
+
+    if (!isFixedComponent && mat) {
+      if (mat.category === "Glass" && mat.billing_unit === "pc") {
+        computedQty = comp.baseQuantity;
+        unitLabel = "pc";
+      } else {
+        switch (comp.dimensionBinding) {
+          case "WIDTH":
+            computedQty = widthM * comp.spanRatio * comp.baseQuantity;
+            unitLabel = "m";
+            break;
+          case "HEIGHT":
+            computedQty = heightM * comp.spanRatio * comp.baseQuantity;
+            unitLabel = "m";
+            break;
+          case "AREA":
+            computedQty = widthM * heightM * comp.spanRatio * comp.baseQuantity;
+            unitLabel = "sqm";
+            break;
+          case "GRILLE_LINEAR": {
+            const grilleBOM = calculateGrilleLinearBOM({
+              widthMm: options.widthMm,
+              heightMm: options.heightMm,
+              includePerimeterFrame: false,
+              grilleRawMaterial: {
+                id: mat?.id || "grille-mat",
+                material_code: mat?.material_code || "GRILLE-EXT",
+                description: mat?.description || "Grille Bar",
+                unit_price: unitPrice,
+                waste_allowance: wasteFactor,
+              },
+            });
+            computedQty = round2(grilleBOM.verticalBars.totalLinearM + grilleBOM.horizontalBars.totalLinearM) * comp.spanRatio * comp.baseQuantity;
+            unitLabel = "m";
+            break;
+          }
+          case "FIXED":
+          default:
+            computedQty = comp.baseQuantity;
+            unitLabel = mat.billing_unit || "pc";
+            break;
+        }
+      }
+    } else if (isFixedComponent) {
       computedQty = comp.baseQuantity;
       unitLabel = "pc";
-    } else {
-      switch (comp.dimensionBinding) {
-        case "WIDTH":
-          computedQty = widthM * comp.spanRatio * comp.baseQuantity;
-          unitLabel = "m";
-          break;
-        case "HEIGHT":
-          computedQty = heightM * comp.spanRatio * comp.baseQuantity;
-          unitLabel = "m";
-          break;
-        case "AREA":
-          computedQty = widthM * heightM * comp.spanRatio * comp.baseQuantity;
-          unitLabel = "sqm";
-          break;
-        case "GRILLE_LINEAR": {
-          const grilleBOM = calculateGrilleLinearBOM({
-            widthMm: options.widthMm,
-            heightMm: options.heightMm,
-            includePerimeterFrame: false,
-            grilleRawMaterial: {
-              id: mat?.id || "grille-mat",
-              material_code: mat?.material_code || "GRILLE-EXT",
-              description: mat?.description || "Grille Bar",
-              unit_price: unitPrice,
-              waste_allowance: wasteFactor,
-            },
-          });
-          computedQty = round2(grilleBOM.verticalBars.totalLinearM + grilleBOM.horizontalBars.totalLinearM) * comp.spanRatio * comp.baseQuantity;
-          unitLabel = "m";
-          break;
-        }
-        case "FIXED":
-        default:
-          computedQty = comp.baseQuantity;
-          unitLabel = mat ? mat.billing_unit : "pc";
-          break;
-      }
     }
 
     const itemSubtotal = round2(computedQty * unitPrice);
 
     const itemDetail: BOMItemDetail = {
       code: mat ? mat.material_code : comp.componentKey,
-      description: mat ? mat.description : comp.componentName,
+      description: (isFixedComponent && comp.componentName) ? comp.componentName : (mat ? mat.description : comp.componentName),
       quantity: round4(computedQty),
       unit: unitLabel,
       unit_price: unitPrice,
@@ -178,7 +207,7 @@ export function calculateParametricBOM(
       if (unitLabel === "sqm") {
         glazingAreaSqm += computedQty;
       }
-    } else if (comp.presentationCategory === "Hardware") {
+    } else if (comp.presentationCategory === "Hardware" || mat?.category === "Hardware") {
       hardwareItems.push(itemDetail);
       hardwareSubtotal += itemSubtotal;
     } else {
@@ -343,7 +372,7 @@ export function generateQuotationSnapshot(
   options?: { structuralWaiver?: boolean }
 ): QuotationBOMSummary {
   const isWaiver = options?.structuralWaiver ?? result.bomSummary.structural_waiver;
-  
+
   const groups: QuotationBOMGroupItem[] = result.bomSummary.groups.map(group => ({
     ...group,
     structural_waiver: isWaiver,
@@ -413,7 +442,7 @@ export function calculateStandardSeries798(params: {
 
   // Fixed hardware rates
   const pHardware = rollerQty * 25.0 + lockQty * 65.0 + (isThreePanel ? 70.0 : 50.0);
-  
+
   // Consumables (silicone + gaskets)
   let pConsumables = 220.0;
   if (params.widthMm === 1800 && hasSill) pConsumables = 260.0;
@@ -692,7 +721,9 @@ export function calculateBOMFromStructuralDefinition(
       mat = comp.rawMaterial;
     }
 
-    if (!mat) {
+    const isFixedComp = comp.pricingMethod === "Fixed" || (typeof comp.unitPrice === "number" && comp.unitPrice > 0);
+
+    if (!mat && !isFixedComp) {
       const key = (comp.componentKey || "").toLowerCase();
       const name = (comp.componentName || comp.partName || "").toLowerCase();
 
@@ -781,12 +812,16 @@ export function calculateBOMFromStructuralDefinition(
       togglePropertyKey: comp.togglePropertyKey || null,
       presentationCategory: comp.presentationCategory || "Framing",
       rawMaterial: mat,
+      unitPrice: comp.unitPrice,
+      pricingMethod: comp.pricingMethod,
     };
   });
 
+  const isFixedModel = definition.template?.modelStrategy === "Fixed";
+
   // If hardware is not explicitly defined in 3D parts, include standard hardware set
   const hasHardware = pricingInputs.some((c) => c.presentationCategory === "Hardware");
-  if (!hasHardware) {
+  if (!hasHardware && !isFixedModel) {
     const rollerQty = 2 * panelCount;
     const lockQty = isThreePanel ? 2 : 1;
     const pHardware = rollerQty * 25.0 + lockQty * 65.0 + (isThreePanel ? 70.0 : 50.0);
@@ -815,7 +850,7 @@ export function calculateBOMFromStructuralDefinition(
 
   // If consumables are not explicitly defined in 3D parts, include standard consumables set
   const hasConsumables = pricingInputs.some((c) => c.presentationCategory === "Consumable");
-  if (!hasConsumables) {
+  if (!hasConsumables && !isFixedModel) {
     let pConsumables = 220.0;
     if (params.widthMm === 1800 && hasSill) pConsumables = 260.0;
     else if (params.widthMm === 1800 && !hasSill) pConsumables = 235.0;
@@ -929,8 +964,8 @@ export function calculateOverlayPricing(overlay: PlacedOverlay): {
   const widthMm = (Number(overlay.configuration.widthCm) || 120) * 10;
   const heightMm = (Number(overlay.configuration.heightCm) || 120) * 10;
   if (overlay.bomResult && overlay.unitPrice !== undefined && overlay.totalPrice !== undefined &&
-      Math.abs(overlay.bomResult.widthM * 1000 - widthMm) < 1e-6 &&
-      Math.abs(overlay.bomResult.heightM * 1000 - heightMm) < 1e-6) {
+    Math.abs(overlay.bomResult.widthM * 1000 - widthMm) < 1e-6 &&
+    Math.abs(overlay.bomResult.heightM * 1000 - heightMm) < 1e-6) {
     return {
       bomResult: overlay.bomResult,
       unitPrice: overlay.unitPrice,
@@ -962,7 +997,8 @@ export function calculateOverlayPricing(overlay: PlacedOverlay): {
     : calculateStandardSeries798(options);
 
   const addonPrice = Number(overlay.configuration.addonPrice) || 0;
-  const unitPrice = bomResult.finalQuotation + addonPrice;
+  const accessoryDelta = Number(overlay.configuration.accessoryPriceDelta) || 0;
+  const unitPrice = bomResult.finalQuotation + addonPrice + accessoryDelta;
   const totalPrice = unitPrice * quantity;
 
   return {
@@ -971,3 +1007,40 @@ export function calculateOverlayPricing(overlay: PlacedOverlay): {
     totalPrice,
   };
 }
+
+export interface AccessoryBOMAdjustment {
+  slotComponentId: string;
+  defaultComponentCost: number;
+  selectedAccessoryPrice: number;
+  finishRateDelta: number;
+}
+
+/**
+ * Calculates hardware bill-of-materials adjustments for customer accessory substitutions.
+ * Deducts baseline hardware cost, applies chosen accessory unit price with finish delta,
+ * and incorporates scrap allowance and contractor margin.
+ * Traceability: PRD-F10, SDD-C7, BRD-M5, IMP-MS76, QAD-TC91.6
+ */
+export function applyAccessoryBOMAdjustments(
+  baseHardwareCost: number,
+  adjustments: AccessoryBOMAdjustment[],
+  scrapAllowance: number = 0.10,
+  contractorMargin: number = 0.25,
+): { netHardwareCost: number; priceDelta: number } {
+  let netCost = baseHardwareCost;
+
+  for (const adj of adjustments) {
+    // Deduct default hardware allowance
+    netCost -= adj.defaultComponentCost;
+    // Add chosen accessory base price and finish delta
+    const accessoryTotal = adj.selectedAccessoryPrice + adj.finishRateDelta;
+    netCost += accessoryTotal * (1 + scrapAllowance);
+  }
+
+  const finalHardwarePrice = netCost * (1 + contractorMargin);
+  return {
+    netHardwareCost: netCost,
+    priceDelta: finalHardwarePrice - (baseHardwareCost * (1 + contractorMargin)),
+  };
+}
+

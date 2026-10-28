@@ -6,6 +6,7 @@
  */
 
 import { z } from "zod";
+import type { AccessoryCategory, AccessoryPositionOptions } from "@/lib/admin/products/types";
 
 // ----------------------------------------------------------------------------
 // 1. Raw Materials Master Catalog Enums & Schemas (ERD-E17)
@@ -219,6 +220,14 @@ export interface ProductComponent {
   glbFileUrl?: string | null;
   allowedMaterials?: ComponentMaterialBinding[];
   defaultRawMaterialId?: string | null;
+  isAccessorySlot?: boolean;
+  accessoryCategory?: AccessoryCategory | null;
+  allowedAccessoryIds?: string[] | null;
+  positionOptions?: AccessoryPositionOptions;
+  unitPrice?: number;
+  pricingMethod?: string;
+  handingMetadata?: import("@/lib/admin/products/types").ComponentHandingMetadata | null;
+  componentData?: Record<string, unknown>;
 }
 
 export const ProductComponentBindingSchema = z.object({
@@ -236,6 +245,10 @@ export const ProductComponentBindingSchema = z.object({
   presentation_category: PresentationCategorySchema.default("Framing"),
   glb_file_url: z.string().nullable().optional(),
   status: z.enum(["Active", "Inactive"]).default("Active"),
+  is_accessory_slot: z.boolean().default(false).optional(),
+  accessory_category: z.enum(["handle", "lock", "hinge", "roller", "other"]).nullable().optional(),
+  allowed_accessory_ids: z.array(z.string().uuid()).nullable().optional(),
+  position_options: z.record(z.string(), z.unknown()).optional(),
 });
 export type ProductComponentBinding = z.infer<typeof ProductComponentBindingSchema>;
 
@@ -423,6 +436,8 @@ export interface ItemizedProductQuotation {
   addonAluminumFinish?: string;
   addonBOM?: import("./addonPricingEngine").AddonBOMResult | null;
   grilleBOM?: GrilleLinearBOMResult | null;
+  swappedAccessories?: Record<string, import("../visualization/types").SelectedAccessoryState>;
+  accessoryPriceDelta?: number;
 }
 
 export interface ConsolidatedQuotationSummary {

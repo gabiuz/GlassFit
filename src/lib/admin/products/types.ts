@@ -15,6 +15,33 @@ export interface AvailableAddonProduct {
   description: string | null;
 }
 
+export type HorizontalPosition = "left" | "right";
+export type VerticalPosition = "bottom" | "up";
+
+export interface AccessoryPositionOptions {
+  allowHorizontalToggle: boolean;
+  defaultHorizontal: HorizontalPosition;
+  horizontalOffsetMm: number; // Lateral offset from edge
+  allowVerticalToggle: boolean;
+  defaultVertical: VerticalPosition;
+  verticalOffsetMm: number; // Offset from bottom or top rail
+}
+
+export interface AccessorySlotConfig {
+  isAccessorySlot: boolean;
+  accessoryCategory: AccessoryCategory | null;
+  allowedAccessoryIds: string[] | null; // Legacy null is treated as an empty approval list
+  positionOptions: AccessoryPositionOptions;
+}
+
+export interface ComponentHandingMetadata {
+  sourceHanding: "left" | "right";
+  uploadedGlbUrl: string;
+  leftGlbUrl: string;
+  rightGlbUrl: string;
+  mirroredAt: string;
+}
+
 export type UpsertComponentInput = {
   templateId: string;
   componentKey: string;
@@ -31,6 +58,13 @@ export type UpsertComponentInput = {
   assemblyGroup?: string;
   componentData?: Record<string, unknown>;
   materialBindings?: ComponentMaterialBindingInput[];
+  isAccessorySlot?: boolean;
+  accessoryCategory?: AccessoryCategory | null;
+  allowedAccessoryIds?: string[] | null;
+  positionOptions?: AccessoryPositionOptions;
+  unitPrice?: number;
+  pricingMethod?: "Fixed" | "Included" | "Per Piece" | "Per Length" | "Per Area" | "Other" | string;
+  handingMetadata?: ComponentHandingMetadata | null;
 };
 
 export interface UpsertComponentPayload {
@@ -51,6 +85,27 @@ export interface UpsertComponentPayload {
   glbFileUrl?: string | null;
   componentData?: Record<string, unknown>;
   materialBindings?: ComponentMaterialBindingInput[];
+  isAccessorySlot?: boolean;
+  accessoryCategory?: AccessoryCategory | null;
+  allowedAccessoryIds?: string[] | null;
+  positionOptions?: AccessoryPositionOptions;
+  unitPrice?: number;
+  pricingMethod?: "Fixed" | "Included" | "Per Piece" | "Per Length" | "Per Area" | "Other" | string;
+  handingMetadata?: ComponentHandingMetadata | null;
+}
+
+export type ProductRole = "standard" | "addon" | "accessory";
+export type AccessoryCategory = "handle" | "lock" | "hinge" | "roller" | "other";
+export type AccessoryMountingType = "surface_mount" | "mortise" | "recessed" | "clamp";
+
+export interface CreateAccessoryProductInput {
+  product_name: string;
+  description?: string | null;
+  base_price: number;
+  is_accessory: true;
+  is_addon: false;
+  accessory_category: AccessoryCategory;
+  accessory_mounting_type: AccessoryMountingType;
 }
 
 export interface DatabaseProductExtended {
@@ -62,6 +117,9 @@ export interface DatabaseProductExtended {
   status: "Active" | "Inactive";
   is_addon: boolean;
   addon_type: AddonType | null;
+  is_accessory: boolean;
+  accessory_category: AccessoryCategory | null;
+  accessory_mounting_type: AccessoryMountingType | null;
   created_at: string;
   updated_at: string;
 }

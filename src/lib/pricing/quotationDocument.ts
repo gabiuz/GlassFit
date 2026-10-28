@@ -30,6 +30,19 @@ export const QuotationDocumentGroupSchema = z.object({
   subtotal: money,
 });
 
+export const SwappedAccessoryDocumentSchema = z.object({
+  slotComponentId: z.string().optional(),
+  slotCategory: z.string().optional(),
+  accessoryId: z.string(),
+  accessoryName: z.string(),
+  finish: z.string().optional(),
+  horizontalPosition: z.enum(["left", "right"]).optional(),
+  verticalPosition: z.enum(["bottom", "up"]).optional(),
+  unitPrice: money.optional(),
+  priceDelta: money.optional(),
+});
+export type SwappedAccessoryDocument = z.infer<typeof SwappedAccessoryDocumentSchema>;
+
 export const QuotationDocumentItemSchema = z.object({
   itemId: required,
   productId: z.string().nullable(),
@@ -62,6 +75,8 @@ export const QuotationDocumentItemSchema = z.object({
   baseUnitPrice: money.optional(),
   addonAluminumFinish: z.string().optional(),
   grilleBOM: z.custom<GrilleLinearBOMResult>().nullable().optional(),
+  swappedAccessories: z.array(SwappedAccessoryDocumentSchema).optional(),
+  accessoryPriceDelta: money.optional(),
 }).superRefine((item, context) => {
   if (Math.round(item.unitPrice * item.quantity * 100) !== Math.round(item.calculatedSubtotal * 100)) {
     context.addIssue({ code: "custom", path: ["calculatedSubtotal"], message: "Item arithmetic mismatch" });
@@ -201,14 +216,15 @@ export function createQuotationDocumentSnapshotV1(input: {
   structuralWaiver: boolean;
   adminLaborCharge?: number | null;
 }): QuotationDocumentDraftV1 {
-  const sourceItems = input.items.length > 0 ? input.items : input.fallbackBom ? [{
+  const fallbackItem: ItemizedProductQuotation | null = input.fallbackBom ? {
     itemId: "primary-item", productId: "", productName: input.projectName, productType: "Window & Door",
     variantName: `${input.fallbackBom.panelCount}-Panel Configuration`, specSummary: `${input.fallbackBom.finishType} | ${input.fallbackBom.widthM * 100}cm × ${input.fallbackBom.heightM * 100}cm`,
     dimensionsFormatted: `${input.fallbackBom.widthM * 100}cm × ${input.fallbackBom.heightM * 100}cm`, widthMm: input.fallbackBom.widthM * 1000,
     heightMm: input.fallbackBom.heightM * 1000, panelCount: input.fallbackBom.panelCount, hasSill: input.hasSill,
     structuralWaiver: input.structuralWaiver, finishType: input.fallbackBom.finishType, glassType: input.fallbackBom.glassType,
     quantity: 1, unitPrice: input.fallbackBom.finalQuotation, totalPrice: input.fallbackBom.finalQuotation, imageUrl: "", bomResult: input.fallbackBom,
-  }] : [];
+  } : null;
+  const sourceItems: ItemizedProductQuotation[] = input.items.length > 0 ? input.items : fallbackItem ? [fallbackItem] : [];
   const items = sourceItems.map((item) => {
     const itemGroups = groupsFromBom(item.bomResult);
     if (item.selectedAddon && item.selectedAddon !== "none" && (item.addonPrice ?? 0) > 0) {
@@ -241,6 +257,22 @@ export function createQuotationDocumentSnapshotV1(input: {
       baseUnitPrice: item.baseUnitPrice,
       addonAluminumFinish: item.addonAluminumFinish,
       grilleBOM: item.grilleBOM,
+      swappedAccessories: item.swappedAccessories
+        ? (Array.isArray(item.swappedAccessories)
+            ? item.swappedAccessories
+            : Object.values(item.swappedAccessories).map((acc) => ({
+                slotComponentId: acc.slotComponentId,
+                slotCategory: acc.category,
+                accessoryId: acc.accessoryId,
+                accessoryName: acc.accessoryName,
+                finish: acc.finish,
+                horizontalPosition: acc.horizontalPosition,
+                verticalPosition: acc.verticalPosition,
+                unitPrice: acc.price,
+                priceDelta: acc.priceDelta ?? 0,
+              })))
+        : [],
+      accessoryPriceDelta: item.accessoryPriceDelta ?? 0,
     };
   });
   const pricing = sourceItems.reduce((totals, item) => {

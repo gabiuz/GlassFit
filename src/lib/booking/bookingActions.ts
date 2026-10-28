@@ -16,6 +16,9 @@ import { revalidatePath } from "next/cache";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import { requirePermission } from "@/lib/auth/admin";
+import { getEligibleAccessories } from "@/lib/admin/products/accessoryEligibility";
+import type { AccessoryCategory } from "@/lib/admin/products/types";
+import { validateAccessoryQuotationSelections } from "./accessorySelectionValidation";
 import {
   deriveQuotationPricing,
   deriveQuotationPricingFromItems,
@@ -79,6 +82,30 @@ export async function generateSignedBookingLink(
   }
 
   const profileId = user.id;
+
+  if (!validated.quotationDocument) {
+    throw new Error("A canonical quotation document is required.");
+  }
+  await validateAccessoryQuotationSelections(validated.quotationDocument, async (productId, componentId, accessoryId) => {
+    const { data: template, error: templateError } = await supabase
+      .from("product_templates")
+      .select("template_id")
+      .eq("product_id", productId)
+      .eq("status", "Active")
+      .single();
+    if (templateError || !template) return null;
+    const { data: component, error: componentError } = await supabase
+      .from("product_components")
+      .select("component_id, accessory_category, allowed_accessory_ids, is_accessory_slot, status")
+      .eq("template_id", template.template_id)
+      .eq("component_id", componentId)
+      .single();
+    if (componentError || !component || component.status !== "Active" || !component.is_accessory_slot ||
+        !component.accessory_category || !component.allowed_accessory_ids?.includes(accessoryId)) return null;
+    const eligible = await getEligibleAccessories(supabase, component.accessory_category as AccessoryCategory, [accessoryId]);
+    const approved = eligible.find((candidate) => candidate.id === accessoryId);
+    return approved ? { productName: approved.name, basePrice: approved.price } : null;
+  });
 
   // Use service client for atomic database operations
   const serviceClient = createSupabaseServiceClient();

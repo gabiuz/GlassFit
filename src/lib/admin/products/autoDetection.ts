@@ -5,8 +5,8 @@
  * Traceability Codes: PRD-F14, SDD-C9, DSD-UI10, ERD-E6
  */
 
-import type { DimensionBinding, PresentationCategory, RawMaterial } from '@/lib/pricing/types';
-import type { ComponentType } from './types';
+import type { DimensionBinding, PresentationCategory, RawMaterial } from "@/lib/pricing/types";
+import type { ComponentType, AccessoryCategory, AccessoryPositionOptions } from "./types";
 
 export interface AutoDetectionResult {
   dimensionBinding: DimensionBinding;
@@ -16,14 +16,126 @@ export interface AutoDetectionResult {
   presentationCategory: PresentationCategory;
   componentType: ComponentType;
   suggestedMaterialCategory: string;
+  isAccessorySlot?: boolean;
+  accessoryCategory?: AccessoryCategory | null;
+  positionOptions?: AccessoryPositionOptions;
+}
+
+export interface AutoDetectAccessorySlotResult {
+  isAccessorySlot: boolean;
+  accessoryCategory: AccessoryCategory;
+  presentationCategory: PresentationCategory;
+  dimensionBinding: DimensionBinding;
+  positionOptions: AccessoryPositionOptions;
+}
+
+/**
+ * Auto-detect swappable hardware accessory slot configuration from filename keywords.
+ * Maps hardware elements (handles, locks, rollers, hinges) to compatible accessory categories
+ * and canonical positional placement rules (Left vs Right on X axis, Bottom vs Up on Y axis).
+ * Upstream Specification: IMP-MS75 (PRD-F5, PRD-F14, SDD-C4, SDD-C9)
+ */
+export function autoDetectAccessorySlot(fileName: string): AutoDetectAccessorySlotResult | null {
+  const lower = fileName.toLowerCase();
+
+  // Handles & Knobs
+  if (/handle|doorknob|knob|lever|pull_bar|pullhandle/.test(lower)) {
+    return {
+      isAccessorySlot: true,
+      accessoryCategory: "handle",
+      presentationCategory: "Hardware",
+      dimensionBinding: "FIXED",
+      positionOptions: {
+        allowHorizontalToggle: true,
+        defaultHorizontal: "right",
+        horizontalOffsetMm: 45,
+        allowVerticalToggle: false,
+        defaultVertical: "up",
+        verticalOffsetMm: 1000,
+      },
+    };
+  }
+
+  // Locks, Latches, Smart Locks
+  if (!lower.includes("stile") && !lower.includes("interlock") && /lock|latch|deadbolt|smartlock|electric_lock/.test(lower)) {
+    return {
+      isAccessorySlot: true,
+      accessoryCategory: "lock",
+      presentationCategory: "Hardware",
+      dimensionBinding: "FIXED",
+      positionOptions: {
+        allowHorizontalToggle: true,
+        defaultHorizontal: "right",
+        horizontalOffsetMm: 35,
+        allowVerticalToggle: true,
+        defaultVertical: "up",
+        verticalOffsetMm: 1000,
+      },
+    };
+  }
+
+  // Rollers & Guides
+  if (/roller|wheel|guide_wheel|track_roller/.test(lower)) {
+    return {
+      isAccessorySlot: true,
+      accessoryCategory: "roller",
+      presentationCategory: "Hardware",
+      dimensionBinding: "FIXED",
+      positionOptions: {
+        allowHorizontalToggle: false,
+        defaultHorizontal: "left",
+        horizontalOffsetMm: 0,
+        allowVerticalToggle: false,
+        defaultVertical: "bottom",
+        verticalOffsetMm: 15,
+      },
+    };
+  }
+
+  // Hinges & Pivots
+  if (/hinge|pivot/.test(lower)) {
+    return {
+      isAccessorySlot: true,
+      accessoryCategory: "hinge",
+      presentationCategory: "Hardware",
+      dimensionBinding: "FIXED",
+      positionOptions: {
+        allowHorizontalToggle: true,
+        defaultHorizontal: "left",
+        horizontalOffsetMm: 10,
+        allowVerticalToggle: true,
+        defaultVertical: "up",
+        verticalOffsetMm: 1000,
+      },
+    };
+  }
+
+  return null;
 }
 
 /**
  * Parse GLB file name to automatically determine dimension binding, span ratio,
- * removable toggles, presentation categories, and suggested raw material categories.
+ * removable toggles, presentation categories, swappable accessory slots, and suggested materials.
  */
 export function autoDetectComponentSettings(fileName: string): AutoDetectionResult {
   const name = fileName.toLowerCase().replace(/\.glb$/, "");
+
+  // Swappable Hardware Accessory Slots (IMP-MS75)
+  const accessorySlot = autoDetectAccessorySlot(fileName);
+  if (accessorySlot) {
+    return {
+      dimensionBinding: accessorySlot.dimensionBinding,
+      spanRatio: 1.0,
+      isRemovable: false,
+      togglePropertyKey: null,
+      presentationCategory: accessorySlot.presentationCategory,
+      componentType: "Hardware",
+      suggestedMaterialCategory: "Hardware",
+      isAccessorySlot: true,
+      accessoryCategory: accessorySlot.accessoryCategory,
+      positionOptions: accessorySlot.positionOptions,
+    };
+  }
 
   // Grille middle bars, center infill, pickets, lattices, and louvers (IMP-MS72)
   if (
@@ -79,6 +191,10 @@ export function autoDetectComponentSettings(fileName: string): AutoDetectionResu
     name.includes("left_panel") ||
     name.includes("right_panel") ||
     name.includes("side_panel") ||
+    name.includes("frame_left") ||
+    name.includes("left_frame") ||
+    name.includes("frame_right") ||
+    name.includes("right_frame") ||
     name.includes("jamb") ||
     name.includes("stile") ||
     name.includes("interlock") ||
@@ -114,6 +230,10 @@ export function autoDetectComponentSettings(fileName: string): AutoDetectionResu
     name.includes("top_panel") ||
     name.includes("bottom_panel") ||
     name.includes("bottom_base") ||
+    name.includes("frame_top") ||
+    name.includes("top_frame") ||
+    name.includes("frame_bottom") ||
+    name.includes("bottom_frame") ||
     name.includes("head") ||
     name.includes("top_track") ||
     name.includes("top_sliding_track") ||

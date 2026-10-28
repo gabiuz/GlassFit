@@ -19,6 +19,11 @@ import {
 
 import { calculateGrilleLinearBOM } from "../pricing/grillePricingEngine";
 import type { GrilleLinearBOMResult } from "../pricing/types";
+import type { AccessoryPositionOptions } from "@/lib/admin/products/types";
+import type { SelectedAccessoryState } from "./types";
+import { createAccessoryMeshById } from "./accessoryMeshFactory";
+import { mirrorObjectHierarchyAcrossX, mirrorPartAcrossCenterline } from "@/lib/admin/products/meshMirroring";
+
 export {
   createWindowGlassMaterial,
   createMaterialPalette,
@@ -53,6 +58,9 @@ export interface ParametricProductBuilderOptions {
   addonAluminumFinish?: string;
   addonConfig?: AddonGeometryConfig;
   grilleBOM?: GrilleLinearBOMResult;
+  swappedAccessories?: Record<string, SelectedAccessoryState>;
+  accessoryModels?: Map<string, THREE.Object3D>;
+  removableStates?: Record<string, boolean>;
 }
 
 export function buildParametricProduct(
@@ -103,10 +111,274 @@ export function buildParametricProduct(
     };
   }
 
+  // If this product is a standalone hardware accessory (IMP-MS78):
+  if (definition.product.isAccessory) {
+    const group = new THREE.Group();
+    group.name = "hardware_accessory_assembly";
+
+    for (const component of definition.components) {
+      try {
+        let clone: THREE.Object3D | null = null;
+        try {
+          clone = cache.getClone(component.componentId);
+        } catch {
+          try {
+            clone = cache.getClone(component.componentKey);
+          } catch {
+            // fallback
+          }
+        }
+
+        if (!clone) continue;
+
+        const swapped = options.swappedAccessories?.[component.componentId] ??
+          options.swappedAccessories?.[component.componentKey];
+        const sourceHanding: "left" | "right" = component.handingMetadata?.sourceHanding ?? "right";
+        const activeHanding: "left" | "right" = swapped?.horizontalPosition ?? sourceHanding;
+
+        let finalMesh = clone.clone(true);
+        if (activeHanding !== sourceHanding) {
+          finalMesh = mirrorObjectHierarchyAcrossX(finalMesh);
+        }
+
+        finalMesh.userData = {
+          ...component,
+          isMirroredHanding: activeHanding !== sourceHanding,
+          preserveMaterial: true,
+        };
+
+        group.add(finalMesh);
+      } catch (err) {
+        console.warn("Could not build hardware accessory component:", err);
+      }
+    }
+
+    group.updateMatrixWorld(true);
+    return {
+      group,
+      resolved,
+    };
+  }
+
   return {
     group: buildAssembledProduct(definition, resolved, cache, options),
     resolved,
   };
+}
+
+/**
+ * Resolves a PBR finish material for metallic and coated hardware.
+ * Traceability: PRD-F2, SDD-C5, IMP-MS76, QAD-TC91.5
+ */
+export function createHardwareFinishMaterial(finishKey: string): THREE.MeshStandardMaterial {
+  const lower = (finishKey || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (lower.includes("brass") || lower.includes("gold") || lower.includes("satinbrass")) {
+    return new THREE.MeshStandardMaterial({
+      color: 0xd4af37,
+      metalness: 0.85,
+      roughness: 0.35,
+    });
+  }
+  if (lower.includes("black") || lower.includes("matteblack") || lower.includes("analok")) {
+    return new THREE.MeshStandardMaterial({
+      color: 0x18191a,
+      metalness: 0.3,
+      roughness: 0.75,
+    });
+  }
+  if (lower.includes("chrome") || lower.includes("silver") || lower.includes("steel") || lower.includes("stainless")) {
+    return new THREE.MeshStandardMaterial({
+      color: 0xd2d6dc,
+      metalness: 0.9,
+      roughness: 0.22,
+    });
+  }
+  if (lower.includes("white")) {
+    return new THREE.MeshStandardMaterial({
+      color: 0xf3f4f6,
+      metalness: 0.15,
+      roughness: 0.45,
+    });
+  }
+  return new THREE.MeshStandardMaterial({
+    color: 0x22262a,
+    metalness: 0.7,
+    roughness: 0.35,
+  });
+}
+
+/**
+ * Creates procedural 3D geometry for modular accessories when external GLB models are not uploaded.
+ * Supports ergonomic lever handles, round knobs, and biometric smart locks.
+ * Traceability: PRD-F5, SDD-C4, IMP-MS76, QAD-TC91.2
+ */
+export function createProceduralAccessoryMesh(
+  category: string,
+  modelName: string,
+  finishKey: string = "matte_black",
+): THREE.Object3D {
+  const group = new THREE.Group();
+  group.name = `ProceduralAccessory_${modelName}`;
+  const mat = createHardwareFinishMaterial(finishKey);
+  const lower = (modelName + " " + category).toLowerCase();
+
+  if (lower.includes("smart") || lower.includes("electric") || lower.includes("digital") || lower.includes("keyless")) {
+    // Smart Digital Lock: tall keypad escutcheon + handle lever
+    const bodyGeom = new THREE.BoxGeometry(0.065, 0.28, 0.025);
+    const bodyMesh = new THREE.Mesh(bodyGeom, mat);
+    bodyMesh.castShadow = true;
+    bodyMesh.receiveShadow = true;
+    group.add(bodyMesh);
+
+    // Keypad screen plate (glossy dark)
+    const keypadGeom = new THREE.BoxGeometry(0.05, 0.12, 0.004);
+    const keypadMat = new THREE.MeshStandardMaterial({ color: 0x0a0a0c, roughness: 0.1, metalness: 0.9 });
+    const keypadMesh = new THREE.Mesh(keypadGeom, keypadMat);
+    keypadMesh.position.set(0, 0.06, 0.014);
+    group.add(keypadMesh);
+
+    // Integrated lever handle
+    const leverStemGeom = new THREE.CylinderGeometry(0.012, 0.012, 0.035, 16);
+    leverStemGeom.rotateX(Math.PI / 2);
+    const leverStem = new THREE.Mesh(leverStemGeom, mat);
+    leverStem.position.set(0, -0.04, 0.025);
+    group.add(leverStem);
+
+    const leverArmGeom = new THREE.BoxGeometry(0.12, 0.02, 0.015);
+    const leverArm = new THREE.Mesh(leverArmGeom, mat);
+    leverArm.position.set(0.05, -0.04, 0.04);
+    leverArm.castShadow = true;
+    group.add(leverArm);
+  } else if (lower.includes("knob")) {
+    // Round Privacy Doorknob: round rosette plate + spherical knob
+    const rosetteGeom = new THREE.CylinderGeometry(0.038, 0.038, 0.008, 24);
+    rosetteGeom.rotateX(Math.PI / 2);
+    const rosette = new THREE.Mesh(rosetteGeom, mat);
+    rosette.castShadow = true;
+    group.add(rosette);
+
+    const stemGeom = new THREE.CylinderGeometry(0.012, 0.012, 0.025, 16);
+    stemGeom.rotateX(Math.PI / 2);
+    const stem = new THREE.Mesh(stemGeom, mat);
+    stem.position.set(0, 0, 0.015);
+    group.add(stem);
+
+    const knobGeom = new THREE.SphereGeometry(0.026, 24, 16);
+    const knob = new THREE.Mesh(knobGeom, mat);
+    knob.position.set(0, 0, 0.035);
+    knob.castShadow = true;
+    group.add(knob);
+  } else if (lower.includes("roller") || lower.includes("wheel")) {
+    // Roller: housing bracket + small wheel
+    const housingGeom = new THREE.BoxGeometry(0.08, 0.025, 0.018);
+    const housing = new THREE.Mesh(housingGeom, mat);
+    group.add(housing);
+
+    const wheelGeom = new THREE.CylinderGeometry(0.014, 0.014, 0.012, 20);
+    wheelGeom.rotateZ(Math.PI / 2);
+    const wheel = new THREE.Mesh(wheelGeom, mat);
+    wheel.position.set(0, -0.01, 0);
+    group.add(wheel);
+  } else {
+    // Standard Door Lever Handle: escutcheon plate + stem + horizontal lever
+    const plateGeom = new THREE.BoxGeometry(0.042, 0.18, 0.01);
+    const plate = new THREE.Mesh(plateGeom, mat);
+    plate.castShadow = true;
+    group.add(plate);
+
+    const stemGeom = new THREE.CylinderGeometry(0.012, 0.012, 0.03, 16);
+    stemGeom.rotateX(Math.PI / 2);
+    const stem = new THREE.Mesh(stemGeom, mat);
+    stem.position.set(0, 0.02, 0.02);
+    group.add(stem);
+
+    const leverGeom = new THREE.BoxGeometry(0.12, 0.018, 0.014);
+    const lever = new THREE.Mesh(leverGeom, mat);
+    lever.position.set(0.05, 0.02, 0.035);
+    lever.castShadow = true;
+    group.add(lever);
+  }
+
+  return group;
+}
+
+/**
+ * Mounts and transforms an accessory mesh to a host product assembly.
+ * Strictly enforces lateral X-axis translation for Left/Right handings
+ * and vertical Y-axis translation for Bottom/Up elevations.
+ * Traceability: PRD-F2, PRD-F5, SDD-C4, IMP-MS76, QAD-TC91.2, QAD-TC91.3, QAD-TC91.4, QAD-TC91.5
+ */
+export function mountAccessoryMesh(
+  parentGroup: THREE.Group,
+  accessoryModel: THREE.Object3D,
+  hostBounds: { widthM: number; heightM: number; depthM: number },
+  positionOptions?: AccessoryPositionOptions | null,
+  horizontal: "left" | "right" = "right",
+  vertical: "bottom" | "up" = "up",
+  finishKey: string = "matte_black",
+  handingVariantMesh?: THREE.Object3D | null,
+  sourceHanding?: "left" | "right" | null,
+): THREE.Object3D {
+  // Support callers passing (accessoryModel, parentGroup) or (parentGroup, accessoryModel)
+  let actualParent = parentGroup;
+  let actualModel = accessoryModel;
+  if (
+    parentGroup &&
+    parentGroup.children.length > 0 &&
+    accessoryModel &&
+    accessoryModel.children.length === 0 &&
+    !(accessoryModel as THREE.Mesh).geometry
+  ) {
+    actualParent = accessoryModel as THREE.Group;
+    actualModel = parentGroup;
+  }
+
+  // If a dedicated handed variant is provided, use it; otherwise evaluate bilateral reflection
+  let targetModel = handingVariantMesh;
+  if (!targetModel) {
+    const baseHanding = sourceHanding ?? positionOptions?.defaultHorizontal ?? "right";
+    if (horizontal !== baseHanding) {
+      targetModel = mirrorObjectHierarchyAcrossX(actualModel);
+    } else {
+      targetModel = actualModel;
+    }
+  }
+
+  const clone = targetModel.clone(true);
+
+  // Apply PBR finish material (Matte Black, Brushed Chrome, Satin Brass, Stainless Steel, etc.)
+  const hardwareMaterial = createHardwareFinishMaterial(finishKey);
+  clone.traverse((child) => {
+    if (child instanceof THREE.Mesh) {
+      child.material = hardwareMaterial;
+      child.castShadow = true;
+      child.receiveShadow = true;
+    }
+  });
+
+  // Calculate strict lateral X-axis coordinate for Left vs Right handings
+  const lateralMarginM = (positionOptions?.horizontalOffsetMm ?? 45) / 1000;
+  const targetXM = horizontal === "left"
+    ? -hostBounds.widthM / 2 + lateralMarginM
+    : hostBounds.widthM / 2 - lateralMarginM;
+
+  // Calculate strict vertical Y-axis coordinate for Bottom vs Up elevations
+  const verticalMarginM = (positionOptions?.verticalOffsetMm ?? 1000) / 1000;
+  const targetYM = vertical === "bottom"
+    ? -hostBounds.heightM / 2 + verticalMarginM
+    : hostBounds.heightM * 0.05; // Standard mid-height elevation
+
+  // Maintain Z depth flush to the front surface of the door stile
+  const targetZM = hostBounds.depthM / 2 + 0.002;
+
+  // Apply translation matrix
+  clone.position.set(targetXM, targetYM, targetZM);
+
+  // Zero out rotation: geometry is already correctly handed without 180-degree yaw flip (IMP-MS78)
+  clone.rotation.set(0, 0, 0);
+
+  actualParent.add(clone);
+  return clone;
 }
 
 function buildWindowLikeProduct(
@@ -289,8 +561,17 @@ function buildWindowLikeProduct(
         readBoolean(resolved.resolvedValues.hasSill, true)
       );
 
+  const isSillExcluded = Boolean(
+    sill && options.removableStates && (
+      options.removableStates[sill.componentId] === false ||
+      options.removableStates[sill.componentKey] === false ||
+      (sill.togglePropertyKey && options.removableStates[sill.togglePropertyKey] === false)
+    )
+  );
+
   if (
     includeSill &&
+    !isSillExcluded &&
     sill &&
     (resolved.componentQuantities[normalizeComponentKey(sill.componentKey)] ?? sill.baseQuantity) > 0
   ) {
@@ -334,6 +615,53 @@ function buildWindowLikeProduct(
     group.updateMatrixWorld(true);
   }
 
+  // Mount swapped accessories if active (IMP-MS76)
+  if (options.swappedAccessories) {
+    for (const [slotId, swapped] of Object.entries(options.swappedAccessories)) {
+      if (!swapped || swapped.accessoryId === "default") continue;
+      let accMesh = options.accessoryModels?.get(swapped.accessoryId);
+      if (!accMesh) {
+        try {
+          accMesh = cache.getClone(swapped.accessoryId);
+        } catch {
+          // fallback
+        }
+      }
+      if (!accMesh && (swapped.accessoryId.startsWith("canonical_") || swapped.accessoryId.startsWith("acc_"))) {
+        try {
+          accMesh = createAccessoryMeshById(swapped.accessoryId);
+        } catch {
+          // fallback
+        }
+      }
+      if (!accMesh) {
+        accMesh = createProceduralAccessoryMesh(swapped.category, swapped.accessoryName, swapped.finish);
+      }
+      const matchingComp = definition.components.find((c) => c.componentId === slotId || c.componentKey === slotId);
+      const posOptions: AccessoryPositionOptions = matchingComp?.positionOptions ??
+        ((matchingComp as Record<string, unknown> | undefined)?.position_options as AccessoryPositionOptions | undefined) ?? {
+          allowHorizontalToggle: true,
+          defaultHorizontal: "right",
+          horizontalOffsetMm: 45,
+          allowVerticalToggle: swapped.category === "lock",
+          defaultVertical: "up",
+          verticalOffsetMm: 1000,
+        };
+      const sourceHanding = swapped.handingMetadata?.sourceHanding ?? matchingComp?.handingMetadata?.sourceHanding ?? null;
+      mountAccessoryMesh(
+        accessories,
+        accMesh,
+        { widthM: widthMm / 1000, heightM: heightMm / 1000, depthM: profile.glassDepthMm / 1000 },
+        posOptions,
+        swapped.horizontalPosition,
+        swapped.verticalPosition,
+        swapped.finish,
+        null,
+        sourceHanding,
+      );
+    }
+  }
+
   accessories.traverse((child) => {
     if (child instanceof THREE.Mesh) {
       child.renderOrder = 0;
@@ -357,12 +685,12 @@ function buildWindowLikeProduct(
 function findDimensionMm(resolved: ResolvedStructure, keys: string[]): number | null {
   for (const key of keys) {
     const lower = key.toLowerCase();
-    for (const [k, v] of Object.entries(resolved.numericValuesMm)) {
+    for (const [k, v] of Object.entries(resolved.numericValuesMm || {})) {
       if (k.toLowerCase() === lower && typeof v === "number" && Number.isFinite(v) && v > 0) {
         return v;
       }
     }
-    for (const [k, v] of Object.entries(resolved.resolvedValues)) {
+    for (const [k, v] of Object.entries(resolved.resolvedValues || {})) {
       if (k.toLowerCase() === lower) {
         const num = toNumber(v, 0);
         if (num > 0) return num;
@@ -391,6 +719,101 @@ function buildAssembledProduct(
         readBoolean(resolved.resolvedValues.hasSill, true)
       );
 
+  // Natural Assembly: Identify accessory slots and measure host geometry
+  const accessorySlotKeys = new Set<string>();
+  const hostComponentsBox = new THREE.Box3();
+  let hasHostComponents = false;
+
+  for (const component of definition.components) {
+    const compIdentity = (
+      component.componentKey +
+      " " +
+      component.componentName +
+      " " +
+      (component.componentType || "") +
+      " " +
+      (component.presentationCategory || "")
+    ).toLowerCase();
+
+    const isFrameOrMeshOrPanel =
+      component.presentationCategory === "Framing" ||
+      component.componentType === "Frame" ||
+      component.componentType === "Model" ||
+      component.componentType === "Mesh" ||
+      component.componentType === "Screen" ||
+      component.componentType === "Glass" ||
+      compIdentity.includes("frame") ||
+      compIdentity.includes("mesh") ||
+      compIdentity.includes("glass") ||
+      compIdentity.includes("sill") ||
+      compIdentity.includes("jamb") ||
+      compIdentity.includes("header") ||
+      compIdentity.includes("rail") ||
+      compIdentity.includes("stile") ||
+      compIdentity.includes("mullion") ||
+      compIdentity.includes("bar");
+
+    const isFixedDimension = (
+      component.dimensionBinding === "FIXED" ||
+      (component as Record<string, unknown>).dimension_binding === "FIXED"
+    );
+
+    const isSlot = !isFrameOrMeshOrPanel && Boolean(
+      component.isAccessorySlot ||
+      (component as Record<string, unknown>).is_accessory_slot ||
+      compIdentity.includes("handle") ||
+      compIdentity.includes("knob") ||
+      compIdentity.includes("lever") ||
+      compIdentity.includes("smartlock") ||
+      compIdentity.includes("lock")
+    );
+
+    if (isSlot || (isFixedDimension && !isFrameOrMeshOrPanel)) {
+      accessorySlotKeys.add(component.componentId);
+      accessorySlotKeys.add(component.componentKey);
+    } else {
+      try {
+        const cModel = cache.getClone(component.componentId);
+        cModel.updateMatrixWorld(true);
+        hostComponentsBox.expandByObject(cModel);
+        hasHostComponents = true;
+      } catch {
+        // ignore missing model in measurement pass
+      }
+    }
+  }
+
+  const hostCenterVec = new THREE.Vector3();
+  const hostSizeVec = new THREE.Vector3();
+  if (hasHostComponents) {
+    hostComponentsBox.getCenter(hostCenterVec);
+    hostComponentsBox.getSize(hostSizeVec);
+  }
+
+  // Pre-calculate target dimensions and parametric scaling factors upfront
+  const targetWidthMm = findDimensionMm(resolved, ["width", "quotation_width", "quotationWidth", "w"]);
+  const targetHeightMm = findDimensionMm(resolved, ["height", "quotation_height", "quotationHeight", "h"]);
+  const targetDepthMm = findDimensionMm(resolved, ["depth", "quotation_depth", "quotationDepth", "d"]);
+
+  const naturalWidthM = hasHostComponents && hostSizeVec.x > 0.0001 ? hostSizeVec.x : 0;
+  const naturalHeightM = hasHostComponents && hostSizeVec.y > 0.0001 ? hostSizeVec.y : 0;
+  const naturalDepthM = hasHostComponents && hostSizeVec.z > 0.0001 ? hostSizeVec.z : 0;
+
+  const scaleX = targetWidthMm && naturalWidthM > 0.0001
+    ? (targetWidthMm / 1000) / naturalWidthM
+    : 1;
+
+  const scaleY = targetHeightMm && naturalHeightM > 0.0001
+    ? (targetHeightMm / 1000) / naturalHeightM
+    : 1;
+
+  const scaleZ = targetDepthMm && naturalDepthM > 0.0001
+    ? (targetDepthMm / 1000) / naturalDepthM
+    : 1;
+
+  const _hostHalfWidth = naturalWidthM > 0.0001 ? naturalWidthM / 2 : 0;
+  void _hostHalfWidth;
+
   // Natural Assembly: Place each component at its modeled origin
   for (const component of definition.components) {
     const key = normalizeComponentKey(component.componentKey);
@@ -400,6 +823,24 @@ function buildAssembledProduct(
       (component.togglePropertyKey && component.togglePropertyKey.toLowerCase().includes("sill"));
 
     if (isSill && !includeSill) {
+      continue;
+    }
+
+    const toggleKey = component.togglePropertyKey || `has_${component.componentKey.replace(/-/g, "_")}`;
+    const isRemovableExcluded = Boolean(
+      (component.isRemovable || component.togglePropertyKey) &&
+      (
+        (options.removableStates && (
+          options.removableStates[component.componentId] === false ||
+          options.removableStates[component.componentKey] === false ||
+          (component.togglePropertyKey && options.removableStates[component.togglePropertyKey] === false)
+        )) ||
+        (resolved.resolvedValues[toggleKey] === 0 || resolved.resolvedValues[toggleKey] === false) ||
+        (component.togglePropertyKey && (resolved.resolvedValues[component.togglePropertyKey] === 0 || resolved.resolvedValues[component.togglePropertyKey] === false))
+      )
+    );
+
+    if (isRemovableExcluded) {
       continue;
     }
 
@@ -413,6 +854,7 @@ function buildAssembledProduct(
     clone.userData.componentName = component.componentName;
     clone.userData.componentType = component.componentType;
     clone.userData.presentationCategory = component.presentationCategory;
+    clone.userData.dimensionBinding = component.dimensionBinding ?? (component as Record<string, unknown>).dimension_binding ?? "FIXED";
     clone.userData.rawMaterialId = component.rawMaterialId ?? null;
     clone.userData.rawMaterialCategory = component.rawMaterial?.category ?? null;
     clone.userData.rawMaterial = component.rawMaterial ?? null;
@@ -456,39 +898,301 @@ function buildAssembledProduct(
       });
     }
 
+    const isFrameOrMeshOrPanel =
+      component.presentationCategory === "Framing" ||
+      component.componentType === "Frame" ||
+      component.componentType === "Model" ||
+      component.componentType === "Mesh" ||
+      component.componentType === "Screen" ||
+      component.componentType === "Glass" ||
+      compIdentity.includes("frame") ||
+      compIdentity.includes("mesh") ||
+      compIdentity.includes("glass") ||
+      compIdentity.includes("sill") ||
+      compIdentity.includes("jamb") ||
+      compIdentity.includes("header") ||
+      compIdentity.includes("rail") ||
+      compIdentity.includes("stile") ||
+      compIdentity.includes("mullion") ||
+      compIdentity.includes("bar");
+
+    const isAccessorySlot = !isFrameOrMeshOrPanel && (
+      accessorySlotKeys.has(component.componentId) ||
+      accessorySlotKeys.has(component.componentKey)
+    );
+    const isAccessoryProduct = Boolean(definition.product?.isAccessory);
+    const hasHanding = !isFrameOrMeshOrPanel && Boolean(
+      (component.positionOptions?.allowHorizontalToggle) ||
+      (isAccessorySlot && component.positionOptions?.defaultHorizontal) ||
+      (options.swappedAccessories?.[component.componentId]?.horizontalPosition && component.positionOptions?.allowHorizontalToggle) ||
+      (options.swappedAccessories?.[component.componentKey]?.horizontalPosition && component.positionOptions?.allowHorizontalToggle) ||
+      isAccessoryProduct ||
+      (component.handingMetadata?.leftGlbUrl && component.handingMetadata?.rightGlbUrl)
+    );
+
+    const swapped = options.swappedAccessories?.[component.componentId] ??
+      options.swappedAccessories?.[component.componentKey];
+
+    const isAlternativeAccessory = Boolean(
+      isAccessorySlot &&
+      swapped &&
+      swapped.accessoryId !== "default" &&
+      swapped.accessoryId !== component.componentId
+    );
+
+    if (hasHanding) {
+      // Measure original handle in its natural modeled position
+      clone.updateMatrixWorld(true);
+      const origHandleBounds = new THREE.Box3().setFromObject(clone);
+      const origHandleCenter = new THREE.Vector3();
+      const origHandleSize = new THREE.Vector3();
+      origHandleBounds.getCenter(origHandleCenter);
+      origHandleBounds.getSize(origHandleSize);
+
+      const baseCenterX = hasHostComponents ? hostCenterVec.x : 0;
+      const deltaX = origHandleCenter.x - baseCenterX;
+      const modeledHanding: "left" | "right" = component.handingMetadata?.sourceHanding ?? (deltaX >= 0 ? "right" : "left");
+      const activeHanding: "left" | "right" = swapped?.horizontalPosition ?? component.positionOptions?.defaultHorizontal ?? modeledHanding;
+
+      const halfPartW = origHandleSize.x / 2;
+      const modeledOuterEdgeDist = modeledHanding === "right"
+        ? (origHandleBounds.max.x - baseCenterX)
+        : (baseCenterX - origHandleBounds.min.x);
+
+      let targetX: number;
+      if (hasHostComponents && scaleX > 0 && Math.abs(scaleX - 1) > 0.0001) {
+        if (activeHanding === "right") {
+          targetX = baseCenterX + modeledOuterEdgeDist - (halfPartW / scaleX);
+        } else {
+          targetX = baseCenterX - modeledOuterEdgeDist + (halfPartW / scaleX);
+        }
+      } else if (!hasHostComponents) {
+        targetX = 0;
+      } else {
+        targetX = activeHanding === "left" ? (baseCenterX - Math.abs(deltaX)) : (baseCenterX + Math.abs(deltaX));
+      }
+
+      const targetY = (component.positionOptions?.allowVerticalToggle && swapped?.verticalPosition === "bottom")
+        ? (hostCenterVec.y - hostSizeVec.y * 0.35)
+        : origHandleCenter.y;
+      const targetZ = origHandleCenter.z;
+
+      if (!isAlternativeAccessory) {
+        if (activeHanding === modeledHanding && (!component.positionOptions?.allowVerticalToggle || swapped?.verticalPosition !== "bottom")) {
+          if (swapped?.finish) {
+            const hwMat = createHardwareFinishMaterial(swapped.finish);
+            clone.traverse((c) => {
+              if (c instanceof THREE.Mesh) c.material = hwMat;
+            });
+          }
+          clone.userData = { ...clone.userData, isMirroredHanding: false };
+
+          const container = new THREE.Group();
+          container.name = `${component.componentName || "part"}_${activeHanding}`;
+          container.userData = { ...clone.userData, isMirroredHanding: false };
+          clone.position.sub(origHandleCenter);
+          container.add(clone);
+          container.position.set(targetX, targetY, targetZ);
+          container.rotation.set(0, 0, 0);
+          group.add(container);
+        } else {
+          const mountedHandle = mirrorPartAcrossCenterline(
+            clone,
+            baseCenterX,
+            activeHanding,
+            component.positionOptions?.allowVerticalToggle && swapped?.verticalPosition === "bottom" ? targetY : undefined,
+            targetZ,
+            targetX
+          );
+
+          if (swapped?.finish) {
+            const hwMat = createHardwareFinishMaterial(swapped.finish);
+            mountedHandle.traverse((c) => {
+              if (c instanceof THREE.Mesh) c.material = hwMat;
+            });
+          }
+          mountedHandle.userData = { ...clone.userData, isMirroredHanding: activeHanding !== modeledHanding };
+          group.add(mountedHandle);
+        }
+      } else if (swapped) {
+        // An active hardware accessory was chosen: replace original cabinet handle
+        let accMesh: THREE.Object3D | null = null;
+        if (options.accessoryModels) {
+          accMesh = options.accessoryModels.get(`${swapped.accessoryId}_${activeHanding}`) ??
+            options.accessoryModels.get(swapped.accessoryId) ??
+            null;
+        }
+        if (!accMesh) {
+          try {
+            accMesh = cache.getClone(swapped.accessoryId);
+          } catch {
+            // fallback
+          }
+        }
+        if (!accMesh && (swapped.accessoryId.startsWith("canonical_") || swapped.accessoryId.startsWith("acc_"))) {
+          try {
+            accMesh = createAccessoryMeshById(swapped.accessoryId);
+          } catch {
+            // fallback
+          }
+        }
+        if (!accMesh) {
+          accMesh = createProceduralAccessoryMesh(swapped.category, swapped.accessoryName, swapped.finish);
+        }
+
+        const mountedAcc = accMesh.clone(true);
+
+        // 1. Recenter mountedAcc geometry at local (0, 0, 0)
+        mountedAcc.updateMatrixWorld(true);
+        const curBox = new THREE.Box3().setFromObject(mountedAcc);
+        const curCenter = new THREE.Vector3();
+        const curSize = new THREE.Vector3();
+        curBox.getCenter(curCenter);
+        curBox.getSize(curSize);
+        mountedAcc.position.sub(curCenter);
+        mountedAcc.updateMatrixWorld(true);
+
+        const sourceHanding = swapped.handingMetadata?.sourceHanding ??
+          component.handingMetadata?.sourceHanding ??
+          "right";
+
+        let finalAccMesh: THREE.Object3D = mountedAcc;
+        if (activeHanding !== sourceHanding && !options.accessoryModels?.has(`${swapped.accessoryId}_${activeHanding}`)) {
+          finalAccMesh = mirrorObjectHierarchyAcrossX(mountedAcc);
+          finalAccMesh.updateMatrixWorld(true);
+          const postBox = new THREE.Box3().setFromObject(finalAccMesh);
+          const postCenter = new THREE.Vector3();
+          postBox.getCenter(postCenter);
+          finalAccMesh.position.sub(postCenter);
+          finalAccMesh.updateMatrixWorld(true);
+        }
+
+        const hwMat = createHardwareFinishMaterial(swapped.finish || "satin");
+        finalAccMesh.traverse((c) => {
+          if (c instanceof THREE.Mesh) {
+            c.material = hwMat;
+            c.castShadow = true;
+            c.receiveShadow = true;
+          }
+        });
+
+        const accHalfW = curSize.x / 2;
+        let accTargetX: number;
+        if (hasHostComponents && scaleX > 0 && Math.abs(scaleX - 1) > 0.0001) {
+          if (activeHanding === "right") {
+            accTargetX = baseCenterX + modeledOuterEdgeDist - (accHalfW / scaleX);
+          } else {
+            accTargetX = baseCenterX - modeledOuterEdgeDist + (accHalfW / scaleX);
+          }
+        } else {
+          accTargetX = targetX;
+        }
+
+        // 2. Wrap in container positioned at target coordinates (identical container hierarchy to mirrorPartAcrossCenterline)
+        const container = new THREE.Group();
+        container.name = `${swapped.accessoryName || "accessory"}_${activeHanding}`;
+        container.userData = {
+          ...clone.userData,
+          componentKey: component.componentKey,
+          componentId: component.componentId,
+          isAccessoryReplacement: true,
+          isMirroredHanding: activeHanding !== sourceHanding,
+        };
+        container.add(finalAccMesh);
+        container.position.set(accTargetX, targetY, targetZ);
+        container.rotation.set(0, 0, 0);
+        container.updateMatrixWorld(true);
+
+        group.add(container);
+      }
+      continue;
+    }
+
+    const isFixedDimension = Boolean(
+      component.dimensionBinding === "FIXED" ||
+      (component as Record<string, unknown>).dimension_binding === "FIXED" ||
+      isAccessorySlot
+    );
+
+    if (isFixedDimension) {
+      clone.updateMatrixWorld(true);
+      const partBounds = new THREE.Box3().setFromObject(clone);
+      const partCenter = new THREE.Vector3();
+      const partSize = new THREE.Vector3();
+      partBounds.getCenter(partCenter);
+      partBounds.getSize(partSize);
+
+      const baseCenterX = hasHostComponents ? hostCenterVec.x : 0;
+      const deltaX = partCenter.x - baseCenterX;
+      const halfPartW = partSize.x / 2;
+
+      let targetX = partCenter.x;
+      if (hasHostComponents && scaleX > 0 && Math.abs(scaleX - 1) > 0.0001) {
+        if (deltaX > 0.02) {
+          const modeledOuterEdgeDist = partBounds.max.x - baseCenterX;
+          targetX = baseCenterX + modeledOuterEdgeDist - (halfPartW / scaleX);
+        } else if (deltaX < -0.02) {
+          const modeledOuterEdgeDist = baseCenterX - partBounds.min.x;
+          targetX = baseCenterX - modeledOuterEdgeDist + (halfPartW / scaleX);
+        }
+      }
+
+      const fixedContainer = new THREE.Group();
+      fixedContainer.name = `${component.componentName || "fixed_part"}_container`;
+      fixedContainer.userData = {
+        ...clone.userData,
+        dimensionBinding: "FIXED",
+        isFixedDimension: true,
+      };
+      clone.position.sub(partCenter);
+      fixedContainer.add(clone);
+      fixedContainer.position.set(targetX, partCenter.y, partCenter.z);
+      fixedContainer.rotation.set(0, 0, 0);
+      group.add(fixedContainer);
+      continue;
+    }
+
     group.add(clone);
   }
 
-  recenterChildAtOrigin(group);
+  // Recenter assembled product around host structural components (invariant to swappable accessories)
+  if (hasHostComponents) {
+    group.position.sub(hostCenterVec);
+    group.updateMatrixWorld(true);
+  } else {
+    recenterChildAtOrigin(group);
+  }
 
-  // Apply parametric scaling based on resolved width, height, and depth
+  // Apply parametric scaling based on host structural components
   group.updateMatrixWorld(true);
-  const naturalBounds = new THREE.Box3().setFromObject(group);
-  const naturalSize = new THREE.Vector3();
-  naturalBounds.getSize(naturalSize);
-
-  const targetWidthMm = findDimensionMm(resolved, ["width", "quotation_width", "quotationWidth", "w"]);
-  const targetHeightMm = findDimensionMm(resolved, ["height", "quotation_height", "quotationHeight", "h"]);
-  const targetDepthMm = findDimensionMm(resolved, ["depth", "quotation_depth", "quotationDepth", "d"]);
-
-  const scaleX = targetWidthMm && naturalSize.x > 0.0001
-    ? (targetWidthMm / 1000) / naturalSize.x
-    : 1;
-
-  const scaleY = targetHeightMm && naturalSize.y > 0.0001
-    ? (targetHeightMm / 1000) / naturalSize.y
-    : 1;
-
-  const scaleZ = targetDepthMm && naturalSize.z > 0.0001
-    ? (targetDepthMm / 1000) / naturalSize.z
-    : 1;
-
   group.scale.set(scaleX, scaleY, scaleZ);
+
+  // Maintain 1:1 metric scale on hardware accessories and fixed parts
+  if (scaleX !== 1 || scaleY !== 1 || scaleZ !== 1) {
+    group.children.forEach((child) => {
+      const binding = child.userData?.dimensionBinding;
+      const isFixed = Boolean(
+        binding === "FIXED" ||
+        child.userData?.isFixedDimension ||
+        child.userData?.isAccessoryReplacement ||
+        (child.userData?.componentId && accessorySlotKeys.has(child.userData.componentId)) ||
+        (child.userData?.componentKey && accessorySlotKeys.has(child.userData.componentKey))
+      );
+
+      if (isFixed) {
+        child.scale.set(
+          scaleX > 0 ? 1 / scaleX : 1,
+          scaleY > 0 ? 1 / scaleY : 1,
+          scaleZ > 0 ? 1 / scaleZ : 1,
+        );
+      }
+    });
+  }
 
   // Attach procedural or uploaded front-layer add-on if active (IMP-MS68, IMP-MS69)
   if (options.activeAddon === "screen" || options.activeAddon === "grill") {
-    const targetW = targetWidthMm ?? (naturalSize.x > 0 ? naturalSize.x * 1000 : 1200);
-    const targetH = targetHeightMm ?? (naturalSize.y > 0 ? naturalSize.y * 1000 : 1200);
+    const targetW = targetWidthMm ?? (naturalWidthM > 0 ? naturalWidthM * 1000 : 1200);
+    const targetH = targetHeightMm ?? (naturalHeightM > 0 ? naturalHeightM * 1000 : 1200);
 
     const addonGroup = buildAddonAttachment(definition, targetW, targetH, cache, options);
 
@@ -517,6 +1221,73 @@ function buildAssembledProduct(
     addonGroup.position.set(localX, localY, localZ);
     group.add(addonGroup);
     group.updateMatrixWorld(true);
+  }
+
+  // Mount swapped modular accessories if configured (IMP-MS76)
+  if (options.swappedAccessories && Object.keys(options.swappedAccessories).length > 0) {
+    const hostBounds = new THREE.Box3().setFromObject(group);
+    const hostSize = new THREE.Vector3();
+    hostBounds.getSize(hostSize);
+
+    for (const [slotKey, swapped] of Object.entries(options.swappedAccessories)) {
+      if (!swapped) continue;
+      // Skip slots already mounted during component assembly to prevent duplication
+      if (accessorySlotKeys.has(slotKey)) continue;
+      const matchingComp = definition.components.find((c) => c.componentId === slotKey || c.componentKey === slotKey);
+      if (matchingComp) continue;
+
+      const isDefault = swapped.accessoryId === "default";
+
+      if (!isDefault) {
+        let accMesh = options.accessoryModels?.get(swapped.accessoryId);
+        if (!accMesh) {
+          try {
+            accMesh = cache.getClone(swapped.accessoryId);
+          } catch {
+            // fallback
+          }
+        }
+        if (!accMesh && (swapped.accessoryId.startsWith("canonical_") || swapped.accessoryId.startsWith("acc_"))) {
+          try {
+            accMesh = createAccessoryMeshById(swapped.accessoryId);
+          } catch {
+            // fallback
+          }
+        }
+        if (!accMesh) {
+          accMesh = createProceduralAccessoryMesh(swapped.category, swapped.accessoryName, swapped.finish);
+        }
+
+        const posOptions: AccessoryPositionOptions = {
+          allowHorizontalToggle: true,
+          defaultHorizontal: "right",
+          horizontalOffsetMm: 45,
+          allowVerticalToggle: swapped.category === "lock",
+          defaultVertical: "up",
+          verticalOffsetMm: 1000,
+        };
+
+        const sourceHanding = swapped.handingMetadata?.sourceHanding ?? null;
+        const mounted = mountAccessoryMesh(
+          group,
+          accMesh,
+          { widthM: hostSize.x || 1.2, heightM: hostSize.y || 2.1, depthM: hostSize.z || 0.08 },
+          posOptions,
+          swapped.horizontalPosition,
+          swapped.verticalPosition,
+          swapped.finish,
+          null,
+          sourceHanding,
+        );
+
+        // Cancel out group scaling on mounted accessory so it preserves exact dimensions
+        mounted.scale.set(
+          scaleX > 0 ? 1 / scaleX : 1,
+          scaleY > 0 ? 1 / scaleY : 1,
+          scaleZ > 0 ? 1 / scaleZ : 1,
+        );
+      }
+    }
   }
 
   applyPresentationMaterials(group, {
@@ -568,11 +1339,52 @@ function buildAddonAttachment(
 
   // 1. Prefer uploaded custom add-on components if present in catalog and cache
   if (matchingAddon && matchingAddon.components && matchingAddon.components.length > 0) {
+    const addonNaturalBounds = new THREE.Box3();
+    let hasAddonGeom = false;
+    for (const comp of matchingAddon.components) {
+      try {
+        let m: THREE.Object3D | null = null;
+        try { m = cache.getClone(comp.componentId); } catch { m = cache.getClone(comp.componentKey); }
+        if (m) {
+          m.updateMatrixWorld(true);
+          addonNaturalBounds.expandByObject(m);
+          hasAddonGeom = true;
+        }
+      } catch {
+        // ignore missing model in measurement pass
+      }
+    }
+
+    const addonNaturalCenter = new THREE.Vector3();
+    const addonNaturalSize = new THREE.Vector3();
+    if (hasAddonGeom) {
+      addonNaturalBounds.getCenter(addonNaturalCenter);
+      addonNaturalBounds.getSize(addonNaturalSize);
+    }
+
+    const scaleX = addonNaturalSize.x > 0.0001 ? targetWidthM / addonNaturalSize.x : 1;
+    const scaleY = addonNaturalSize.y > 0.0001 ? targetHeightM / addonNaturalSize.y : 1;
+    const addonBaseCenterX = hasAddonGeom ? addonNaturalCenter.x : 0;
+
     const uploadedGroup = new THREE.Group();
     uploadedGroup.name = `Addon_${addonType === "screen" ? "Screen" : "Grill"}_Assembly_Content`;
 
     let clonedCount = 0;
     for (const comp of matchingAddon.components) {
+      const toggleKey = comp.togglePropertyKey || `has_${comp.componentKey.replace(/-/g, "_")}`;
+      const isRemovableExcluded = Boolean(
+        (comp.isRemovable || comp.togglePropertyKey) &&
+        options.removableStates && (
+          options.removableStates[comp.componentId] === false ||
+          options.removableStates[comp.componentKey] === false ||
+          options.removableStates[toggleKey] === false ||
+          (comp.togglePropertyKey && options.removableStates[comp.togglePropertyKey] === false)
+        )
+      );
+      if (isRemovableExcluded) {
+        continue;
+      }
+
       try {
         let clone: THREE.Object3D | null = null;
         try {
@@ -586,7 +1398,98 @@ function buildAddonAttachment(
           clone.userData.componentName = comp.componentName;
           clone.userData.componentType = comp.componentType;
           clone.userData.presentationCategory = comp.presentationCategory;
-          uploadedGroup.add(clone);
+          clone.userData.dimensionBinding = comp.dimensionBinding ?? (comp as Record<string, unknown>).dimension_binding ?? "FIXED";
+
+          const swapped = options.swappedAccessories?.[comp.componentId] ?? options.swappedAccessories?.[comp.componentKey];
+          const hasHanding = Boolean(
+            comp.positionOptions?.allowHorizontalToggle ||
+            (comp.isAccessorySlot && comp.positionOptions?.defaultHorizontal) ||
+            (swapped?.horizontalPosition && comp.positionOptions?.allowHorizontalToggle)
+          );
+          if (hasHanding) {
+            clone.updateMatrixWorld(true);
+            const partBox = new THREE.Box3().setFromObject(clone);
+            const partCenter = new THREE.Vector3();
+            const partSize = new THREE.Vector3();
+            partBox.getCenter(partCenter);
+            partBox.getSize(partSize);
+            const deltaX = partCenter.x - addonBaseCenterX;
+            const modeledHanding: "left" | "right" = deltaX >= 0 ? "right" : "left";
+            const activeHanding: "left" | "right" = swapped?.horizontalPosition ?? comp.positionOptions?.defaultHorizontal ?? modeledHanding;
+
+            const halfPartW = partSize.x / 2;
+            const modeledOuterEdgeDist = modeledHanding === "right"
+              ? (partBox.max.x - addonBaseCenterX)
+              : (addonBaseCenterX - partBox.min.x);
+
+            let targetX: number;
+            if (hasAddonGeom && scaleX > 0 && Math.abs(scaleX - 1) > 0.0001) {
+              if (activeHanding === "right") {
+                targetX = addonBaseCenterX + modeledOuterEdgeDist - (halfPartW / scaleX);
+              } else {
+                targetX = addonBaseCenterX - modeledOuterEdgeDist + (halfPartW / scaleX);
+              }
+            } else {
+              targetX = activeHanding === "left" ? (addonBaseCenterX - Math.abs(deltaX)) : (addonBaseCenterX + Math.abs(deltaX));
+            }
+
+            if (activeHanding === modeledHanding) {
+              const container = new THREE.Group();
+              container.name = `${comp.componentName || "part"}_${activeHanding}`;
+              container.userData = { ...clone.userData, isMirroredHanding: false, isFixedDimension: true };
+              clone.position.sub(partCenter);
+              container.add(clone);
+              container.position.set(targetX, partCenter.y, partCenter.z);
+              uploadedGroup.add(container);
+            } else {
+              const mountedPart = mirrorPartAcrossCenterline(
+                clone,
+                addonBaseCenterX,
+                activeHanding,
+                undefined,
+                undefined,
+                targetX
+              );
+              mountedPart.userData = { ...clone.userData, isMirroredHanding: true, isFixedDimension: true };
+              uploadedGroup.add(mountedPart);
+            }
+          } else {
+            const isFixed = Boolean(
+              comp.dimensionBinding === "FIXED" ||
+              (comp as Record<string, unknown>).dimension_binding === "FIXED"
+            );
+            if (isFixed) {
+              clone.updateMatrixWorld(true);
+              const partBox = new THREE.Box3().setFromObject(clone);
+              const partCenter = new THREE.Vector3();
+              const partSize = new THREE.Vector3();
+              partBox.getCenter(partCenter);
+              partBox.getSize(partSize);
+
+              const deltaX = partCenter.x - addonBaseCenterX;
+              const halfPartW = partSize.x / 2;
+              let targetX = partCenter.x;
+              if (hasAddonGeom && scaleX > 0 && Math.abs(scaleX - 1) > 0.0001) {
+                if (deltaX > 0.02) {
+                  const modeledOuterEdgeDist = partBox.max.x - addonBaseCenterX;
+                  targetX = addonBaseCenterX + modeledOuterEdgeDist - (halfPartW / scaleX);
+                } else if (deltaX < -0.02) {
+                  const modeledOuterEdgeDist = addonBaseCenterX - partBox.min.x;
+                  targetX = addonBaseCenterX - modeledOuterEdgeDist + (halfPartW / scaleX);
+                }
+              }
+
+              const container = new THREE.Group();
+              container.name = `${comp.componentName || "part"}_container`;
+              container.userData = { ...clone.userData, isFixedDimension: true };
+              clone.position.sub(partCenter);
+              container.add(clone);
+              container.position.set(targetX, partCenter.y, partCenter.z);
+              uploadedGroup.add(container);
+            } else {
+              uploadedGroup.add(clone);
+            }
+          }
           clonedCount++;
         }
       } catch {
@@ -595,25 +1498,34 @@ function buildAddonAttachment(
     }
 
     if (clonedCount > 0) {
-      // Measure natural bounds of the uploaded components combined
-      uploadedGroup.updateMatrixWorld(true);
-      const naturalBounds = new THREE.Box3().setFromObject(uploadedGroup);
-      const naturalCenter = new THREE.Vector3();
-      const naturalSize = new THREE.Vector3();
-      naturalBounds.getCenter(naturalCenter);
-      naturalBounds.getSize(naturalSize);
-
       // Center the internal mesh geometry so that (0, 0, 0) is the exact center of the add-on
       for (const child of uploadedGroup.children) {
-        child.position.sub(naturalCenter);
+        child.position.sub(addonNaturalCenter);
       }
       uploadedGroup.position.set(0, 0, 0);
       uploadedGroup.updateMatrixWorld(true);
 
       // Scale the uploaded group so it exactly spans targetWidthM and targetHeightM
-      const scaleX = naturalSize.x > 0.0001 ? targetWidthM / naturalSize.x : 1;
-      const scaleY = naturalSize.y > 0.0001 ? targetHeightM / naturalSize.y : 1;
       uploadedGroup.scale.set(scaleX, scaleY, 1);
+
+      // Maintain 1:1 metric scale on fixed components within the add-on attachment
+      if (scaleX !== 1 || scaleY !== 1) {
+        uploadedGroup.children.forEach((child) => {
+          const binding = child.userData?.dimensionBinding;
+          const isFixed = Boolean(
+            binding === "FIXED" ||
+            child.userData?.isFixedDimension ||
+            child.userData?.isAccessoryReplacement
+          );
+          if (isFixed) {
+            child.scale.set(
+              scaleX > 0 ? 1 / scaleX : 1,
+              scaleY > 0 ? 1 / scaleY : 1,
+              1
+            );
+          }
+        });
+      }
       uploadedGroup.updateMatrixWorld(true);
 
       // Apply distinct materials and protect from global presentation overrides

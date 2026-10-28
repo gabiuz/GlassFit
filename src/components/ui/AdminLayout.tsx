@@ -25,7 +25,7 @@ export default function AdminLayout({ children, context }: AdminLayoutProps) {
                     onClose={() => setIsSidebarOpen(false)}
                     permissions={context.role.permissions}
                 />
-                <div className="flex-1 min-w-0 w-full px-4 sm:px-6 lg:px-10 py-6 overflow-x-hidden">
+                <div className="flex-1 min-w-0 w-full px-4 sm:px-6 lg:px-10 py-6 overflow-x-clip">
                     {children}
                 </div>
             </div>

@@ -9,7 +9,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
 import type { DimensionBinding, PresentationCategory } from "@/lib/pricing/types";
-import type { ComponentType } from "./types";
+import type { ComponentType, AccessoryCategory, AccessoryPositionOptions } from "./types";
 import { autoDetectComponentSettings } from "./autoDetection";
 
 // Polyfill FileReader for Node.js / unit testing environments if absent
@@ -65,6 +65,9 @@ export interface ExtractedComponentPart {
   isRemovable: boolean;
   togglePropertyKey: string | null;
   baseQuantity: number;
+  isAccessorySlot?: boolean;
+  accessoryCategory?: AccessoryCategory | null;
+  positionOptions?: AccessoryPositionOptions;
   dimensionsMm: {
     width: number;
     height: number;
@@ -467,6 +470,9 @@ export async function decomposeSceneGraph(
       isRemovable: detected.isRemovable,
       togglePropertyKey: detected.togglePropertyKey,
       baseQuantity: 1,
+      isAccessorySlot: detected.isAccessorySlot,
+      accessoryCategory: detected.accessoryCategory,
+      positionOptions: detected.positionOptions,
       dimensionsMm: {
         width: Math.max(1, Math.round(size.x * 1000)),
         height: Math.max(1, Math.round(size.y * 1000)),

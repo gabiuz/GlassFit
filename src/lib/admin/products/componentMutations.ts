@@ -10,10 +10,31 @@ import type {
     UpsertComponentInput,
     UpsertComponentPayload,
 } from "./types";
+import { validateAccessoryApprovalIds } from "./accessoryActions";
 
 export async function upsertProductComponent(input: UpsertComponentInput): Promise<string> {
     const adminCtx = await requirePermission("manage_products");
     const supabase = await createSupabaseServerClient();
+
+    let requireAccessoryOptions = false;
+    if (input.isAccessorySlot) {
+        const { data: template, error: templateError } = await supabase
+            .from("product_templates")
+            .select("product_id")
+            .eq("template_id", input.templateId)
+            .single();
+        if (templateError || !template) throw new Error("Product template could not be checked before saving its accessory slot.");
+        const { data: product, error: productError } = await supabase
+            .from("products")
+            .select("status")
+            .eq("product_id", template.product_id)
+            .single();
+        if (productError || !product) throw new Error("Product status could not be checked before saving its accessory slot.");
+        requireAccessoryOptions = product.status === "Active";
+    }
+    const approvedAccessoryIds = input.isAccessorySlot
+        ? await validateAccessoryApprovalIds(input.accessoryCategory, input.allowedAccessoryIds, input.componentName, requireAccessoryOptions)
+        : [];
 
     // Check if component already exists for this template/key
     const { data: existing } = await supabase
@@ -36,10 +57,11 @@ export async function upsertProductComponent(input: UpsertComponentInput): Promi
         resolvedRawMaterialId = defaultBinding ? defaultBinding.rawMaterialId : null;
     }
 
-    // We inject assembly_group into component_data if provided
+    // We inject assembly_group and handing_metadata into component_data if provided
     const mergedComponentData = {
         ...(input.componentData || {}),
         assembly_group: input.assemblyGroup || undefined,
+        ...(input.handingMetadata ? { handing_metadata: input.handingMetadata } : {}),
     };
 
     const payload = {
@@ -47,6 +69,8 @@ export async function upsertProductComponent(input: UpsertComponentInput): Promi
         component_type: input.componentType,
         base_quantity: input.baseQuantity,
         raw_material_id: resolvedRawMaterialId,
+        unit_price: Math.max(0, Number(input.unitPrice ?? 0)),
+        pricing_method: input.pricingMethod || (input.unitPrice !== undefined && input.unitPrice > 0 ? "Fixed" : "Included"),
         dimension_binding: input.dimensionBinding || "FIXED",
         span_ratio: typeof input.spanRatio === "number" ? input.spanRatio : 1.0,
         is_removable: Boolean(input.isRemovable),
@@ -54,6 +78,17 @@ export async function upsertProductComponent(input: UpsertComponentInput): Promi
         presentation_category: input.presentationCategory || "Framing",
         glb_file_url: input.glbFileUrl || null,
         component_data: mergedComponentData,
+        is_accessory_slot: Boolean(input.isAccessorySlot),
+        accessory_category: input.isAccessorySlot ? (input.accessoryCategory || null) : null,
+        allowed_accessory_ids: approvedAccessoryIds,
+        position_options: input.positionOptions || {
+            allowHorizontalToggle: true,
+            defaultHorizontal: "right",
+            horizontalOffsetMm: 45,
+            allowVerticalToggle: false,
+            defaultVertical: "up",
+            verticalOffsetMm: 1000,
+        },
         updated_by: adminCtx.profileId,
     };
 
@@ -209,6 +244,13 @@ export async function upsertProductComponentWithMaterials(
             assemblyGroup: payload.assemblyGroup,
             componentData: payload.componentData,
             materialBindings: payload.materialBindings,
+            isAccessorySlot: payload.isAccessorySlot,
+            accessoryCategory: payload.accessoryCategory,
+            allowedAccessoryIds: payload.allowedAccessoryIds,
+            positionOptions: payload.positionOptions,
+            unitPrice: payload.unitPrice,
+            pricingMethod: payload.pricingMethod,
+            handingMetadata: payload.handingMetadata,
         });
 
         return {
