@@ -147,9 +147,11 @@ export function ProductSetupWizard({ productId, initialData, initialStep }: Prod
             </div>
 
             {/* Stepper / Tabs */}
-            <div className="flex items-center gap-1.5 sm:gap-3 w-full overflow-x-auto pb-2">
+            <nav aria-label="Product setup steps" className="flex items-center gap-1.5 sm:gap-3 w-full overflow-x-auto pb-2">
                 {steps.map((step) => {
                     const isActive = activeStep === step.key;
+                    const activeIndex = steps.findIndex(item => item.key === activeStep);
+                    const isComplete = step.number - 1 < activeIndex;
                     // Disable future steps if we are a draft
                     const isDisabled = isDraft && step.number > 1;
 
@@ -158,14 +160,15 @@ export function ProductSetupWizard({ productId, initialData, initialStep }: Prod
                             key={step.key}
                             type="button"
                             disabled={isDisabled}
+                            aria-current={isActive ? "step" : undefined}
                             onClick={() => !isDisabled && handleStepChange(step.key)}
                             className={cn(
-                                "flex-1 sm:flex-none h-9 sm:h-[45px] px-2 sm:px-5 py-1.5 sm:py-2.5 rounded-[25px] flex items-center justify-center gap-1.5 sm:gap-3 transition-colors min-w-0",
+                                "shrink-0 h-9 sm:h-[45px] px-3 sm:px-5 py-1.5 sm:py-2.5 rounded-[25px] flex items-center justify-center gap-1.5 sm:gap-3 transition-colors whitespace-nowrap",
                                 isActive
                                     ? "bg-[#07b6d3] text-white shadow-xs"
                                     : isDisabled 
                                         ? "bg-neutral-100 text-neutral-400 cursor-not-allowed opacity-60"
-                                        : "bg-[#c3c3c3] text-white hover:bg-stone-400 cursor-pointer"
+                                        : isComplete ? "bg-[#0f1422] text-white hover:bg-neutral-800 cursor-pointer" : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200 cursor-pointer"
                             )}
                         >
                             <div className={cn(
@@ -174,13 +177,13 @@ export function ProductSetupWizard({ productId, initialData, initialStep }: Prod
                             )}>
                                 {step.number}
                             </div>
-                            <span className="text-xs sm:text-base lg:text-lg font-normal leading-tight truncate">
+                            <span className="text-xs sm:text-base lg:text-lg font-normal leading-tight">
                                 {step.label}
                             </span>
                         </button>
                     );
                 })}
-            </div>
+            </nav>
 
             {/* Step Content Area */}
             <div className="w-full bg-white rounded-[20px] p-4 sm:p-6 lg:p-[30px] shadow-xs">

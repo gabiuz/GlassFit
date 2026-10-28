@@ -447,6 +447,10 @@ The implementation adds client test suite `npm run test:ms63` and FastAPI CV ser
 | QAD-TC92.9 | Submit quotation with unapproved, revoked, or altered accessory data | New quotation is rejected before persistence | P0 |
 | QAD-TC92.10 | Restore original part | Original mesh returns and accessory price delta is zero | P0 |
 
+## QAD-TC94: Admin Components Workspace (IMP-MS79)
+
+QAD-TC94.1 through QAD-TC94.18 are defined in [MS79](implementation/ms79.md). Code checks completed on October 28, 2026: static typecheck, production build, focused ESLint, and 40 existing component, material, accessory, grille, and wizard regression tests. Browser acceptance on the 18-part Jalousie fixture, Fixed strategy, accessory products, responsive widths, and keyboard operation remains pending. Traces to PRD-F5, PRD-F10, PRD-F14, PRD-F19, SDD-C4, SDD-C7, SDD-C9, DSD-UI10, ERD-E6, and ERD-E17.
+
 
 
 
