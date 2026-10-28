@@ -34,6 +34,20 @@ export type AssetType =
     | "Variation Preview" 
     | "Other";
 
+/** Read current persisted publication asset status for Step 4 (FIX13-V1). */
+export async function hasQualifyingProductModelAsset(productId: string): Promise<boolean> {
+    await requirePermission("manage_products");
+    const supabase = await createSupabaseServerClient();
+    const { data, error } = await supabase.from("product_assets")
+        .select("asset_id")
+        .eq("product_id", productId)
+        .in("asset_type", ["Whole Model", "Catalog 3D Preview"])
+        .eq("status", "Active")
+        .limit(1);
+    if (error) throw new Error(`Could not verify product model asset: ${error.message}`);
+    return Boolean(data?.length);
+}
+
 export async function generatePresignedUrl(
     productId: string,
     assetType: AssetType,

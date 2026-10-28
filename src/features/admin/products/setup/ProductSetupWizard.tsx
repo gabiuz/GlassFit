@@ -220,8 +220,9 @@ export function ProductSetupWizard({ productId, initialData, initialStep }: Prod
                         modelStrategy={isAccessory ? "Fixed" : ((Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.model_strategy : productData?.product_templates?.model_strategy) || (isAddon ? "Parametric" : null))}
                         productType={productData?.product_type || "Window"}
                         initialData={Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.product_components : productData?.product_templates?.product_components}
-                        wholeModelAsset={productData?.product_assets?.find?.((a: ProductAssetSummary) => a.asset_type === "Catalog 3D Preview" && a.is_primary !== false) || null}
+                        wholeModelAsset={productData?.product_assets?.find?.((a: ProductAssetSummary) => (a.asset_type === "Whole Model" || a.asset_type === "Catalog 3D Preview") && a.status === "Active" && Boolean(a.file_url)) || null}
                         isAccessory={isAccessory}
+                        isAddon={isAddon}
                         initialAccessoryCategory={(productData?.accessory_category as AccessoryCategory) || null}
                         productBasePrice={typeof productData?.base_price === "number" ? productData.base_price : undefined}
                         onSave={() => handleStepChange(isAccessory ? "validation" : "parameters")}

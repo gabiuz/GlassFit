@@ -4,7 +4,9 @@ import React, { useState, useEffect, useMemo, Suspense } from "react";
 import { UploadCloud, X, Loader2, CheckCircle, AlertCircle, Eye, CheckSquare, Square, Layers, Sparkles } from "lucide-react";
 import { upsertProductComponent, deleteProductComponent } from "@/lib/admin/products/componentMutations";
 import type { ComponentType, AccessoryCategory, AccessoryPositionOptions } from "@/lib/admin/products/types";
-import { generatePresignedUrl, confirmAssetUpload } from "@/lib/admin/products/assetUpload";
+import { generatePresignedUrl, confirmAssetUpload, hasQualifyingProductModelAsset, deleteProductAssets } from "@/lib/admin/products/assetUpload";
+import { getComponentIssues, getProductComponentIssue } from "@/lib/admin/products/componentEligibility";
+import type { UpsertComponentInput } from "@/lib/admin/products/types";
 import { autoDetectComponentSettings, suggestCandidateMaterials } from "@/lib/admin/products/autoDetection";
 import { decomposeWholeModel, type ExtractedComponentPart } from "@/lib/admin/products/modelDecomposer";
 import { DecompositionPreviewModal } from "./DecompositionPreviewModal";
@@ -38,6 +40,7 @@ export type StructuralComponentsSectionProps = {
         byte_size?: number;
     } | null;
     isAccessory?: boolean;
+    isAddon?: boolean;
     initialAccessoryCategory?: AccessoryCategory | null;
     productBasePrice?: number;
     onSave: () => void;
@@ -545,6 +548,7 @@ export function StructuralComponentsSection({
     initialData,
     wholeModelAsset,
     isAccessory = false,
+    isAddon = false,
     initialAccessoryCategory = null,
     productBasePrice,
     onSave,
@@ -580,6 +584,17 @@ export function StructuralComponentsSection({
     const [cameraAction, setCameraAction] = useState<{ kind: "fit" | "reset" | "front"; serial: number } | null>(null);
     const [showUpload, setShowUpload] = useState(false);
     const [uploadErrors, setUploadErrors] = useState<string[]>([]);
+    const eligibilityContext = { modelStrategy, isAccessory, isAddon };
+    const issuesForPart = (part: MappedFile) => getComponentIssues({
+        pricingMethod: part.pricingMethod,
+        unitPrice: part.unitPrice,
+        dimensionBinding: part.dimensionBinding,
+        rawMaterialId: part.rawMaterialId,
+        materialBindings: part.materialBindings,
+        isAccessorySlot: part.isAccessorySlot,
+        hasModelPreview: Boolean(part.glbFileUrl || part.previewMesh),
+    }, eligibilityContext);
+    const hasPartIssue = (part: MappedFile) => part.status !== "success" || issuesForPart(part).length > 0;
 
     // Fetch master raw materials
     useEffect(() => {
@@ -1051,18 +1066,18 @@ export function StructuralComponentsSection({
 
             updateMappedFile(mapped.id, { status: "uploading" });
 
-            // 2. Upsert Component in DB with all MS-3 & MS64 & MS78 fields
-            const componentId = await upsertProductComponent({
+            // FIX13-V5: use one complete payload for initial and post-upload persistence.
+            const buildPayload = (glbFileUrl: string | null, handingMetadata = mapped.handingMetadata): UpsertComponentInput => ({
                 templateId,
                 componentKey: mapped.componentKey,
                 componentName: mapped.componentName,
                 componentType: mapped.componentType,
                 baseQuantity: mapped.baseQuantity,
                 rawMaterialId: mapped.rawMaterialId,
-                materialBindings: mapped.materialBindings?.map(b => ({
-                    rawMaterialId: b.rawMaterialId,
-                    isDefault: b.isDefault,
-                    displayOrder: b.displayOrder,
+                materialBindings: mapped.materialBindings?.map(binding => ({
+                    rawMaterialId: binding.rawMaterialId,
+                    isDefault: binding.isDefault,
+                    displayOrder: binding.displayOrder,
                 })),
                 dimensionBinding: mapped.dimensionBinding,
                 spanRatio: mapped.spanRatio,
@@ -1070,10 +1085,10 @@ export function StructuralComponentsSection({
                 togglePropertyKey: mapped.togglePropertyKey,
                 presentationCategory: mapped.presentationCategory,
                 assemblyGroup: mapped.assemblyGroup || undefined,
-                glbFileUrl: mapped.glbFileUrl || undefined,
+                glbFileUrl,
                 componentData: {
                     ...(dimensions ? { source_dimensions_mm: dimensions } : {}),
-                    ...(mapped.handingMetadata ? { handing_metadata: mapped.handingMetadata } : {}),
+                    ...(handingMetadata ? { handing_metadata: handingMetadata } : {}),
                     ...(mapped.accessoryCategory ? { accessory_category: mapped.accessoryCategory } : {}),
                 },
                 isAccessorySlot: mapped.isAccessorySlot,
@@ -1082,66 +1097,46 @@ export function StructuralComponentsSection({
                 positionOptions: mapped.positionOptions || undefined,
                 unitPrice: mapped.unitPrice !== undefined ? mapped.unitPrice : (isAccessory ? productBasePrice : undefined),
                 pricingMethod: mapped.pricingMethod || (isAccessory ? "Fixed" : undefined),
-                handingMetadata: mapped.handingMetadata,
+                handingMetadata,
             });
+            const payload = buildPayload(mapped.glbFileUrl || null);
+            if (isAccessory && (!Number.isFinite(payload.unitPrice) || (payload.unitPrice ?? 0) <= 0)) {
+                throw new Error("Accessory unit price is missing. Set a positive price before saving.");
+            }
 
-            // 3. Request Presigned URL & upload only if file has content
+            // Object storage and PostgreSQL have separate commit boundaries. Upload first.
             let primaryGlbUrl = mapped.glbFileUrl || "";
+            let stagedAsset: { assetId: string; objectKey: string } | null = null;
             if (mapped.file.size > 0) {
                 const { uploadUrl, assetId, objectKey } = await generatePresignedUrl(
-                    productId,
-                    "Component Model",
-                    mapped.file.name,
-                    mapped.file.type || "model/gltf-binary",
-                    componentId
+                    productId, "Component Model", mapped.file.name, mapped.file.type || "model/gltf-binary"
                 );
-
                 const uploadRes = await fetch(uploadUrl, {
                     method: "PUT",
                     body: mapped.file,
-                    headers: { "Content-Type": mapped.file.type || "model/gltf-binary" }
+                    headers: { "Content-Type": mapped.file.type || "model/gltf-binary" },
                 });
-
-                if (!uploadRes.ok) {
-                    throw new Error(`R2 Upload failed: ${uploadRes.statusText}`);
-                }
-
-                await confirmAssetUpload(
-                    productId,
-                    assetId,
-                    objectKey,
-                    "Component Model",
-                    mapped.file.name,
-                    mapped.file.type || "model/gltf-binary",
-                    mapped.file.size,
-                    componentId
-                );
+                if (!uploadRes.ok) throw new Error(`R2 upload failed: ${uploadRes.statusText}`);
+                stagedAsset = { assetId, objectKey };
                 primaryGlbUrl = getR2AssetUrl(objectKey) || "";
                 if (!primaryGlbUrl) throw new Error("Uploaded model URL could not be resolved.");
-                await upsertProductComponent({
-                    templateId,
-                    componentKey: mapped.componentKey,
-                    componentName: mapped.componentName,
-                    componentType: mapped.componentType,
-                    baseQuantity: mapped.baseQuantity,
-                    rawMaterialId: mapped.rawMaterialId,
-                    materialBindings: mapped.materialBindings,
-                    dimensionBinding: mapped.dimensionBinding,
-                    spanRatio: mapped.spanRatio,
-                    isRemovable: mapped.isRemovable,
-                    togglePropertyKey: mapped.togglePropertyKey,
-                    presentationCategory: mapped.presentationCategory,
-                    assemblyGroup: mapped.assemblyGroup,
-                    glbFileUrl: primaryGlbUrl,
-                    componentData: { ...(dimensions ? { source_dimensions_mm: dimensions } : {}) },
-                    isAccessorySlot: mapped.isAccessorySlot,
-                    accessoryCategory: mapped.accessoryCategory,
-                    allowedAccessoryIds: mapped.allowedAccessoryIds,
-                    positionOptions: mapped.positionOptions || undefined,
-                    unitPrice: mapped.unitPrice,
-                    pricingMethod: mapped.pricingMethod,
-                    handingMetadata: mapped.handingMetadata,
-                });
+            }
+
+            let componentId: string;
+            try {
+                componentId = await upsertProductComponent(buildPayload(primaryGlbUrl || null));
+            } catch (saveError) {
+                if (stagedAsset) {
+                    try { await deleteProductAssets([stagedAsset.objectKey]); }
+                    catch (cleanupError) { console.error("Staged component asset cleanup failed:", cleanupError); }
+                }
+                throw saveError;
+            }
+            if (stagedAsset) {
+                await confirmAssetUpload(
+                    productId, stagedAsset.assetId, stagedAsset.objectKey, "Component Model",
+                    mapped.file.name, mapped.file.type || "model/gltf-binary", mapped.file.size, componentId
+                );
             }
 
             // 4. Bilateral Handing Mesh Mirroring for hardware accessories (IMP-MS78)
@@ -1184,31 +1179,12 @@ export function StructuralComponentsSection({
                             mirroredAt: new Date().toISOString(),
                         };
 
-                        await upsertProductComponent({
-                            templateId,
-                            componentKey: mapped.componentKey,
-                            componentName: mapped.componentName,
-                            componentType: mapped.componentType,
-                            baseQuantity: mapped.baseQuantity,
-                            rawMaterialId: mapped.rawMaterialId,
-                            dimensionBinding: mapped.dimensionBinding,
-                            spanRatio: mapped.spanRatio,
-                            isRemovable: mapped.isRemovable,
-                            presentationCategory: mapped.presentationCategory,
-                            glbFileUrl: primaryGlbUrl,
-                            componentData: {
-                                ...(dimensions ? { source_dimensions_mm: dimensions } : {}),
-                                handing_metadata: finalHandingMetadata,
-                            },
-                            unitPrice: mapped.unitPrice !== undefined ? mapped.unitPrice : (isAccessory ? productBasePrice : undefined),
-                            pricingMethod: mapped.pricingMethod || (isAccessory ? "Fixed" : undefined),
-                            handingMetadata: finalHandingMetadata,
-                        });
+                        await upsertProductComponent(buildPayload(primaryGlbUrl, finalHandingMetadata));
 
                         updateMappedFile(mapped.id, { handingMetadata: finalHandingMetadata });
                     }
                 } catch (mirrorErr) {
-                    console.warn("Mirrored accessory GLB export or upload error:", mirrorErr);
+                    throw new Error(`Accessory handing model could not be saved: ${mirrorErr instanceof Error ? mirrorErr.message : "Unknown error"}`);
                 }
             }
 
@@ -1243,21 +1219,23 @@ export function StructuralComponentsSection({
             const chunk = pending.slice(i, i + chunkSize);
             results.push(...await Promise.all(chunk.map(processSingleUpload)));
         }
+        const successfullyRemoved: string[] = [];
         for (const removed of removedFiles) {
             if (removed.persisted) {
                 try {
                     await deleteProductComponent(templateId, removed.componentKey);
+                    successfullyRemoved.push(removed.id);
                 } catch (error) {
                     results.push({ name: removed.componentName, success: false, error: error instanceof Error ? error.message : "Delete failed" });
                 }
-            }
+            } else successfullyRemoved.push(removed.id);
         }
+        setRemovedFiles(previous => previous.filter(item => !successfullyRemoved.includes(item.id)));
         const failures = results.filter(result => !result.success);
         if (failures.length) {
             setSaveError(failures.map(result => `${result.name}: ${result.error}`).join("; "));
             setSaveState("error");
         } else {
-            setRemovedFiles([]);
             setSaveState("saved");
         }
         setIsUploadingAll(false);
@@ -1268,14 +1246,18 @@ export function StructuralComponentsSection({
 
     const handleContinue = async () => {
         if (hasPendingChanges && !(await handleUploadAll())) return;
-        if (!mappedFiles.length) {
-            setSaveError("Add at least one component before continuing.");
+        let hasQualifyingModelAsset = false;
+        try {
+            hasQualifyingModelAsset = await hasQualifyingProductModelAsset(productId);
+        } catch (error) {
+            setSaveError(error instanceof Error ? error.message : "Could not verify product model asset.");
             setSaveState("error");
             return;
         }
-        const invalid = mappedFiles.filter(m => (modelStrategy !== "Fixed" && !m.isAccessorySlot && !m.rawMaterialId) || (!m.glbFileUrl && !m.previewMesh));
-        if (invalid.length) {
-            setSaveError(`Review required for ${invalid.map(m => m.componentName).join(", ")}: assign a default material and verify a model preview.`);
+        const productIssue = getProductComponentIssue({ ...eligibilityContext, componentsCount: mappedFiles.length, hasQualifyingModelAsset });
+        const partIssues = mappedFiles.flatMap(part => issuesForPart(part).map(issue => `${part.componentName}: ${issue}`));
+        if (productIssue || partIssues.length) {
+            setSaveError([productIssue, ...partIssues].filter(Boolean).join("; "));
             setSaveState("error");
             return;
         }
@@ -1545,7 +1527,7 @@ export function StructuralComponentsSection({
                     <div className="text-right">
                         <span className="text-neutral-400 block text-[11px]">BOM Estimation Status</span>
                         <span className="text-xs font-medium text-white flex items-center gap-1.5">
-                            {mappedFiles.every(m => m.status === "success" && (m.rawMaterialId || modelStrategy === "Fixed" || m.isAccessorySlot) && (m.glbFileUrl || m.previewMesh)) && !removedFiles.length ? "Ready for Validation" : "Needs review"}
+                            {mappedFiles.every(m => !hasPartIssue(m)) && !removedFiles.length && (mappedFiles.length > 0 || modelStrategy === "Fixed" && Boolean(wholeModelAsset)) ? "Ready for Validation" : "Needs review"}
                         </span>
                     </div>
                 </div>
@@ -1775,7 +1757,7 @@ export function StructuralComponentsSection({
                             <input aria-label="Search parts" value={partSearch} onChange={event => setPartSearch(event.target.value)} placeholder="Search parts" className="mb-2 w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" />
                             <button type="button" aria-pressed={showIssuesOnly} onClick={() => setShowIssuesOnly(value => !value)} className="mb-2 rounded-lg border border-neutral-200 px-2 py-1 text-xs">{showIssuesOnly ? "Show all parts" : "Show issues only"}</button>
                             <div className="grid grid-cols-2 gap-1 sm:grid-cols-3">
-                                {mappedFiles.filter(part => `${part.componentName} ${part.presentationCategory}`.toLowerCase().includes(partSearch.toLowerCase()) && (!showIssuesOnly || part.status === "error" || !part.rawMaterialId && modelStrategy !== "Fixed" && !part.isAccessorySlot)).map(part => <div key={part.id} className={`flex items-center gap-1 rounded-lg px-1 ${selectedIds.has(part.id) ? "bg-[#0f1422] text-white" : "bg-neutral-100 text-neutral-800"}`}><button type="button" aria-pressed={selectedIds.has(part.id)} onClick={() => handleSelectPart(part.id, false)} className="flex-1 px-1 py-1.5 text-left text-xs focus-visible:outline-2 focus-visible:outline-[#07b6d3]">{part.componentName}{part.status === "error" ? " · Error" : ""}</button><button type="button" aria-label={`Toggle ${part.componentName} in batch selection`} aria-pressed={selectedIds.has(part.id)} onClick={() => handleSelectPart(part.id, true)} className="rounded px-1 text-xs focus-visible:outline-2 focus-visible:outline-[#07b6d3]">{selectedIds.has(part.id) ? "✓" : "+"}</button></div>)}
+                                {mappedFiles.filter(part => `${part.componentName} ${part.presentationCategory}`.toLowerCase().includes(partSearch.toLowerCase()) && (!showIssuesOnly || hasPartIssue(part))).map(part => <div key={part.id} className={`flex items-center gap-1 rounded-lg px-1 ${selectedIds.has(part.id) ? "bg-[#0f1422] text-white" : "bg-neutral-100 text-neutral-800"}`}><button type="button" aria-pressed={selectedIds.has(part.id)} onClick={() => handleSelectPart(part.id, false)} className="flex-1 px-1 py-1.5 text-left text-xs focus-visible:outline-2 focus-visible:outline-[#07b6d3]">{part.componentName}{part.status === "error" ? " · Error" : ""}</button><button type="button" aria-label={`Toggle ${part.componentName} in batch selection`} aria-pressed={selectedIds.has(part.id)} onClick={() => handleSelectPart(part.id, true)} className="rounded px-1 text-xs focus-visible:outline-2 focus-visible:outline-[#07b6d3]">{selectedIds.has(part.id) ? "✓" : "+"}</button></div>)}
                             </div>
                         </div>
                     </div>
