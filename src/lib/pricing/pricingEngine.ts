@@ -372,7 +372,7 @@ export function generateQuotationSnapshot(
   options?: { structuralWaiver?: boolean }
 ): QuotationBOMSummary {
   const isWaiver = options?.structuralWaiver ?? result.bomSummary.structural_waiver;
-  
+
   const groups: QuotationBOMGroupItem[] = result.bomSummary.groups.map(group => ({
     ...group,
     structural_waiver: isWaiver,
@@ -442,7 +442,7 @@ export function calculateStandardSeries798(params: {
 
   // Fixed hardware rates
   const pHardware = rollerQty * 25.0 + lockQty * 65.0 + (isThreePanel ? 70.0 : 50.0);
-  
+
   // Consumables (silicone + gaskets)
   let pConsumables = 220.0;
   if (params.widthMm === 1800 && hasSill) pConsumables = 260.0;
@@ -964,8 +964,8 @@ export function calculateOverlayPricing(overlay: PlacedOverlay): {
   const widthMm = (Number(overlay.configuration.widthCm) || 120) * 10;
   const heightMm = (Number(overlay.configuration.heightCm) || 120) * 10;
   if (overlay.bomResult && overlay.unitPrice !== undefined && overlay.totalPrice !== undefined &&
-      Math.abs(overlay.bomResult.widthM * 1000 - widthMm) < 1e-6 &&
-      Math.abs(overlay.bomResult.heightM * 1000 - heightMm) < 1e-6) {
+    Math.abs(overlay.bomResult.widthM * 1000 - widthMm) < 1e-6 &&
+    Math.abs(overlay.bomResult.heightM * 1000 - heightMm) < 1e-6) {
     return {
       bomResult: overlay.bomResult,
       unitPrice: overlay.unitPrice,
