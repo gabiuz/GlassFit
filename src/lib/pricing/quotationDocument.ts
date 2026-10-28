@@ -74,6 +74,9 @@ export const QuotationDocumentItemSchema = z.object({
   addonPrice: money.optional(),
   baseUnitPrice: money.optional(),
   addonAluminumFinish: z.string().optional(),
+  addonMountingSide: z.enum(["front", "back"]).optional(),
+  hatchCount: z.number().int().nonnegative().optional(),
+  hatchTargetKeys: z.array(z.string()).optional(),
   grilleBOM: z.custom<GrilleLinearBOMResult>().nullable().optional(),
   swappedAccessories: z.array(SwappedAccessoryDocumentSchema).optional(),
   accessoryPriceDelta: money.optional(),
@@ -256,6 +259,9 @@ export function createQuotationDocumentSnapshotV1(input: {
       addonPrice: item.addonPrice,
       baseUnitPrice: item.baseUnitPrice,
       addonAluminumFinish: item.addonAluminumFinish,
+      addonMountingSide: item.addonMountingSide,
+      hatchCount: item.hatchCount,
+      hatchTargetKeys: item.hatchTargetKeys,
       grilleBOM: item.grilleBOM,
       swappedAccessories: item.swappedAccessories
         ? (Array.isArray(item.swappedAccessories)

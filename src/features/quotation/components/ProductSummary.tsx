@@ -208,6 +208,30 @@ function createProductSummaryItemFromOverlay(
   const selectedAddon = (config.selectedAddon as "none" | "screen" | "grill") ?? (config.addonProductId ? "screen" : undefined);
   const addonProductId = config.addonProductId ?? null;
   const addonAluminumFinish = config.addonAluminumFinish;
+  const addonMountingSide = (config.addonMountingSide as "front" | "back") ?? undefined;
+  const hatchCount = Number(config.hatchCount) || 0;
+  const hatchTargetKeys = Array.isArray(config.hatchTargetKeys) ? (config.hatchTargetKeys as string[]) : undefined;
+
+  const sideLabel = addonMountingSide === "back"
+    ? "Interior Mount / Back"
+    : addonMountingSide === "front"
+      ? "Exterior Mount / Front"
+      : null;
+  const hatchLabel = hatchCount > 0
+    ? `with ${hatchCount}x Operator Access ${hatchCount === 1 ? "Hatch" : "Hatches"}`
+    : null;
+  const sideHatchClause = [sideLabel, hatchLabel].filter(Boolean).length > 0
+    ? ` (${[sideLabel, hatchLabel].filter(Boolean).join(", ")})`
+    : "";
+
+  const formattedAddonName = addonName
+    ? `${addonName}${sideHatchClause}`
+    : selectedAddon === "screen"
+      ? `Insect Screen${sideHatchClause}`
+      : selectedAddon === "grill"
+        ? `Security Grille${sideHatchClause}`
+        : null;
+
   const baseUnitPrice = unitPrice - addonPrice;
 
   const item: ProductItem = {
@@ -219,7 +243,7 @@ function createProductSummaryItemFromOverlay(
       dimension,
       !hasSill ? "Flush Base (No Sill)" : null,
       panelCount > 2 ? `${panelCount}-Panel` : null,
-      addonName && selectedAddon && selectedAddon !== "none" ? `Add-on: ${addonName}` : null,
+      formattedAddonName && selectedAddon && selectedAddon !== "none" ? `Add-on: ${formattedAddonName}` : null,
     ]
       .filter(Boolean)
       .join(" | "),
@@ -247,6 +271,9 @@ function createProductSummaryItemFromOverlay(
       addonName,
       addonPrice: addonPrice > 0 ? addonPrice : undefined,
       addonAluminumFinish,
+      addonMountingSide,
+      hatchCount: hatchCount > 0 ? hatchCount : undefined,
+      hatchTargetKeys,
       baseUnitPrice,
       bomGroups: {
         framingAmount: bomCalc.effectiveFramingCost,
@@ -338,6 +365,29 @@ function createProductSummaryItem(
   const selectedAddon = (configuration?.selectedAddon as "none" | "screen" | "grill") ?? (configuration?.addonProductId ? "screen" : undefined);
   const addonProductId = configuration?.addonProductId ?? null;
   const addonAluminumFinish = configuration?.addonAluminumFinish;
+  const addonMountingSide = (configuration?.addonMountingSide as "front" | "back") ?? undefined;
+  const hatchCount = Number(configuration?.hatchCount) || 0;
+  const hatchTargetKeys = Array.isArray(configuration?.hatchTargetKeys) ? (configuration?.hatchTargetKeys as string[]) : undefined;
+
+  const sideLabel = addonMountingSide === "back"
+    ? "Interior Mount / Back"
+    : addonMountingSide === "front"
+      ? "Exterior Mount / Front"
+      : null;
+  const hatchLabel = hatchCount > 0
+    ? `with ${hatchCount}x Operator Access ${hatchCount === 1 ? "Hatch" : "Hatches"}`
+    : null;
+  const sideHatchClause = [sideLabel, hatchLabel].filter(Boolean).length > 0
+    ? ` (${[sideLabel, hatchLabel].filter(Boolean).join(", ")})`
+    : "";
+
+  const formattedAddonName = addonName
+    ? `${addonName}${sideHatchClause}`
+    : selectedAddon === "screen"
+      ? `Insect Screen${sideHatchClause}`
+      : selectedAddon === "grill"
+        ? `Security Grille${sideHatchClause}`
+        : null;
 
   const baseUnitPrice =
     bomCalc.finalQuotation > 0
@@ -358,7 +408,7 @@ function createProductSummaryItem(
       dimension,
       !hasSill ? "Flush Base (No Sill)" : null,
       panelCount > 2 ? `${panelCount}-Panel` : null,
-      addonName && selectedAddon && selectedAddon !== "none" ? `Add-on: ${addonName}` : null,
+      formattedAddonName && selectedAddon && selectedAddon !== "none" ? `Add-on: ${formattedAddonName}` : null,
     ]
       .filter(Boolean)
       .join(" | "),
@@ -385,6 +435,9 @@ function createProductSummaryItem(
       addonName,
       addonPrice: addonPrice > 0 ? addonPrice : undefined,
       addonAluminumFinish,
+      addonMountingSide,
+      hatchCount: hatchCount > 0 ? hatchCount : undefined,
+      hatchTargetKeys,
       baseUnitPrice,
       bomGroups: {
         framingAmount: bomCalc.effectiveFramingCost,
@@ -423,6 +476,9 @@ function createProductSummaryItem(
     addonPrice: addonPrice > 0 ? addonPrice : undefined,
     baseUnitPrice,
     addonAluminumFinish,
+    addonMountingSide,
+    hatchCount: hatchCount > 0 ? hatchCount : undefined,
+    hatchTargetKeys,
     grilleBOM: configuration?.grilleBOM ?? null,
     ...quotationMeasurement(configuration),
   };

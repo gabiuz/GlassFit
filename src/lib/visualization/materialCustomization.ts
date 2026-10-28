@@ -206,6 +206,8 @@ function getComponentMultiplier(
       return widthM * span * qty;
     case "HEIGHT":
       return heightM * span * qty;
+    case "PERIMETER":
+      return 2 * (widthM + heightM) * span * qty;
     case "AREA":
       return widthM * heightM * span * qty;
     case "FIXED":

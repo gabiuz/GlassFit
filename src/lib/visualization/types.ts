@@ -199,6 +199,10 @@ export type CompatibleAddon = {
   addonType: "screen" | "grill";
   isDefaultEnabled?: boolean;
   displayOrder?: number;
+  allowedSides?: "front" | "back" | "both";
+  defaultSide?: "front" | "back";
+  hatchTargetComponentKeys?: string[] | null;
+  hatchAlignmentConfig?: Record<string, unknown> | null;
   addonProduct?: {
     productId: string;
     productName: string;
@@ -378,6 +382,9 @@ export type ProductConfigurationSnapshot = {
   addonName?: string | null;
   addonPrice?: number;
   addonAluminumFinish?: string;
+  addonMountingSide?: "front" | "back";
+  hatchCount?: number;
+  hatchTargetKeys?: string[];
   baseUnitPrice?: number;
   grilleBOM?: import("@/lib/pricing/types").GrilleLinearBOMResult | null;
   swappedAccessories?: Record<string, SelectedAccessoryState>;

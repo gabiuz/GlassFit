@@ -30,6 +30,8 @@ export type ModelPresentationOptions = {
   activeAddon?: "screen" | "grill" | "none" | null;
   addonProductId?: string | null;
   addonAluminumFinish?: string;
+  addonMountingSide?: "front" | "back";
+  hatchTargetComponentKeys?: string[];
   addonConfig?: AddonGeometryConfig;
   swappedAccessories?: Record<string, import("./types").SelectedAccessoryState>;
 };
@@ -379,6 +381,8 @@ export class ProductModelRenderer {
       activeAddon: presentation.activeAddon,
       addonProductId: presentation.addonProductId,
       addonAluminumFinish: presentation.addonAluminumFinish,
+      addonMountingSide: presentation.addonMountingSide,
+      hatchTargetComponentKeys: presentation.hatchTargetComponentKeys,
       addonConfig: presentation.addonConfig,
       swappedAccessories: presentation.swappedAccessories,
     });

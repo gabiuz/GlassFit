@@ -1,21 +1,28 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { Info, Layers, Loader2, AlertCircle, CheckCircle2, ShieldCheck } from "lucide-react";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { Info, Layers, Loader2, AlertCircle, CheckCircle2, ShieldCheck, Crosshair } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   getAvailableAddonProducts,
   getCompatibleAddonsForProduct,
   saveProductAddonInheritance,
 } from "@/lib/admin/products/addonMutations";
-import type { AvailableAddonProduct } from "@/lib/admin/products/types";
+import type { AvailableAddonProduct, AddonAllowedSides, AddonMountingSide } from "@/lib/admin/products/types";
 
 export interface AddonInheritanceSectionProps {
   productId: string;
   isAddon?: boolean;
+  productType?: string;
+  hostComponents?: Array<Record<string, unknown>>;
 }
 
-export function AddonInheritanceSection({ productId, isAddon = false }: AddonInheritanceSectionProps) {
+export function AddonInheritanceSection({
+  productId,
+  isAddon = false,
+  productType = "Window",
+  hostComponents = [],
+}: AddonInheritanceSectionProps) {
   const [screens, setScreens] = useState<AvailableAddonProduct[]>([]);
   const [grills, setGrills] = useState<AvailableAddonProduct[]>([]);
   const [hasScreen, setHasScreen] = useState(false);
@@ -23,10 +30,42 @@ export function AddonInheritanceSection({ productId, isAddon = false }: AddonInh
   const [hasGrill, setHasGrill] = useState(false);
   const [selectedGrillProductIds, setSelectedGrillProductIds] = useState<string[]>([]);
 
+  // Mounting side and hatch operator targeting state (IMP-MS80)
+  const isOutwardProjecting = productType === "Awning Window" || productType === "Casement Window";
+  const [screenAllowedSides, setScreenAllowedSides] = useState<AddonAllowedSides>(
+    isOutwardProjecting ? "back" : "both"
+  );
+  const [screenDefaultSide, setScreenDefaultSide] = useState<AddonMountingSide>("back");
+  const [screenHatchTargets, setScreenHatchTargets] = useState<string[]>([]);
+
+  const [grillAllowedSides, setGrillAllowedSides] = useState<AddonAllowedSides>("both");
+  const [grillDefaultSide, setGrillDefaultSide] = useState<AddonMountingSide>("front");
+
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saved" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const candidateOperatorComponents = useMemo(() => {
+    return (hostComponents || []).filter((comp) => {
+      const key = String(comp.component_key || comp.componentKey || "").toLowerCase();
+      const name = String(comp.component_name || comp.componentName || "").toLowerCase();
+      const cat = String(comp.presentation_category || comp.presentationCategory || comp.component_type || "").toLowerCase();
+      return (
+        key.includes("operator") ||
+        key.includes("crank") ||
+        key.includes("latch") ||
+        key.includes("handle") ||
+        key.includes("rotator") ||
+        name.includes("operator") ||
+        name.includes("crank") ||
+        name.includes("latch") ||
+        name.includes("handle") ||
+        name.includes("rotator") ||
+        cat.includes("hardware")
+      );
+    });
+  }, [hostComponents]);
 
   const loadData = useCallback(async () => {
     if (!productId || productId === "draft") {
@@ -51,18 +90,28 @@ export function AddonInheritanceSection({ productId, isAddon = false }: AddonInh
       if (screenBindings.length > 0) {
         setHasScreen(true);
         setSelectedScreenProductIds(screenBindings.map((b) => b.addonProductId));
+        setScreenAllowedSides(screenBindings[0].allowedSides ?? (isOutwardProjecting ? "back" : "both"));
+        setScreenDefaultSide(screenBindings[0].defaultSide ?? "back");
+        setScreenHatchTargets(screenBindings[0].hatchTargetComponentKeys ?? []);
       } else {
         setHasScreen(false);
         setSelectedScreenProductIds(availableScreens.length > 0 ? [availableScreens[0].productId] : []);
+        setScreenAllowedSides(isOutwardProjecting ? "back" : "both");
+        setScreenDefaultSide("back");
+        setScreenHatchTargets([]);
       }
 
       const grillBindings = bindings.filter((b) => b.addonType === "grill");
       if (grillBindings.length > 0) {
         setHasGrill(true);
         setSelectedGrillProductIds(grillBindings.map((b) => b.addonProductId));
+        setGrillAllowedSides(grillBindings[0].allowedSides ?? "both");
+        setGrillDefaultSide(grillBindings[0].defaultSide ?? "front");
       } else {
         setHasGrill(false);
         setSelectedGrillProductIds(availableGrills.length > 0 ? [availableGrills[0].productId] : []);
+        setGrillAllowedSides("both");
+        setGrillDefaultSide("front");
       }
     } catch (err: unknown) {
       console.error("Failed to load add-on configuration:", err);
@@ -70,7 +119,7 @@ export function AddonInheritanceSection({ productId, isAddon = false }: AddonInh
     } finally {
       setIsLoading(false);
     }
-  }, [productId]);
+  }, [productId, isOutwardProjecting]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -130,9 +179,14 @@ export function AddonInheritanceSection({ productId, isAddon = false }: AddonInh
         hasScreen,
         screenAddonProductId: selectedScreenProductIds[0] ?? null,
         screenAddonProductIds: hasScreen ? selectedScreenProductIds : [],
+        screenAllowedSides,
+        screenDefaultSide,
+        screenHatchTargetComponentKeys: screenHatchTargets,
         hasGrill,
         grillAddonProductId: selectedGrillProductIds[0] ?? null,
         grillAddonProductIds: hasGrill ? selectedGrillProductIds : [],
+        grillAllowedSides,
+        grillDefaultSide,
       });
 
       setSaveStatus("saved");
@@ -309,6 +363,168 @@ export function AddonInheritanceSection({ productId, isAddon = false }: AddonInh
                   Please select at least one screen template or disable screen attachment.
                 </p>
               )}
+
+              {/* Physical Collision Guardrail Warning (IMP-MS80) */}
+              {isOutwardProjecting && screenAllowedSides !== "back" && (
+                <div className="flex items-start gap-2.5 p-3 rounded-[10px] bg-amber-50 border border-amber-200 text-amber-900 text-xs">
+                  <AlertCircle className="size-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div className="flex flex-col gap-0.5">
+                    <span className="font-semibold text-amber-950">Physical Collision Warning</span>
+                    <span>
+                      Awning and casement sashes project outward when opened. Exterior screens will be struck by the opening sash. Interior (Back) mounting is recommended.
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Allowed Mounting Sides (IMP-MS80) */}
+              <div className="flex flex-col gap-2 pt-3 border-t border-teal-200/60">
+                <span className="text-xs font-semibold text-neutral-800">Allowed Mounting Sides</span>
+                <div className="grid grid-cols-3 gap-2">
+                  <label
+                    className={cn(
+                      "flex items-center gap-2 p-2.5 rounded-[8px] border text-xs cursor-pointer transition-all",
+                      screenAllowedSides === "front"
+                        ? "border-teal-500 bg-teal-50/50 font-medium text-neutral-900"
+                        : "border-neutral-200 hover:border-neutral-300 text-neutral-600"
+                    )}
+                  >
+                    <input
+                      type="radio"
+                      name="screenAllowedSides"
+                      value="front"
+                      checked={screenAllowedSides === "front"}
+                      onChange={() => setScreenAllowedSides("front")}
+                      className="size-3.5 text-[#07b6d3] focus:ring-[#07b6d3]"
+                    />
+                    <span>Front (Exterior) Only</span>
+                  </label>
+                  <label
+                    className={cn(
+                      "flex items-center gap-2 p-2.5 rounded-[8px] border text-xs cursor-pointer transition-all",
+                      screenAllowedSides === "back"
+                        ? "border-teal-500 bg-teal-50/50 font-medium text-neutral-900"
+                        : "border-neutral-200 hover:border-neutral-300 text-neutral-600"
+                    )}
+                  >
+                    <input
+                      type="radio"
+                      name="screenAllowedSides"
+                      value="back"
+                      checked={screenAllowedSides === "back"}
+                      onChange={() => setScreenAllowedSides("back")}
+                      className="size-3.5 text-[#07b6d3] focus:ring-[#07b6d3]"
+                    />
+                    <span>Back (Interior) Only</span>
+                  </label>
+                  <label
+                    className={cn(
+                      "flex items-center gap-2 p-2.5 rounded-[8px] border text-xs cursor-pointer transition-all",
+                      screenAllowedSides === "both"
+                        ? "border-teal-500 bg-teal-50/50 font-medium text-neutral-900"
+                        : "border-neutral-200 hover:border-neutral-300 text-neutral-600"
+                    )}
+                  >
+                    <input
+                      type="radio"
+                      name="screenAllowedSides"
+                      value="both"
+                      checked={screenAllowedSides === "both"}
+                      onChange={() => setScreenAllowedSides("both")}
+                      className="size-3.5 text-[#07b6d3] focus:ring-[#07b6d3]"
+                    />
+                    <span>Both Sides</span>
+                  </label>
+                </div>
+
+                {screenAllowedSides === "both" && (
+                  <div className="flex items-center gap-3 pt-2">
+                    <span className="text-[11px] font-medium text-neutral-700">Default Side:</span>
+                    <div className="flex items-center gap-3 text-xs">
+                      <label className="flex items-center gap-1.5 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="screenDefaultSide"
+                          value="front"
+                          checked={screenDefaultSide === "front"}
+                          onChange={() => setScreenDefaultSide("front")}
+                          className="size-3 text-[#07b6d3] focus:ring-[#07b6d3]"
+                        />
+                        <span>Front (Exterior)</span>
+                      </label>
+                      <label className="flex items-center gap-1.5 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="screenDefaultSide"
+                          value="back"
+                          checked={screenDefaultSide === "back"}
+                          onChange={() => setScreenDefaultSide("back")}
+                          className="size-3 text-[#07b6d3] focus:ring-[#07b6d3]"
+                        />
+                        <span>Back (Interior)</span>
+                      </label>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Operator-Targeted Screen Hatch Alignment (IMP-MS80) */}
+              {candidateOperatorComponents.length > 0 && (
+                <div className="flex flex-col gap-2 pt-3 border-t border-teal-200/60">
+                  <div className="flex items-center justify-between">
+                    <div className="flex flex-col">
+                      <span className="text-xs font-semibold text-neutral-800 flex items-center gap-1.5">
+                        <Crosshair className="size-3.5 text-[#07b6d3]" />
+                        Operator Hatch Alignment Targets
+                      </span>
+                      <span className="text-[11px] text-neutral-500">
+                        Bind screen access hatches directly to host window operating mechanisms
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-teal-800 bg-teal-100 font-semibold px-2 py-0.5 rounded-md">
+                      {screenHatchTargets.length === 0
+                        ? "1 default hatch"
+                        : `${screenHatchTargets.length} target ${screenHatchTargets.length === 1 ? "operator" : "operators"} (${screenHatchTargets.length} ${screenHatchTargets.length === 1 ? "hatch" : "hatches"})`}
+                    </span>
+                  </div>
+
+                  <div className="flex flex-col gap-1.5 max-h-48 overflow-y-auto pr-1">
+                    {candidateOperatorComponents.map((comp) => {
+                      const compKey = String(comp.component_key || comp.componentKey || "");
+                      const compName = String(comp.component_name || comp.componentName || compKey);
+                      const isChecked = screenHatchTargets.includes(compKey);
+                      return (
+                        <label
+                          key={compKey}
+                          className={cn(
+                            "flex items-center justify-between p-2 rounded-[8px] border text-xs cursor-pointer transition-all",
+                            isChecked
+                              ? "bg-white border-teal-400 ring-1 ring-teal-300/40 text-neutral-900"
+                              : "bg-white/60 border-neutral-200 text-neutral-700 hover:border-neutral-300"
+                          )}
+                        >
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => {
+                                setScreenHatchTargets((prev) =>
+                                  prev.includes(compKey)
+                                    ? prev.filter((k) => k !== compKey)
+                                    : [...prev, compKey]
+                                );
+                              }}
+                              className="size-3.5 rounded text-[#07b6d3] focus:ring-[#07b6d3]"
+                            />
+                            <span className="font-medium">{compName}</span>
+                          </div>
+                          <span className="text-[11px] text-neutral-400 font-mono">{compKey}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -419,6 +635,97 @@ export function AddonInheritanceSection({ productId, isAddon = false }: AddonInh
                   Please select at least one security grille template or disable grille attachment.
                 </p>
               )}
+
+              {/* Allowed Mounting Sides for Security Grille (IMP-MS80) */}
+              <div className="flex flex-col gap-2 pt-3 border-t border-amber-200/60">
+                <span className="text-xs font-semibold text-neutral-800">Allowed Mounting Sides</span>
+                <div className="grid grid-cols-3 gap-2">
+                  <label
+                    className={cn(
+                      "flex items-center gap-2 p-2.5 rounded-[8px] border text-xs cursor-pointer transition-all",
+                      grillAllowedSides === "front"
+                        ? "border-amber-500 bg-amber-50/50 font-medium text-neutral-900"
+                        : "border-neutral-200 hover:border-neutral-300 text-neutral-600"
+                    )}
+                  >
+                    <input
+                      type="radio"
+                      name="grillAllowedSides"
+                      value="front"
+                      checked={grillAllowedSides === "front"}
+                      onChange={() => setGrillAllowedSides("front")}
+                      className="size-3.5 text-[#07b6d3] focus:ring-[#07b6d3]"
+                    />
+                    <span>Front (Exterior) Only</span>
+                  </label>
+                  <label
+                    className={cn(
+                      "flex items-center gap-2 p-2.5 rounded-[8px] border text-xs cursor-pointer transition-all",
+                      grillAllowedSides === "back"
+                        ? "border-amber-500 bg-amber-50/50 font-medium text-neutral-900"
+                        : "border-neutral-200 hover:border-neutral-300 text-neutral-600"
+                    )}
+                  >
+                    <input
+                      type="radio"
+                      name="grillAllowedSides"
+                      value="back"
+                      checked={grillAllowedSides === "back"}
+                      onChange={() => setGrillAllowedSides("back")}
+                      className="size-3.5 text-[#07b6d3] focus:ring-[#07b6d3]"
+                    />
+                    <span>Back (Interior) Only</span>
+                  </label>
+                  <label
+                    className={cn(
+                      "flex items-center gap-2 p-2.5 rounded-[8px] border text-xs cursor-pointer transition-all",
+                      grillAllowedSides === "both"
+                        ? "border-amber-500 bg-amber-50/50 font-medium text-neutral-900"
+                        : "border-neutral-200 hover:border-neutral-300 text-neutral-600"
+                    )}
+                  >
+                    <input
+                      type="radio"
+                      name="grillAllowedSides"
+                      value="both"
+                      checked={grillAllowedSides === "both"}
+                      onChange={() => setGrillAllowedSides("both")}
+                      className="size-3.5 text-[#07b6d3] focus:ring-[#07b6d3]"
+                    />
+                    <span>Both Sides</span>
+                  </label>
+                </div>
+
+                {grillAllowedSides === "both" && (
+                  <div className="flex items-center gap-3 pt-2">
+                    <span className="text-[11px] font-medium text-neutral-700">Default Side:</span>
+                    <div className="flex items-center gap-3 text-xs">
+                      <label className="flex items-center gap-1.5 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="grillDefaultSide"
+                          value="front"
+                          checked={grillDefaultSide === "front"}
+                          onChange={() => setGrillDefaultSide("front")}
+                          className="size-3 text-[#07b6d3] focus:ring-[#07b6d3]"
+                        />
+                        <span>Front (Exterior)</span>
+                      </label>
+                      <label className="flex items-center gap-1.5 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="grillDefaultSide"
+                          value="back"
+                          checked={grillDefaultSide === "back"}
+                          onChange={() => setGrillDefaultSide("back")}
+                          className="size-3 text-[#07b6d3] focus:ring-[#07b6d3]"
+                        />
+                        <span>Back (Interior)</span>
+                      </label>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>

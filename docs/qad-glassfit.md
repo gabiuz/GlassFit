@@ -451,6 +451,26 @@ The implementation adds client test suite `npm run test:ms63` and FastAPI CV ser
 
 QAD-TC94.1 through QAD-TC94.18 are defined in [MS79](implementation/ms79.md). Code checks completed on October 28, 2026: static typecheck, production build, focused ESLint, and 40 existing component, material, accessory, grille, and wizard regression tests. Browser acceptance on the 18-part Jalousie fixture, Fixed strategy, accessory products, responsive widths, and keyboard operation remains pending. Traces to PRD-F5, PRD-F10, PRD-F14, PRD-F19, SDD-C4, SDD-C7, SDD-C9, DSD-UI10, ERD-E6, and ERD-E17.
 
+## QAD-TC95: Directional Add-on Placement Side Compatibility and Operator-Targeted Multi-Hatch Alignment (IMP-MS80)
+
+**Status:** Implemented with automated unit tests (`npm run test:ms80`). Traces to IMP-MS80, PRD-F5, PRD-F10, PRD-F14, PRD-F19, SDD-C4, SDD-C5, SDD-C7, SDD-C9, DSD-UI4, DSD-UI7, DSD-UI10, ERD-E3, ERD-E6, ERD-E14, BRD-M2, BRD-M4, BRD-M5. See [MS80 implementation specification](implementation/ms80.md) for architectural contracts, Three.js 3D positioning, and quotation disclosure details.
+
+| Test ID | Scenario | Preconditions | Execution Steps | Expected Outcome | Severity |
+|---|---|---|---|---|---|
+| QAD-TC95.1 | Admin selects mounting side compatibility in Setup Wizard | Admin edits a window fixture in `/admin/products/[id]/setup` and opens Add-on Attachments step | 1. Select Front, Back, or Both<br>2. Save wizard | Choice persists cleanly to `product_compatible_addons.allowed_sides` | P0 |
+| QAD-TC95.2 | Awning window sash collision warning and automatic default | Product has `product_type = 'Awning Window'` and Screen add-on is enabled | 1. Inspect mounting side options<br>2. Select Front | Defaults screen mounting side to `back` (Interior); selecting `front` renders amber sash collision warning banner | P0 |
+| QAD-TC95.3 | Backward compatibility for legacy add-on bindings | Database contains existing rows in `product_compatible_addons` created prior to migration 026 | 1. Query compatible addons | Migration assigns `allowed_sides = 'both'` and `default_side = 'back'` without throwing runtime null errors | P0 |
+| QAD-TC95.4 | Admin selects multiple operator parts for hatch alignment | Admin opens Screen configuration on window with 2 right operator handles | 1. Check operator checkboxes<br>2. Save wizard | Both operator parts are selected; keys persist to `hatch_target_component_keys` | P0 |
+| QAD-TC95.5 | Single operator hatch alignment verification | Host window has 1 operator handle at X = +0.42m, Y = 0.50m; screen add-on enabled | 1. Build 3D assembly<br>2. Measure hatch center | Exactly 1 hatch is rendered, centered at X = +0.42m, Y = 0.50m on the screen mesh plane | P0 |
+| QAD-TC95.6 | Dual operator multi-hatch automated instantiation | Host window has 2 operators at Y = 0.35m and Y = 1.10m on the right jamb | 1. Build 3D assembly<br>2. Measure hatch centers | Exactly 2 access hatches are instantiated, each centered at vertical elevation of its respective operator | P0 |
+| QAD-TC95.7 | Bilateral handing matching for left vs right operators | Host window has an operator on the left jamb (X = -0.40m) | 1. Build 3D assembly<br>2. Inspect hatch mesh geometry | Assembly engine mirrors hatch mesh laterally across X axis matching left-side operator orientation | P0 |
+| QAD-TC95.8 | Customer workspace side toggle when allowed_sides is 'both' | Host sliding window has `allowed_sides = 'both'`; customer opens 3D workspace | 1. Click Front/Back toggle in Options dock | Switches add-on Z position across host frame between Front and Back with 8mm clearance gap | P0 |
+| QAD-TC95.9 | Customer workspace locked side when allowed_sides is 'back' | Host Awning window has `allowed_sides = 'back'`; customer opens 3D workspace | 1. Inspect Add-on Options dock | Dock displays locked badge `Interior Mount (Back) - Prevents Sash Collision`; customer cannot move screen to exterior | P0 |
+| QAD-TC95.10 | Parametric BOM scales hatch hardware by operator count | Jalousie window has 2 hatch targets; hatch hardware has `base_quantity = 1` | 1. Run parametric BOM calculation | Evaluates hatch hardware quantity to 2 pcs and calculates hardware cost subtotal accordingly | P0 |
+| QAD-TC95.11 | Quotation modal and Consultation PDF specification disclosure | Customer creates quotation for 2-operator Jalousie with screen mounted to Back | 1. Generate quotation and PDF | Specification line states `Insect Screen (Interior Mount / Back, with 2x Operator Access Hatches)` | P0 |
+| QAD-TC95.12 | Wizard round-trip state persistence | Admin configures mounting side and 2 operator targets, saves, and reloads | 1. Navigate between steps<br>2. Refresh page | Selections, radio values, and target operator tags are faithfully restored from database state | P0 |
+
+
 
 
 

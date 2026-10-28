@@ -21,6 +21,9 @@ export type ProductDetailsData = {
   addonName?: string | null;
   addonPrice?: number | null;
   addonAluminumFinish?: string | null;
+  addonMountingSide?: "front" | "back";
+  hatchCount?: number;
+  hatchTargetKeys?: string[];
   baseUnitPrice?: number | null;
   bomGroups?: {
     framingAmount: number;

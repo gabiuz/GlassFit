@@ -19,6 +19,9 @@ export interface AddonGeometryConfig {
   zOffsetMm?: number; // Forward offset in front of window (default: 18mm for screen, 22mm for grill)
   finishColor?: string; // Hex color for aluminum frame/bars
   mountPosition?: "front" | "rear"; // Mount placement relative to host window (default: front)
+  hasHatch?: boolean; // Whether procedural screen includes a wicket access hatch
+  isHatchHorizontal?: boolean; // Whether procedural screen hatch is oriented horizontally
+  hatchPositions?: Array<{ x: number; y: number }>; // World or relative positions for procedural hatches
 }
 
 export interface GrillPatternInfo {
@@ -148,6 +151,67 @@ export function buildParametricScreenGroup(
     meshPlane.userData.presentationCategory = "Hardware";
     meshPlane.position.set(0, 0, zOffset);
     group.add(meshPlane);
+  }
+
+  // 3. Optional Procedural Wicket Access Hatch (IMP-MS80)
+  if (config.hasHatch && innerWidthM > 0.25 && innerHeightM > 0.25) {
+    const isHorizontal = Boolean(config.isHatchHorizontal);
+    const hatchW = isHorizontal ? 0.28 : 0.18;
+    const hatchH = isHorizontal ? 0.16 : 0.26;
+    const hatchBorderW = 0.015;
+    const hatchDepth = frameDepth * 0.9;
+    const hatchGroup = new THREE.Group();
+    hatchGroup.name = "Screen_Access_Hatch_Procedural";
+    hatchGroup.userData.componentKey = "screen_access_hatch";
+    hatchGroup.userData.componentName = "Screen Access Hatch";
+    hatchGroup.userData.isAddon = true;
+    hatchGroup.userData.isHatchClone = true;
+    hatchGroup.userData.isHorizontalHatch = isHorizontal;
+    hatchGroup.userData.presentationCategory = "Hardware";
+
+    // Sub-frame extrusion rails for hatch opening
+    const hTop = new THREE.Mesh(new THREE.BoxGeometry(hatchW, hatchBorderW, hatchDepth), resolvedFrameMat);
+    hTop.position.set(0, hatchH / 2 - hatchBorderW / 2, 0);
+    const hBot = new THREE.Mesh(new THREE.BoxGeometry(hatchW, hatchBorderW, hatchDepth), resolvedFrameMat);
+    hBot.position.set(0, -hatchH / 2 + hatchBorderW / 2, 0);
+    const hLeft = new THREE.Mesh(new THREE.BoxGeometry(hatchBorderW, hatchH - 2 * hatchBorderW, hatchDepth), resolvedFrameMat);
+    hLeft.position.set(-hatchW / 2 + hatchBorderW / 2, 0, 0);
+    const hRight = new THREE.Mesh(new THREE.BoxGeometry(hatchBorderW, hatchH - 2 * hatchBorderW, hatchDepth), resolvedFrameMat);
+    hRight.position.set(hatchW / 2 - hatchBorderW / 2, 0, 0);
+
+    // Hatch latch hardware knob: placed at top center when horizontal, or side center when vertical
+    const latchMesh = isHorizontal
+      ? new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.035, 0.015), resolvedFrameMat)
+      : new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.012, 0.015), resolvedFrameMat);
+    if (isHorizontal) {
+      latchMesh.position.set(0, hatchH / 2 - hatchBorderW - 0.015, 0.006);
+    } else {
+      latchMesh.position.set(hatchW / 2 - hatchBorderW - 0.015, 0, 0.006);
+    }
+
+    hatchGroup.add(hTop, hBot, hLeft, hRight, latchMesh);
+    hatchGroup.traverse((c) => {
+      if (c instanceof THREE.Mesh) {
+        c.castShadow = true;
+        c.receiveShadow = true;
+        c.renderOrder = 0;
+        c.userData.preserveMaterial = true;
+      }
+    });
+
+    const rawPosX = config.hatchPositions?.[0]?.x ?? (isHorizontal ? 0 : (innerWidthM / 2 - hatchW / 2 - 0.03));
+    const rawPosY = config.hatchPositions?.[0]?.y ?? (-innerHeightM / 2 + hatchH / 2 + 0.02);
+
+    const minX = -innerWidthM / 2 + hatchW / 2 + 0.01;
+    const maxX = innerWidthM / 2 - hatchW / 2 - 0.01;
+    const minY = -innerHeightM / 2 + hatchH / 2 + 0.01;
+    const maxY = innerHeightM / 2 - hatchH / 2 - 0.01;
+
+    const posX = Math.max(minX, Math.min(maxX, rawPosX));
+    const posY = Math.max(minY, Math.min(maxY, rawPosY));
+
+    hatchGroup.position.set(posX, posY, zOffset + 0.002);
+    group.add(hatchGroup);
   }
 
   group.userData.addonType = "screen";

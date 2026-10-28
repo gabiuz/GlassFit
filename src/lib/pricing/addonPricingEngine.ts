@@ -12,6 +12,10 @@ export interface AddonPricingInput {
   finishType?: string;
   customProfileRate?: number; // PHP per linear meter
   customMeshRate?: number; // PHP per square meter
+  hatchCount?: number;
+  mountingSide?: "front" | "back";
+  allowedSides?: "front" | "back" | "both";
+  hatchTargetKeys?: string[];
 }
 
 export interface AddonBOMResult {
@@ -74,7 +78,7 @@ export function calculateAddonBOM(input: AddonPricingInput): AddonBOMResult {
     // 3. Hardware (4 Corner Keys + Spline Rubber)
     const cornerKeysCost = 80.0; // 4 pcs @ 20.00
     const splineCost = frameLinearM * 15.0; // Rubber spline gasket
-    const hardwareSubtotal = cornerKeysCost + splineCost;
+    let hardwareSubtotal = cornerKeysCost + splineCost;
 
     breakdown.push({
       item: "Spline & Corner Key Hardware",
@@ -83,6 +87,20 @@ export function calculateAddonBOM(input: AddonPricingInput): AddonBOMResult {
       unitPrice: Math.round(hardwareSubtotal * 100) / 100,
       subtotal: Math.round(hardwareSubtotal * 100) / 100,
     });
+
+    const hatchCount = input.hatchCount ?? 0;
+    if (hatchCount > 0) {
+      const hatchHardwareUnitPrice = 180.0; // PHP per hatch wicket latch and pivot hinges set
+      const hatchHardwareSubtotal = hatchCount * hatchHardwareUnitPrice;
+      hardwareSubtotal += hatchHardwareSubtotal;
+      breakdown.push({
+        item: `Screen Access Hatch Hardware (${hatchCount}x operator ${hatchCount === 1 ? "hatch" : "hatches"})`,
+        quantity: hatchCount,
+        unit: "set",
+        unitPrice: hatchHardwareUnitPrice,
+        subtotal: hatchHardwareSubtotal,
+      });
+    }
 
     const materialSubtotal = frameGrossCost + meshGrossCost + hardwareSubtotal;
     const directMaterialCost = Math.round(materialSubtotal * 100) / 100;

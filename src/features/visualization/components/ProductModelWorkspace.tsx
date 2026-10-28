@@ -16,7 +16,7 @@ import {
   useMotionValue,
   useReducedMotion,
 } from "motion/react";
-import { ChevronDown, RotateCw, FlipHorizontal, RotateCcw, Trash2, MousePointer2, Maximize, Move, Minus, Plus, CheckCircle2, Info, Lock } from "lucide-react";
+import { ChevronDown, RotateCw, FlipHorizontal, RotateCcw, Trash2, MousePointer2, Maximize, Move, Minus, Plus, CheckCircle2, Info, Lock, ShieldCheck } from "lucide-react";
 import Button from "@/components/shared/Button";
 import { cn } from "@/lib/utils";
 import { AddProductModal } from "./AddProductModal";
@@ -477,6 +477,25 @@ export function ProductModelWorkspace({
     }
     return list[0] ?? null;
   }, [effectiveSelectedAddon, screenAddons, grillAddons, selectedAddonProductId]);
+
+  const [addonMountingSide, setAddonMountingSide] = useState<"front" | "back">(() => {
+    if (initialConfiguration?.addonMountingSide === "front" || initialConfiguration?.addonMountingSide === "back") {
+      return initialConfiguration.addonMountingSide;
+    }
+    return "back";
+  });
+
+  useEffect(() => {
+    if (activeCompatibleAddon) {
+      if (activeCompatibleAddon.allowedSides === "back") {
+        setAddonMountingSide("back");
+      } else if (activeCompatibleAddon.allowedSides === "front") {
+        setAddonMountingSide("front");
+      } else if (activeCompatibleAddon.allowedSides === "both") {
+        setAddonMountingSide(activeCompatibleAddon.defaultSide ?? "back");
+      }
+    }
+  }, [activeCompatibleAddon]);
 
   // Identify swappable hardware accessory slots on active product (IMP-MS76)
   const accessorySlots = useMemo(() => {
@@ -1066,6 +1085,8 @@ export function ProductModelWorkspace({
       activeAddon: overrides?.activeAddon ?? selectedAddon,
       addonProductId: overrides?.addonProductId ?? selectedAddonProductId,
       addonAluminumFinish: overrides?.addonAluminumFinish ?? addonAlumFinish,
+      addonMountingSide: overrides?.addonMountingSide ?? addonMountingSide,
+      hatchTargetComponentKeys: activeCompatibleAddon?.hatchTargetComponentKeys ?? undefined,
       addonConfig: {
         finishColor: getFinishHexColor(overrides?.addonAluminumFinish ?? addonAlumFinish),
         zOffsetMm: 18,
@@ -1099,7 +1120,7 @@ export function ProductModelWorkspace({
     }
 
     // 3. Mark skipPreparedBuildRef to prevent redundant debounced loadModel() rebuilds
-    const nextBuildKey = `${structuralDefinition?.product.productId}:${widthCm}:${heightCm}:${panelCount}:${currentOptions.includeSill}:${currentOptions.activeAddon}:${currentOptions.addonAluminumFinish}:${currentOptions.aluminumFinish}:${currentOptions.glassAppearance}:${currentOptions.glassColor}:${currentOptions.glassThicknessMm}`;
+    const nextBuildKey = `${structuralDefinition?.product.productId}:${widthCm}:${heightCm}:${panelCount}:${currentOptions.includeSill}:${currentOptions.activeAddon}:${addonMountingSide}:${currentOptions.addonAluminumFinish}:${currentOptions.aluminumFinish}:${currentOptions.glassAppearance}:${currentOptions.glassColor}:${currentOptions.glassThicknessMm}`;
     skipPreparedBuildRef.current = nextBuildKey;
 
     // 4. Invalidate model revision for outline measurement and UI updates
@@ -1113,6 +1134,8 @@ export function ProductModelWorkspace({
     selectedAddon,
     selectedAddonProductId,
     addonAlumFinish,
+    addonMountingSide,
+    activeCompatibleAddon,
     getFinishHexColor,
     perspectiveCorners,
     yaw,
@@ -1745,7 +1768,7 @@ export function ProductModelWorkspace({
   useEffect(() => {
     if (!mvpRendererRef.current || !structuralDefinition) return;
     const accessoriesKey = JSON.stringify(selectedAccessories);
-    const buildKey = `${structuralDefinition.product.productId}:${widthCm}:${heightCm}:${panelCount}:${includeSill}:${selectedAddon}:${selectedAddonProductId}:${addonAlumFinish}:${alumFinish}:${glassAppearance}:${glassColor}:${glassThicknessMm}:${accessoriesKey}`;
+    const buildKey = `${structuralDefinition.product.productId}:${widthCm}:${heightCm}:${panelCount}:${includeSill}:${selectedAddon}:${addonMountingSide}:${selectedAddonProductId}:${addonAlumFinish}:${alumFinish}:${glassAppearance}:${glassColor}:${glassThicknessMm}:${accessoriesKey}`;
     if (skipPreparedBuildRef.current === buildKey) {
       skipPreparedBuildRef.current = null;
       return;
@@ -1775,6 +1798,8 @@ export function ProductModelWorkspace({
         includeSill,
         activeAddon: selectedAddon,
         addonProductId: selectedAddonProductId,
+        addonMountingSide,
+        hatchTargetComponentKeys: activeCompatibleAddon?.hatchTargetComponentKeys ?? undefined,
         swappedAccessories: selectedAccessories,
       },
       {
@@ -1793,7 +1818,7 @@ export function ProductModelWorkspace({
       if (!cancelled) setProductBuildError(error instanceof Error ? error.message : "Could not build the product model.");
     });
     return () => { cancelled = true; };
-  }, [structuralDefinition, widthCm, heightCm, panelCount, includeSill, selectedAddon, selectedAddonProductId, addonAlumFinish, glassAppearance, glassColor, glassThicknessMm, alumFinish, hasExplicitOverrides, selectedMaterials, candidateMaterialsMap, selectedAccessories]);
+  }, [structuralDefinition, widthCm, heightCm, panelCount, includeSill, selectedAddon, selectedAddonProductId, addonAlumFinish, addonMountingSide, activeCompatibleAddon, glassAppearance, glassColor, glassThicknessMm, alumFinish, hasExplicitOverrides, selectedMaterials, candidateMaterialsMap, selectedAccessories]);
 
   useEffect(() => {
     if (!mvpRendererRef.current) return;
@@ -2005,6 +2030,9 @@ export function ProductModelWorkspace({
       addonName: effectiveSelectedAddon !== "none" ? (activeCompatibleAddon?.addonProduct?.productName ?? (effectiveSelectedAddon === "grill" ? "Architectural Security Window Grille" : (addonBOM?.addonName ?? "Extruded Aluminum Insect Screen"))) : null,
       addonPrice: effectiveSelectedAddon !== "none" ? addonPrice : 0,
       addonAluminumFinish: effectiveSelectedAddon !== "none" ? addonAlumFinish : undefined,
+      addonMountingSide: effectiveSelectedAddon !== "none" ? addonMountingSide : undefined,
+      hatchCount: effectiveSelectedAddon !== "none" ? (activeCompatibleAddon?.hatchTargetComponentKeys?.length ?? 0) : 0,
+      hatchTargetKeys: effectiveSelectedAddon !== "none" ? (activeCompatibleAddon?.hatchTargetComponentKeys ?? []) : [],
       grilleBOM: activeGrilleBOM ?? null,
       baseUnitPrice: realtimePricing.baseUnitPrice,
       swappedAccessories: selectedAccessories,
@@ -2022,6 +2050,10 @@ export function ProductModelWorkspace({
           addon_product_id: activeCompatibleAddon?.addonProductId ?? selectedAddonProductId ?? null,
           addon_name: activeCompatibleAddon?.addonProduct?.productName ?? (effectiveSelectedAddon === "grill" ? "Architectural Security Window Grille" : (addonBOM?.addonName ?? "Extruded Aluminum Insect Screen")),
           finish: addonAlumFinish,
+          mounting_side: addonMountingSide,
+          allowed_sides: activeCompatibleAddon?.allowedSides ?? "both",
+          hatch_count: activeCompatibleAddon?.hatchTargetComponentKeys?.length ?? 0,
+          hatch_target_keys: activeCompatibleAddon?.hatchTargetComponentKeys ?? [],
           price: addonPrice,
           grille_bom: activeGrilleBOM ?? null,
         } : null,
@@ -5283,6 +5315,60 @@ export function ProductModelWorkspace({
                               <div className="flex items-center justify-between text-xs text-neutral-600 bg-neutral-50 px-3 py-2 rounded-[8px] border border-neutral-200">
                                 <span className="font-medium text-neutral-800">Attachment:</span>
                                 <span>{activeCompatibleAddon.addonProduct.productName}</span>
+                              </div>
+                            )}
+
+                            {/* Directional Add-on Mounting Placement (IMP-MS80) */}
+                            {effectiveSelectedAddon !== "none" && (
+                              <div className="flex flex-col gap-2 pt-3 border-t border-neutral-200/60">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[#0f1422] text-sm font-medium">Mounting Placement</span>
+                                  {activeCompatibleAddon?.hatchTargetComponentKeys && activeCompatibleAddon.hatchTargetComponentKeys.length > 0 && (
+                                    <span className="text-[11px] text-[#07b6d3] bg-[#07b6d3]/10 font-semibold px-2 py-0.5 rounded-md">
+                                      {activeCompatibleAddon.hatchTargetComponentKeys.length}x Aligned {activeCompatibleAddon.hatchTargetComponentKeys.length === 1 ? "Hatch" : "Hatches"}
+                                    </span>
+                                  )}
+                                </div>
+                                {activeCompatibleAddon?.allowedSides === "back" ? (
+                                  <div className="flex items-center gap-2 p-2.5 rounded-[10px] bg-amber-50/80 border border-amber-200 text-xs text-amber-900">
+                                    <ShieldCheck className="size-4 text-amber-600 shrink-0" />
+                                    <span>Interior Mount (Back) - Prevents Sash Collision</span>
+                                  </div>
+                                ) : activeCompatibleAddon?.allowedSides === "front" ? (
+                                  <div className="flex items-center gap-2 p-2.5 rounded-[10px] bg-neutral-100 border border-neutral-200 text-xs text-neutral-800">
+                                    <ShieldCheck className="size-4 text-neutral-600 shrink-0" />
+                                    <span>Exterior Mount (Front)</span>
+                                  </div>
+                                ) : (
+                                  <div className="grid grid-cols-2 gap-1.5 p-1 bg-neutral-100 rounded-[12px]">
+                                    <button
+                                      type="button"
+                                      onClick={() => setAddonMountingSide("front")}
+                                      aria-pressed={addonMountingSide === "front"}
+                                      className={cn(
+                                        "py-2 px-3 text-xs rounded-[10px] font-medium transition-all cursor-pointer",
+                                        addonMountingSide === "front"
+                                          ? "bg-[#0f1422] text-white shadow-xs"
+                                          : "text-neutral-600 hover:text-black"
+                                      )}
+                                    >
+                                      Exterior (Front)
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setAddonMountingSide("back")}
+                                      aria-pressed={addonMountingSide === "back"}
+                                      className={cn(
+                                        "py-2 px-3 text-xs rounded-[10px] font-medium transition-all cursor-pointer",
+                                        addonMountingSide === "back"
+                                          ? "bg-[#0f1422] text-white shadow-xs"
+                                          : "text-neutral-600 hover:text-black"
+                                      )}
+                                    >
+                                      Interior (Back)
+                                    </button>
+                                  </div>
+                                )}
                               </div>
                             )}
 

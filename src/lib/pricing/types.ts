@@ -171,6 +171,7 @@ export const DimensionBindingSchema = z.enum([
   "AREA",
   "FIXED",
   "GRILLE_LINEAR",
+  "PERIMETER",
 ]);
 export type DimensionBinding = z.infer<typeof DimensionBindingSchema>;
 
@@ -434,6 +435,9 @@ export interface ItemizedProductQuotation {
   addonPrice?: number;
   baseUnitPrice?: number;
   addonAluminumFinish?: string;
+  addonMountingSide?: "front" | "back";
+  hatchCount?: number;
+  hatchTargetKeys?: string[];
   addonBOM?: import("./addonPricingEngine").AddonBOMResult | null;
   grilleBOM?: GrilleLinearBOMResult | null;
   swappedAccessories?: Record<string, import("../visualization/types").SelectedAccessoryState>;

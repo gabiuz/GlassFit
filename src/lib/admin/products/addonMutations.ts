@@ -58,7 +58,7 @@ export async function getCompatibleAddonsForProduct(
   // Fetch bindings directly and map products
   const { data: fallbackData, error: fallbackError } = await supabase
     .from("product_compatible_addons")
-    .select("id, parent_product_id, addon_product_id, addon_type, is_default_enabled, display_order")
+    .select("id, parent_product_id, addon_product_id, addon_type, is_default_enabled, display_order, allowed_sides, default_side, hatch_target_component_keys, hatch_alignment_config")
     .eq("parent_product_id", parentProductId)
     .order("display_order", { ascending: true });
 
@@ -86,6 +86,10 @@ export async function getCompatibleAddonsForProduct(
       addonType: row.addon_type as AddonType,
       isDefaultEnabled: row.is_default_enabled,
       displayOrder: row.display_order,
+      allowedSides: (row.allowed_sides as import("./types").AddonAllowedSides) || "both",
+      defaultSide: (row.default_side as import("./types").AddonMountingSide) || "back",
+      hatchTargetComponentKeys: (row.hatch_target_component_keys as string[]) || null,
+      hatchAlignmentConfig: (row.hatch_alignment_config as Record<string, unknown>) || null,
       addonProduct: prod
         ? {
             productId: prod.product_id,

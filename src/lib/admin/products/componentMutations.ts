@@ -98,8 +98,120 @@ export async function upsertProductComponent(input: UpsertComponentInput): Promi
             display_order: binding.displayOrder ?? 0,
         })),
     });
-    if (error) throw new Error(`Product component could not be saved: ${error.message}`);
+
+    if (error) {
+        const isMissingRpc =
+            error.code === "PGRST202" ||
+            error.message?.includes("save_product_component_with_materials") ||
+            error.message?.includes("schema cache");
+
+        if (isMissingRpc) {
+            console.warn(
+                "[GlassFit] RPC 'save_product_component_with_materials' not found in database schema cache. " +
+                "Falling back to direct table upsert. Please apply migration 024_atomic_component_material_save.sql."
+            );
+            return await fallbackUpsertComponentWithMaterials(supabase, input, payload, bindings, adminCtx.profileId);
+        }
+
+        throw new Error(`Product component could not be saved: ${error.message}`);
+    }
+
     if (typeof componentId !== "string") throw new Error("Product component save was not confirmed.");
+    return componentId;
+}
+
+/** Fallback table upsert when database migration 024 has not yet been applied to Supabase. */
+async function fallbackUpsertComponentWithMaterials(
+    supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+    input: UpsertComponentInput,
+    payload: Record<string, unknown>,
+    bindings: readonly { rawMaterialId: string; isDefault: boolean; displayOrder?: number }[],
+    adminProfileId: string
+): Promise<string> {
+    const { data: existing, error: lookupError } = await supabase
+        .from("product_components")
+        .select("component_id")
+        .eq("template_id", input.templateId)
+        .eq("component_key", input.componentKey)
+        .maybeSingle();
+
+    if (lookupError) throw new Error(`Could not check existing component: ${lookupError.message}`);
+
+    let componentId: string;
+
+    if (existing?.component_id) {
+        componentId = existing.component_id;
+        const { error: updateError } = await supabase
+            .from("product_components")
+            .update(payload)
+            .eq("component_id", componentId);
+        if (updateError) throw new Error(`Could not update component: ${updateError.message}`);
+    } else {
+        const { data: inserted, error: insertError } = await supabase
+            .from("product_components")
+            .insert({
+                template_id: input.templateId,
+                created_by: adminProfileId,
+                component_key: input.componentKey,
+                status: "Active",
+                ...payload,
+            })
+            .select("component_id")
+            .single();
+        if (insertError || !inserted?.component_id) {
+            throw new Error(`Could not insert component: ${insertError?.message || "Unknown error"}`);
+        }
+        componentId = inserted.component_id;
+    }
+
+    if (bindings.length === 0) {
+        const { error: delError } = await supabase
+            .from("product_component_materials")
+            .delete()
+            .eq("product_component_id", componentId);
+        if (delError) throw new Error(`Could not clear component material bindings: ${delError.message}`);
+        await supabase
+            .from("product_components")
+            .update({ raw_material_id: null })
+            .eq("component_id", componentId);
+    } else {
+        const rawMaterialIds = bindings.map((b) => b.rawMaterialId);
+
+        // 1. Delete rows not in candidate list
+        const { error: pruneError } = await supabase
+            .from("product_component_materials")
+            .delete()
+            .eq("product_component_id", componentId)
+            .not("raw_material_id", "in", `(${rawMaterialIds.join(",")})`);
+        if (pruneError) throw new Error(`Could not remove old component material bindings: ${pruneError.message}`);
+
+        // 2. Clear default flag first to avoid unique constraint collision
+        const { error: clearDefaultError } = await supabase
+            .from("product_component_materials")
+            .update({ is_default: false })
+            .eq("product_component_id", componentId);
+        if (clearDefaultError) throw new Error(`Could not reset default material binding: ${clearDefaultError.message}`);
+
+        // 3. Upsert candidate bindings with target is_default
+        for (const binding of bindings) {
+            const { error: upsertMatError } = await supabase
+                .from("product_component_materials")
+                .upsert(
+                    {
+                        product_component_id: componentId,
+                        raw_material_id: binding.rawMaterialId,
+                        is_default: binding.isDefault,
+                        display_order: binding.displayOrder ?? 0,
+                        updated_at: new Date().toISOString(),
+                    },
+                    {
+                        onConflict: "product_component_id,raw_material_id",
+                    }
+                );
+            if (upsertMatError) throw new Error(`Could not save material binding: ${upsertMatError.message}`);
+        }
+    }
+
     return componentId;
 }
 
