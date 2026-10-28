@@ -38,6 +38,9 @@ import { ALUMINUM_FINISH_OPTIONS } from "@/lib/products/materialMapping";
 import { PartMaterialsSandbox } from "./PartMaterialsSandbox";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, Stage } from "@react-three/drei";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+
+const accessoryGltfLoader = new GLTFLoader();
 
 export type ValidationWorkspaceSectionProps = {
   productId: string;
@@ -50,23 +53,27 @@ function ParametricModelView({
   resolved,
   cache,
   hasSill,
+  removableStates,
   hiddenComponents,
   materialOverrides,
   rawMaterials,
   activeAddon = "none",
   addonAluminumFinish = "analok",
   swappedAccessories,
+  accessoryModels,
 }: {
   definition: ProductStructuralDefinition;
   resolved: ResolvedStructure;
   cache: ComponentModelCache;
   hasSill: boolean;
+  removableStates?: Record<string, boolean>;
   hiddenComponents: Set<string>;
   materialOverrides: Record<string, string>;
   rawMaterials: RawMaterial[];
   activeAddon?: "screen" | "grill" | "none" | null;
   addonAluminumFinish?: string;
   swappedAccessories?: Record<string, SelectedAccessoryState>;
+  accessoryModels?: Map<string, THREE.Object3D>;
 }) {
   const group = useMemo(() => {
     if (definition.product.isAddon) {
@@ -88,9 +95,11 @@ function ParametricModelView({
 
     const built = buildParametricProduct(definition, resolved, cache, {
       includeSill: hasSill,
+      removableStates,
       activeAddon,
       addonAluminumFinish,
       swappedAccessories,
+      accessoryModels,
     });
 
     // Apply visibility overrides from the debugger
@@ -105,7 +114,7 @@ function ParametricModelView({
     });
 
     return built.group;
-  }, [definition, resolved, cache, hasSill, hiddenComponents, activeAddon, addonAluminumFinish, swappedAccessories]);
+  }, [definition, resolved, cache, hasSill, removableStates, hiddenComponents, activeAddon, addonAluminumFinish, swappedAccessories, accessoryModels]);
 
   // Dynamic Three.js Material Shading: Update mesh materials in place without reloading geometry
   useEffect(() => {
@@ -191,6 +200,7 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
   const [parameters, setParameters] = useState<Record<string, number>>({});
   const [resolvedStructure, setResolvedStructure] = useState<ResolvedStructure | null>(null);
   const [hasSill, setHasSill] = useState(true);
+  const [removableStates, setRemovableStates] = useState<Record<string, boolean>>({});
 
   const hiddenComponents = useMemo(() => new Set<string>(), []);
   const [testResults, setTestResults] = useState<{ name: string; status: "pending" | "pass" | "fail" }[]>([]);
@@ -204,10 +214,19 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
   // Step 6 Modular Hardware Accessory Swapping State (IMP-MS75)
   const [swappedAccessories, setSwappedAccessories] = useState<Record<string, SelectedAccessoryState>>({});
   const [catalogAccessories, setCatalogAccessories] = useState<CatalogAccessoryItem[]>([]);
+  const [accessoryModels, setAccessoryModels] = useState<Map<string, THREE.Object3D>>(new Map());
   const [accessoryCatalogError, setAccessoryCatalogError] = useState<string | null>(null);
 
   const accessorySlots = useMemo(
-    () => definition?.components.filter((c) => c.isAccessorySlot) ?? [],
+    () => definition?.components.filter((c) => c.isAccessorySlot || Boolean(c.accessoryCategory)) ?? [],
+    [definition],
+  );
+
+  const removableComponents = useMemo(
+    () =>
+      definition?.components.filter(
+        (c) => Boolean(c.isRemovable || c.togglePropertyKey),
+      ) ?? [],
     [definition],
   );
 
@@ -229,15 +248,26 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
         const loadedCache = await preloadComponentModels(allComponents);
         setCache(loadedCache);
 
-        // Initialize parameters to default
-        const initialParams: Record<string, number> = {
-          has_sill: 1,
-          include_sill: 1,
-          includeSill: 1,
-        };
+        // Initialize parameters to default and identify removable components
+        const initialRemovable: Record<string, boolean> = {};
+        const initialParams: Record<string, number> = {};
         def.parameters.forEach((p) => {
           initialParams[p.parameterKey] = Number(p.defaultValue);
         });
+
+        def.components.forEach((comp) => {
+          if (comp.isRemovable || comp.togglePropertyKey) {
+            initialRemovable[comp.componentId] = true;
+            const toggleKey = comp.togglePropertyKey || `has_${comp.componentKey.replace(/-/g, "_")}`;
+            initialParams[toggleKey] = 1;
+            if (toggleKey === "has_sill" || comp.componentKey.includes("sill") || comp.componentName.toLowerCase().includes("sill")) {
+              initialParams.has_sill = 1;
+              initialParams.include_sill = 1;
+              initialParams.includeSill = 1;
+            }
+          }
+        });
+        setRemovableStates(initialRemovable);
         setParameters(initialParams);
 
         const resolved = resolveProductStructure({ definition: def, values: initialParams });
@@ -257,7 +287,7 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
         // Initialize accessory slot overrides with defaults (IMP-MS75)
         const initialSwapped: Record<string, SelectedAccessoryState> = {};
         def.components.forEach((comp) => {
-          if (comp.isAccessorySlot) {
+          if (comp.isAccessorySlot || Boolean(comp.accessoryCategory)) {
             initialSwapped[comp.componentId] = {
               slotComponentId: comp.componentId,
               accessoryId: "default",
@@ -268,6 +298,7 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
               finish: "satin",
               horizontalPosition: comp.positionOptions?.defaultHorizontal || "right",
               verticalPosition: comp.positionOptions?.defaultVertical || "up",
+              handingMetadata: comp.handingMetadata || null,
             };
           }
         });
@@ -276,6 +307,37 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
         try {
           const dbAccessories = await fetchActiveCatalogAccessories();
           setCatalogAccessories(dbAccessories);
+
+          const modelsMap = new Map<string, THREE.Object3D>();
+          await Promise.all(
+            dbAccessories.map(async (acc) => {
+              if (acc.glbUrl) {
+                try {
+                  const gltf = await accessoryGltfLoader.loadAsync(acc.glbUrl);
+                  modelsMap.set(acc.id, gltf.scene);
+                } catch {
+                  // fallback
+                }
+              }
+              if (acc.handingMetadata?.leftGlbUrl) {
+                try {
+                  const gltfLeft = await accessoryGltfLoader.loadAsync(acc.handingMetadata.leftGlbUrl);
+                  modelsMap.set(`${acc.id}_left`, gltfLeft.scene);
+                } catch {
+                  // fallback
+                }
+              }
+              if (acc.handingMetadata?.rightGlbUrl) {
+                try {
+                  const gltfRight = await accessoryGltfLoader.loadAsync(acc.handingMetadata.rightGlbUrl);
+                  modelsMap.set(`${acc.id}_right`, gltfRight.scene);
+                } catch {
+                  // fallback
+                }
+              }
+            })
+          );
+          setAccessoryModels(modelsMap);
         } catch (error: unknown) {
           setAccessoryCatalogError(error instanceof Error ? error.message : "Failed to load registered accessories.");
         }
@@ -291,13 +353,20 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
   // Handle manual parameter changes
   const handleParameterChange = (key: string, value: number) => {
     if (!definition) return;
-    const newParams = {
+    const newParams: Record<string, number> = {
       ...parameters,
       [key]: value,
-      has_sill: hasSill ? 1 : 0,
-      include_sill: hasSill ? 1 : 0,
-      includeSill: hasSill ? 1 : 0,
     };
+    removableComponents.forEach((comp) => {
+      const toggleKey = comp.togglePropertyKey || `has_${comp.componentKey.replace(/-/g, "_")}`;
+      const isIncluded = removableStates[comp.componentId] ?? true;
+      newParams[toggleKey] = isIncluded ? 1 : 0;
+      if (toggleKey === "has_sill" || comp.componentKey.includes("sill") || comp.componentName.toLowerCase().includes("sill")) {
+        newParams.has_sill = isIncluded ? 1 : 0;
+        newParams.include_sill = isIncluded ? 1 : 0;
+        newParams.includeSill = isIncluded ? 1 : 0;
+      }
+    });
     setParameters(newParams);
     try {
       const resolved = resolveProductStructure({ definition, values: newParams });
@@ -307,21 +376,46 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
     }
   };
 
-  const handleSillToggle = (newHasSill: boolean) => {
-    setHasSill(newHasSill);
-    if (!definition) return;
-    const newParams = {
+  const handleRemovableToggle = (componentId: string, isIncluded: boolean) => {
+    const comp = definition?.components.find((c) => c.componentId === componentId);
+    if (!comp || !definition) return;
+
+    const toggleKey = comp.togglePropertyKey || `has_${comp.componentKey.replace(/-/g, "_")}`;
+
+    setRemovableStates((prev) => ({
+      ...prev,
+      [componentId]: isIncluded,
+    }));
+
+    const isSill =
+      toggleKey === "has_sill" ||
+      toggleKey === "include_sill" ||
+      toggleKey.includes("sill") ||
+      comp.componentKey.includes("sill") ||
+      comp.componentName.toLowerCase().includes("sill");
+
+    if (isSill) {
+      setHasSill(isIncluded);
+    }
+
+    const newParams: Record<string, number> = {
       ...parameters,
-      has_sill: newHasSill ? 1 : 0,
-      include_sill: newHasSill ? 1 : 0,
-      includeSill: newHasSill ? 1 : 0,
+      [toggleKey]: isIncluded ? 1 : 0,
+      [comp.componentKey]: isIncluded ? 1 : 0,
     };
+
+    if (isSill) {
+      newParams.has_sill = isIncluded ? 1 : 0;
+      newParams.include_sill = isIncluded ? 1 : 0;
+      newParams.includeSill = isIncluded ? 1 : 0;
+    }
+
     setParameters(newParams);
     try {
       const resolved = resolveProductStructure({ definition, values: newParams });
       setResolvedStructure(resolved);
     } catch (e) {
-      console.error("Resolver failed on sill toggle:", e);
+      console.error("Resolver failed on removable toggle:", e);
     }
   };
 
@@ -408,6 +502,34 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
       const allowedIds = slot?.allowedAccessoryIds ?? [];
       const catalogItem = catalogAccessories.find((o) => o.id === accessoryId && allowedIds.includes(o.id) && o.category === slot?.accessoryCategory);
       if (catalogItem) {
+        if (catalogItem.glbUrl && !accessoryModels.has(catalogItem.id)) {
+          accessoryGltfLoader.loadAsync(catalogItem.glbUrl).then((gltf) => {
+            setAccessoryModels((prevModels) => {
+              const updated = new Map(prevModels);
+              updated.set(catalogItem.id, gltf.scene);
+              return updated;
+            });
+          }).catch(() => {});
+        }
+        if (catalogItem.handingMetadata?.leftGlbUrl && !accessoryModels.has(`${catalogItem.id}_left`)) {
+          accessoryGltfLoader.loadAsync(catalogItem.handingMetadata.leftGlbUrl).then((gltf) => {
+            setAccessoryModels((prevModels) => {
+              const updated = new Map(prevModels);
+              updated.set(`${catalogItem.id}_left`, gltf.scene);
+              return updated;
+            });
+          }).catch(() => {});
+        }
+        if (catalogItem.handingMetadata?.rightGlbUrl && !accessoryModels.has(`${catalogItem.id}_right`)) {
+          accessoryGltfLoader.loadAsync(catalogItem.handingMetadata.rightGlbUrl).then((gltf) => {
+            setAccessoryModels((prevModels) => {
+              const updated = new Map(prevModels);
+              updated.set(`${catalogItem.id}_right`, gltf.scene);
+              return updated;
+            });
+          }).catch(() => {});
+        }
+
         return {
           ...prev,
           [slotComponentId]: {
@@ -421,6 +543,7 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
             finish: existing?.finish || "satin",
             horizontalPosition: existing?.horizontalPosition || baseSlotHorizontal,
             verticalPosition: existing?.verticalPosition || baseSlotVertical,
+            handingMetadata: catalogItem.handingMetadata || null,
           },
         };
       }
@@ -458,8 +581,11 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
   };
 
   const accessoryTotalDelta = useMemo(() => {
-    return Object.values(swappedAccessories).reduce((acc, curr) => acc + (curr.priceDelta || 0), 0);
-  }, [swappedAccessories]);
+    return Object.values(swappedAccessories).reduce((acc, curr) => {
+      if (removableStates[curr.slotComponentId] === false) return acc;
+      return acc + (curr.priceDelta || 0);
+    }, 0);
+  }, [swappedAccessories, removableStates]);
 
   // Calculate real-time Parametric Bill of Materials (with active material overrides)
   const bomCalculation: CalculatedBOMResult | null = useMemo(() => {
@@ -482,6 +608,7 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
         null;
 
       return {
+        componentId: comp.componentId,
         componentKey: comp.componentKey,
         componentName: comp.componentName,
         dimensionBinding: comp.dimensionBinding || "FIXED",
@@ -491,6 +618,8 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
         togglePropertyKey: comp.togglePropertyKey,
         presentationCategory: comp.presentationCategory || "Framing",
         rawMaterial: boundMat,
+        unitPrice: comp.unitPrice,
+        pricingMethod: comp.pricingMethod,
       };
     });
 
@@ -505,8 +634,9 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
       heightMm: currentHeightMm,
       panelCount: currentPanels,
       hasSill,
+      removableStates,
     });
-  }, [definition, rawMaterials, parameters, hasSill, materialOverrides]);
+  }, [definition, rawMaterials, parameters, hasSill, removableStates, materialOverrides]);
 
   // Baseline BOM Calculation (strictly default configuration for sensitivity comparison)
   const baselineBOMResult: CalculatedBOMResult | null = useMemo(() => {
@@ -528,6 +658,7 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
         null;
 
       return {
+        componentId: comp.componentId,
         componentKey: comp.componentKey,
         componentName: comp.componentName,
         dimensionBinding: comp.dimensionBinding || "FIXED",
@@ -537,6 +668,8 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
         togglePropertyKey: comp.togglePropertyKey,
         presentationCategory: comp.presentationCategory || "Framing",
         rawMaterial: boundMat,
+        unitPrice: comp.unitPrice,
+        pricingMethod: comp.pricingMethod,
       };
     });
 
@@ -550,8 +683,9 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
       heightMm: currentHeightMm,
       panelCount: currentPanels,
       hasSill,
+      removableStates,
     });
-  }, [definition, rawMaterials, parameters, hasSill]);
+  }, [definition, rawMaterials, parameters, hasSill, removableStates]);
 
   // Material Price Sensitivity Delta
   const priceSensitivityDelta = useMemo(() => {
@@ -844,12 +978,14 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
                     resolved={resolvedStructure}
                     cache={cache}
                     hasSill={hasSill}
+                    removableStates={removableStates}
                     hiddenComponents={hiddenComponents}
                     materialOverrides={materialOverrides}
                     rawMaterials={rawMaterials}
                     activeAddon={activeAddon}
                     addonAluminumFinish={addonAlumFinish}
                     swappedAccessories={swappedAccessories}
+                    accessoryModels={accessoryModels}
                   />
                 </Stage>
               </Suspense>
@@ -866,25 +1002,40 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
             </div>
           </div>
 
-          {/* Quick Feature Switch (Sill Toggle) - only visible for non-addon fixtures with removable sill */}
-          {!definition.product.isAddon && definition.components.some((c) => c.isRemovable || (c.togglePropertyKey && c.togglePropertyKey.toLowerCase().includes("sill"))) && (
-            <div className="bg-white border border-neutral-200 rounded-[12px] p-4 flex items-center justify-between shadow-xs">
-              <div className="flex items-center gap-2.5">
-                <Sparkles className="size-4 text-[#07b6d3]" />
-                <div>
-                  <h4 className="text-xs font-semibold text-[#0f1422]">Bottom Sill Profile (has_sill)</h4>
-                  <p className="text-[11px] text-neutral-500">Toggle bottom track inclusion to test net customer price adjustment</p>
-                </div>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={hasSill}
-                  onChange={(e) => handleSillToggle(e.target.checked)}
-                  className="sr-only peer"
-                />
-                <div className="w-9 h-5 bg-neutral-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#07b6d3]"></div>
-              </label>
+          {/* Removable Components Toggles - dynamic based on Step 2 configuration */}
+          {!definition.product.isAddon && removableComponents.length > 0 && (
+            <div className="bg-white border border-neutral-200 rounded-[12px] p-4 shadow-xs space-y-3">
+              {removableComponents.map((comp, idx) => {
+                const toggleKey = comp.togglePropertyKey || `has_${comp.componentKey.replace(/-/g, "_")}`;
+                const isIncluded = removableStates[comp.componentId] ?? true;
+                return (
+                  <div
+                    key={comp.componentId}
+                    className={`flex items-center justify-between ${idx > 0 ? "pt-3 border-t border-neutral-100" : ""}`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <Sparkles className="size-4 text-[#07b6d3] shrink-0" />
+                      <div>
+                        <h4 className="text-xs font-semibold text-[#0f1422]">
+                          {comp.componentName} <span className="font-mono text-neutral-400 font-normal">({toggleKey})</span>
+                        </h4>
+                        <p className="text-[11px] text-neutral-500">
+                          Toggle {comp.componentName.toLowerCase()} inclusion to test net customer price adjustment
+                        </p>
+                      </div>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer shrink-0 ml-3">
+                      <input
+                        type="checkbox"
+                        checked={isIncluded}
+                        onChange={(e) => handleRemovableToggle(comp.componentId, e.target.checked)}
+                        className="sr-only peer"
+                      />
+                      <div className="w-9 h-5 bg-neutral-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#07b6d3]"></div>
+                    </label>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

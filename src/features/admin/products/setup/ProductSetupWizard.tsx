@@ -217,6 +217,8 @@ export function ProductSetupWizard({ productId, initialData, initialStep }: Prod
                         productType={productData?.product_type || "Window"}
                         initialData={Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.product_components : productData?.product_templates?.product_components}
                         wholeModelAsset={productData?.product_assets?.find?.((a: ProductAssetSummary) => a.asset_type === "Catalog 3D Preview" && a.is_primary !== false) || null}
+                        isAccessory={isAccessory}
+                        initialAccessoryCategory={(productData?.accessory_category as AccessoryCategory) || null}
                         onSave={() => handleStepChange(isAccessory ? "validation" : "parameters")}
                     />
                 )}

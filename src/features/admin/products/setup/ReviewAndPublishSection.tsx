@@ -81,10 +81,11 @@ export function ReviewAndPublishSection({ productId }: ReviewAndPublishSectionPr
     const missingErrors: string[] = [];
 
     if (isAccessory) {
-        // Hardware accessories (IMP-MS74):
-        // Bypass 2D/3D assets and parameters. Require material mapping on all uploaded components.
+        // Hardware accessories (IMP-MS74, IMP-MS78):
+        // Bypass 2D/3D assets and parameters. Require material mapping on non-fixed components.
         const unassignedComponents = draft?.components?.filter(
-            (c) => !c.rawMaterialId && (!c.allowedMaterials || c.allowedMaterials.length === 0)
+            (c) => !c.rawMaterialId && (!c.allowedMaterials || c.allowedMaterials.length === 0) &&
+                   !(c.pricingMethod === "Fixed" || (typeof c.unitPrice === "number" && c.unitPrice > 0))
         ) ?? [];
         if (unassignedComponents.length > 0) {
             canActivate = false;
@@ -96,7 +97,8 @@ export function ReviewAndPublishSection({ productId }: ReviewAndPublishSectionPr
         // Add-on accessories (IMP-MS70):
         // Bypass 2D/3D assets. Support procedural generation or custom components.
         const unassignedComponents = draft?.components?.filter(
-            (c) => !c.rawMaterialId && (!c.allowedMaterials || c.allowedMaterials.length === 0)
+            (c) => !c.rawMaterialId && (!c.allowedMaterials || c.allowedMaterials.length === 0) &&
+                   !(c.pricingMethod === "Fixed" || (typeof c.unitPrice === "number" && c.unitPrice > 0))
         ) ?? [];
         if (unassignedComponents.length > 0) {
             canActivate = false;
@@ -114,7 +116,8 @@ export function ReviewAndPublishSection({ productId }: ReviewAndPublishSectionPr
             missingErrors.push("Parametric products require at least one component.");
         }
         const unassignedComponents = draft?.components?.filter(
-            (c) => !c.rawMaterialId && (!c.allowedMaterials || c.allowedMaterials.length === 0)
+            (c) => !c.rawMaterialId && (!c.allowedMaterials || c.allowedMaterials.length === 0) &&
+                   !(c.pricingMethod === "Fixed" || (typeof c.unitPrice === "number" && c.unitPrice > 0))
         ) ?? [];
         if (unassignedComponents.length > 0) {
             canActivate = false;
@@ -123,9 +126,9 @@ export function ReviewAndPublishSection({ productId }: ReviewAndPublishSectionPr
             );
         }
     } else {
-        if (!hasAssets) {
+        if (!hasAssets && !hasComponents) {
             canActivate = false;
-            missingErrors.push("Fixed products require a 3D model asset.");
+            missingErrors.push("Fixed products require a 3D model asset or component parts.");
         }
     }
 

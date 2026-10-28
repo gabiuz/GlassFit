@@ -111,6 +111,9 @@ export type ProductComponentDefinition = {
   accessoryCategory?: AccessoryCategory | null;
   allowedAccessoryIds?: string[] | null;
   positionOptions?: AccessoryPositionOptions | null;
+  unitPrice?: number;
+  pricingMethod?: string;
+  handingMetadata?: import("@/lib/admin/products/types").ComponentHandingMetadata | null;
 };
 
 export interface AccessorySlotOverride {
@@ -136,6 +139,7 @@ export interface SelectedAccessoryState {
   priceDelta?: number;
   glbUrl?: string | null;
   imageUrl?: string | null;
+  handingMetadata?: import("@/lib/admin/products/types").ComponentHandingMetadata | null;
 }
 
 export type ProductStructuralAsset = {

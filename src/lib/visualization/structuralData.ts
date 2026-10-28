@@ -164,6 +164,8 @@ async function fetchCompatibleAddons(
           is_removable,
           toggle_property_key,
           presentation_category,
+          unit_price,
+          pricing_method,
           component_data,
           is_accessory_slot,
           accessory_category,
@@ -250,6 +252,11 @@ async function fetchCompatibleAddons(
         accessoryCategory: ((compRow as Record<string, unknown>).accessory_category as import("@/lib/admin/products/types").AccessoryCategory) || null,
         allowedAccessoryIds: ((compRow as Record<string, unknown>).allowed_accessory_ids as string[]) || [],
         positionOptions: ((compRow as Record<string, unknown>).position_options as import("@/lib/admin/products/types").AccessoryPositionOptions) || null,
+        unitPrice: typeof (compRow as Record<string, unknown>).unit_price === "number"
+          ? (compRow as Record<string, unknown>).unit_price as number
+          : ((compRow as Record<string, unknown>).unit_price ? Number((compRow as Record<string, unknown>).unit_price) : undefined),
+        pricingMethod: ((compRow as Record<string, unknown>).pricing_method as string) || undefined,
+        handingMetadata: (compData?.handing_metadata as import("@/lib/admin/products/types").ComponentHandingMetadata) || null,
         model: {
           assetId: asset.asset_id,
           r2ObjectKey: asset.r2_object_key,
@@ -358,6 +365,8 @@ export async function getProductStructuralDefinition(
         is_removable,
         toggle_property_key,
         presentation_category,
+        unit_price,
+        pricing_method,
         component_data,
         is_accessory_slot,
         accessory_category,
@@ -495,6 +504,11 @@ export async function getProductStructuralDefinition(
       accessoryCategory: ((row as Record<string, unknown>).accessory_category as import("@/lib/admin/products/types").AccessoryCategory) || null,
       allowedAccessoryIds: ((row as Record<string, unknown>).allowed_accessory_ids as string[]) || [],
       positionOptions: ((row as Record<string, unknown>).position_options as import("@/lib/admin/products/types").AccessoryPositionOptions) || null,
+      unitPrice: typeof (row as Record<string, unknown>).unit_price === "number"
+        ? (row as Record<string, unknown>).unit_price as number
+        : ((row as Record<string, unknown>).unit_price ? Number((row as Record<string, unknown>).unit_price) : undefined),
+      pricingMethod: ((row as Record<string, unknown>).pricing_method as string) || undefined,
+      handingMetadata: (componentData?.handing_metadata as import("@/lib/admin/products/types").ComponentHandingMetadata) || null,
       model: {
         assetId: asset.asset_id,
         r2ObjectKey: asset.r2_object_key,
@@ -640,6 +654,8 @@ export async function getDraftStructuralDefinition(
         is_removable,
         toggle_property_key,
         presentation_category,
+        unit_price,
+        pricing_method,
         component_data,
         is_accessory_slot,
         accessory_category,
@@ -760,6 +776,11 @@ export async function getDraftStructuralDefinition(
       accessoryCategory: ((row as Record<string, unknown>).accessory_category as import("@/lib/admin/products/types").AccessoryCategory) || null,
       allowedAccessoryIds: ((row as Record<string, unknown>).allowed_accessory_ids as string[]) || [],
       positionOptions: ((row as Record<string, unknown>).position_options as import("@/lib/admin/products/types").AccessoryPositionOptions) || null,
+      unitPrice: typeof (row as Record<string, unknown>).unit_price === "number"
+        ? (row as Record<string, unknown>).unit_price as number
+        : ((row as Record<string, unknown>).unit_price ? Number((row as Record<string, unknown>).unit_price) : undefined),
+      pricingMethod: ((row as Record<string, unknown>).pricing_method as string) || undefined,
+      handingMetadata: (componentData?.handing_metadata as import("@/lib/admin/products/types").ComponentHandingMetadata) || null,
       model: {
         assetId: asset.asset_id,
         r2ObjectKey: asset.r2_object_key,

@@ -34,6 +34,14 @@ export interface AccessorySlotConfig {
   positionOptions: AccessoryPositionOptions;
 }
 
+export interface ComponentHandingMetadata {
+  sourceHanding: "left" | "right";
+  uploadedGlbUrl: string;
+  leftGlbUrl: string;
+  rightGlbUrl: string;
+  mirroredAt: string;
+}
+
 export type UpsertComponentInput = {
   templateId: string;
   componentKey: string;
@@ -54,6 +62,9 @@ export type UpsertComponentInput = {
   accessoryCategory?: AccessoryCategory | null;
   allowedAccessoryIds?: string[] | null;
   positionOptions?: AccessoryPositionOptions;
+  unitPrice?: number;
+  pricingMethod?: "Fixed" | "Included" | "Per Piece" | "Per Length" | "Per Area" | "Other" | string;
+  handingMetadata?: ComponentHandingMetadata | null;
 };
 
 export interface UpsertComponentPayload {
@@ -78,6 +89,9 @@ export interface UpsertComponentPayload {
   accessoryCategory?: AccessoryCategory | null;
   allowedAccessoryIds?: string[] | null;
   positionOptions?: AccessoryPositionOptions;
+  unitPrice?: number;
+  pricingMethod?: "Fixed" | "Included" | "Per Piece" | "Per Length" | "Per Area" | "Other" | string;
+  handingMetadata?: ComponentHandingMetadata | null;
 }
 
 export type ProductRole = "standard" | "addon" | "accessory";

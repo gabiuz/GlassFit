@@ -22,6 +22,7 @@ import type { GrilleLinearBOMResult } from "../pricing/types";
 import type { AccessoryPositionOptions } from "@/lib/admin/products/types";
 import type { SelectedAccessoryState } from "./types";
 import { createAccessoryMeshById } from "./accessoryMeshFactory";
+import { mirrorObjectHierarchyAcrossX, mirrorPartAcrossCenterline } from "@/lib/admin/products/meshMirroring";
 
 export {
   createWindowGlassMaterial,
@@ -59,6 +60,7 @@ export interface ParametricProductBuilderOptions {
   grilleBOM?: GrilleLinearBOMResult;
   swappedAccessories?: Record<string, SelectedAccessoryState>;
   accessoryModels?: Map<string, THREE.Object3D>;
+  removableStates?: Record<string, boolean>;
 }
 
 export function buildParametricProduct(
@@ -265,8 +267,35 @@ export function mountAccessoryMesh(
   horizontal: "left" | "right" = "right",
   vertical: "bottom" | "up" = "up",
   finishKey: string = "matte_black",
+  handingVariantMesh?: THREE.Object3D | null,
+  sourceHanding?: "left" | "right" | null,
 ): THREE.Object3D {
-  const clone = accessoryModel.clone(true);
+  // Support callers passing (accessoryModel, parentGroup) or (parentGroup, accessoryModel)
+  let actualParent = parentGroup;
+  let actualModel = accessoryModel;
+  if (
+    parentGroup &&
+    parentGroup.children.length > 0 &&
+    accessoryModel &&
+    accessoryModel.children.length === 0 &&
+    !(accessoryModel as THREE.Mesh).geometry
+  ) {
+    actualParent = accessoryModel as THREE.Group;
+    actualModel = parentGroup;
+  }
+
+  // If a dedicated handed variant is provided, use it; otherwise evaluate bilateral reflection
+  let targetModel = handingVariantMesh;
+  if (!targetModel) {
+    const baseHanding = sourceHanding ?? positionOptions?.defaultHorizontal ?? "right";
+    if (horizontal !== baseHanding) {
+      targetModel = mirrorObjectHierarchyAcrossX(actualModel);
+    } else {
+      targetModel = actualModel;
+    }
+  }
+
+  const clone = targetModel.clone(true);
 
   // Apply PBR finish material (Matte Black, Brushed Chrome, Satin Brass, Stainless Steel, etc.)
   const hardwareMaterial = createHardwareFinishMaterial(finishKey);
@@ -296,14 +325,10 @@ export function mountAccessoryMesh(
   // Apply translation matrix
   clone.position.set(targetXM, targetYM, targetZM);
 
-  // If positioned on the left side, mirror orientation if required by handle geometry
-  if (horizontal === "left" && (positionOptions?.defaultHorizontal ?? "right") === "right") {
-    clone.rotation.y = Math.PI;
-  } else {
-    clone.rotation.y = 0;
-  }
+  // Zero out rotation: geometry is already correctly handed without 180-degree yaw flip (IMP-MS78)
+  clone.rotation.set(0, 0, 0);
 
-  parentGroup.add(clone);
+  actualParent.add(clone);
   return clone;
 }
 
@@ -487,8 +512,17 @@ function buildWindowLikeProduct(
         readBoolean(resolved.resolvedValues.hasSill, true)
       );
 
+  const isSillExcluded = Boolean(
+    sill && options.removableStates && (
+      options.removableStates[sill.componentId] === false ||
+      options.removableStates[sill.componentKey] === false ||
+      (sill.togglePropertyKey && options.removableStates[sill.togglePropertyKey] === false)
+    )
+  );
+
   if (
     includeSill &&
+    !isSillExcluded &&
     sill &&
     (resolved.componentQuantities[normalizeComponentKey(sill.componentKey)] ?? sill.baseQuantity) > 0
   ) {
@@ -564,6 +598,7 @@ function buildWindowLikeProduct(
           defaultVertical: "up",
           verticalOffsetMm: 1000,
         };
+      const sourceHanding = swapped.handingMetadata?.sourceHanding ?? matchingComp?.handingMetadata?.sourceHanding ?? null;
       mountAccessoryMesh(
         accessories,
         accMesh,
@@ -572,6 +607,8 @@ function buildWindowLikeProduct(
         swapped.horizontalPosition,
         swapped.verticalPosition,
         swapped.finish,
+        null,
+        sourceHanding,
       );
     }
   }
@@ -633,6 +670,54 @@ function buildAssembledProduct(
         readBoolean(resolved.resolvedValues.hasSill, true)
       );
 
+  // Natural Assembly: Identify accessory slots and measure host geometry
+  const accessorySlotKeys = new Set<string>();
+  const hostComponentsBox = new THREE.Box3();
+  let hasHostComponents = false;
+
+  for (const component of definition.components) {
+    const compIdentity = (
+      component.componentKey +
+      " " +
+      component.componentName +
+      " " +
+      (component.componentType || "") +
+      " " +
+      (component.presentationCategory || "")
+    ).toLowerCase();
+
+    const isSlot = Boolean(
+      component.isAccessorySlot ||
+      (component as Record<string, unknown>).is_accessory_slot ||
+      compIdentity.includes("handle") ||
+      compIdentity.includes("knob") ||
+      compIdentity.includes("lever") ||
+      compIdentity.includes("smartlock") ||
+      compIdentity.includes("lock")
+    );
+
+    if (isSlot) {
+      accessorySlotKeys.add(component.componentId);
+      accessorySlotKeys.add(component.componentKey);
+    } else {
+      try {
+        const cModel = cache.getClone(component.componentId);
+        cModel.updateMatrixWorld(true);
+        hostComponentsBox.expandByObject(cModel);
+        hasHostComponents = true;
+      } catch {
+        // ignore missing model in measurement pass
+      }
+    }
+  }
+
+  const hostCenterVec = new THREE.Vector3();
+  const hostSizeVec = new THREE.Vector3();
+  if (hasHostComponents) {
+    hostComponentsBox.getCenter(hostCenterVec);
+    hostComponentsBox.getSize(hostSizeVec);
+  }
+
   // Natural Assembly: Place each component at its modeled origin
   for (const component of definition.components) {
     const key = normalizeComponentKey(component.componentKey);
@@ -642,6 +727,24 @@ function buildAssembledProduct(
       (component.togglePropertyKey && component.togglePropertyKey.toLowerCase().includes("sill"));
 
     if (isSill && !includeSill) {
+      continue;
+    }
+
+    const toggleKey = component.togglePropertyKey || `has_${component.componentKey.replace(/-/g, "_")}`;
+    const isRemovableExcluded = Boolean(
+      (component.isRemovable || component.togglePropertyKey) &&
+      (
+        (options.removableStates && (
+          options.removableStates[component.componentId] === false ||
+          options.removableStates[component.componentKey] === false ||
+          (component.togglePropertyKey && options.removableStates[component.togglePropertyKey] === false)
+        )) ||
+        (resolved.resolvedValues[toggleKey] === 0 || resolved.resolvedValues[toggleKey] === false) ||
+        (component.togglePropertyKey && (resolved.resolvedValues[component.togglePropertyKey] === 0 || resolved.resolvedValues[component.togglePropertyKey] === false))
+      )
+    );
+
+    if (isRemovableExcluded) {
       continue;
     }
 
@@ -698,15 +801,7 @@ function buildAssembledProduct(
       });
     }
 
-    const isAccessorySlot = Boolean(
-      component.isAccessorySlot ||
-      (component as Record<string, unknown>).is_accessory_slot ||
-      compIdentity.includes("handle") ||
-      compIdentity.includes("knob") ||
-      compIdentity.includes("lever") ||
-      compIdentity.includes("smartlock") ||
-      compIdentity.includes("lock")
-    );
+    const isAccessorySlot = accessorySlotKeys.has(component.componentId) || accessorySlotKeys.has(component.componentKey);
 
     const swapped = options.swappedAccessories?.[component.componentId] ??
       options.swappedAccessories?.[component.componentKey] ??
@@ -718,45 +813,142 @@ function buildAssembledProduct(
       swapped.accessoryId !== component.componentId
     );
 
-    // If an alternative accessory mesh will be mounted dynamically, skip adding default sub-mesh (IMP-MS76)
-    if (isAccessorySlot && isAlternativeAccessory) {
-      continue;
-    }
+    if (isAccessorySlot) {
+      // Measure original handle in its natural modeled position
+      clone.updateMatrixWorld(true);
+      const origHandleBounds = new THREE.Box3().setFromObject(clone);
+      const origHandleCenter = new THREE.Vector3();
+      origHandleBounds.getCenter(origHandleCenter);
 
-    // If default hardware mesh is active, apply position options and finish
-    if (isAccessorySlot && swapped) {
-      if (swapped.finish) {
-        const hwMat = createHardwareFinishMaterial(swapped.finish);
-        clone.traverse((c) => {
+      const baseCenterX = hasHostComponents ? hostCenterVec.x : 0;
+      const deltaX = origHandleCenter.x - baseCenterX;
+      const modeledHanding: "left" | "right" = deltaX >= 0 ? "right" : "left";
+      const activeHanding: "left" | "right" = swapped?.horizontalPosition ?? component.positionOptions?.defaultHorizontal ?? modeledHanding;
+
+      const targetX = activeHanding === "left" ? (baseCenterX - Math.abs(deltaX)) : (baseCenterX + Math.abs(deltaX));
+      const targetY = (component.positionOptions?.allowVerticalToggle && swapped?.verticalPosition === "bottom")
+        ? (hostCenterVec.y - hostSizeVec.y * 0.35)
+        : origHandleCenter.y;
+      const targetZ = origHandleCenter.z;
+
+      if (!isAlternativeAccessory) {
+        // Original cabinet handle is active (positioned symmetrically at targetX, targetY, targetZ)
+        const mountedHandle = mirrorPartAcrossCenterline(
+          clone,
+          baseCenterX,
+          activeHanding,
+          targetY,
+          targetZ
+        );
+
+        if (swapped?.finish) {
+          const hwMat = createHardwareFinishMaterial(swapped.finish);
+          mountedHandle.traverse((c) => {
+            if (c instanceof THREE.Mesh) c.material = hwMat;
+          });
+        }
+        mountedHandle.userData = { ...clone.userData, isMirroredHanding: activeHanding !== modeledHanding };
+        group.add(mountedHandle);
+      } else if (swapped) {
+        // An active hardware accessory was chosen: replace original cabinet handle
+        let accMesh: THREE.Object3D | null = null;
+        if (options.accessoryModels) {
+          accMesh = options.accessoryModels.get(`${swapped.accessoryId}_${activeHanding}`) ??
+            options.accessoryModels.get(swapped.accessoryId) ??
+            null;
+        }
+        if (!accMesh) {
+          try {
+            accMesh = cache.getClone(swapped.accessoryId);
+          } catch {
+            // fallback
+          }
+        }
+        if (!accMesh && (swapped.accessoryId.startsWith("canonical_") || swapped.accessoryId.startsWith("acc_"))) {
+          try {
+            accMesh = createAccessoryMeshById(swapped.accessoryId);
+          } catch {
+            // fallback
+          }
+        }
+        if (!accMesh) {
+          accMesh = createProceduralAccessoryMesh(swapped.category, swapped.accessoryName, swapped.finish);
+        }
+
+        const mountedAcc = accMesh.clone(true);
+
+        // 1. Recenter mountedAcc geometry at local (0, 0, 0)
+        mountedAcc.updateMatrixWorld(true);
+        const curBox = new THREE.Box3().setFromObject(mountedAcc);
+        const curCenter = new THREE.Vector3();
+        curBox.getCenter(curCenter);
+        mountedAcc.position.sub(curCenter);
+        mountedAcc.updateMatrixWorld(true);
+
+        const sourceHanding = swapped.handingMetadata?.sourceHanding ??
+          component.handingMetadata?.sourceHanding ??
+          "right";
+
+        let finalAccMesh: THREE.Object3D = mountedAcc;
+        if (activeHanding !== sourceHanding && !options.accessoryModels?.has(`${swapped.accessoryId}_${activeHanding}`)) {
+          finalAccMesh = mirrorObjectHierarchyAcrossX(mountedAcc);
+          finalAccMesh.updateMatrixWorld(true);
+          const postBox = new THREE.Box3().setFromObject(finalAccMesh);
+          const postCenter = new THREE.Vector3();
+          postBox.getCenter(postCenter);
+          finalAccMesh.position.sub(postCenter);
+          finalAccMesh.updateMatrixWorld(true);
+        }
+
+        const hwMat = createHardwareFinishMaterial(swapped.finish || "satin");
+        finalAccMesh.traverse((c) => {
           if (c instanceof THREE.Mesh) {
             c.material = hwMat;
+            c.castShadow = true;
+            c.receiveShadow = true;
           }
         });
+
+        // 2. Wrap in container positioned at target coordinates (identical container hierarchy to mirrorPartAcrossCenterline)
+        const container = new THREE.Group();
+        container.name = `${swapped.accessoryName || "accessory"}_${activeHanding}`;
+        container.userData = {
+          ...clone.userData,
+          componentKey: component.componentKey,
+          componentId: component.componentId,
+          isAccessoryReplacement: true,
+          isMirroredHanding: activeHanding !== sourceHanding,
+        };
+        container.add(finalAccMesh);
+        container.position.set(targetX, targetY, targetZ);
+        container.rotation.set(0, 0, 0);
+        container.updateMatrixWorld(true);
+
+        group.add(container);
       }
-      if (swapped.horizontalPosition === "left") {
-        clone.position.x = -Math.abs(clone.position.x || 0.45);
-        clone.rotation.y = Math.PI;
-      } else if (swapped.horizontalPosition === "right") {
-        clone.position.x = Math.abs(clone.position.x || 0.45);
-        clone.rotation.y = 0;
-      }
-      if (swapped.verticalPosition === "bottom") {
-        clone.position.y = -0.45;
-      } else if (swapped.verticalPosition === "up") {
-        clone.position.y = 0.05;
-      }
+      continue;
     }
 
     group.add(clone);
   }
 
-  recenterChildAtOrigin(group);
+  // Recenter assembled product around host structural components (invariant to swappable accessories)
+  if (hasHostComponents) {
+    group.position.sub(hostCenterVec);
+    group.updateMatrixWorld(true);
+  } else {
+    recenterChildAtOrigin(group);
+  }
 
-  // Apply parametric scaling based on resolved width, height, and depth
+  // Apply parametric scaling based on host structural components
   group.updateMatrixWorld(true);
-  const naturalBounds = new THREE.Box3().setFromObject(group);
   const naturalSize = new THREE.Vector3();
-  naturalBounds.getSize(naturalSize);
+  if (hasHostComponents && hostSizeVec.x > 0.0001 && hostSizeVec.y > 0.0001) {
+    naturalSize.copy(hostSizeVec);
+  } else {
+    const naturalBounds = new THREE.Box3().setFromObject(group);
+    naturalBounds.getSize(naturalSize);
+  }
 
   const targetWidthMm = findDimensionMm(resolved, ["width", "quotation_width", "quotationWidth", "w"]);
   const targetHeightMm = findDimensionMm(resolved, ["height", "quotation_height", "quotationHeight", "h"]);
@@ -775,6 +967,23 @@ function buildAssembledProduct(
     : 1;
 
   group.scale.set(scaleX, scaleY, scaleZ);
+
+  // Maintain 1:1 metric scale on hardware accessories and fixed parts
+  if (scaleX !== 1 || scaleY !== 1 || scaleZ !== 1) {
+    group.children.forEach((child) => {
+      if (
+        child.userData?.isAccessoryReplacement ||
+        (child.userData?.componentId && accessorySlotKeys.has(child.userData.componentId)) ||
+        (child.userData?.componentKey && accessorySlotKeys.has(child.userData.componentKey))
+      ) {
+        child.scale.set(
+          scaleX > 0 ? 1 / scaleX : 1,
+          scaleY > 0 ? 1 / scaleY : 1,
+          scaleZ > 0 ? 1 / scaleZ : 1,
+        );
+      }
+    });
+  }
 
   // Attach procedural or uploaded front-layer add-on if active (IMP-MS68, IMP-MS69)
   if (options.activeAddon === "screen" || options.activeAddon === "grill") {
@@ -818,8 +1027,12 @@ function buildAssembledProduct(
 
     for (const [slotKey, swapped] of Object.entries(options.swappedAccessories)) {
       if (!swapped) continue;
+      // Skip slots already mounted during component assembly to prevent duplication
+      if (accessorySlotKeys.has(slotKey)) continue;
       const matchingComp = definition.components.find((c) => c.componentId === slotKey || c.componentKey === slotKey);
-      const isDefault = swapped.accessoryId === "default" || (matchingComp && swapped.accessoryId === matchingComp.componentId);
+      if (matchingComp) continue;
+
+      const isDefault = swapped.accessoryId === "default";
 
       if (!isDefault) {
         let accMesh = options.accessoryModels?.get(swapped.accessoryId);
@@ -841,16 +1054,16 @@ function buildAssembledProduct(
           accMesh = createProceduralAccessoryMesh(swapped.category, swapped.accessoryName, swapped.finish);
         }
 
-        const posOptions: AccessoryPositionOptions = matchingComp?.positionOptions ??
-          ((matchingComp as Record<string, unknown> | undefined)?.position_options as AccessoryPositionOptions | undefined) ?? {
-            allowHorizontalToggle: true,
-            defaultHorizontal: "right",
-            horizontalOffsetMm: 45,
-            allowVerticalToggle: swapped.category === "lock",
-            defaultVertical: "up",
-            verticalOffsetMm: 1000,
-          };
+        const posOptions: AccessoryPositionOptions = {
+          allowHorizontalToggle: true,
+          defaultHorizontal: "right",
+          horizontalOffsetMm: 45,
+          allowVerticalToggle: swapped.category === "lock",
+          defaultVertical: "up",
+          verticalOffsetMm: 1000,
+        };
 
+        const sourceHanding = swapped.handingMetadata?.sourceHanding ?? null;
         const mounted = mountAccessoryMesh(
           group,
           accMesh,
@@ -859,6 +1072,8 @@ function buildAssembledProduct(
           swapped.horizontalPosition,
           swapped.verticalPosition,
           swapped.finish,
+          null,
+          sourceHanding,
         );
 
         // Cancel out group scaling on mounted accessory so it preserves exact dimensions

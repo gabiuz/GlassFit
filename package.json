@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test:ms78": "npx tsx --test tests/unit/adminFixedComponentPricing.test.ts tests/unit/accessoryMeshMirroring.test.ts",
     "test:ms77": "npx tsx --test tests/unit/ms77AccessorySelectionValidation.test.ts",
     "test:ms76": "npx tsx --test tests/unit/accessoryWorkspaceIntegration.test.ts",
     "test:ms75": "npx tsx --test tests/unit/adminAccessoryPartInspector.test.ts",

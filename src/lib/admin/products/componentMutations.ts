@@ -57,10 +57,11 @@ export async function upsertProductComponent(input: UpsertComponentInput): Promi
         resolvedRawMaterialId = defaultBinding ? defaultBinding.rawMaterialId : null;
     }
 
-    // We inject assembly_group into component_data if provided
+    // We inject assembly_group and handing_metadata into component_data if provided
     const mergedComponentData = {
         ...(input.componentData || {}),
         assembly_group: input.assemblyGroup || undefined,
+        ...(input.handingMetadata ? { handing_metadata: input.handingMetadata } : {}),
     };
 
     const payload = {
@@ -68,6 +69,8 @@ export async function upsertProductComponent(input: UpsertComponentInput): Promi
         component_type: input.componentType,
         base_quantity: input.baseQuantity,
         raw_material_id: resolvedRawMaterialId,
+        unit_price: Math.max(0, Number(input.unitPrice ?? 0)),
+        pricing_method: input.pricingMethod || (input.unitPrice !== undefined && input.unitPrice > 0 ? "Fixed" : "Included"),
         dimension_binding: input.dimensionBinding || "FIXED",
         span_ratio: typeof input.spanRatio === "number" ? input.spanRatio : 1.0,
         is_removable: Boolean(input.isRemovable),
@@ -245,6 +248,9 @@ export async function upsertProductComponentWithMaterials(
             accessoryCategory: payload.accessoryCategory,
             allowedAccessoryIds: payload.allowedAccessoryIds,
             positionOptions: payload.positionOptions,
+            unitPrice: payload.unitPrice,
+            pricingMethod: payload.pricingMethod,
+            handingMetadata: payload.handingMetadata,
         });
 
         return {

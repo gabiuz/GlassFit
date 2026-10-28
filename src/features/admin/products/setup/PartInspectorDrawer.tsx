@@ -8,6 +8,7 @@
 'use client';
 
 import React, { useState, useMemo, useEffect } from 'react';
+import { Sparkles } from 'lucide-react';
 import { fetchActiveCatalogAccessories, type CatalogAccessoryItem } from '@/lib/admin/products/accessoryActions';
 import type {
   DimensionBinding,
@@ -43,6 +44,8 @@ export interface PartInspectorConfig {
   accessoryCategory?: AccessoryCategory | null;
   allowedAccessoryIds?: string[] | null;
   positionOptions?: AccessoryPositionOptions;
+  unitPrice?: number;
+  pricingMethod?: string;
 }
 
 interface PartInspectorDrawerProps {
@@ -50,6 +53,8 @@ interface PartInspectorDrawerProps {
   allParts?: PartInspectorConfig[];
   rawMaterials: RawMaterial[];
   analyzedGrilleData?: GrilleGeometryAnalysis | null;
+  modelStrategy?: string | null;
+  isAccessory?: boolean;
   onUpdateParts: (updates: Partial<PartInspectorConfig>) => void;
   onSyncAssemblyGroup?: (assemblyGroup: string, bindings: ComponentMaterialBinding[], defaultMaterialId: string | null) => void;
   onDeselect: () => void;
@@ -59,6 +64,8 @@ export function PartInspectorDrawer({
   selectedParts,
   rawMaterials,
   analyzedGrilleData,
+  modelStrategy,
+  isAccessory = false,
   onUpdateParts,
   onSyncAssemblyGroup,
   onDeselect,
@@ -398,15 +405,54 @@ export function PartInspectorDrawer({
           </div>
         )}
 
+        {/* Fixed Component Price Field (IMP-MS78) */}
+        {(modelStrategy === "Fixed" || primary.pricingMethod === "Fixed" || isAccessory) && (
+          <div className="bg-neutral-50 p-4 rounded-[12px] border border-neutral-200 space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold text-[#0f1422] uppercase tracking-wider">
+                Fixed Component Price (PHP)
+              </label>
+              <span className="text-[11px] text-neutral-500">Overrides raw material rates</span>
+            </div>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-medium text-neutral-400">
+                PHP
+              </span>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={primary.unitPrice !== undefined && primary.unitPrice !== null ? primary.unitPrice : ""}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  const val = raw === "" ? undefined : parseFloat(raw);
+                  onUpdateParts({
+                    unitPrice: val !== undefined && !isNaN(val) ? val : undefined,
+                    pricingMethod: "Fixed",
+                    dimensionBinding: "FIXED",
+                  });
+                }}
+                placeholder="0.00"
+                className="w-full pl-12 pr-4 py-2 bg-white border border-neutral-300 rounded-[8px] text-sm font-medium text-[#0f1422] focus:outline-none focus:border-[#07b6d3]"
+              />
+            </div>
+            <p className="text-[11px] text-neutral-500">
+              Direct unit cost for this component. Used in BOM summation and quotation generation.
+            </p>
+          </div>
+        )}
+
         {/* Section 1: Multi-Material Selection Panel */}
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <div>
               <label className="text-xs font-semibold text-neutral-800 block">
-                Allowed Raw Materials (Catalog)
+                {modelStrategy === "Fixed" ? "Allowed Raw Materials (Optional for Fixed Models)" : "Allowed Raw Materials (Catalog)"}
               </label>
               <p className="text-[10px] text-neutral-400 mt-0.5">
-                Select one or more materials. Designate one material as the default.
+                {modelStrategy === "Fixed"
+                  ? "Optionally assign catalog finishes for client 3D swatch preview without affecting fixed price."
+                  : "Select one or more materials. Designate one material as the default."}
               </p>
             </div>
             {currentBindings.length > 0 && (
@@ -725,41 +771,84 @@ export function PartInspectorDrawer({
           />
         </div>
 
-        {/* Section 4: Removable Toggle */}
-        <div className="bg-neutral-50 p-3 rounded-[10px] border border-neutral-200 space-y-2.5">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs font-medium text-[#0f1422]">Allow Client to Remove</p>
-              <p className="text-[10px] text-neutral-500">Enables toggle switch in simulation</p>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={primary.isRemovable}
-                onChange={(e) => onUpdateParts({ isRemovable: e.target.checked })}
-                className="sr-only peer"
-              />
-              <div className="w-8 h-4.5 bg-neutral-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-[#07b6d3]"></div>
-            </label>
-          </div>
-
-          {primary.isRemovable && (
-            <div className="pt-2 border-t border-neutral-200/60 space-y-1">
-              <label className="text-[11px] font-medium text-neutral-600 block">
-                Toggle Property Key
+        {/* Section 4: Removable Toggle (Omitted for Hardware Accessories since all accessories are client-removable) */}
+        {!isAccessory && (
+          <div className="bg-neutral-50 p-3 rounded-[10px] border border-neutral-200 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-medium text-[#0f1422]">Allow Client to Remove</p>
+                <p className="text-[10px] text-neutral-500">Enables toggle switch in simulation</p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={primary.isRemovable}
+                  onChange={(e) => onUpdateParts({ isRemovable: e.target.checked })}
+                  className="sr-only peer"
+                />
+                <div className="w-8 h-4.5 bg-neutral-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-[#07b6d3]"></div>
               </label>
-              <input
-                type="text"
-                value={primary.togglePropertyKey || ''}
-                onChange={(e) => onUpdateParts({ togglePropertyKey: e.target.value })}
-                placeholder="has_sill"
-                className="w-full border border-neutral-200 rounded-[6px] px-2.5 py-1.5 text-xs focus:border-[#07b6d3] outline-none bg-white"
-              />
             </div>
-          )}
-        </div>
 
-        {/* Section: Swappable Accessory Slot (IMP-MS75) */}
+            {primary.isRemovable && (
+              <div className="pt-2 border-t border-neutral-200/60 space-y-1">
+                <label className="text-[11px] font-medium text-neutral-600 block">
+                  Toggle Property Key
+                </label>
+                <input
+                  type="text"
+                  value={primary.togglePropertyKey || ''}
+                  onChange={(e) => onUpdateParts({ togglePropertyKey: e.target.value })}
+                  placeholder="has_sill"
+                  className="w-full border border-neutral-200 rounded-[6px] px-2.5 py-1.5 text-xs focus:border-[#07b6d3] outline-none bg-white"
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Section: Accessory Configuration */}
+        {isAccessory ? (
+          <div className="bg-neutral-50 p-3.5 rounded-[10px] border border-neutral-200 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Sparkles className="size-4 text-[#07b6d3]" />
+                <div>
+                  <p className="text-xs font-semibold text-[#0f1422]">Accessory Category</p>
+                  <p className="text-[10px] text-neutral-500">
+                    Template classification for this hardware model
+                  </p>
+                </div>
+              </div>
+              <span className="text-[10px] bg-[#07b6d3]/10 text-[#07b6d3] font-medium px-2 py-0.5 rounded-full">
+                Hardware Template
+              </span>
+            </div>
+
+            <div className="space-y-1.5 pt-1">
+              <label className="text-[11px] font-medium text-neutral-700 block">
+                Accessory Type <span className="text-red-500">*</span>
+              </label>
+              <select
+                value={primary.accessoryCategory || "handle"}
+                onChange={(e) => {
+                  const nextCategory = e.target.value as AccessoryCategory;
+                  onUpdateParts({ accessoryCategory: nextCategory });
+                }}
+                className="w-full border border-neutral-200 rounded-[8px] px-3 py-2 text-xs font-medium text-[#0f1422] focus:border-[#07b6d3] outline-none bg-white shadow-xs cursor-pointer"
+              >
+                <option value="handle">Handle / Knob / Pull</option>
+                <option value="lock">Lock / Latch / Smart Lock</option>
+                <option value="hinge">Hinge / Pivot</option>
+                <option value="roller">Roller / Guide Wheel</option>
+                <option value="other">Other Hardware</option>
+              </select>
+              <p className="text-[10px] text-neutral-500 leading-normal">
+                Specifies which fixture slot type (e.g. door handles or sliding locks) can mount this hardware template.
+              </p>
+            </div>
+          </div>
+        ) : (
         <div className="bg-neutral-50 p-3 rounded-[10px] border border-neutral-200 space-y-3">
           <div className="flex items-center justify-between">
             <div>
@@ -945,6 +1034,7 @@ export function PartInspectorDrawer({
             </div>
           )}
         </div>
+        )}
 
         {/* Section 5: Base Quantity & Assembly Group */}
         <div className="grid grid-cols-2 gap-3">

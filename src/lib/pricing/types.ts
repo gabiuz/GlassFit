@@ -224,6 +224,10 @@ export interface ProductComponent {
   accessoryCategory?: AccessoryCategory | null;
   allowedAccessoryIds?: string[] | null;
   positionOptions?: AccessoryPositionOptions;
+  unitPrice?: number;
+  pricingMethod?: string;
+  handingMetadata?: import("@/lib/admin/products/types").ComponentHandingMetadata | null;
+  componentData?: Record<string, unknown>;
 }
 
 export const ProductComponentBindingSchema = z.object({

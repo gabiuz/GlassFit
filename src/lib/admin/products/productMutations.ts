@@ -164,6 +164,34 @@ export async function updateProductDraft(productId: string, input: UpdateProduct
     return data.product_id;
 }
 
+export async function updateProductAccessoryCategory(
+    productId: string,
+    accessoryCategory: AccessoryCategory
+): Promise<void> {
+    const adminCtx = await requirePermission("manage_products");
+    const supabase = await createSupabaseServerClient();
+
+    if (!UUID_PATTERN.test(productId)) {
+        throw new Error("A valid persisted product ID is required.");
+    }
+
+    const { error } = await supabase
+        .from("products")
+        .update({
+            accessory_category: accessoryCategory,
+            updated_by: adminCtx.profileId,
+        })
+        .eq("product_id", productId);
+
+    if (error) {
+        console.error("Failed to update product accessory category:", error);
+        throw new Error(error.message);
+    }
+
+    revalidatePath("/admin/products");
+    revalidatePath(`/admin/products/${productId}/setup`);
+}
+
 
 export type UpsertTemplateInput = {
     model_strategy: "Fixed" | "Parametric";
