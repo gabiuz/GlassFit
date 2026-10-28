@@ -108,9 +108,10 @@ export function ProductSetupWizard({ productId, initialData, initialStep }: Prod
 
     const handleProductCreated = (newId: string, data: Record<string, unknown>) => {
         const isAddonProduct = Boolean(data.is_addon ?? productData?.is_addon);
+        const isAccessoryProduct = Boolean(data.is_accessory ?? productData?.is_accessory);
         setDraftId(newId);
         setProductData({ ...productData, ...data, product_id: newId });
-        const nextStep = isAddonProduct ? "components" : "strategy";
+        const nextStep = (isAddonProduct || isAccessoryProduct) ? "components" : "strategy";
         setActiveStep(nextStep);
         router.replace(buildProductSetupUrl(newId, nextStep));
         refreshDraft(newId);
@@ -213,12 +214,13 @@ export function ProductSetupWizard({ productId, initialData, initialStep }: Prod
                     <StructuralComponentsSection
                         productId={draftId}
                         templateId={(Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.template_id : productData?.product_templates?.template_id) || ""}
-                        modelStrategy={(Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.model_strategy : productData?.product_templates?.model_strategy) || (isAddon || isAccessory ? "Parametric" : null)}
+                        modelStrategy={isAccessory ? "Fixed" : ((Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.model_strategy : productData?.product_templates?.model_strategy) || (isAddon ? "Parametric" : null))}
                         productType={productData?.product_type || "Window"}
                         initialData={Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.product_components : productData?.product_templates?.product_components}
                         wholeModelAsset={productData?.product_assets?.find?.((a: ProductAssetSummary) => a.asset_type === "Catalog 3D Preview" && a.is_primary !== false) || null}
                         isAccessory={isAccessory}
                         initialAccessoryCategory={(productData?.accessory_category as AccessoryCategory) || null}
+                        productBasePrice={typeof productData?.base_price === "number" ? productData.base_price : undefined}
                         onSave={() => handleStepChange(isAccessory ? "validation" : "parameters")}
                     />
                 )}

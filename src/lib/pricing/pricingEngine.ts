@@ -207,7 +207,7 @@ export function calculateParametricBOM(
       if (unitLabel === "sqm") {
         glazingAreaSqm += computedQty;
       }
-    } else if (comp.presentationCategory === "Hardware") {
+    } else if (comp.presentationCategory === "Hardware" || mat?.category === "Hardware") {
       hardwareItems.push(itemDetail);
       hardwareSubtotal += itemSubtotal;
     } else {

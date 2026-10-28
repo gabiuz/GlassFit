@@ -38,6 +38,7 @@ export type StructuralComponentsSectionProps = {
     } | null;
     isAccessory?: boolean;
     initialAccessoryCategory?: AccessoryCategory | null;
+    productBasePrice?: number;
     onSave: () => void;
 };
 
@@ -64,7 +65,7 @@ type MappedFile = {
     isAccessorySlot?: boolean;
     accessoryCategory?: AccessoryCategory | null;
     allowedAccessoryIds?: string[] | null;
-    positionOptions?: AccessoryPositionOptions;
+    positionOptions?: AccessoryPositionOptions | null;
     unitPrice?: number;
     pricingMethod?: string;
     handingMetadata?: ComponentHandingMetadata | null;
@@ -249,10 +250,11 @@ function PartViewer3D({
 
             const sourceSize = file.sourceDimensions || { x: 1, y: 1, z: 1 };
             wrapper.position.set(xM, yM, zM);
+            const isFixed = file.dimensionBinding === "FIXED";
             wrapper.scale.set(
-                getPartScale(targetWidthM ?? 0, sourceSize.x),
-                getPartScale(targetHeightM ?? 0, sourceSize.y),
-                getPartScale(targetDepthM ?? 0, sourceSize.z)
+                isFixed ? 1 : getPartScale(targetWidthM ?? 0, sourceSize.x),
+                isFixed ? 1 : getPartScale(targetHeightM ?? 0, sourceSize.y),
+                isFixed ? 1 : getPartScale(targetDepthM ?? 0, sourceSize.z)
             );
 
             highlightPart(wrapper, selectedIds.has(file.id));
@@ -485,6 +487,7 @@ export function StructuralComponentsSection({
     wholeModelAsset,
     isAccessory = false,
     initialAccessoryCategory = null,
+    productBasePrice,
     onSave,
 }: StructuralComponentsSectionProps) {
     const [uploadMode, setUploadMode] = useState<"individual" | "assembled">("individual");
@@ -533,6 +536,10 @@ export function StructuralComponentsSection({
             const bindings = extractComponentBindings(comp);
             const defaultBinding = bindings.find(b => b.isDefault);
             const rawMaterialId = defaultBinding ? defaultBinding.rawMaterialId : (comp.raw_material_id as string) || null;
+            const existingPrice = typeof comp.unit_price === "number" ? comp.unit_price : (comp.unit_price ? Number(comp.unit_price) : undefined);
+            const resolvedUnitPrice = existingPrice !== undefined ? existingPrice : (isAccessory ? productBasePrice : undefined);
+            const resolvedPricingMethod = (comp.pricing_method as string) || (isAccessory ? "Fixed" : (typeof resolvedUnitPrice === "number" && resolvedUnitPrice > 0 ? "Fixed" : undefined));
+
             return {
                 id: String(comp.component_id || crypto.randomUUID()),
                 file: new File([], `${comp.component_key}.glb`),
@@ -543,7 +550,7 @@ export function StructuralComponentsSection({
                 baseQuantity: typeof comp.base_quantity === "number" ? comp.base_quantity : 1,
                 rawMaterialId,
                 materialBindings: bindings,
-                dimensionBinding: (comp.dimension_binding as DimensionBinding) || detected.dimensionBinding,
+                dimensionBinding: (comp.dimension_binding as DimensionBinding) || (isAccessory ? "FIXED" : detected.dimensionBinding),
                 spanRatio: typeof comp.span_ratio === "number" ? comp.span_ratio : detected.spanRatio,
                 isRemovable: isAccessory ? true : (typeof comp.is_removable === "boolean" ? comp.is_removable : detected.isRemovable),
                 togglePropertyKey: (comp.toggle_property_key as string) || detected.togglePropertyKey,
@@ -552,16 +559,9 @@ export function StructuralComponentsSection({
                 isAccessorySlot: isAccessory ? false : (typeof comp.is_accessory_slot === "boolean" ? comp.is_accessory_slot : Boolean(detected.isAccessorySlot)),
                 accessoryCategory: (comp.accessory_category as AccessoryCategory) || (compData.accessory_category as AccessoryCategory) || (initialAccessoryCategory as AccessoryCategory) || detected.accessoryCategory || (isAccessory ? "handle" : null),
                 allowedAccessoryIds: (comp.allowed_accessory_ids as string[]) || [],
-                positionOptions: (comp.position_options as AccessoryPositionOptions) || detected.positionOptions || {
-                    allowHorizontalToggle: true,
-                    defaultHorizontal: "right",
-                    horizontalOffsetMm: 45,
-                    allowVerticalToggle: false,
-                    defaultVertical: "up",
-                    verticalOffsetMm: 1000,
-                },
-                unitPrice: typeof comp.unit_price === "number" ? comp.unit_price : (comp.unit_price ? Number(comp.unit_price) : undefined),
-                pricingMethod: (comp.pricing_method as string) || (typeof comp.unit_price === "number" && comp.unit_price > 0 ? "Fixed" : undefined),
+                positionOptions: (comp.position_options as AccessoryPositionOptions) || detected.positionOptions || null,
+                unitPrice: resolvedUnitPrice,
+                pricingMethod: resolvedPricingMethod,
                 handingMetadata: (compData.handing_metadata as ComponentHandingMetadata) || null,
                 status: "success" as const,
             };
@@ -590,7 +590,7 @@ export function StructuralComponentsSection({
                             baseQuantity: typeof comp.base_quantity === "number" ? comp.base_quantity : 1,
                             rawMaterialId,
                             materialBindings: bindings,
-                            dimensionBinding: (comp.dimension_binding as DimensionBinding) || detected.dimensionBinding,
+                            dimensionBinding: (comp.dimension_binding as DimensionBinding) || (isAccessory ? "FIXED" : detected.dimensionBinding),
                             spanRatio: typeof comp.span_ratio === "number" ? comp.span_ratio : detected.spanRatio,
                             isRemovable: isAccessory ? true : (typeof comp.is_removable === "boolean" ? comp.is_removable : detected.isRemovable),
                             togglePropertyKey: (comp.toggle_property_key as string) || detected.togglePropertyKey,
@@ -599,16 +599,12 @@ export function StructuralComponentsSection({
                             isAccessorySlot: isAccessory ? false : (typeof comp.is_accessory_slot === "boolean" ? comp.is_accessory_slot : Boolean(detected.isAccessorySlot)),
                             accessoryCategory: (comp.accessory_category as AccessoryCategory) || (compData.accessory_category as AccessoryCategory) || (initialAccessoryCategory as AccessoryCategory) || detected.accessoryCategory || (isAccessory ? "handle" : null),
                             allowedAccessoryIds: (comp.allowed_accessory_ids as string[]) || [],
-                            positionOptions: (comp.position_options as AccessoryPositionOptions) || detected.positionOptions || {
-                                allowHorizontalToggle: true,
-                                defaultHorizontal: "right",
-                                horizontalOffsetMm: 45,
-                                allowVerticalToggle: false,
-                                defaultVertical: "up",
-                                verticalOffsetMm: 1000,
-                            },
-                            unitPrice: typeof comp.unit_price === "number" ? comp.unit_price : (comp.unit_price ? Number(comp.unit_price) : undefined),
-                            pricingMethod: (comp.pricing_method as string) || (typeof comp.unit_price === "number" && comp.unit_price > 0 ? "Fixed" : undefined),
+                            positionOptions: (comp.position_options as AccessoryPositionOptions) || detected.positionOptions || null,
+                            unitPrice: (() => {
+                                const ep = typeof comp.unit_price === "number" ? comp.unit_price : (comp.unit_price ? Number(comp.unit_price) : undefined);
+                                return ep !== undefined ? ep : (isAccessory ? productBasePrice : undefined);
+                            })(),
+                            pricingMethod: (comp.pricing_method as string) || (isAccessory ? "Fixed" : (typeof comp.unit_price === "number" && comp.unit_price > 0 ? "Fixed" : undefined)),
                             handingMetadata: (compData.handing_metadata as ComponentHandingMetadata) || null,
                             status: "success" as const,
                         };
@@ -622,13 +618,16 @@ export function StructuralComponentsSection({
                         const defaultBinding = foundBindings.find(b => b.isDefault);
                         const nextRawMatId = defaultBinding ? defaultBinding.rawMaterialId : (found.raw_material_id as string) || null;
                         const foundData = (found.component_data || {}) as Record<string, unknown>;
+                        const foundPrice = typeof found.unit_price === "number" ? found.unit_price : (found.unit_price ? Number(found.unit_price) : item.unitPrice);
+                        const resolvedUnitPrice = foundPrice !== undefined ? foundPrice : (isAccessory ? productBasePrice : undefined);
+                        const resolvedPricingMethod = (found.pricing_method as string) || (isAccessory ? "Fixed" : item.pricingMethod);
                         return {
                             ...item,
                             glbFileUrl: (found.glb_file_url as string) || item.glbFileUrl,
                             rawMaterialId: nextRawMatId ?? item.rawMaterialId,
                             materialBindings: foundBindings.length > 0 ? foundBindings : item.materialBindings,
-                            unitPrice: typeof found.unit_price === "number" ? found.unit_price : (found.unit_price ? Number(found.unit_price) : item.unitPrice),
-                            pricingMethod: (found.pricing_method as string) || item.pricingMethod,
+                            unitPrice: resolvedUnitPrice,
+                            pricingMethod: resolvedPricingMethod,
                             handingMetadata: (foundData.handing_metadata as ComponentHandingMetadata) || item.handingMetadata,
                         };
                     }
@@ -715,13 +714,13 @@ export function StructuralComponentsSection({
                 componentType: autoDetected.componentType,
                 assemblyGroup: autoDetected.presentationCategory.toLowerCase(),
                 baseQuantity: 1,
-                rawMaterialId: suggested.defaultRawMaterialId,
-                materialBindings: suggested.materialBindings.map(b => ({
+                rawMaterialId: isAccessory ? null : suggested.defaultRawMaterialId,
+                materialBindings: isAccessory ? [] : suggested.materialBindings.map(b => ({
                     rawMaterialId: b.rawMaterialId,
                     isDefault: b.isDefault,
                     displayOrder: b.displayOrder,
                 })),
-                dimensionBinding: (modelStrategy === "Fixed" ? "FIXED" : autoDetected.dimensionBinding) as DimensionBinding,
+                dimensionBinding: (isAccessory ? "FIXED" : (modelStrategy === "Fixed" ? "FIXED" : autoDetected.dimensionBinding)) as DimensionBinding,
                 spanRatio: modelStrategy === "Fixed" ? 1.0 : autoDetected.spanRatio,
                 isRemovable: isAccessory ? true : autoDetected.isRemovable,
                 togglePropertyKey: autoDetected.togglePropertyKey,
@@ -732,16 +731,9 @@ export function StructuralComponentsSection({
                 isAccessorySlot: isAccessory ? false : Boolean(autoDetected.isAccessorySlot),
                 accessoryCategory: isAccessory ? (initialAccessoryCategory || autoDetected.accessoryCategory || "handle") : (autoDetected.accessoryCategory || null),
                 allowedAccessoryIds: [],
-                positionOptions: autoDetected.positionOptions || {
-                    allowHorizontalToggle: true,
-                    defaultHorizontal: "right",
-                    horizontalOffsetMm: 45,
-                    allowVerticalToggle: false,
-                    defaultVertical: "up",
-                    verticalOffsetMm: 1000,
-                },
-                unitPrice: undefined,
-                pricingMethod: modelStrategy === "Fixed" ? "Fixed" : undefined,
+                positionOptions: autoDetected.positionOptions || null,
+                unitPrice: isAccessory ? productBasePrice : undefined,
+                pricingMethod: (isAccessory || modelStrategy === "Fixed") ? "Fixed" : undefined,
                 handingMetadata: null,
             };
         });
@@ -827,13 +819,13 @@ export function StructuralComponentsSection({
                 componentType: part.componentType,
                 assemblyGroup: part.presentationCategory.toLowerCase(),
                 baseQuantity: part.baseQuantity || 1,
-                rawMaterialId: suggested.defaultRawMaterialId,
-                materialBindings: suggested.materialBindings.map(b => ({
+                rawMaterialId: isAccessory ? null : suggested.defaultRawMaterialId,
+                materialBindings: isAccessory ? [] : suggested.materialBindings.map(b => ({
                     rawMaterialId: b.rawMaterialId,
                     isDefault: b.isDefault,
                     displayOrder: b.displayOrder,
                 })),
-                dimensionBinding: part.dimensionBinding,
+                dimensionBinding: isAccessory ? "FIXED" : part.dimensionBinding,
                 spanRatio: part.spanRatio,
                 isRemovable: part.isRemovable,
                 togglePropertyKey: part.togglePropertyKey,
@@ -849,14 +841,10 @@ export function StructuralComponentsSection({
                 isAccessorySlot: Boolean(part.isAccessorySlot),
                 accessoryCategory: part.accessoryCategory || null,
                 allowedAccessoryIds: [],
-                positionOptions: part.positionOptions || {
-                    allowHorizontalToggle: true,
-                    defaultHorizontal: "right",
-                    horizontalOffsetMm: 45,
-                    allowVerticalToggle: false,
-                    defaultVertical: "up",
-                    verticalOffsetMm: 1000,
-                },
+                positionOptions: part.positionOptions || null,
+                unitPrice: isAccessory ? productBasePrice : undefined,
+                pricingMethod: (isAccessory || modelStrategy === "Fixed") ? "Fixed" : undefined,
+                handingMetadata: null,
             };
         });
 
@@ -1009,9 +997,9 @@ export function StructuralComponentsSection({
                 isAccessorySlot: mapped.isAccessorySlot,
                 accessoryCategory: mapped.accessoryCategory,
                 allowedAccessoryIds: mapped.allowedAccessoryIds,
-                positionOptions: mapped.positionOptions,
-                unitPrice: mapped.unitPrice,
-                pricingMethod: mapped.pricingMethod,
+                positionOptions: mapped.positionOptions || undefined,
+                unitPrice: mapped.unitPrice !== undefined ? mapped.unitPrice : (isAccessory ? productBasePrice : undefined),
+                pricingMethod: mapped.pricingMethod || (isAccessory ? "Fixed" : undefined),
                 handingMetadata: mapped.handingMetadata,
             });
 
@@ -1105,8 +1093,8 @@ export function StructuralComponentsSection({
                                 source_dimensions_mm: dimensions,
                                 handing_metadata: finalHandingMetadata,
                             },
-                            unitPrice: mapped.unitPrice,
-                            pricingMethod: mapped.pricingMethod,
+                            unitPrice: mapped.unitPrice !== undefined ? mapped.unitPrice : (isAccessory ? productBasePrice : undefined),
+                            pricingMethod: mapped.pricingMethod || (isAccessory ? "Fixed" : undefined),
                             handingMetadata: finalHandingMetadata,
                         });
 
@@ -1533,12 +1521,16 @@ export function StructuralComponentsSection({
                                         {selectedHanding === "left" ? "Original Upload" : "Generated Mirror"}
                                     </span>
                                 </div>
-                                <div className="h-44 bg-neutral-100 rounded-[10px] overflow-hidden border border-neutral-200">
-                                    <Canvas camera={{ position: [0, 0, 0.4], fov: 45 }}>
+                                <div className="h-64 sm:h-72 bg-neutral-100 rounded-[10px] overflow-hidden border border-neutral-200">
+                                    <Canvas shadows camera={{ position: [0, 0, 0.6], fov: 45 }}>
                                         <ambientLight intensity={0.7} />
                                         <directionalLight position={[2, 4, 3]} intensity={1.2} />
-                                        {leftPreviewMesh && <primitive object={leftPreviewMesh} />}
-                                        <OrbitControls enableZoom={false} autoRotate autoRotateSpeed={2} />
+                                        <Suspense fallback={null}>
+                                            <Stage environment={null} intensity={0.8} adjustCamera={1.2}>
+                                                {leftPreviewMesh && <primitive object={leftPreviewMesh} />}
+                                            </Stage>
+                                        </Suspense>
+                                        <OrbitControls enableZoom={true} minDistance={0.1} maxDistance={5} autoRotate autoRotateSpeed={2} />
                                     </Canvas>
                                 </div>
                             </div>
@@ -1550,12 +1542,16 @@ export function StructuralComponentsSection({
                                         {selectedHanding === "right" ? "Original Upload" : "Generated Mirror"}
                                     </span>
                                 </div>
-                                <div className="h-44 bg-neutral-100 rounded-[10px] overflow-hidden border border-neutral-200">
-                                    <Canvas camera={{ position: [0, 0, 0.4], fov: 45 }}>
+                                <div className="h-64 sm:h-72 bg-neutral-100 rounded-[10px] overflow-hidden border border-neutral-200">
+                                    <Canvas shadows camera={{ position: [0, 0, 0.6], fov: 45 }}>
                                         <ambientLight intensity={0.7} />
                                         <directionalLight position={[2, 4, 3]} intensity={1.2} />
-                                        {rightPreviewMesh && <primitive object={rightPreviewMesh} />}
-                                        <OrbitControls enableZoom={false} autoRotate autoRotateSpeed={2} />
+                                        <Suspense fallback={null}>
+                                            <Stage environment={null} intensity={0.8} adjustCamera={1.2}>
+                                                {rightPreviewMesh && <primitive object={rightPreviewMesh} />}
+                                            </Stage>
+                                        </Suspense>
+                                        <OrbitControls enableZoom={true} minDistance={0.1} maxDistance={5} autoRotate autoRotateSpeed={2} />
                                     </Canvas>
                                 </div>
                             </div>
@@ -1646,6 +1642,7 @@ export function StructuralComponentsSection({
                             analyzedGrilleData={analyzedGrilleData}
                             modelStrategy={modelStrategy}
                             isAccessory={isAccessory}
+                            productBasePrice={productBasePrice}
                             onUpdateParts={handleBatchUpdateSelected}
                             onSyncAssemblyGroup={handleSyncAssemblyGroup}
                             onDeselect={() => setSelectedIds(new Set())}
@@ -1697,10 +1694,16 @@ export function StructuralComponentsSection({
                                         </button>
                                     </th>
                                     <th className="px-3 py-2">Component Name</th>
-                                    <th className="px-3 py-2">Driver</th>
-                                    <th className="px-3 py-2">Span Ratio</th>
-                                    <th className="px-3 py-2">Material Link</th>
-                                    <th className="px-3 py-2">Removable</th>
+                                    {isAccessory ? (
+                                        <th className="px-3 py-2">Unit Price</th>
+                                    ) : (
+                                        <>
+                                            <th className="px-3 py-2">Driver</th>
+                                            <th className="px-3 py-2">Span Ratio</th>
+                                            <th className="px-3 py-2">Material Link</th>
+                                            <th className="px-3 py-2">Removable</th>
+                                        </>
+                                    )}
                                     <th className="px-3 py-2">Status</th>
                                     <th className="px-3 py-2"></th>
                                 </tr>
@@ -1735,37 +1738,45 @@ export function StructuralComponentsSection({
                                                 </div>
                                                 <div className="text-[10px] text-neutral-400 font-mono">{mapped.componentKey}</div>
                                             </td>
-                                            <td className="px-3 py-2">
-                                                <span className="px-2 py-0.5 rounded bg-neutral-100 text-neutral-700 font-mono text-[10px]">
-                                                    {mapped.dimensionBinding}
-                                                </span>
-                                            </td>
-                                            <td className="px-3 py-2 font-mono text-neutral-600">
-                                                {mapped.spanRatio.toFixed(2)}x
-                                            </td>
-                                            <td className="px-3 py-2 max-w-[180px] truncate text-neutral-600">
-                                                {mat ? (
-                                                    <span title={mat.description} className="text-[#07b6d3] font-medium flex items-center gap-1">
-                                                        <span>{mat.material_code}</span>
-                                                        {mapped.materialBindings && mapped.materialBindings.length > 1 && (
-                                                            <span className="text-[10px] px-1 py-0.2 rounded bg-cyan-100 text-[#07b6d3] font-semibold">
-                                                                +{mapped.materialBindings.length - 1}
+                                            {isAccessory ? (
+                                                <td className="px-3 py-2 font-medium text-neutral-800">
+                                                    PHP {(productBasePrice ?? 0).toFixed(2)}
+                                                </td>
+                                            ) : (
+                                                <>
+                                                    <td className="px-3 py-2">
+                                                        <span className="px-2 py-0.5 rounded bg-neutral-100 text-neutral-700 font-mono text-[10px]">
+                                                            {mapped.dimensionBinding}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-3 py-2 font-mono text-neutral-600">
+                                                        {mapped.spanRatio.toFixed(2)}x
+                                                    </td>
+                                                    <td className="px-3 py-2 max-w-[180px] truncate text-neutral-600">
+                                                        {mat ? (
+                                                            <span title={mat.description} className="text-[#07b6d3] font-medium flex items-center gap-1">
+                                                                <span>{mat.material_code}</span>
+                                                                {mapped.materialBindings && mapped.materialBindings.length > 1 && (
+                                                                    <span className="text-[10px] px-1 py-0.2 rounded bg-cyan-100 text-[#07b6d3] font-semibold">
+                                                                        +{mapped.materialBindings.length - 1}
+                                                                    </span>
+                                                                )}
                                                             </span>
+                                                        ) : (
+                                                            <span className="text-neutral-400 italic">Unassigned</span>
                                                         )}
-                                                    </span>
-                                                ) : (
-                                                    <span className="text-neutral-400 italic">Unassigned</span>
-                                                )}
-                                            </td>
-                                            <td className="px-3 py-2">
-                                                {mapped.isRemovable ? (
-                                                    <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-600 text-[10px] font-medium border border-amber-200">
-                                                        {mapped.togglePropertyKey || "Toggleable"}
-                                                    </span>
-                                                ) : (
-                                                    <span className="text-neutral-400 text-[11px]">Fixed</span>
-                                                )}
-                                            </td>
+                                                    </td>
+                                                    <td className="px-3 py-2">
+                                                        {mapped.isRemovable ? (
+                                                            <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-600 text-[10px] font-medium border border-amber-200">
+                                                                {mapped.togglePropertyKey || "Toggleable"}
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-neutral-400 text-[11px]">Fixed</span>
+                                                        )}
+                                                    </td>
+                                                </>
+                                            )}
                                             <td className="px-3 py-2">
                                                 {mapped.status === "idle" && <span className="text-amber-600 font-medium text-xs">Unsaved</span>}
                                                 {mapped.status === "processing" && (

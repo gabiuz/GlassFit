@@ -5,6 +5,7 @@ import { requirePermission } from "@/lib/auth/admin";
 import { revalidatePath } from "next/cache";
 import { getProductDraft } from "./productMutations";
 import { validateAccessoryApprovalIds } from "./accessoryActions";
+import { syncHardwareAccessoryToRawMaterial } from "@/lib/admin/materials/hardwareSync";
 import type { AccessoryCategory } from "./types";
 
 export async function activateProduct(productId: string) {
@@ -34,10 +35,26 @@ export async function activateProduct(productId: string) {
         );
     }
 
+    const isFixedComp = (comp: {
+        pricing_method?: string | null;
+        unit_price?: number | null;
+        dimension_binding?: string | null;
+    }) => {
+        return (
+            draft.is_accessory ||
+            template.model_strategy === "Fixed" ||
+            comp.pricing_method === "Fixed" ||
+            comp.dimension_binding === "FIXED" ||
+            (typeof comp.unit_price === "number" && comp.unit_price > 0)
+        );
+    };
+
     if (draft.is_accessory) {
-        // Modular hardware accessories (IMP-MS74):
+        // Modular hardware accessories (IMP-MS74, IMP-MS78):
         // Bypasses 2D/3D assets and scalar parametric dimension rules.
+        // Fixed hardware accessories do not require catalog raw material mappings.
         const unassignedComponent = template.product_components?.find((comp) => {
+            if (isFixedComp(comp)) return false;
             const hasRawMat = Boolean(comp.raw_material_id);
             const hasBindings = Array.isArray(comp.product_component_materials) && comp.product_component_materials.length > 0;
             return !hasRawMat && !hasBindings;
@@ -56,6 +73,7 @@ export async function activateProduct(productId: string) {
             throw new Error("Parametric products require at least one component.");
         }
         const unassignedComponent = template.product_components.find((comp) => {
+            if (isFixedComp(comp)) return false;
             const hasRawMat = Boolean(comp.raw_material_id);
             const hasBindings = Array.isArray(comp.product_component_materials) && comp.product_component_materials.length > 0;
             return !hasRawMat && !hasBindings;
@@ -68,9 +86,10 @@ export async function activateProduct(productId: string) {
             (asset.asset_type === "Whole Model" || asset.asset_type === "Catalog 3D Preview") &&
             asset.status === "Active"
         );
+        const hasComponents = Array.isArray(template.product_components) && template.product_components.length > 0;
 
-        if (!hasFixedModelAsset) {
-             throw new Error("Fixed products require a 3D model asset.");
+        if (!hasFixedModelAsset && !hasComponents) {
+             throw new Error("Fixed products require a 3D model asset or component parts.");
         }
     }
 
@@ -104,6 +123,15 @@ export async function activateProduct(productId: string) {
     if (error) {
         console.error("Failed to activate product:", error);
         throw new Error(error.message);
+    }
+
+    if (draft.is_accessory) {
+        await syncHardwareAccessoryToRawMaterial(supabase, {
+            productId: draft.product_id,
+            productName: draft.product_name,
+            basePrice: draft.base_price,
+            status: "Active",
+        });
     }
 
     // 4. Revalidate frontend paths

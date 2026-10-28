@@ -80,25 +80,43 @@ export function ReviewAndPublishSection({ productId }: ReviewAndPublishSectionPr
     let canActivate = true;
     const missingErrors: string[] = [];
 
+    const isFixedComponent = (c: {
+        pricingMethod?: string | null;
+        unitPrice?: number | null;
+        dimensionBinding?: string | null;
+        dimension_binding?: string | null;
+        unit_price?: number | null;
+        pricing_method?: string | null;
+    }) => {
+        return (
+            isAccessory ||
+            c.pricingMethod === "Fixed" ||
+            c.pricing_method === "Fixed" ||
+            c.dimensionBinding === "FIXED" ||
+            c.dimension_binding === "FIXED" ||
+            (typeof c.unitPrice === "number" && c.unitPrice > 0) ||
+            (typeof c.unit_price === "number" && c.unit_price > 0)
+        );
+    };
+
     if (isAccessory) {
         // Hardware accessories (IMP-MS74, IMP-MS78):
-        // Bypass 2D/3D assets and parameters. Require material mapping on non-fixed components.
+        // Standalone fixed hardware accessories bypass material mapping.
+        // Base price is defined in Basic Info (Step 1) and parts are static 1:1 metric scale.
         const unassignedComponents = draft?.components?.filter(
-            (c) => !c.rawMaterialId && (!c.allowedMaterials || c.allowedMaterials.length === 0) &&
-                   !(c.pricingMethod === "Fixed" || (typeof c.unitPrice === "number" && c.unitPrice > 0))
+            (c) => !isFixedComponent(c) && !c.rawMaterialId && (!c.allowedMaterials || c.allowedMaterials.length === 0)
         ) ?? [];
         if (unassignedComponents.length > 0) {
             canActivate = false;
             missingErrors.push(
-                `Activation Blocked: ${unassignedComponents.length} component${unassignedComponents.length > 1 ? "s have" : " has"} zero materials assigned. Return to Step 3 to complete material mapping.`
+                `Activation Blocked: ${unassignedComponents.length} component${unassignedComponents.length > 1 ? "s have" : " has"} zero materials assigned. Return to Step 2 to complete material mapping.`
             );
         }
     } else if (isAddon) {
         // Add-on accessories (IMP-MS70):
         // Bypass 2D/3D assets. Support procedural generation or custom components.
         const unassignedComponents = draft?.components?.filter(
-            (c) => !c.rawMaterialId && (!c.allowedMaterials || c.allowedMaterials.length === 0) &&
-                   !(c.pricingMethod === "Fixed" || (typeof c.unitPrice === "number" && c.unitPrice > 0))
+            (c) => !isFixedComponent(c) && !c.rawMaterialId && (!c.allowedMaterials || c.allowedMaterials.length === 0)
         ) ?? [];
         if (unassignedComponents.length > 0) {
             canActivate = false;
@@ -116,8 +134,7 @@ export function ReviewAndPublishSection({ productId }: ReviewAndPublishSectionPr
             missingErrors.push("Parametric products require at least one component.");
         }
         const unassignedComponents = draft?.components?.filter(
-            (c) => !c.rawMaterialId && (!c.allowedMaterials || c.allowedMaterials.length === 0) &&
-                   !(c.pricingMethod === "Fixed" || (typeof c.unitPrice === "number" && c.unitPrice > 0))
+            (c) => !isFixedComponent(c) && !c.rawMaterialId && (!c.allowedMaterials || c.allowedMaterials.length === 0)
         ) ?? [];
         if (unassignedComponents.length > 0) {
             canActivate = false;

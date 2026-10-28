@@ -5,7 +5,7 @@ import { Canvas } from "@react-three/fiber";
 import { OrbitControls, Stage } from "@react-three/drei";
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { RotateCw, RefreshCw, X, Loader2, Eye, AlertCircle } from "lucide-react";
+import { RotateCw, RefreshCw, X, Eye, AlertCircle } from "lucide-react";
 
 export interface ModelPreviewCanvasProps {
   modelSource: string | File;

@@ -69,7 +69,7 @@ export function BasicInfoSection({ productId, initialData, onSave, isEditing }: 
                 product_name: name,
                 product_type: (isAddon || isAccessory) ? "Other" : type,
                 description,
-                base_price: parseFloat(basePrice) || 0,
+                base_price: isAddon ? 0 : (parseFloat(basePrice) || 0),
                 is_addon: isAddon,
                 addon_type: isAddon ? addonType : null,
                 is_accessory: isAccessory,
@@ -259,41 +259,48 @@ export function BasicInfoSection({ productId, initialData, onSave, isEditing }: 
                     />
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-[20px]">
-                    {!isAddon && !isAccessory && (
-                        <div className="flex flex-col gap-[5px] w-full">
-                            <label className="text-[16px] font-medium leading-[1.4] text-[#0f1422]">
-                                Product Type <span className="text-[#e74242]">*</span>
-                            </label>
-                            <select
-                                value={type}
-                                onChange={(e) => setType(e.target.value)}
-                                required
-                                className="w-full border border-[#c3c3c3] rounded-[8px] px-[16px] py-[12px] text-[14px] text-black bg-white focus:outline-none focus:border-[#07b6d3] transition-colors"
-                            >
-                                {PRODUCT_TYPES.map(t => (
-                                    <option key={t} value={t}>{t}</option>
-                                ))}
-                            </select>
-                        </div>
-                    )}
+                {!isAddon && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-[20px]">
+                        {!isAccessory && (
+                            <div className="flex flex-col gap-[5px] w-full">
+                                <label className="text-[16px] font-medium leading-[1.4] text-[#0f1422]">
+                                    Product Type <span className="text-[#e74242]">*</span>
+                                </label>
+                                <select
+                                    value={type}
+                                    onChange={(e) => setType(e.target.value)}
+                                    required
+                                    className="w-full border border-[#c3c3c3] rounded-[8px] px-[16px] py-[12px] text-[14px] text-black bg-white focus:outline-none focus:border-[#07b6d3] transition-colors"
+                                >
+                                    {PRODUCT_TYPES.map(t => (
+                                        <option key={t} value={t}>{t}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        )}
 
-                    <div className={cn("flex flex-col gap-[5px] w-full", (isAddon || isAccessory) && "sm:col-span-2")}>
-                        <label className="text-[16px] font-medium leading-[1.4] text-[#0f1422]">
-                            Base Price (₱) <span className="text-[#e74242]">*</span>
-                        </label>
-                        <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={basePrice}
-                            onChange={(e) => setBasePrice(e.target.value)}
-                            placeholder="0.00"
-                            required
-                            className="w-full border border-[#c3c3c3] rounded-[8px] px-[16px] py-[12px] text-[14px] text-black placeholder-[#c3c3c3] focus:outline-none focus:border-[#07b6d3] transition-colors"
-                        />
+                        <div className={cn("flex flex-col gap-[5px] w-full", isAccessory && "sm:col-span-2")}>
+                            <label className="text-[16px] font-medium leading-[1.4] text-[#0f1422]">
+                                {isAccessory ? "Accessory Base / Fixed Price (₱)" : "Base Price (₱)"} <span className="text-[#e74242]">*</span>
+                            </label>
+                            <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={basePrice}
+                                onChange={(e) => setBasePrice(e.target.value)}
+                                placeholder="0.00"
+                                required={!isAddon}
+                                className="w-full border border-[#c3c3c3] rounded-[8px] px-[16px] py-[12px] text-[14px] text-black placeholder-[#c3c3c3] focus:outline-none focus:border-[#07b6d3] transition-colors"
+                            />
+                            {isAccessory && (
+                                <p className="text-[12px] text-neutral-500">
+                                    This base price serves as the fixed price for this accessory, eliminating the need to enter it again in components.
+                                </p>
+                            )}
+                        </div>
                     </div>
-                </div>
+                )}
 
                 <div className="flex flex-col gap-[5px] w-full">
                     <label className="text-[16px] font-medium leading-[1.4] text-[#0f1422]">

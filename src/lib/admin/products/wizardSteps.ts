@@ -42,18 +42,16 @@ export const ADDON_PRODUCT_STEPS: WizardStepDefinition[] = [
 ];
 
 /**
- * Dedicated 5-step authoring workflow for Hardware Accessories (IMP-MS74).
- * Preserves Visualization Strategy for pivot and mounting anchor configuration.
- * Preserves Components for 3D GLB mesh part upload and finish material bindings.
- * Omits 2D/3D Assets (not directly browsable in public catalog).
- * Omits Parameters & Rules (hardware accessories have fixed mechanical dimensions).
+ * Dedicated 4-step authoring workflow for Hardware Accessories (IMP-MS74).
+ * Hardware accessories always use a Fixed model strategy (static 1:1 metric scale).
+ * Strategy and Assets are omitted to streamline authoring directly into Components.
+ * Parameters & Rules are omitted since accessories have fixed mechanical dimensions.
  */
 export const ACCESSORY_PRODUCT_STEPS: WizardStepDefinition[] = [
   { key: "basic", label: "Basic Info", number: 1 },
-  { key: "strategy", label: "Visualization", number: 2 },
-  { key: "components", label: "Components", number: 3 },
-  { key: "validation", label: "Validation", number: 4 },
-  { key: "review", label: "Review & Publish", number: 5 },
+  { key: "components", label: "Components", number: 2 },
+  { key: "validation", label: "Validation", number: 3 },
+  { key: "review", label: "Review & Publish", number: 4 },
 ];
 
 export type ProductRole = "standard" | "addon" | "accessory";
@@ -100,7 +98,7 @@ export function resolveWizardStep(
   if (isAccessory) {
     const accessoryStepKeys = ACCESSORY_PRODUCT_STEPS.map((s) => s.key);
     if (!accessoryStepKeys.includes(validStep)) {
-      if (validStep === "assets") {
+      if (validStep === "strategy" || validStep === "assets") {
         return "components";
       }
       if (validStep === "parameters") {

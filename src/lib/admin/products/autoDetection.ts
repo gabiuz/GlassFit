@@ -191,6 +191,10 @@ export function autoDetectComponentSettings(fileName: string): AutoDetectionResu
     name.includes("left_panel") ||
     name.includes("right_panel") ||
     name.includes("side_panel") ||
+    name.includes("frame_left") ||
+    name.includes("left_frame") ||
+    name.includes("frame_right") ||
+    name.includes("right_frame") ||
     name.includes("jamb") ||
     name.includes("stile") ||
     name.includes("interlock") ||
@@ -226,6 +230,10 @@ export function autoDetectComponentSettings(fileName: string): AutoDetectionResu
     name.includes("top_panel") ||
     name.includes("bottom_panel") ||
     name.includes("bottom_base") ||
+    name.includes("frame_top") ||
+    name.includes("top_frame") ||
+    name.includes("frame_bottom") ||
+    name.includes("bottom_frame") ||
     name.includes("head") ||
     name.includes("top_track") ||
     name.includes("top_sliding_track") ||

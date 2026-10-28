@@ -110,7 +110,8 @@ export function mirrorPartAcrossCenterline(
   baseCenterX: number,
   targetHanding: "left" | "right",
   targetY?: number,
-  targetZ?: number
+  targetZ?: number,
+  overrideTargetX?: number
 ): THREE.Object3D {
   sourceObject.updateMatrixWorld(true);
   const origBox = new THREE.Box3().setFromObject(sourceObject);
@@ -120,13 +121,20 @@ export function mirrorPartAcrossCenterline(
   const deltaX = origCenter.x - baseCenterX;
   const modeledHanding: "left" | "right" = deltaX >= 0 ? "right" : "left";
 
-  const targetX = targetHanding === "left"
-    ? (baseCenterX - Math.abs(deltaX))
-    : (baseCenterX + Math.abs(deltaX));
+  const targetX = overrideTargetX !== undefined
+    ? overrideTargetX
+    : (targetHanding === "left"
+        ? (baseCenterX - Math.abs(deltaX))
+        : (baseCenterX + Math.abs(deltaX)));
   const finalY = targetY !== undefined ? targetY : origCenter.y;
   const finalZ = targetZ !== undefined ? targetZ : origCenter.z;
 
   const clone = sourceObject.clone(true);
+
+  if (targetHanding === modeledHanding && targetY === undefined && targetZ === undefined && overrideTargetX === undefined) {
+    clone.userData = { ...sourceObject.userData, isMirroredHanding: false };
+    return clone;
+  }
 
   // 1. Recenter clone at local (0, 0, 0)
   clone.updateMatrixWorld(true);

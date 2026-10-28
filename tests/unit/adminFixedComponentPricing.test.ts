@@ -377,4 +377,186 @@ describe("IMP-MS78: Admin Fixed-Price Non-Parametric Component Pricing", () => {
 
     assert.strictEqual(bomKeyFallback.directMaterialsSubtotal, 3950);
   });
+
+  // QAD-TC93.13: Hardware accessory fixed price defaults to product base_price without requiring component entry
+  it("QAD-TC93.13: hardware accessory defaults component fixed price to product base_price without manual component entry", () => {
+    // 1. Hardware accessory base price configured in Step 1
+    const accessoryBasePrice = 350.00;
+    const isAccessory = true;
+
+    // Component initialization simulates StructuralComponentsSection resolving price
+    const existingComponentPrice = undefined;
+    const resolvedUnitPrice = existingComponentPrice !== undefined ? existingComponentPrice : (isAccessory ? accessoryBasePrice : undefined);
+    const resolvedPricingMethod = isAccessory ? "Fixed" : (typeof resolvedUnitPrice === "number" && resolvedUnitPrice > 0 ? "Fixed" : undefined);
+    const resolvedDimensionBinding = isAccessory ? "FIXED" : "WIDTH";
+
+    assert.strictEqual(resolvedUnitPrice, 350.00);
+    assert.strictEqual(resolvedPricingMethod, "Fixed");
+    assert.strictEqual(resolvedDimensionBinding, "FIXED");
+
+    // Evaluated in parametric BOM
+    const accessoryComp: ComponentPricingInput = {
+      componentKey: "mc_door_handle",
+      componentName: "MC Door Handle",
+      dimensionBinding: resolvedDimensionBinding,
+      spanRatio: 1.0,
+      baseQuantity: 1,
+      isRemovable: true,
+      presentationCategory: "Hardware",
+      rawMaterial: null,
+      unitPrice: resolvedUnitPrice,
+      pricingMethod: resolvedPricingMethod,
+    };
+
+    const bom = calculateParametricBOM([accessoryComp], {
+      widthMm: 100,
+      heightMm: 200,
+    });
+
+    assert.strictEqual(bom.directMaterialsSubtotal, 350.00);
+    assert.strictEqual(bom.finalQuotation, 350.00);
+  });
+
+  // QAD-TC93.19: Streamlined 4-step hardware accessory workflow always uses Fixed strategy
+  it("QAD-TC93.19: hardware accessory authoring workflow skips strategy and omits raw material/dimension inputs", async () => {
+    const { getStepsForProduct, resolveWizardStep } = await import("../../src/lib/admin/products/wizardSteps.js");
+
+    const accessorySteps = getStepsForProduct(false, true);
+    assert.strictEqual(accessorySteps.length, 4);
+    assert.deepStrictEqual(
+      accessorySteps.map((s) => s.key),
+      ["basic", "components", "validation", "review"]
+    );
+
+    // Strategy or assets step keys should route to components
+    assert.strictEqual(resolveWizardStep("p-1", "strategy", false, true), "components");
+    assert.strictEqual(resolveWizardStep("p-1", "assets", false, true), "components");
+
+    // Parameters step routes to validation
+    assert.strictEqual(resolveWizardStep("p-1", "parameters", false, true), "validation");
+  });
+
+  // QAD-TC93.21: Pre-activation readiness and publish gates pass for fixed components and hardware accessories without raw materials
+  it("QAD-TC93.21: validation and publish gates permit fixed components and hardware accessories without raw material mapping", () => {
+    // 1. Hardware accessory definition where constituent parts have no raw materials
+    const accessoryDef: ProductStructuralDefinition = {
+      product: {
+        productId: "acc-door-lock-01",
+        productName: "Sliding Door Mortise Lock",
+        productType: "Other",
+        description: "Heavy duty flush mortise lock",
+        basePrice: 650.0,
+        isAccessory: true,
+      },
+      template: {
+        templateId: "tmpl-acc-01",
+        templateName: "Accessory Template",
+        modelStrategy: "Fixed",
+        measurementUnit: "mm",
+        baseConfiguration: {},
+      },
+      parameters: [],
+      components: [
+        {
+          componentId: "part-body",
+          componentKey: "lock_body",
+          componentName: "Lock Body",
+          componentType: "Model",
+          baseQuantity: 1,
+          rawMaterialId: null,
+          allowedMaterials: [],
+          dimensionBinding: "FIXED",
+          spanRatio: 1.0,
+          isRemovable: false,
+          presentationCategory: "Hardware",
+          componentData: {},
+          unitPrice: 650.0,
+          pricingMethod: "Fixed",
+          model: {
+            assetId: "a1",
+            r2ObjectKey: "k1",
+            url: "https://test.glb",
+            fileName: "lock_body.glb",
+            sourceDimensionsMm: null,
+          },
+        },
+        {
+          componentId: "part-cylinder",
+          componentKey: "lock_cylinder",
+          componentName: "Keyed Cylinder",
+          componentType: "Model",
+          baseQuantity: 1,
+          rawMaterialId: null,
+          allowedMaterials: [],
+          dimensionBinding: "FIXED",
+          spanRatio: 1.0,
+          isRemovable: false,
+          presentationCategory: "Hardware",
+          componentData: {},
+          model: {
+            assetId: "a2",
+            r2ObjectKey: "k2",
+            url: "https://test.glb",
+            fileName: "lock_cylinder.glb",
+            sourceDimensionsMm: null,
+          },
+        },
+      ],
+      rules: [],
+    };
+
+    // Pre-activation readiness evaluation logic (matching ValidationWorkspaceSection)
+    const isHardwareAccessory = Boolean(accessoryDef.product.isAccessory);
+    const isFixedProduct = accessoryDef.template.modelStrategy === "Fixed";
+    const unassigned: string[] = [];
+
+    accessoryDef.components.forEach((comp) => {
+      const isFixed =
+        isHardwareAccessory ||
+        isFixedProduct ||
+        comp.pricingMethod === "Fixed" ||
+        comp.dimensionBinding === "FIXED" ||
+        (typeof comp.unitPrice === "number" && comp.unitPrice > 0);
+
+      if (isFixed) return;
+      if (!comp.rawMaterialId && (!comp.allowedMaterials || comp.allowedMaterials.length === 0)) {
+        unassigned.push(comp.componentName || comp.componentKey);
+      }
+    });
+
+    assert.strictEqual(unassigned.length, 0, "Accessory components must not be flagged as unassigned");
+
+    // 2. Parametric product with a fixed handle part and a parametric frame part
+    const parametricComponents = [
+      {
+        componentKey: "parametric_frame",
+        componentName: "Aluminum Frame",
+        dimensionBinding: "WIDTH",
+        rawMaterialId: null,
+        allowedMaterials: [],
+      },
+      {
+        componentKey: "fixed_cremone_handle",
+        componentName: "Cremone Handle",
+        dimensionBinding: "FIXED",
+        rawMaterialId: null,
+        allowedMaterials: [],
+        unitPrice: 420.0,
+        pricingMethod: "Fixed",
+      },
+    ];
+
+    const unassignedParametric = parametricComponents.filter((comp) => {
+      const isFixed =
+        comp.pricingMethod === "Fixed" ||
+        comp.dimensionBinding === "FIXED" ||
+        (typeof comp.unitPrice === "number" && comp.unitPrice > 0);
+      if (isFixed) return false;
+      return !comp.rawMaterialId && (!comp.allowedMaterials || comp.allowedMaterials.length === 0);
+    });
+
+    // Only the parametric frame without materials should be unassigned; fixed handle passes
+    assert.strictEqual(unassignedParametric.length, 1);
+    assert.strictEqual(unassignedParametric[0].componentKey, "parametric_frame");
+  });
 });

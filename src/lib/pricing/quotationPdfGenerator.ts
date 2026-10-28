@@ -128,7 +128,7 @@ function canonicalGroupsTable(item: QuotationDocumentViewModel["items"][number],
   const hasUpgrades = (addonPriceFormatted > 0) || (accessoryPriceFormatted > 0);
   const subtotalContent = hasUpgrades
     ? `<div class="item-pricing-breakdown" style="display:flex;flex-direction:column;gap:3px;font-size:11px;color:#475569;">
-        <span>Base Fixture: ${money(basePrice)}</span>
+        <span>${item.productType === "Door" ? "Base Door Fixture" : "Base Window Fixture"}: ${money(basePrice)}</span>
         ${addonPriceFormatted > 0 ? `<span>Add-on (${escapeHtml(addonNameShort)}): ${money(addonPriceFormatted)}</span>` : ""}
         ${accessoryPriceFormatted > 0 ? `<span>Hardware Upgrades: ${money(accessoryPriceFormatted)}</span>` : ""}
       </div>

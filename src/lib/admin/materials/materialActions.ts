@@ -12,6 +12,7 @@ import {
   type RawMaterialsFilter,
   type RawMaterial,
 } from "./types";
+import { syncAllHardwareAccessoriesToRawMaterials } from "./hardwareSync";
 
 /**
  * Fetch all raw materials with optional category, finish, active status, and search filters.
@@ -19,6 +20,13 @@ import {
 export async function getRawMaterials(filter?: RawMaterialsFilter): Promise<RawMaterial[]> {
   const supabase = await createSupabaseServerClient();
   const validatedFilter = filter ? RawMaterialsFilterSchema.parse(filter) : undefined;
+
+  // Mirror registered hardware accessories into raw_materials under category Hardware (PRD-F14, ERD-E17, IMP-MS78)
+  try {
+    await syncAllHardwareAccessoriesToRawMaterials(supabase);
+  } catch (syncErr) {
+    console.warn("Non-blocking hardware accessory sync warning:", syncErr);
+  }
 
   let query = supabase
     .from("raw_materials")
@@ -94,6 +102,21 @@ export async function upsertRawMaterial(input: UpsertRawMaterialInput): Promise<
       throw new Error(`Failed to update raw material: ${error.message}`);
     }
     resultData = data as RawMaterial;
+
+    // Two-way sync: If updating a material linked to a hardware accessory product, keep products.base_price in sync
+    try {
+      await supabase
+        .from("products")
+        .update({
+          base_price: validated.unit_price,
+          product_name: validated.description,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("product_id", validated.id)
+        .eq("is_accessory", true);
+    } catch {
+      // Ignore if not a hardware accessory product
+    }
   } else {
     const { data, error } = await supabase
       .from("raw_materials")
@@ -241,6 +264,21 @@ export async function batchUpdateMaterialPrices(input: BatchUpdateMaterialPrices
       console.error(`Failed to update price for material ${item.id}:`, error);
       throw new Error(`Failed to update price for item ${item.id}: ${error.message}`);
     }
+
+    // Keep corresponding accessory product base_price in sync if applicable
+    try {
+      await supabase
+        .from("products")
+        .update({
+          base_price: item.unit_price,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("product_id", item.id)
+        .eq("is_accessory", true);
+    } catch {
+      // Ignore if not a hardware accessory product
+    }
+
     updatedCount++;
   }
 
