@@ -15,6 +15,7 @@ import type {
   PresentationCategory,
   RawMaterial,
   ComponentMaterialBinding,
+  JalousieConfig,
 } from '@/lib/pricing/types';
 import type {
   ComponentType,
@@ -46,6 +47,7 @@ export interface PartInspectorConfig {
   positionOptions?: AccessoryPositionOptions | null;
   unitPrice?: number;
   pricingMethod?: string;
+  jalousieConfig?: JalousieConfig | null;
 }
 
 interface PartInspectorDrawerProps {
@@ -643,12 +645,40 @@ export function PartInspectorDrawer({
             Dimension Driver
           </label>
           <div className="grid grid-cols-2 gap-2">
-            {(['WIDTH', 'HEIGHT', 'PERIMETER', 'AREA', 'FIXED', 'GRILLE_LINEAR'] as DimensionBinding[]).map((driver) => (
+            {(['WIDTH', 'HEIGHT', 'PERIMETER', 'AREA', 'FIXED', 'GRILLE_LINEAR', 'LOUVER_BLADE', 'LOUVER_OPERATOR'] as DimensionBinding[]).map((driver) => (
               <button
                 key={driver}
                 type="button"
                 aria-pressed={primary.dimensionBinding === driver}
-                onClick={() => onUpdateParts({ dimensionBinding: driver })}
+                onClick={() => {
+                  if (driver === 'LOUVER_BLADE') {
+                    onUpdateParts({
+                      dimensionBinding: driver,
+                      presentationCategory: 'Glazing',
+                      componentType: 'Glass',
+                      baseQuantity: primary.jalousieConfig?.base_blade_count ?? (primary.baseQuantity > 1 ? primary.baseQuantity : 7),
+                      jalousieConfig: {
+                        pitch_mm: primary.jalousieConfig?.pitch_mm ?? 175,
+                        blade_height_mm: primary.jalousieConfig?.blade_height_mm ?? 105.3,
+                        blades_per_operator: primary.jalousieConfig?.blades_per_operator ?? 4,
+                        base_blade_count: primary.jalousieConfig?.base_blade_count ?? 7,
+                      },
+                    });
+                  } else if (driver === 'LOUVER_OPERATOR') {
+                    onUpdateParts({
+                      dimensionBinding: driver,
+                      presentationCategory: 'Hardware',
+                      componentType: 'Hardware',
+                      baseQuantity: primary.jalousieConfig?.base_operator_count ?? (primary.baseQuantity > 1 ? primary.baseQuantity : 2),
+                      jalousieConfig: {
+                        blades_per_operator: primary.jalousieConfig?.blades_per_operator ?? 4,
+                        base_operator_count: primary.jalousieConfig?.base_operator_count ?? 2,
+                      },
+                    });
+                  } else {
+                    onUpdateParts({ dimensionBinding: driver });
+                  }
+                }}
                 className={
                   primary.dimensionBinding === driver
                     ? 'px-3 py-2 rounded-[8px] text-xs font-medium border text-center transition-all border-[#07b6d3] bg-[#07b6d3]/10 text-[#07b6d3]'
@@ -660,7 +690,9 @@ export function PartInspectorDrawer({
                 {driver === 'PERIMETER' && 'Perimeter (2W + 2H)'}
                 {driver === 'AREA' && 'Area (2D)'}
                 {driver === 'FIXED' && 'Static / Fixed'}
-                {driver === 'GRILLE_LINEAR' && 'Grille Linear (Per Meter)'}
+                {driver === 'GRILLE_LINEAR' && 'Grille Linear'}
+                {driver === 'LOUVER_BLADE' && 'Louver Blade (pc)'}
+                {driver === 'LOUVER_OPERATOR' && 'Window Operator (pc)'}
               </button>
             ))}
           </div>
@@ -735,6 +767,117 @@ export function PartInspectorDrawer({
                   Analyzing 3D geometry and sub-bar orientations...
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Jalousie Louver Blade Summary Card (IMP-MS81) */}
+          {primary.dimensionBinding === 'LOUVER_BLADE' && (
+            <div className="mt-3 p-3.5 rounded-[12px] bg-cyan-50/90 border border-[#07b6d3]/30 text-xs text-neutral-700 space-y-2.5">
+              <div className="flex items-center justify-between pb-1.5 border-b border-cyan-100">
+                <div className="flex items-center gap-1.5 font-semibold text-[#067f98]">
+                  <span className="w-2 h-2 rounded-full bg-[#07b6d3] animate-pulse" />
+                  <h4>Louver Blade Parametric Driver Active</h4>
+                </div>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-100 text-[#067f98] font-medium border border-cyan-200">
+                  Per Piece (pc) BOM
+                </span>
+              </div>
+              <p className="text-[11px] text-neutral-600 leading-relaxed">
+                Dynamically adds and removes discrete glass blades at constant pitch as aperture height scales, preserving 1:1 metric thickness and height without mesh stretching distortion.
+              </p>
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <div className="bg-white p-2 rounded-[8px] border border-cyan-200/80">
+                  <label className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider block mb-1">
+                    Louver Pitch (mm)
+                  </label>
+                  <input
+                    type="number"
+                    min="50"
+                    max="500"
+                    step="1"
+                    value={primary.jalousieConfig?.pitch_mm ?? primary.jalousieConfig?.pitchMm ?? 175}
+                    onChange={(e) => {
+                      const val = Math.max(50, Number(e.target.value) || 175);
+                      onUpdateParts({
+                        jalousieConfig: {
+                          ...(primary.jalousieConfig || {}),
+                          pitch_mm: val,
+                          pitchMm: val,
+                        },
+                      });
+                    }}
+                    className="w-full text-xs font-mono font-semibold px-2 py-1 rounded border border-neutral-200 focus:outline-none focus:ring-1 focus:ring-[#07b6d3]"
+                  />
+                </div>
+                <div className="bg-white p-2 rounded-[8px] border border-cyan-200/80">
+                  <label className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider block mb-1">
+                    Blade Height (mm)
+                  </label>
+                  <input
+                    type="number"
+                    min="20"
+                    max="400"
+                    step="0.1"
+                    value={primary.jalousieConfig?.blade_height_mm ?? primary.jalousieConfig?.bladeHeightMm ?? 105.3}
+                    onChange={(e) => {
+                      const val = Math.max(20, Number(e.target.value) || 105.3);
+                      onUpdateParts({
+                        jalousieConfig: {
+                          ...(primary.jalousieConfig || {}),
+                          blade_height_mm: val,
+                          bladeHeightMm: val,
+                        },
+                      });
+                    }}
+                    className="w-full text-xs font-mono font-semibold px-2 py-1 rounded border border-neutral-200 focus:outline-none focus:ring-1 focus:ring-[#07b6d3]"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Jalousie Louver Operator Summary Card (IMP-MS81) */}
+          {primary.dimensionBinding === 'LOUVER_OPERATOR' && (
+            <div className="mt-3 p-3.5 rounded-[12px] bg-amber-50/90 border border-amber-300/40 text-xs text-neutral-700 space-y-2.5">
+              <div className="flex items-center justify-between pb-1.5 border-b border-amber-100">
+                <div className="flex items-center gap-1.5 font-semibold text-amber-800">
+                  <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                  <h4>Window Operator Driver Active</h4>
+                </div>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-medium border border-amber-200">
+                  Proportional Hardware
+                </span>
+              </div>
+              <p className="text-[11px] text-neutral-600 leading-relaxed">
+                Automatically calculates required operating crank mechanisms based on total louvers (ceil(N / Bank Size)) and centers each operator along its respective louver bank.
+              </p>
+              <div className="bg-white p-2 rounded-[8px] border border-amber-200/80">
+                <label className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider block mb-1">
+                  Blades per Operator Bank
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="10"
+                  step="1"
+                  value={primary.jalousieConfig?.blades_per_operator ?? primary.jalousieConfig?.bladesPerOperator ?? 4}
+                  onChange={(e) => {
+                    const val = Math.max(1, Math.min(10, Number(e.target.value) || 4));
+                    onUpdateParts({
+                      jalousieConfig: {
+                        ...(primary.jalousieConfig || {}),
+                        blades_per_operator: val,
+                        bladesPerOperator: val,
+                      },
+                    });
+                  }}
+                  className="w-full text-xs font-mono font-semibold px-2 py-1 rounded border border-neutral-200 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                />
+              </div>
+              <div className="bg-amber-100/60 p-2.5 rounded-[8px] border border-amber-200 text-[11px] text-amber-900 flex items-start gap-2">
+                <span className="font-semibold text-amber-800 shrink-0">Screen Hatch:</span>
+                <span>This operator is automatically registered as a target for screen access hatches in Step 4 (Compatible Add-ons).</span>
+              </div>
             </div>
           )}
         </div>
