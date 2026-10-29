@@ -26,6 +26,7 @@ import { mirrorObjectHierarchyAcrossX, exportMirroredGlb, mirrorPartAcrossCenter
 import { updateProductAccessoryCategory } from "@/lib/admin/products/productMutations";
 import type { ComponentHandingMetadata } from "@/lib/admin/products/types";
 import { getR2AssetUrl } from "@/lib/r2";
+import { getFrontPartIds, getVisiblePartHits } from "@/lib/admin/products/partPicking";
 
 export type StructuralComponentsSectionProps = {
     productId: string;
@@ -485,24 +486,17 @@ function PartViewer3D({
         return root;
     }, [files, selectedIds, hoveredId, rawMaterials, productType, viewMode]);
 
-    const partIdForObject = (object: THREE.Object3D): string | null => {
-        let current: THREE.Object3D | null = object;
-        while (current && !current.userData.fileId) current = current.parent;
-        return current?.userData.fileId || null;
-    };
-
     return (
         <>
         <primitive
             object={group}
             onPointerOver={(e: ThreeEvent<PointerEvent>) => {
-                const firstMesh = e.intersections.find(hit => hit.object instanceof THREE.Mesh);
-                setHoveredId(firstMesh ? partIdForObject(firstMesh.object) : null);
+                setHoveredId(getVisiblePartHits(e.intersections)[0]?.id ?? null);
             }}
             onPointerOut={() => setHoveredId(null)}
             onClick={(e: ThreeEvent<MouseEvent>) => {
                 e.stopPropagation();
-                const ids = Array.from(new Set(e.intersections.filter(hit => hit.object instanceof THREE.Mesh).map(hit => partIdForObject(hit.object)).filter((id): id is string => Boolean(id))));
+                const ids = getFrontPartIds(e.intersections);
                 if (ids.length > 1) {
                     setOverlapChoice({ ids, point: e.point.clone() });
                 } else if (ids.length === 1) {
