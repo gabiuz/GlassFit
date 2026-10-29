@@ -172,8 +172,68 @@ export const DimensionBindingSchema = z.enum([
   "FIXED",
   "GRILLE_LINEAR",
   "PERIMETER",
+  "LOUVER_BLADE",
+  "LOUVER_OPERATOR",
 ]);
 export type DimensionBinding = z.infer<typeof DimensionBindingSchema>;
+
+export const JalousieConfigSchema = z.object({
+  pitch_mm: z.number().positive().optional(),
+  blade_height_mm: z.number().positive().optional(),
+  blades_per_operator: z.number().int().positive().optional(),
+  base_blade_count: z.number().int().positive().optional(),
+  base_operator_count: z.number().int().positive().optional(),
+  pitchMm: z.number().positive().optional(),
+  bladeHeightMm: z.number().positive().optional(),
+  bladesPerOperator: z.number().int().positive().optional(),
+  baseBladeCount: z.number().int().positive().optional(),
+  baseOperatorCount: z.number().int().positive().optional(),
+}).passthrough();
+export type JalousieConfig = z.infer<typeof JalousieConfigSchema>;
+
+export const DynamicBayRoleSchema = z.enum([
+  "OUTER_JAMB_LEFT",
+  "OUTER_JAMB_RIGHT",
+  "OUTER_HEAD",
+  "OUTER_SILL",
+  "REMOVABLE_SILL",
+  "BAY_DIVIDER",
+  "BAY_INFILL",
+  "BAY_HARDWARE",
+  "GLOBAL_ACCESSORY",
+]);
+export type DynamicBayRole = z.infer<typeof DynamicBayRoleSchema>;
+
+export const ExpansionAnchorModeSchema = z.enum([
+  "symmetric",
+  "rightward",
+  "leftward",
+]);
+export type ExpansionAnchorMode = z.infer<typeof ExpansionAnchorModeSchema>;
+
+export const DynamicBayConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  primary_dimension: z.string().default("width"),
+  primaryDimension: z.string().optional(),
+  default_bay_count: z.number().int().positive().default(2),
+  defaultBayCount: z.number().int().positive().optional(),
+  nominal_bay_pitch_mm: z.number().positive().default(600),
+  nominalBayPitchMm: z.number().positive().optional(),
+  min_bay_width_mm: z.number().positive().optional(),
+  minBayWidthMm: z.number().positive().optional(),
+  max_bay_width_mm: z.number().positive().optional(),
+  maxBayWidthMm: z.number().positive().optional(),
+  expansion_anchor: ExpansionAnchorModeSchema.optional(),
+  expansion_anchor_mode: ExpansionAnchorModeSchema.default("symmetric"),
+  expansionAnchorMode: ExpansionAnchorModeSchema.optional(),
+  divider_component_key: z.string().nullable().optional(),
+  dividerComponentKey: z.string().nullable().optional(),
+  bay_infill_component_keys: z.array(z.string()).default([]),
+  bayInfillComponentKeys: z.array(z.string()).optional(),
+  bay_hardware_component_keys: z.array(z.string()).default([]),
+  bayHardwareComponentKeys: z.array(z.string()).optional(),
+}).passthrough();
+export type DynamicBayConfig = z.infer<typeof DynamicBayConfigSchema>;
 
 export const PresentationCategorySchema = z.enum([
   "Framing",
@@ -228,6 +288,9 @@ export interface ProductComponent {
   unitPrice?: number;
   pricingMethod?: string;
   handingMetadata?: import("@/lib/admin/products/types").ComponentHandingMetadata | null;
+  jalousieConfig?: JalousieConfig | null;
+  bayRole?: DynamicBayRole | null;
+  bay_role?: DynamicBayRole | null;
   componentData?: Record<string, unknown>;
 }
 
@@ -250,6 +313,8 @@ export const ProductComponentBindingSchema = z.object({
   accessory_category: z.enum(["handle", "lock", "hinge", "roller", "other"]).nullable().optional(),
   allowed_accessory_ids: z.array(z.string().uuid()).nullable().optional(),
   position_options: z.record(z.string(), z.unknown()).optional(),
+  jalousie_config: JalousieConfigSchema.nullable().optional(),
+  bay_role: DynamicBayRoleSchema.nullable().optional(),
 });
 export type ProductComponentBinding = z.infer<typeof ProductComponentBindingSchema>;
 

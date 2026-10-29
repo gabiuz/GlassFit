@@ -13,7 +13,9 @@ import {
   calculateOverlayPricing,
   aggregateMultiProductBOM,
 } from "@/lib/pricing/pricingEngine";
-import type { ItemizedProductQuotation } from "@/lib/pricing/types";
+import { computeLouverBladeCount, computeLouverOperatorCount } from "@/lib/visualization/jalousieGeometryAnalyzer";
+import { computeDynamicBayCount, computeMullionCount } from "@/lib/visualization/bayReplicationEngine";
+import type { ItemizedProductQuotation, DynamicBayConfig } from "@/lib/pricing/types";
 import { PriceCard, ProductDetailsData } from "./PriceCard";
 
 interface ProductItem {
@@ -234,6 +236,20 @@ function createProductSummaryItemFromOverlay(
 
   const baseUnitPrice = unitPrice - addonPrice;
 
+  const isJalousieOverlay = (overlay.productName || "").toLowerCase().includes("jalousie");
+  const isDynamicBayActiveOverlay = Boolean(overlay.configuration?.dynamicBayConfig?.enabled);
+  const nominalPitchMmOverlay = overlay.configuration?.dynamicBayConfig?.nominal_bay_pitch_mm ?? 600;
+  const bayCountOverlay = isDynamicBayActiveOverlay ? computeDynamicBayCount(widthMm, nominalPitchMmOverlay) : 1;
+  const mullionCountOverlay = isDynamicBayActiveOverlay ? computeMullionCount(bayCountOverlay) : 0;
+  const louverCountPerBayOverlay = computeLouverBladeCount(heightMm, 175);
+  const opCountPerBayOverlay = computeLouverOperatorCount(louverCountPerBayOverlay, 4);
+  const totalLouversOverlay = bayCountOverlay * louverCountPerBayOverlay;
+  const totalOpsOverlay = bayCountOverlay * opCountPerBayOverlay;
+
+  const jalousieOverlaySpec = isJalousieOverlay
+    ? `${bayCountOverlay > 1 ? `${bayCountOverlay}-Sided Jalousie Window | ` : ""}${totalLouversOverlay}x Glass Louver Blades | ${totalOpsOverlay}x Window Operators${mullionCountOverlay > 0 ? ` | ${mullionCountOverlay}x Center Mullions` : ""}`
+    : null;
+
   const item: ProductItem = {
     itemId,
     productId: overlay.productId,
@@ -243,6 +259,7 @@ function createProductSummaryItemFromOverlay(
       dimension,
       !hasSill ? "Flush Base (No Sill)" : null,
       panelCount > 2 ? `${panelCount}-Panel` : null,
+      jalousieOverlaySpec,
       formattedAddonName && selectedAddon && selectedAddon !== "none" ? `Add-on: ${formattedAddonName}` : null,
     ]
       .filter(Boolean)
@@ -398,6 +415,28 @@ function createProductSummaryItem(
   const totalPrice = unitPrice * qty;
   const itemId = definition.product.productId;
 
+  const isJalousie = (definition.product.productType || "").toLowerCase().includes("jalousie") ||
+    definition.components.some((c) => c.dimensionBinding === "LOUVER_BLADE" || (c as Record<string, unknown>).dimension_binding === "LOUVER_BLADE");
+
+  const dynamicBayConfig = definition.product.dynamicBayConfig ?? (definition.template as Record<string, unknown> | undefined)?.dynamic_bay_config as DynamicBayConfig | undefined;
+  const isDynamicBayActive = Boolean(dynamicBayConfig?.enabled);
+  const nominalPitchMm = dynamicBayConfig?.nominal_bay_pitch_mm ?? 600;
+  const bayCount = isDynamicBayActive ? computeDynamicBayCount(widthMm, nominalPitchMm) : 1;
+  const mullionCount = isDynamicBayActive ? computeMullionCount(bayCount) : 0;
+
+  let jalousieSpec: string | null = null;
+  if (isJalousie) {
+    const louverComp = definition.components.find((c) => c.dimensionBinding === "LOUVER_BLADE" || (c as Record<string, unknown>).dimension_binding === "LOUVER_BLADE");
+    const opComp = definition.components.find((c) => c.dimensionBinding === "LOUVER_OPERATOR" || (c as Record<string, unknown>).dimension_binding === "LOUVER_OPERATOR");
+    const pitchMm = louverComp?.jalousieConfig?.pitch_mm ?? louverComp?.jalousieConfig?.pitchMm ?? 175;
+    const louverCountPerBay = computeLouverBladeCount(heightMm, pitchMm);
+    const bladesPerOp = opComp?.jalousieConfig?.blades_per_operator ?? opComp?.jalousieConfig?.bladesPerOperator ?? 4;
+    const opCountPerBay = computeLouverOperatorCount(louverCountPerBay, bladesPerOp);
+    const totalLouvers = bayCount * louverCountPerBay;
+    const totalOps = bayCount * opCountPerBay;
+    jalousieSpec = `${bayCount > 1 ? `${bayCount}-Sided Jalousie Window | ` : ""}${totalLouvers}x Glass Louver Blades | ${totalOps}x Window Operators${mullionCount > 0 ? ` | ${mullionCount}x Center Mullions` : ""}`;
+  }
+
   const item: ProductItem = {
     itemId,
     productId: definition.product.productId,
@@ -408,6 +447,7 @@ function createProductSummaryItem(
       dimension,
       !hasSill ? "Flush Base (No Sill)" : null,
       panelCount > 2 ? `${panelCount}-Panel` : null,
+      jalousieSpec,
       formattedAddonName && selectedAddon && selectedAddon !== "none" ? `Add-on: ${formattedAddonName}` : null,
     ]
       .filter(Boolean)

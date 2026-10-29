@@ -1,4 +1,5 @@
-import type { DimensionBinding, PresentationCategory } from "@/lib/pricing/types";
+import type { DimensionBinding, PresentationCategory, JalousieConfig, DynamicBayRole, ExpansionAnchorMode, DynamicBayConfig } from "@/lib/pricing/types";
+export type { JalousieConfig, DynamicBayRole, ExpansionAnchorMode, DynamicBayConfig };
 import type { ComponentMaterialBindingInput } from "@/lib/pricing/materialBindingUtils";
 
 export type AddonType = "screen" | "grill";
@@ -67,6 +68,10 @@ export type UpsertComponentInput = {
   unitPrice?: number;
   pricingMethod?: "Fixed" | "Included" | "Per Piece" | "Per Length" | "Per Area" | "Other" | string;
   handingMetadata?: ComponentHandingMetadata | null;
+  jalousieConfig?: JalousieConfig | null;
+  jalousie_config?: JalousieConfig | null;
+  bayRole?: DynamicBayRole | null;
+  bay_role?: DynamicBayRole | null;
 };
 
 export interface UpsertComponentPayload {
@@ -94,6 +99,10 @@ export interface UpsertComponentPayload {
   unitPrice?: number;
   pricingMethod?: "Fixed" | "Included" | "Per Piece" | "Per Length" | "Per Area" | "Other" | string;
   handingMetadata?: ComponentHandingMetadata | null;
+  jalousieConfig?: JalousieConfig | null;
+  jalousie_config?: JalousieConfig | null;
+  bayRole?: DynamicBayRole | null;
+  bay_role?: DynamicBayRole | null;
 }
 
 export type ProductRole = "standard" | "addon" | "accessory";
@@ -122,6 +131,7 @@ export interface DatabaseProductExtended {
   is_accessory: boolean;
   accessory_category: AccessoryCategory | null;
   accessory_mounting_type: AccessoryMountingType | null;
+  dynamic_bay_config?: DynamicBayConfig | null;
   created_at: string;
   updated_at: string;
 }

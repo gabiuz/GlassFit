@@ -519,7 +519,23 @@ export function applyPresentationMaterials(
     const classification = classifySceneMesh(object);
     object.userData.materialCategory = classification;
     if (classification === "Glass") {
-      object.material = glassMaterial.clone();
+      const isLouverBlade = Boolean(
+        object.userData?.isLouverBladeInstance ||
+        object.userData?.dimensionBinding === "LOUVER_BLADE" ||
+        object.name?.toLowerCase().includes("louver") ||
+        object.name?.toLowerCase().includes("blade")
+      );
+      if (isLouverBlade && glassMaterial instanceof THREE.MeshPhysicalMaterial) {
+        const louverMat = glassMaterial.clone();
+        louverMat.opacity = Math.min(louverMat.opacity, 0.07);
+        louverMat.transmission = Math.max(louverMat.transmission, 0.96);
+        louverMat.roughness = 0.02;
+        louverMat.clearcoat = 1.0;
+        louverMat.clearcoatRoughness = 0.02;
+        object.material = louverMat;
+      } else {
+        object.material = glassMaterial.clone();
+      }
       object.castShadow = false;
       object.receiveShadow = true;
       object.renderOrder = 1;
@@ -546,6 +562,7 @@ export interface InsectScreenMaterialOptions {
   wirePitchMm?: number;
   wireColor?: string;
   wireThicknessRatio?: number;
+  alphaTest?: number;
 }
 
 /**
@@ -557,10 +574,11 @@ export function createInsectScreenMaterial(
   heightMm?: number,
   config?: InsectScreenMaterialOptions,
 ): THREE.MeshStandardMaterial {
-  const wirePitchMm = config?.wirePitchMm ?? 2.5; // 2.5mm tight spacing between wires
+  const wirePitchMm = config?.wirePitchMm ?? 3.2; // 3.2mm realistic architectural spacing between wires
   const wireColor = config?.wireColor ?? "#181a1d"; // Dark charcoal wire
   const effectiveWidthMm = widthMm && widthMm > 0 ? widthMm : 1200;
   const effectiveHeightMm = heightMm && heightMm > 0 ? heightMm : 1200;
+  const alphaTest = config?.alphaTest ?? 0.2;
 
   const repeatX = Math.max(1, Math.round(effectiveWidthMm / wirePitchMm));
   const repeatY = Math.max(1, Math.round(effectiveHeightMm / wirePitchMm));
@@ -569,7 +587,7 @@ export function createInsectScreenMaterial(
     const fallback = new THREE.MeshStandardMaterial({
       color: new THREE.Color(wireColor),
       transparent: true,
-      alphaTest: 0.2, // Critical: Cutout geometry included in depth & transmission buffers
+      alphaTest,
       depthWrite: true,
       depthTest: true,
       roughness: 0.35,
@@ -591,7 +609,7 @@ export function createInsectScreenMaterial(
     const fallback = new THREE.MeshStandardMaterial({
       color: new THREE.Color(wireColor),
       transparent: true,
-      alphaTest: 0.2,
+      alphaTest,
       depthWrite: true,
       depthTest: true,
       roughness: 0.35,
@@ -604,13 +622,19 @@ export function createInsectScreenMaterial(
     return fallback;
   }
 
-  // Clear aperture openings between wires
-  ctx.clearRect(0, 0, size, size);
+  if (typeof ctx.clearRect === "function") {
+    ctx.clearRect(0, 0, size, size);
+  }
+  // Fill aperture background with atmospheric screen veil (subtle ~15% attenuation)
+  if (typeof ctx.fillRect === "function") {
+    ctx.fillStyle = "rgba(22, 26, 32, 0.24)";
+    ctx.fillRect(0, 0, size, size);
+  }
 
-  // Wire thickness: ~28% of cell width for realistic insect screen wire gauge
-  const wireWidth = Math.max(4, Math.round(size * (config?.wireThicknessRatio ?? 0.28)));
+  // Wire thickness: ~24% of cell width for realistic insect screen wire gauge (leaves 76% clear open aperture)
+  const wireWidth = Math.max(4, Math.round(size * (config?.wireThicknessRatio ?? 0.24)));
 
-  // 1. Solid wire grid lines (woven criss-cross pattern and perimeter seam border)
+  // 1. Solid wire grid lines (woven criss-cross pattern)
   ctx.strokeStyle = wireColor;
   ctx.lineWidth = wireWidth;
   ctx.beginPath();
@@ -619,18 +643,16 @@ export function createInsectScreenMaterial(
   ctx.moveTo(0, size / 2);
   ctx.lineTo(size, size / 2);
   ctx.stroke();
-  ctx.strokeRect(0, 0, size, size);
 
   // 2. Subtle specular wire crown line for realistic metallic thread luster
-  ctx.strokeStyle = "#4a525d";
-  ctx.lineWidth = Math.max(2, Math.round(wireWidth * 0.28));
+  ctx.strokeStyle = "#828d9e";
+  ctx.lineWidth = Math.max(1, Math.round(wireWidth * 0.30));
   ctx.beginPath();
   ctx.moveTo(size / 2, 0);
   ctx.lineTo(size / 2, size);
   ctx.moveTo(0, size / 2);
   ctx.lineTo(size, size / 2);
   ctx.stroke();
-  ctx.strokeRect(0, 0, size, size);
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.wrapS = THREE.RepeatWrapping;
@@ -645,12 +667,12 @@ export function createInsectScreenMaterial(
   const material = new THREE.MeshStandardMaterial({
     map: texture,
     transparent: true,
-    alphaTest: 0.2, // Discards transparent openings; writes solid wire to depth and transmission passes
+    alphaTest,
     depthWrite: true,
     depthTest: true,
     opacity: 0.98,
     roughness: 0.35,
-    metalness: 0.75,
+    metalness: 0.65,
     side: THREE.DoubleSide,
   });
 
@@ -811,16 +833,21 @@ export function applyPBRToMesh(mesh: THREE.Mesh, rawMaterial: RawMaterial | null
       return;
     }
 
+    const isLouverBlade = Boolean(
+      mesh.userData?.isLouverBladeInstance ||
+      mesh.userData?.dimensionBinding === "LOUVER_BLADE" ||
+      mesh.name?.toLowerCase().includes("louver") ||
+      mesh.name?.toLowerCase().includes("blade")
+    );
+
     if (mesh.material instanceof THREE.MeshPhysicalMaterial) {
       mesh.material.color.copy(pbr.color);
       mesh.material.attenuationColor = pbr.color.clone();
       mesh.material.transparent = true;
-      mesh.material.transmission = pbr.transmission ?? (mesh.material.transmission > 0 ? mesh.material.transmission : 0.88);
-      if (pbr.opacity !== undefined) {
-        mesh.material.opacity = pbr.opacity;
-      }
+      mesh.material.transmission = isLouverBlade ? 0.96 : (pbr.transmission ?? (mesh.material.transmission > 0 ? mesh.material.transmission : 0.88));
+      mesh.material.opacity = isLouverBlade ? 0.07 : (pbr.opacity ?? 0.18);
       if (pbr.roughness !== undefined && rawMaterial?.category === "Glass") {
-        mesh.material.roughness = pbr.roughness;
+        mesh.material.roughness = isLouverBlade ? 0.02 : pbr.roughness;
       }
       if (pbr.ior !== undefined) {
         mesh.material.ior = pbr.ior;
@@ -834,13 +861,13 @@ export function applyPBRToMesh(mesh: THREE.Mesh, rawMaterial: RawMaterial | null
       color: pbr.color,
       attenuationColor: pbr.color.clone(),
       metalness: pbr.metalness ?? 0.02,
-      roughness: pbr.roughness ?? 0.03,
-      transmission: pbr.transmission ?? 0.88,
-      opacity: pbr.opacity ?? 0.18,
+      roughness: isLouverBlade ? 0.02 : (pbr.roughness ?? 0.03),
+      transmission: isLouverBlade ? 0.96 : (pbr.transmission ?? 0.88),
+      opacity: isLouverBlade ? 0.07 : (pbr.opacity ?? 0.18),
       transparent: true,
       ior: pbr.ior ?? 1.52,
       clearcoat: 1.0,
-      clearcoatRoughness: 0.04,
+      clearcoatRoughness: isLouverBlade ? 0.02 : 0.04,
       side: THREE.DoubleSide,
       depthWrite: false,
     });

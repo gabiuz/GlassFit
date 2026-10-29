@@ -16,8 +16,12 @@ import type {
   RawMaterial,
   ComponentMaterialBinding,
   DimensionBinding,
+  JalousieConfig,
 } from "./types";
 import { calculateGrilleLinearBOM } from "./grillePricingEngine";
+import { computeLouverBladeCount, computeLouverOperatorCount } from "@/lib/visualization/jalousieGeometryAnalyzer";
+import { computeDynamicBayCount, computeMullionCount } from "@/lib/visualization/bayReplicationEngine";
+import type { DynamicBayConfig, DynamicBayRole, ExpansionAnchorMode } from "@/lib/pricing/types";
 import type { PlacedOverlay, ProductStructuralDefinition } from "@/lib/visualization/types";
 
 export type {
@@ -35,10 +39,17 @@ export interface ComponentPricingInput {
   baseQuantity: number;
   isRemovable: boolean;
   togglePropertyKey?: string | null;
-  presentationCategory: "Framing" | "Glazing" | "Hardware" | "Consumable" | "Other";
+  presentationCategory: "Framing" | "Glazing" | "Hardware" | "Consumable" | "Other" | string;
   rawMaterial?: RawMaterial | null;
   unitPrice?: number;
   pricingMethod?: string;
+  jalousieConfig?: JalousieConfig | null;
+  bayRole?: DynamicBayRole | null;
+  bay_role?: DynamicBayRole | null;
+  componentType?: string;
+  component_key?: string;
+  component_id?: string;
+  [key: string]: unknown;
 }
 
 export interface CalculateBOMOptions {
@@ -56,6 +67,9 @@ export interface CalculateBOMOptions {
   laborRate?: number; // default 0.25 (25%)
   contractorMarginRate?: number; // default 0.25 (25%)
   structuralWaiver?: boolean;
+  dynamicBayConfig?: DynamicBayConfig | null;
+  bayCount?: number;
+  expansionAnchorMode?: ExpansionAnchorMode;
 }
 
 export const DEFAULT_AL_SCRAP = 0.12;
@@ -92,6 +106,13 @@ export function calculateParametricBOM(
   const isCrabbingRisk = aspectRatio > 1.2;
   const isSpanLimitExceeded = panelCount === 2 && options.widthMm >= 2400;
 
+  const isBayReplicationActive = Boolean(options.dynamicBayConfig?.enabled);
+  const nominalPitch = options.dynamicBayConfig?.nominal_bay_pitch_mm ?? options.dynamicBayConfig?.nominalBayPitchMm ?? 600;
+  const effectiveBayCount = isBayReplicationActive
+    ? Math.max(1, options.bayCount ?? computeDynamicBayCount(options.widthMm, nominalPitch))
+    : 1;
+  const effectiveMullionCount = isBayReplicationActive ? computeMullionCount(effectiveBayCount) : 0;
+
   const framingItems: BOMItemDetail[] = [];
   const glazingItems: BOMItemDetail[] = [];
   const hardwareItems: BOMItemDetail[] = [];
@@ -107,12 +128,19 @@ export function calculateParametricBOM(
 
   // Process explicitly mapped components if provided
   for (const comp of components) {
-    const toggleKey = comp.togglePropertyKey || `has_${comp.componentKey.replace(/-/g, "_")}`;
+    const rawComp = comp as Record<string, unknown>;
+    const compKey: string =
+      (typeof comp.componentKey === "string" && comp.componentKey) ||
+      (typeof rawComp.component_key === "string" && rawComp.component_key) ||
+      (typeof comp.componentId === "string" && comp.componentId) ||
+      (typeof rawComp.component_id === "string" && rawComp.component_id) ||
+      "";
+    const toggleKey = comp.togglePropertyKey || `has_${compKey.replace(/-/g, "_")}`;
     const isSillComponent =
       comp.togglePropertyKey === "has_sill" ||
       toggleKey.includes("sill") ||
-      comp.componentKey.includes("sill") ||
-      comp.componentName.toLowerCase().includes("sill");
+      compKey.includes("sill") ||
+      String(comp.componentName || "").toLowerCase().includes("sill");
 
     const isExcluded =
       (isSillComponent && hasSill === false) ||
@@ -139,7 +167,37 @@ export function calculateParametricBOM(
     let computedQty = comp.baseQuantity;
     let unitLabel = "pc";
 
-    if (!isFixedComponent && mat) {
+    const compRole = comp.bayRole || comp.bay_role;
+    const compKeyLower = compKey.toLowerCase();
+    const spanRatio = typeof comp.spanRatio === "number" && comp.spanRatio > 0 ? comp.spanRatio : 1;
+    const isMullion = isBayReplicationActive && (
+      compRole === "BAY_DIVIDER" ||
+      compKeyLower.includes("center") ||
+      compKeyLower.includes("mullion")
+    );
+
+    if (isMullion) {
+      if (comp.dimensionBinding === "HEIGHT" || comp.pricingMethod === "Per Length") {
+        computedQty = heightM * spanRatio * effectiveMullionCount * (comp.baseQuantity || 1);
+        unitLabel = "m";
+      } else {
+        computedQty = effectiveMullionCount * (comp.baseQuantity || 1);
+        unitLabel = "pc";
+      }
+    } else if (comp.dimensionBinding === "LOUVER_BLADE") {
+      const pitchMm = comp.jalousieConfig?.pitch_mm ?? comp.jalousieConfig?.pitchMm ?? 175;
+      computedQty = computeLouverBladeCount(options.heightMm, pitchMm) * spanRatio * effectiveBayCount;
+      unitLabel = "pc";
+    } else if (comp.dimensionBinding === "LOUVER_OPERATOR") {
+      const pitchMm = comp.jalousieConfig?.pitch_mm ?? comp.jalousieConfig?.pitchMm ?? 175;
+      const bladesPerOp = comp.jalousieConfig?.blades_per_operator ?? comp.jalousieConfig?.bladesPerOperator ?? 4;
+      const louverCount = computeLouverBladeCount(options.heightMm, pitchMm);
+      computedQty = computeLouverOperatorCount(louverCount, bladesPerOp) * spanRatio * effectiveBayCount;
+      unitLabel = "pc";
+    } else if (isBayReplicationActive && (compRole === "BAY_INFILL" || compRole === "BAY_HARDWARE")) {
+      computedQty = comp.baseQuantity * effectiveBayCount;
+      unitLabel = mat?.billing_unit || "pc";
+    } else if (!isFixedComponent && mat) {
       if (mat.category === "Glass" && mat.billing_unit === "pc") {
         computedQty = comp.baseQuantity;
         unitLabel = "pc";
@@ -203,9 +261,18 @@ export function calculateParametricBOM(
 
     const itemSubtotal = round2(computedQty * unitPrice);
 
+    let itemDesc = (isFixedComponent && comp.componentName) ? comp.componentName : (mat ? mat.description : comp.componentName);
+    if (isMullion) {
+      itemDesc = `${effectiveMullionCount}x Center Mullions`;
+    } else if (comp.dimensionBinding === "LOUVER_BLADE") {
+      itemDesc = `${computedQty}x Glass Louver Blades`;
+    } else if (comp.dimensionBinding === "LOUVER_OPERATOR") {
+      itemDesc = `${computedQty}x Window Operators`;
+    }
+
     const itemDetail: BOMItemDetail = {
       code: mat ? mat.material_code : comp.componentKey,
-      description: (isFixedComponent && comp.componentName) ? comp.componentName : (mat ? mat.description : comp.componentName),
+      description: itemDesc,
       quantity: round4(computedQty),
       unit: unitLabel,
       unit_price: unitPrice,
@@ -659,6 +726,8 @@ export function calculateBOMFromStructuralDefinition(
     structuralWaiver?: boolean;
     selectedMaterials?: Record<string, string>;
     rawMaterials?: RawMaterial[] | Map<string, RawMaterial> | Record<string, RawMaterial>;
+    dynamicBayConfig?: DynamicBayConfig | null;
+    bayCount?: number;
   }
 ): CalculatedBOMResult {
   if (!definition || !definition.components || definition.components.length === 0) {
@@ -805,6 +874,30 @@ export function calculateBOMFromStructuralDefinition(
           waste_allowance: DEFAULT_AL_SCRAP,
           is_active: true,
         };
+      } else if (comp.dimensionBinding === "LOUVER_BLADE" || key.includes("louver") || name.includes("louver")) {
+        mat = {
+          id: `fallback-${comp.componentKey}`,
+          material_code: "mat_gl_jalousie_blade_4x24",
+          description: "Jalousie Glass Louver Blade (4\" x 24\")",
+          category: "Glass",
+          finish_type: params.glassType === "6mm_clear" ? "Clear" : "Bronze",
+          billing_unit: "pc",
+          unit_price: 45.0,
+          waste_allowance: 0,
+          is_active: true,
+        };
+      } else if (comp.dimensionBinding === "LOUVER_OPERATOR" || key.includes("operator") || name.includes("operator")) {
+        mat = {
+          id: `fallback-${comp.componentKey}`,
+          material_code: "mat_hw_jalousie_operator",
+          description: "Jalousie Window Operator Mechanism",
+          category: "Hardware",
+          finish_type: "Standard",
+          billing_unit: "pc",
+          unit_price: 450.0,
+          waste_allowance: 0,
+          is_active: true,
+        };
       } else if (comp.presentationCategory === "Glazing" || key.includes("glass") || key.includes("pane") || name.includes("glass") || name.includes("pane")) {
         mat = {
           id: `fallback-${comp.componentKey}`,
@@ -832,6 +925,8 @@ export function calculateBOMFromStructuralDefinition(
       rawMaterial: mat,
       unitPrice: comp.unitPrice,
       pricingMethod: comp.pricingMethod,
+      jalousieConfig: comp.jalousieConfig || (comp.componentData?.jalousie_config as JalousieConfig) || null,
+      bayRole: comp.bayRole || (comp.componentData?.bay_role as DynamicBayRole) || null,
     };
   });
 
@@ -896,11 +991,21 @@ export function calculateBOMFromStructuralDefinition(
     });
   }
 
+  const dynamicBayConfig =
+    params.dynamicBayConfig ??
+    (definition.template as Record<string, unknown>)?.dynamic_bay_config ??
+    (definition.template as Record<string, unknown>)?.dynamicBayConfig ??
+    (definition.product as Record<string, unknown>)?.dynamic_bay_config ??
+    (definition.product as Record<string, unknown>)?.dynamicBayConfig ??
+    null;
+
   return calculateParametricBOM(pricingInputs, {
     widthMm: params.widthMm,
     heightMm: params.heightMm,
     panelCount,
     hasSill,
+    dynamicBayConfig: dynamicBayConfig as DynamicBayConfig | null,
+    bayCount: params.bayCount,
     structuralWaiver: params.structuralWaiver ?? false,
   });
 }

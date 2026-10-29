@@ -11,7 +11,7 @@ import {
 } from "@/lib/visualization/materialCustomization";
 
 export interface PartMaterialsPickerProps {
-  components: ProductComponentDefinition[];
+  components: (ProductComponentDefinition & { isFromAddon?: boolean; addonType?: string })[];
   selectedMaterials: Record<string, string>;
   candidateMaterialsMap: Map<string, RawMaterial>;
   allRawMaterials?: RawMaterial[];
@@ -321,6 +321,11 @@ export function PartMaterialsPicker({
                       >
                         {category}
                       </span>
+                      {(comp as { isFromAddon?: boolean }).isFromAddon && (
+                        <span className="text-[9px] uppercase font-semibold px-1.5 py-0.5 rounded bg-cyan-50 text-[#07b6d3] border border-cyan-200/80">
+                          Add-on
+                        </span>
+                      )}
                     </div>
 
                     {selectedOption && (

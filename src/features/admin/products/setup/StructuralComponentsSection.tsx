@@ -12,8 +12,9 @@ import { decomposeWholeModel, type ExtractedComponentPart } from "@/lib/admin/pr
 import { DecompositionPreviewModal } from "./DecompositionPreviewModal";
 import { PartInspectorDrawer, type PartInspectorConfig } from "./PartInspectorDrawer";
 import { analyzeGrilleGeometry, type GrilleGeometryAnalysis } from "@/lib/pricing/grilleGeometryAnalyzer";
+import { analyzeJalousieGeometry } from "@/lib/visualization/jalousieGeometryAnalyzer";
 import { getRawMaterials } from "@/lib/admin/materials/materialActions";
-import type { RawMaterial, DimensionBinding, PresentationCategory, ComponentMaterialBinding } from "@/lib/pricing/types";
+import type { RawMaterial, DimensionBinding, PresentationCategory, ComponentMaterialBinding, JalousieConfig, DynamicBayRole } from "@/lib/pricing/types";
 import { Canvas, type ThreeEvent } from "@react-three/fiber";
 import { useThree } from "@react-three/fiber";
 import { Html, OrbitControls, Stage } from "@react-three/drei";
@@ -75,6 +76,9 @@ type MappedFile = {
     unitPrice?: number;
     pricingMethod?: string;
     handingMetadata?: ComponentHandingMetadata | null;
+    jalousieConfig?: JalousieConfig | null;
+    bayRole?: DynamicBayRole | null;
+    bay_role?: DynamicBayRole | null;
 };
 
 function formatKeyFromName(name: string) {
@@ -639,6 +643,8 @@ export function StructuralComponentsSection({
                 unitPrice: resolvedUnitPrice,
                 pricingMethod: resolvedPricingMethod,
                 handingMetadata: (compData.handing_metadata as ComponentHandingMetadata) || null,
+                jalousieConfig: ((comp.jalousie_config || compData.jalousie_config) as JalousieConfig) || null,
+                bayRole: ((comp.bay_role || compData.bay_role) as DynamicBayRole) || detected.bayRole || null,
                 sourceDimensions: compData.source_dimensions_mm as { x: number; y: number; z: number } | undefined,
                 persisted: true,
                 status: "success" as const,
@@ -684,6 +690,7 @@ export function StructuralComponentsSection({
                             })(),
                             pricingMethod: (comp.pricing_method as string) || (isAccessory ? "Fixed" : (typeof comp.unit_price === "number" && comp.unit_price > 0 ? "Fixed" : undefined)),
                             handingMetadata: (compData.handing_metadata as ComponentHandingMetadata) || null,
+                            jalousieConfig: ((comp.jalousie_config || compData.jalousie_config) as JalousieConfig) || null,
                             sourceDimensions: compData.source_dimensions_mm as { x: number; y: number; z: number } | undefined,
                             persisted: true,
                             status: "success" as const,
@@ -709,6 +716,11 @@ export function StructuralComponentsSection({
                             unitPrice: resolvedUnitPrice,
                             pricingMethod: resolvedPricingMethod,
                             handingMetadata: (foundData.handing_metadata as ComponentHandingMetadata) || item.handingMetadata,
+                            isAccessorySlot: typeof found.is_accessory_slot === "boolean" ? found.is_accessory_slot : item.isAccessorySlot,
+                            accessoryCategory: (found.accessory_category as AccessoryCategory) || item.accessoryCategory,
+                            allowedAccessoryIds: (found.allowed_accessory_ids as string[]) || item.allowedAccessoryIds,
+                            positionOptions: (found.position_options as AccessoryPositionOptions) || item.positionOptions,
+                            jalousieConfig: ((found.jalousie_config || foundData.jalousie_config) as JalousieConfig) || item.jalousieConfig,
                         };
                     }
                     return item;
@@ -786,38 +798,58 @@ export function StructuralComponentsSection({
                 parseError = err instanceof Error ? err.message : "Could not parse GLB geometry.";
             }
 
-            const suggested = suggestCandidateMaterials(autoDetected.presentationCategory, rawMaterials);
+            const jalousieAnalysis = previewMesh ? analyzeJalousieGeometry(previewMesh, f.name) : null;
+            const isJalousie = Boolean(jalousieAnalysis && (jalousieAnalysis.isLouverBlade || jalousieAnalysis.isLouverOperator));
+            const resolvedBinding = (isAccessory
+                ? "FIXED"
+                : (isJalousie
+                    ? jalousieAnalysis!.suggestedBinding
+                    : (modelStrategy === "Fixed"
+                        ? "FIXED"
+                        : autoDetected.dimensionBinding))) as DimensionBinding;
+            const resolvedBaseQty = isJalousie ? jalousieAnalysis!.suggestedBaseQuantity : 1;
+            const resolvedPresentation = isJalousie ? jalousieAnalysis!.suggestedPresentationCategory : autoDetected.presentationCategory;
+            const suggested = suggestCandidateMaterials(resolvedPresentation, rawMaterials, undefined, resolvedBinding);
+            const jalousieConfig = isJalousie ? {
+                pitch_mm: jalousieAnalysis!.pitchMm,
+                blade_height_mm: jalousieAnalysis!.bladeHeightMm,
+                blades_per_operator: jalousieAnalysis!.bladesPerOperator,
+                base_blade_count: jalousieAnalysis!.louverCount,
+                base_operator_count: jalousieAnalysis!.operatorCount,
+            } : null;
 
             return {
                 id: crypto.randomUUID(),
                 file: f,
                 componentKey: formatKeyFromName(f.name),
                 componentName: formatLabelFromName(f.name),
-                componentType: autoDetected.componentType,
-                assemblyGroup: autoDetected.presentationCategory.toLowerCase(),
-                baseQuantity: 1,
+                componentType: isJalousie ? (jalousieAnalysis!.isLouverBlade ? "Glass" : "Hardware") : autoDetected.componentType,
+                assemblyGroup: resolvedPresentation.toLowerCase(),
+                baseQuantity: resolvedBaseQty,
                 rawMaterialId: isAccessory ? null : suggested.defaultRawMaterialId,
                 materialBindings: isAccessory ? [] : suggested.materialBindings.map(b => ({
                     rawMaterialId: b.rawMaterialId,
                     isDefault: b.isDefault,
                     displayOrder: b.displayOrder,
                 })),
-                dimensionBinding: (isAccessory ? "FIXED" : (modelStrategy === "Fixed" ? "FIXED" : autoDetected.dimensionBinding)) as DimensionBinding,
+                dimensionBinding: resolvedBinding,
                 spanRatio: modelStrategy === "Fixed" ? 1.0 : autoDetected.spanRatio,
                 isRemovable: isAccessory ? true : autoDetected.isRemovable,
                 togglePropertyKey: autoDetected.togglePropertyKey,
-                presentationCategory: autoDetected.presentationCategory,
+                presentationCategory: resolvedPresentation,
                 previewMesh,
                 status: parseError ? "error" as const : "idle" as const,
                 errorMsg: parseError,
                 sourceDimensions: dims,
-                isAccessorySlot: isAccessory ? false : Boolean(autoDetected.isAccessorySlot),
-                accessoryCategory: isAccessory ? (initialAccessoryCategory || autoDetected.accessoryCategory || "handle") : (autoDetected.accessoryCategory || null),
+                isAccessorySlot: isAccessory ? false : (isJalousie ? (jalousieAnalysis?.isLouverOperator ? Boolean(autoDetected.isAccessorySlot) : false) : Boolean(autoDetected.isAccessorySlot)),
+                accessoryCategory: isAccessory ? (initialAccessoryCategory || autoDetected.accessoryCategory || "handle") : (isJalousie ? (jalousieAnalysis?.isLouverOperator ? (autoDetected.accessoryCategory || "handle") : null) : (autoDetected.accessoryCategory || null)),
                 allowedAccessoryIds: [],
                 positionOptions: autoDetected.positionOptions || null,
                 unitPrice: isAccessory ? productBasePrice : undefined,
-                pricingMethod: (isAccessory || modelStrategy === "Fixed") ? "Fixed" : undefined,
+                pricingMethod: (isAccessory || (modelStrategy === "Fixed" && !isJalousie)) ? "Fixed" : undefined,
                 handingMetadata: null,
+                jalousieConfig,
+                bayRole: autoDetected.bayRole || null,
             };
         });
 
@@ -989,6 +1021,8 @@ export function StructuralComponentsSection({
                         ...(updates.positionOptions !== undefined && { positionOptions: updates.positionOptions }),
                         ...("unitPrice" in updates ? { unitPrice: updates.unitPrice } : {}),
                         ...(updates.pricingMethod !== undefined && { pricingMethod: updates.pricingMethod }),
+                        ...("jalousieConfig" in updates ? { jalousieConfig: updates.jalousieConfig } : {}),
+                        ...("bayRole" in updates ? { bayRole: updates.bayRole } : {}),
                         status: "idle" as const,
                     };
                 }
@@ -1084,6 +1118,8 @@ export function StructuralComponentsSection({
                     ...(dimensions ? { source_dimensions_mm: dimensions } : {}),
                     ...(handingMetadata ? { handing_metadata: handingMetadata } : {}),
                     ...(mapped.accessoryCategory ? { accessory_category: mapped.accessoryCategory } : {}),
+                    ...(mapped.jalousieConfig ? { jalousie_config: mapped.jalousieConfig } : {}),
+                    ...(mapped.bayRole ? { bay_role: mapped.bayRole } : {}),
                 },
                 isAccessorySlot: mapped.isAccessorySlot,
                 accessoryCategory: mapped.accessoryCategory,
@@ -1092,6 +1128,9 @@ export function StructuralComponentsSection({
                 unitPrice: mapped.unitPrice !== undefined ? mapped.unitPrice : (isAccessory ? productBasePrice : undefined),
                 pricingMethod: mapped.pricingMethod || (isAccessory ? "Fixed" : undefined),
                 handingMetadata,
+                jalousieConfig: mapped.jalousieConfig || undefined,
+                bayRole: mapped.bayRole || undefined,
+                bay_role: mapped.bayRole || undefined,
             });
             const payload = buildPayload(mapped.glbFileUrl || null);
             if (isAccessory && (!Number.isFinite(payload.unitPrice) || (payload.unitPrice ?? 0) <= 0)) {
@@ -1282,6 +1321,8 @@ export function StructuralComponentsSection({
                 positionOptions: m.positionOptions,
                 unitPrice: m.unitPrice,
                 pricingMethod: m.pricingMethod,
+                jalousieConfig: m.jalousieConfig,
+                bayRole: m.bayRole,
             }));
     }, [mappedFiles, selectedIds]);
 

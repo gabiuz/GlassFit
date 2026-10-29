@@ -57,6 +57,11 @@ venv/
 *.py[cod]
 fastapi-service/generated/
 
+.venv312/
+**/venv/
+**/.venv/
+**/.venv312/
+
 # agent skills & local tooling
 .agents/
 skills-lock.json

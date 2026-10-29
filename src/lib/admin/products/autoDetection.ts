@@ -5,7 +5,7 @@
  * Traceability Codes: PRD-F14, SDD-C9, DSD-UI10, ERD-E6
  */
 
-import type { DimensionBinding, PresentationCategory, RawMaterial } from "@/lib/pricing/types";
+import type { DimensionBinding, PresentationCategory, RawMaterial, DynamicBayRole } from "@/lib/pricing/types";
 import type { ComponentType, AccessoryCategory, AccessoryPositionOptions } from "./types";
 
 export interface AutoDetectionResult {
@@ -19,6 +19,7 @@ export interface AutoDetectionResult {
   isAccessorySlot?: boolean;
   accessoryCategory?: AccessoryCategory | null;
   positionOptions?: AccessoryPositionOptions;
+  bayRole?: DynamicBayRole;
 }
 
 export interface AutoDetectAccessorySlotResult {
@@ -114,10 +115,81 @@ export function autoDetectAccessorySlot(fileName: string): AutoDetectAccessorySl
 }
 
 /**
+ * Auto-detect modular bay role for structural components from filename keywords.
+ * Maps fenestration profiles to semantic bay roles for automated modular expansion (IMP-MS82).
+ * Traceability: PRD-F5, PRD-F14, SDD-C4, SDD-C9, ERD-E6, QAD-TC97.1
+ */
+export function autoDetectBayRole(fileName: string): DynamicBayRole | null {
+  const lower = fileName.toLowerCase().replace(/\.glb$/, "");
+
+  if (lower.includes("window_sill") || lower.includes("removable_sill")) {
+    return "REMOVABLE_SILL";
+  }
+  if (lower.includes("center") || lower.includes("mullion")) {
+    return "BAY_DIVIDER";
+  }
+  if (
+    lower.includes("jamb_left") ||
+    lower.includes("frame_left") ||
+    lower.includes("left_jamb") ||
+    lower.includes("left_frame") ||
+    (lower.includes("left") && (lower.includes("jamb") || lower.includes("frame") || lower.includes("stile")))
+  ) {
+    return "OUTER_JAMB_LEFT";
+  }
+  if (
+    lower.includes("jamb_right") ||
+    lower.includes("frame_right") ||
+    lower.includes("right_jamb") ||
+    lower.includes("right_frame") ||
+    (lower.includes("right") && (lower.includes("jamb") || lower.includes("frame") || lower.includes("stile")))
+  ) {
+    return "OUTER_JAMB_RIGHT";
+  }
+  if (
+    lower.includes("frame_top") ||
+    lower.includes("top_frame") ||
+    lower.includes("header") ||
+    lower.includes("head_track") ||
+    lower.includes("top_rail")
+  ) {
+    return "OUTER_HEAD";
+  }
+  if (
+    lower.includes("frame_bottom") ||
+    lower.includes("bottom_frame") ||
+    lower.includes("sill_rail") ||
+    lower.includes("bottom_rail") ||
+    (lower.includes("bottom") && (lower.includes("frame") || lower.includes("rail")))
+  ) {
+    return "OUTER_SILL";
+  }
+  if (
+    lower.includes("louver") ||
+    lower.includes("glass") ||
+    lower.includes("blade") ||
+    lower.includes("infill") ||
+    lower.includes("clips_and_glass")
+  ) {
+    return "BAY_INFILL";
+  }
+  if (
+    lower.includes("operator") ||
+    lower.includes("crank") ||
+    lower.includes("rotopers") ||
+    lower.includes("jw_operators")
+  ) {
+    return "BAY_HARDWARE";
+  }
+
+  return null;
+}
+
+/**
  * Parse GLB file name to automatically determine dimension binding, span ratio,
  * removable toggles, presentation categories, swappable accessory slots, and suggested materials.
  */
-export function autoDetectComponentSettings(fileName: string): AutoDetectionResult {
+function detectRawComponentSettings(fileName: string): AutoDetectionResult {
   const name = fileName.toLowerCase().replace(/\.glb$/, "");
 
   // Swappable Hardware Accessory Slots (IMP-MS75)
@@ -134,6 +206,45 @@ export function autoDetectComponentSettings(fileName: string): AutoDetectionResu
       isAccessorySlot: true,
       accessoryCategory: accessorySlot.accessoryCategory,
       positionOptions: accessorySlot.positionOptions,
+    };
+  }
+
+  // Jalousie Louver Blades (IMP-MS81, PRD-F5, PRD-F14, QAD-TC96.3)
+  if (
+    name.includes("louver") ||
+    name.includes("jalousie") ||
+    name.includes("blade") ||
+    name.includes("clips_and_glass") ||
+    name.includes("louver_glass")
+  ) {
+    return {
+      dimensionBinding: "LOUVER_BLADE",
+      spanRatio: 1.0,
+      isRemovable: false,
+      togglePropertyKey: null,
+      presentationCategory: "Glazing",
+      componentType: "Glass",
+      suggestedMaterialCategory: "Glass",
+    };
+  }
+
+  // Jalousie Window Operators (IMP-MS81, PRD-F5, PRD-F14, QAD-TC96.3)
+  if (
+    name.includes("operator") ||
+    name.includes("rotopers") ||
+    name.includes("crank") ||
+    name.includes("jw_operators")
+  ) {
+    return {
+      dimensionBinding: "LOUVER_OPERATOR",
+      spanRatio: 1.0,
+      isRemovable: false,
+      togglePropertyKey: null,
+      presentationCategory: "Hardware",
+      componentType: "Hardware",
+      suggestedMaterialCategory: "Hardware",
+      isAccessorySlot: true,
+      accessoryCategory: "handle",
     };
   }
 
@@ -223,7 +334,11 @@ export function autoDetectComponentSettings(fileName: string): AutoDetectionResu
     name.includes("stile") ||
     name.includes("interlock") ||
     name.includes("lockstile") ||
-    name.includes("mullion")
+    name.includes("mullion") ||
+    name.includes("frame_center") ||
+    name.includes("center_frame") ||
+    name.includes("center_mullion") ||
+    name.includes("frame_middle")
   ) {
     return {
       dimensionBinding: "HEIGHT",
@@ -368,6 +483,20 @@ export function autoDetectComponentSettings(fileName: string): AutoDetectionResu
   };
 }
 
+/**
+ * Parse GLB file name to automatically determine dimension binding, span ratio,
+ * removable toggles, presentation categories, swappable accessory slots, suggested materials,
+ * and semantic modular bay roles (IMP-MS82).
+ */
+export function autoDetectComponentSettings(fileName: string): AutoDetectionResult {
+  const result = detectRawComponentSettings(fileName);
+  const bayRole = autoDetectBayRole(fileName);
+  if (bayRole) {
+    result.bayRole = bayRole;
+  }
+  return result;
+}
+
 export interface SuggestedCandidateMaterial {
   rawMaterialId: string;
   isDefault: boolean;
@@ -386,7 +515,8 @@ export interface SuggestedMaterialConfig {
 export function suggestCandidateMaterials(
   presentationCategory: PresentationCategory,
   rawMaterials: RawMaterial[],
-  preferredFinish?: string
+  preferredFinish?: string,
+  dimensionBinding?: DimensionBinding,
 ): SuggestedMaterialConfig {
   if (!rawMaterials || rawMaterials.length === 0) {
     return { materialBindings: [], defaultRawMaterialId: null };
@@ -410,12 +540,20 @@ export function suggestCandidateMaterials(
       targetCategory = "Aluminum";
   }
 
-  const matches = rawMaterials.filter(
+  let matches = rawMaterials.filter(
     (m) => m.category.toLowerCase() === targetCategory.toLowerCase() && m.is_active !== false
   );
 
   if (matches.length === 0) {
     return { materialBindings: [], defaultRawMaterialId: null };
+  }
+
+  // Filter or prioritize per-piece ('pc') billing for louver blades and operators (IMP-MS81 Section 5.1)
+  if (dimensionBinding === "LOUVER_BLADE" || dimensionBinding === "LOUVER_OPERATOR") {
+    const pcMatches = matches.filter((m) => m.billing_unit === "pc");
+    if (pcMatches.length > 0) {
+      matches = [...pcMatches, ...matches.filter((m) => m.billing_unit !== "pc")];
+    }
   }
 
   // Determine default material index based on preferredFinish or standard conventions

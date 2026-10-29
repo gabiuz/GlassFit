@@ -813,4 +813,173 @@ describe("IMP-MS80: Directional Add-on Placement Side Compatibility and Operator
       );
     });
   });
+
+  // --------------------------------------------------------------------------
+  // QAD-TC95.16: Hatch sub-mesh material segregation preserves aluminum framing and hardware latch
+  // --------------------------------------------------------------------------
+  describe("QAD-TC95.16: Hatch sub-mesh material segregation preserves aluminum framing and hardware latch", () => {
+    it("assigns framing material to hatch frame, screen material to hatch mesh, and hardware finish to latch", () => {
+      // Construct a compound hatch object matching Blender/CAD hierarchy
+      const hatchRoot = new THREE.Group();
+      hatchRoot.name = "Screen_Access_Hatch";
+
+      const frameMesh = new THREE.Mesh(
+        new THREE.BoxGeometry(0.16, 0.30, 0.02),
+        new THREE.MeshStandardMaterial({ name: "Screen_Mat_Aluminium" })
+      );
+      frameMesh.name = "Screen_Access_Hatch_Mesh";
+
+      const wireMesh = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.14, 0.28),
+        new THREE.MeshStandardMaterial({ name: "SCD_Screen_Wire_Metal" })
+      );
+      wireMesh.name = "Screen_Access_Hatch_Mesh_1";
+
+      const latchMesh = new THREE.Mesh(
+        new THREE.BoxGeometry(0.02, 0.04, 0.01),
+        new THREE.MeshStandardMaterial({ name: "Screen_Hardware_Metal" })
+      );
+      latchMesh.name = "Screen_Access_Hatch_Mesh_2";
+
+      hatchRoot.add(frameMesh, wireMesh, latchMesh);
+
+      const customCache: ComponentModelCache = {
+        getClone: (id: string) => {
+          if (id === "comp_screen_hatch" || id === "screen_access_hatch") {
+            return hatchRoot.clone(true);
+          }
+          if (id === "c_frame" || id === "comp_frame" || id === "window_frame") {
+            return new THREE.Mesh(new THREE.BoxGeometry(1.0, 1.2, 0.06));
+          }
+          if (id === "comp_screen_frame" || id === "screen_perimeter_frame") {
+            return new THREE.Mesh(new THREE.BoxGeometry(1.0, 1.2, 0.02));
+          }
+          if (id === "c_op" || id === "operator_crank") {
+            return new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.05));
+          }
+          throw new Error(`Unknown clone: ${id}`);
+        },
+        getSourceSizeMeters: () => new THREE.Vector3(1.0, 1.2, 0.06),
+      };
+
+      const customDefinition: ProductStructuralDefinition = {
+        product: {
+          productId: "prod_hatch_mat_test",
+          productName: "Test Window",
+          productType: "Window",
+          isAddon: false,
+          isAccessory: false,
+        },
+        template: {
+          templateId: "tpl_hatch_mat_test",
+          templateName: "Test Template",
+          modelStrategy: "Fixed",
+          measurementUnit: "mm",
+          baseConfiguration: {},
+        },
+        parameters: [],
+        rules: [],
+        components: [
+          {
+            componentId: "c_frame",
+            componentKey: "window_frame",
+            componentName: "Window Frame",
+            componentType: "Frame",
+            dimensionBinding: "AREA",
+            baseQuantity: 1,
+            componentData: {},
+            model: { assetId: "a1", r2ObjectKey: "f.glb", url: "https://r2.dev/f.glb", fileName: "f.glb", sourceDimensionsMm: null },
+          },
+          {
+            componentId: "c_op",
+            componentKey: "operator_crank",
+            componentName: "Operator",
+            componentType: "Hardware",
+            dimensionBinding: "FIXED",
+            baseQuantity: 1,
+            componentData: {},
+            model: { assetId: "a2", r2ObjectKey: "op.glb", url: "https://r2.dev/op.glb", fileName: "op.glb", sourceDimensionsMm: null },
+          },
+        ],
+        compatibleAddons: [
+          {
+            id: "binding_hatch_test",
+            parentProductId: "prod_hatch_mat_test",
+            addonProductId: "addon_screen",
+            addonType: "screen",
+            allowedSides: "both",
+            defaultSide: "back",
+            hatchTargetComponentKeys: ["operator_crank"],
+            components: [
+              {
+                componentId: "comp_screen_frame",
+                componentKey: "screen_perimeter_frame",
+                componentName: "Screen Frame",
+                componentType: "Frame",
+                dimensionBinding: "AREA",
+                baseQuantity: 1,
+                componentData: {},
+                model: { assetId: "sf", r2ObjectKey: "sf.glb", url: "https://r2.dev/sf.glb", fileName: "sf.glb", sourceDimensionsMm: null },
+              },
+              {
+                componentId: "comp_screen_hatch",
+                componentKey: "screen_access_hatch",
+                componentName: "Access Hatch",
+                componentType: "Hardware",
+                dimensionBinding: "FIXED",
+                baseQuantity: 1,
+                componentData: {},
+                model: { assetId: "sh", r2ObjectKey: "sh.glb", url: "https://r2.dev/sh.glb", fileName: "sh.glb", sourceDimensionsMm: null },
+              },
+            ],
+          },
+        ],
+      };
+
+      const customResolved: ResolvedStructure = {
+        componentQuantities: { window_frame: 1, operator_crank: 1 },
+        resolvedValues: {},
+        numericValuesMm: { width: 1000, height: 1200 },
+        appliedRuleIds: [],
+      };
+
+      const built = buildParametricProduct(customDefinition, customResolved, customCache, {
+        activeAddon: "screen",
+        addonMountingSide: "back",
+        hatchTargetComponentKeys: ["operator_crank"],
+      });
+
+      let foundFrameMesh: THREE.Mesh | null = null;
+      let foundWireMesh: THREE.Mesh | null = null;
+      let foundLatchMesh: THREE.Mesh | null = null;
+
+      built.group.traverse((c) => {
+        if (c instanceof THREE.Mesh) {
+          if (c.name === "Screen_Access_Hatch_Mesh") foundFrameMesh = c;
+          if (c.name === "Screen_Access_Hatch_Mesh_1") foundWireMesh = c;
+          if (c.name === "Screen_Access_Hatch_Mesh_2") foundLatchMesh = c;
+        }
+      });
+
+      if (!foundFrameMesh || !foundWireMesh || !foundLatchMesh) {
+        assert.fail("All hatch sub-meshes (frame, wire, latch) must exist in built scene");
+      }
+
+      const verifiedFrame: THREE.Mesh = foundFrameMesh;
+      const verifiedWire: THREE.Mesh = foundWireMesh;
+      const verifiedLatch: THREE.Mesh = foundLatchMesh;
+
+      // Verify hatch frame has Framing category and is NOT marked as screen wire mesh
+      assert.strictEqual(verifiedFrame.userData.presentationCategory, "Framing", "Hatch frame must be categorized as Framing");
+      assert.strictEqual(verifiedFrame.userData.isScreenMesh, false, "Hatch frame must not be marked as screen mesh");
+
+      // Verify hatch wire mesh has Mesh category and IS marked as screen wire mesh
+      assert.strictEqual(verifiedWire.userData.presentationCategory, "Mesh", "Hatch wire must be categorized as Mesh");
+      assert.strictEqual(verifiedWire.userData.isScreenMesh, true, "Hatch wire must be marked as screen mesh");
+
+      // Verify hatch latch has Hardware category
+      assert.strictEqual(verifiedLatch.userData.presentationCategory, "Hardware", "Hatch latch must be categorized as Hardware");
+      assert.strictEqual(verifiedLatch.userData.isScreenMesh, false, "Hatch latch must not be marked as screen mesh");
+    });
+  });
 });
