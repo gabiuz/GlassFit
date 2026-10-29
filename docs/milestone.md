@@ -595,13 +595,6 @@ Plans a bounded 60/40 admin Components workbench that keeps the model visible wh
 
 Enforces directional mounting side compatibility (Front exterior, Back interior, or Both customer selectable) for add-on attachments (insect screens and security grilles) to prevent physical projection collisions on outward-projecting fixtures (awning and casement windows). Dynamically binds screen access hatches directly to host product operating mechanisms (jalousie window operators), automatically cloning and positioning N distinct hatches centered at target operator centroids in 3D space, mirroring handing laterally for left-side operators, and scaling parametric BOM hardware quantities by N. All 12 acceptance scenarios in QAD-TC95 verified.
 
-## MS81: Parametric Jalousie Dynamic Louver and Operator Generation, Automated Pitch Counting, and Per-Piece BOM Pricing Engine
-
-**Status:** Implemented (October 29, 2026); automated unit test suite passing (`npm run test:ms81`). **Specification:** [IMP-MS81](implementation/ms81.md). **Traceability:** BRD-M2, BRD-M4, BRD-M5; PRD-F5, PRD-F10, PRD-F14, PRD-F19; SDD-C4, SDD-C5, SDD-C7, SDD-C9; DSD-UI4, DSD-UI7, DSD-UI10; ERD-E3, ERD-E6, ERD-E14, ERD-E17; QAD-TC96.1 through QAD-TC96.12.
-
-Introduces automated 3D geometry analysis for uploaded jalousie louver and operator meshes (`JW_Louver_Clips_And_Glass.glb` detecting 7 blades at 175mm pitch; `JW_Operators.glb` detecting 2 operators). Dynamically adds or deletes discrete louver glass blades at 175mm pitch intervals during height adjustment without vertical mesh stretching ($scaleY = 1.0$). Automatically scales operator hardware count proportionally ($N_{operators} = \lceil N_{louvers} / 4 \rceil$) and distributes operators along window jamb centroids. Evaluates parametric bill-of-materials costs on a discrete per-piece (`pc`) billing basis for both glass blades and operating mechanisms, feeding into real-time quotation snapshots and consultation PDF handoffs.
-
-
 
 
 

@@ -16,10 +16,8 @@ import type {
   RawMaterial,
   ComponentMaterialBinding,
   DimensionBinding,
-  JalousieConfig,
 } from "./types";
 import { calculateGrilleLinearBOM } from "./grillePricingEngine";
-import { computeLouverBladeCount, computeLouverOperatorCount } from "@/lib/visualization/jalousieGeometryAnalyzer";
 import type { PlacedOverlay, ProductStructuralDefinition } from "@/lib/visualization/types";
 
 export type {
@@ -41,7 +39,6 @@ export interface ComponentPricingInput {
   rawMaterial?: RawMaterial | null;
   unitPrice?: number;
   pricingMethod?: string;
-  jalousieConfig?: JalousieConfig | null;
 }
 
 export interface CalculateBOMOptions {
@@ -142,17 +139,7 @@ export function calculateParametricBOM(
     let computedQty = comp.baseQuantity;
     let unitLabel = "pc";
 
-    if (comp.dimensionBinding === "LOUVER_BLADE") {
-      const pitchMm = comp.jalousieConfig?.pitch_mm ?? comp.jalousieConfig?.pitchMm ?? 175;
-      computedQty = computeLouverBladeCount(options.heightMm, pitchMm) * comp.spanRatio;
-      unitLabel = "pc";
-    } else if (comp.dimensionBinding === "LOUVER_OPERATOR") {
-      const pitchMm = comp.jalousieConfig?.pitch_mm ?? comp.jalousieConfig?.pitchMm ?? 175;
-      const louverCount = computeLouverBladeCount(options.heightMm, pitchMm);
-      const bladesPerOp = comp.jalousieConfig?.blades_per_operator ?? comp.jalousieConfig?.bladesPerOperator ?? 4;
-      computedQty = computeLouverOperatorCount(louverCount, bladesPerOp) * comp.spanRatio;
-      unitLabel = "pc";
-    } else if (!isFixedComponent && mat) {
+    if (!isFixedComponent && mat) {
       if (mat.category === "Glass" && mat.billing_unit === "pc") {
         computedQty = comp.baseQuantity;
         unitLabel = "pc";
@@ -216,16 +203,9 @@ export function calculateParametricBOM(
 
     const itemSubtotal = round2(computedQty * unitPrice);
 
-    let itemDesc = (isFixedComponent && comp.componentName) ? comp.componentName : (mat ? mat.description : comp.componentName);
-    if (comp.dimensionBinding === "LOUVER_BLADE") {
-      itemDesc = `${computedQty}x Glass Louver Blades`;
-    } else if (comp.dimensionBinding === "LOUVER_OPERATOR") {
-      itemDesc = `${computedQty}x Window Operators`;
-    }
-
     const itemDetail: BOMItemDetail = {
       code: mat ? mat.material_code : comp.componentKey,
-      description: itemDesc,
+      description: (isFixedComponent && comp.componentName) ? comp.componentName : (mat ? mat.description : comp.componentName),
       quantity: round4(computedQty),
       unit: unitLabel,
       unit_price: unitPrice,
@@ -825,30 +805,6 @@ export function calculateBOMFromStructuralDefinition(
           waste_allowance: DEFAULT_AL_SCRAP,
           is_active: true,
         };
-      } else if (comp.dimensionBinding === "LOUVER_BLADE" || key.includes("louver") || name.includes("louver")) {
-        mat = {
-          id: `fallback-${comp.componentKey}`,
-          material_code: "mat_gl_jalousie_blade_4x24",
-          description: "Jalousie Glass Louver Blade (4\" x 24\")",
-          category: "Glass",
-          finish_type: params.glassType === "6mm_clear" ? "Clear" : "Bronze",
-          billing_unit: "pc",
-          unit_price: 45.0,
-          waste_allowance: 0,
-          is_active: true,
-        };
-      } else if (comp.dimensionBinding === "LOUVER_OPERATOR" || key.includes("operator") || name.includes("operator")) {
-        mat = {
-          id: `fallback-${comp.componentKey}`,
-          material_code: "mat_hw_jalousie_operator",
-          description: "Jalousie Window Operator Mechanism",
-          category: "Hardware",
-          finish_type: "Standard",
-          billing_unit: "pc",
-          unit_price: 450.0,
-          waste_allowance: 0,
-          is_active: true,
-        };
       } else if (comp.presentationCategory === "Glazing" || key.includes("glass") || key.includes("pane") || name.includes("glass") || name.includes("pane")) {
         mat = {
           id: `fallback-${comp.componentKey}`,
@@ -876,7 +832,6 @@ export function calculateBOMFromStructuralDefinition(
       rawMaterial: mat,
       unitPrice: comp.unitPrice,
       pricingMethod: comp.pricingMethod,
-      jalousieConfig: comp.jalousieConfig || (comp.componentData?.jalousie_config as JalousieConfig) || null,
     };
   });
 
