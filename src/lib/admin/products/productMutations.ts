@@ -372,6 +372,7 @@ export async function getProductDraft(productId: string) {
                     base_quantity,
                     raw_material_id,
                     dimension_binding,
+                    jalousie_config,
                     span_ratio,
                     is_removable,
                     toggle_property_key,
@@ -380,6 +381,10 @@ export async function getProductDraft(productId: string) {
                     component_data,
                     unit_price,
                     pricing_method,
+                    is_accessory_slot,
+                    accessory_category,
+                    allowed_accessory_ids,
+                    position_options,
                     product_component_materials (
                         id,
                         product_component_id,
