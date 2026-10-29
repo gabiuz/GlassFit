@@ -66,7 +66,6 @@ import {
 } from "@/lib/visualization/types";
 import { calculateAddonBOM, type AddonBOMResult } from "@/lib/pricing/addonPricingEngine";
 import { calculateGrilleLinearBOM } from "@/lib/pricing/grillePricingEngine";
-import { computeLouverBladeCount, computeLouverOperatorCount } from "@/lib/visualization/jalousieGeometryAnalyzer";
 import type { GrilleLinearBOMResult } from "@/lib/pricing/types";
 import { getCompatibleAddonsForProduct } from "@/lib/admin/products/addonMutations";
 import { getActiveAccessories, type ActiveAccessoryProduct } from "@/lib/products/getActiveAccessories";
@@ -1006,32 +1005,6 @@ export function ProductModelWorkspace({
     return getAllCandidateMaterialsMap(structuralDefinition, allRawMaterials);
   }, [structuralDefinition, allRawMaterials]);
 
-  // Evaluates dynamic operator-aligned hatch count for host products (IMP-MS80, IMP-MS81)
-  const effectiveHatchCount = useMemo(() => {
-    if (effectiveSelectedAddon === "none") {
-      return 0;
-    }
-    const operatorComp = structuralDefinition?.components?.find(
-      (c) => c.dimensionBinding === "LOUVER_OPERATOR" || (c as Record<string, unknown>).dimension_binding === "LOUVER_OPERATOR"
-    );
-    const targetKeys = (activeCompatibleAddon?.hatchTargetComponentKeys && activeCompatibleAddon.hatchTargetComponentKeys.length > 0)
-      ? activeCompatibleAddon.hatchTargetComponentKeys
-      : (operatorComp ? [operatorComp.componentKey] : []);
-
-    if (targetKeys.length === 0) {
-      return 0;
-    }
-
-    if (operatorComp) {
-      const pitchMm = operatorComp.jalousieConfig?.pitch_mm ?? operatorComp.jalousieConfig?.pitchMm ?? 175;
-      const bladesPerOp = operatorComp.jalousieConfig?.blades_per_operator ?? operatorComp.jalousieConfig?.bladesPerOperator ?? 4;
-      const heightValMm = (Number(heightCm) || DEFAULT_PRODUCT_HEIGHT_CM) * 10;
-      const louverCount = computeLouverBladeCount(heightValMm, pitchMm);
-      return computeLouverOperatorCount(louverCount, bladesPerOp);
-    }
-    return targetKeys.length;
-  }, [effectiveSelectedAddon, activeCompatibleAddon, structuralDefinition, heightCm]);
-
   // Real-time Dedicated Add-on Parametric BOM Calculation (Sub-50ms sync)
   const addonBOM = useMemo<AddonBOMResult | null>(() => {
     if (effectiveSelectedAddon === "none") return null;
@@ -1041,11 +1014,8 @@ export function ProductModelWorkspace({
       addonType: effectiveSelectedAddon,
       widthMm: widthValCm * 10,
       heightMm: heightValCm * 10,
-      hatchCount: effectiveHatchCount,
-      mountingSide: addonMountingSide,
-      hatchTargetKeys: activeCompatibleAddon?.hatchTargetComponentKeys ?? undefined,
     });
-  }, [effectiveSelectedAddon, widthCm, heightCm, effectiveHatchCount, addonMountingSide, activeCompatibleAddon]);
+  }, [effectiveSelectedAddon, widthCm, heightCm]);
 
   // Real-time Dedicated Grille Linear BOM Calculation (IMP-MS73 / Sub-50ms sync)
   const activeGrilleBOM = useMemo<GrilleLinearBOMResult | null>(() => {
@@ -2063,7 +2033,7 @@ export function ProductModelWorkspace({
       addonPrice: effectiveSelectedAddon !== "none" ? addonPrice : 0,
       addonAluminumFinish: effectiveSelectedAddon !== "none" ? addonAlumFinish : undefined,
       addonMountingSide: effectiveSelectedAddon !== "none" ? addonMountingSide : undefined,
-      hatchCount: effectiveSelectedAddon !== "none" ? effectiveHatchCount : 0,
+      hatchCount: effectiveSelectedAddon !== "none" ? (activeCompatibleAddon?.hatchTargetComponentKeys?.length ?? 0) : 0,
       hatchTargetKeys: effectiveSelectedAddon !== "none" ? (activeCompatibleAddon?.hatchTargetComponentKeys ?? []) : [],
       grilleBOM: activeGrilleBOM ?? null,
       baseUnitPrice: realtimePricing.baseUnitPrice,
@@ -2084,7 +2054,7 @@ export function ProductModelWorkspace({
           finish: addonAlumFinish,
           mounting_side: addonMountingSide,
           allowed_sides: activeCompatibleAddon?.allowedSides ?? "both",
-          hatch_count: effectiveHatchCount,
+          hatch_count: activeCompatibleAddon?.hatchTargetComponentKeys?.length ?? 0,
           hatch_target_keys: activeCompatibleAddon?.hatchTargetComponentKeys ?? [],
           price: addonPrice,
           grille_bom: activeGrilleBOM ?? null,
@@ -2140,8 +2110,6 @@ export function ProductModelWorkspace({
     selectedAddonProductId,
     activeCompatibleAddon,
     addonAlumFinish,
-    addonMountingSide,
-    effectiveHatchCount,
     addonPrice,
     addonBOM,
     activeGrilleBOM,
@@ -5380,9 +5348,9 @@ export function ProductModelWorkspace({
                               <div className="flex flex-col gap-2 pt-3 border-t border-neutral-200/60">
                                 <div className="flex items-center justify-between">
                                   <span className="text-[#0f1422] text-sm font-medium">Mounting Placement</span>
-                                  {activeCompatibleAddon?.hatchTargetComponentKeys && activeCompatibleAddon.hatchTargetComponentKeys.length > 0 && effectiveHatchCount > 0 && (
+                                  {activeCompatibleAddon?.hatchTargetComponentKeys && activeCompatibleAddon.hatchTargetComponentKeys.length > 0 && (
                                     <span className="text-[11px] text-[#07b6d3] bg-[#07b6d3]/10 font-semibold px-2 py-0.5 rounded-md">
-                                      {effectiveHatchCount}x Aligned {effectiveHatchCount === 1 ? "Hatch" : "Hatches"}
+                                      {activeCompatibleAddon.hatchTargetComponentKeys.length}x Aligned {activeCompatibleAddon.hatchTargetComponentKeys.length === 1 ? "Hatch" : "Hatches"}
                                     </span>
                                   )}
                                 </div>

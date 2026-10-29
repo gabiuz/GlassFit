@@ -8,7 +8,6 @@ import {
   getCompatibleAddonsForProduct,
   saveProductAddonInheritance,
 } from "@/lib/admin/products/addonMutations";
-import { fetchDraftStructuralDefinition } from "@/lib/admin/products/validationMutations";
 import type { AvailableAddonProduct, AddonAllowedSides, AddonMountingSide } from "@/lib/admin/products/types";
 
 export interface AddonInheritanceSectionProps {
@@ -46,27 +45,18 @@ export function AddonInheritanceSection({
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saved" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [fetchedComponents, setFetchedComponents] = useState<Array<Record<string, unknown>>>([]);
-
-  const effectiveHostComponents = useMemo(() => {
-    if (hostComponents && hostComponents.length > 0) return hostComponents;
-    return fetchedComponents;
-  }, [hostComponents, fetchedComponents]);
 
   const candidateOperatorComponents = useMemo(() => {
-    return (effectiveHostComponents || []).filter((comp) => {
+    return (hostComponents || []).filter((comp) => {
       const key = String(comp.component_key || comp.componentKey || "").toLowerCase();
       const name = String(comp.component_name || comp.componentName || "").toLowerCase();
       const cat = String(comp.presentation_category || comp.presentationCategory || comp.component_type || "").toLowerCase();
-      const binding = String(comp.dimension_binding || comp.dimensionBinding || "").toUpperCase();
       return (
-        binding === "LOUVER_OPERATOR" ||
         key.includes("operator") ||
         key.includes("crank") ||
         key.includes("latch") ||
         key.includes("handle") ||
         key.includes("rotator") ||
-        key.includes("rotopers") ||
         name.includes("operator") ||
         name.includes("crank") ||
         name.includes("latch") ||
@@ -75,7 +65,7 @@ export function AddonInheritanceSection({
         cat.includes("hardware")
       );
     });
-  }, [effectiveHostComponents]);
+  }, [hostComponents]);
 
   const loadData = useCallback(async () => {
     if (!productId || productId === "draft") {
@@ -92,17 +82,6 @@ export function AddonInheritanceSection({
         getAvailableAddonProducts("grill"),
         getCompatibleAddonsForProduct(productId),
       ]);
-
-      if (!hostComponents || hostComponents.length === 0) {
-        try {
-          const draftDef = await fetchDraftStructuralDefinition(productId);
-          if (draftDef && Array.isArray(draftDef.components) && draftDef.components.length > 0) {
-            setFetchedComponents(draftDef.components as unknown as Array<Record<string, unknown>>);
-          }
-        } catch (fetchErr) {
-          console.warn("Could not fetch draft structural components in AddonInheritanceSection:", fetchErr);
-        }
-      }
 
       setScreens(availableScreens);
       setGrills(availableGrills);
@@ -140,7 +119,7 @@ export function AddonInheritanceSection({
     } finally {
       setIsLoading(false);
     }
-  }, [productId, isOutwardProjecting, hostComponents]);
+  }, [productId, isOutwardProjecting]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -295,9 +274,6 @@ export function AddonInheritanceSection({
                   setHasScreen(checked);
                   if (checked && selectedScreenProductIds.length === 0 && screens.length > 0) {
                     setSelectedScreenProductIds([screens[0].productId]);
-                  }
-                  if (checked && screenHatchTargets.length === 0 && candidateOperatorComponents.length > 0) {
-                    setScreenHatchTargets(candidateOperatorComponents.map((c) => String(c.component_key || c.componentKey || "")));
                   }
                 }}
                 className="size-4 rounded text-[#07b6d3] focus:ring-[#07b6d3]"
@@ -505,23 +481,11 @@ export function AddonInheritanceSection({
                         Bind screen access hatches directly to host window operating mechanisms
                       </span>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const allKeys = candidateOperatorComponents.map((c) => String(c.component_key || c.componentKey || ""));
-                          setScreenHatchTargets(screenHatchTargets.length === allKeys.length ? [] : allKeys);
-                        }}
-                        className="text-[11px] font-medium text-teal-700 hover:text-teal-900 underline"
-                      >
-                        {screenHatchTargets.length === candidateOperatorComponents.length ? "Deselect All" : "Select All"}
-                      </button>
-                      <span className="text-[11px] text-teal-800 bg-teal-100 font-semibold px-2 py-0.5 rounded-md">
-                        {screenHatchTargets.length === 0
-                          ? "1 default hatch"
-                          : `${screenHatchTargets.length} target ${screenHatchTargets.length === 1 ? "operator" : "operators"} (${screenHatchTargets.length} ${screenHatchTargets.length === 1 ? "hatch" : "hatches"})`}
-                      </span>
-                    </div>
+                    <span className="text-[11px] text-teal-800 bg-teal-100 font-semibold px-2 py-0.5 rounded-md">
+                      {screenHatchTargets.length === 0
+                        ? "1 default hatch"
+                        : `${screenHatchTargets.length} target ${screenHatchTargets.length === 1 ? "operator" : "operators"} (${screenHatchTargets.length} ${screenHatchTargets.length === 1 ? "hatch" : "hatches"})`}
+                    </span>
                   </div>
 
                   <div className="flex flex-col gap-1.5 max-h-48 overflow-y-auto pr-1">
