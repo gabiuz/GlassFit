@@ -360,10 +360,12 @@ export async function getProductDraft(productId: string) {
             is_accessory,
             accessory_category,
             accessory_mounting_type,
+            dynamic_bay_config,
             product_templates (
                 template_id,
                 model_strategy,
                 base_configuration,
+                dynamic_bay_config,
                 product_components (
                     component_id,
                     component_key,
@@ -373,6 +375,7 @@ export async function getProductDraft(productId: string) {
                     raw_material_id,
                     dimension_binding,
                     jalousie_config,
+                    bay_role,
                     span_ratio,
                     is_removable,
                     toggle_property_key,

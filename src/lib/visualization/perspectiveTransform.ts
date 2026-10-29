@@ -403,7 +403,7 @@ function drawPerspectiveWarpedImage2D(
 
 type CachedWebGLWarpState = {
   canvas: HTMLCanvasElement;
-  gl: WebGLRenderingContext;
+  gl: WebGLRenderingContext | WebGL2RenderingContext;
   program: WebGLProgram;
   positionBuffer: WebGLBuffer;
   uInvH: WebGLUniformLocation;
@@ -412,6 +412,7 @@ type CachedWebGLWarpState = {
   uSrcRect: WebGLUniformLocation;
   uTexture: WebGLUniformLocation;
   texture: WebGLTexture;
+  isWebGL2: boolean;
 };
 
 let cachedWebGLWarp: CachedWebGLWarpState | null = null;
@@ -429,8 +430,18 @@ function getOrCreateWebGLWarpState(): CachedWebGLWarpState | null {
   }
 
   const canvas = document.createElement("canvas");
+  const gl2 = canvas.getContext("webgl2", {
+    alpha: true,
+    antialias: true,
+    premultipliedAlpha: false,
+  });
   const gl =
-    canvas.getContext("webgl", { alpha: true, antialias: true, premultipliedAlpha: false }) ||
+    gl2 ||
+    (canvas.getContext("webgl", {
+      alpha: true,
+      antialias: true,
+      premultipliedAlpha: false,
+    }) as WebGLRenderingContext | null) ||
     (canvas.getContext("experimental-webgl", {
       alpha: true,
       antialias: true,
@@ -440,6 +451,7 @@ function getOrCreateWebGLWarpState(): CachedWebGLWarpState | null {
   if (!gl) {
     return null;
   }
+  const isWebGL2 = Boolean(gl2);
 
   const vsSource = `
     attribute vec2 a_position;
@@ -456,11 +468,10 @@ function getOrCreateWebGLWarpState(): CachedWebGLWarpState | null {
     uniform vec2 u_texSize;
     uniform vec4 u_srcRect;
 
-    void main() {
-      vec2 fragCoord = vec2(gl_FragCoord.x, u_resolution.y - gl_FragCoord.y);
+    vec4 samplePoint(vec2 fragCoord) {
       vec3 srcPt = u_invH * vec3(fragCoord, 1.0);
       if (abs(srcPt.z) < 1e-7) {
-        discard;
+        return vec4(0.0);
       }
 
       vec2 srcPx = srcPt.xy / srcPt.z;
@@ -475,14 +486,34 @@ function getOrCreateWebGLWarpState(): CachedWebGLWarpState | null {
       float edgeDist = min(edgeDistX, edgeDistY);
 
       if (edgeDist < 0.0) {
+        return vec4(0.0);
+      }
+
+      // Smooth anti-aliased edge falloff
+      float edgeAlpha = clamp(edgeDist / 0.75, 0.0, 1.0);
+      vec2 uv = srcPx / u_texSize;
+      vec4 texColor = texture2D(u_image, uv);
+      float finalAlpha = texColor.a * edgeAlpha;
+      return vec4(texColor.rgb * finalAlpha, finalAlpha);
+    }
+
+    void main() {
+      vec2 baseCoord = vec2(gl_FragCoord.x, u_resolution.y - gl_FragCoord.y);
+
+      // 4-tap Rotated Grid Super-Sampling (RGSS) offsets.
+      // Rotated by 18.4 degrees to break axis-aligned grid resonance with fine insect screens
+      vec4 s0 = samplePoint(baseCoord + vec2(-0.375,  0.125));
+      vec4 s1 = samplePoint(baseCoord + vec2( 0.125,  0.375));
+      vec4 s2 = samplePoint(baseCoord + vec2( 0.375, -0.125));
+      vec4 s3 = samplePoint(baseCoord + vec2(-0.125, -0.375));
+
+      vec4 accum = (s0 + s1 + s2 + s3) * 0.25;
+      if (accum.a <= 0.001) {
         discard;
       }
 
-      // 0.5px sub-pixel anti-aliasing edge falloff
-      float edgeAlpha = clamp(edgeDist / 0.5, 0.0, 1.0);
-      vec2 uv = srcPx / u_texSize;
-      vec4 texColor = texture2D(u_image, uv);
-      gl_FragColor = vec4(texColor.rgb, texColor.a * edgeAlpha);
+      // Convert from premultiplied alpha to straight alpha for destination blend
+      gl_FragColor = vec4(accum.rgb / max(accum.a, 0.0001), accum.a);
     }
   `;
 
@@ -566,6 +597,7 @@ function getOrCreateWebGLWarpState(): CachedWebGLWarpState | null {
     uSrcRect,
     uTexture,
     texture,
+    isWebGL2,
   };
 
   return cachedWebGLWarp;
@@ -626,12 +658,21 @@ export function drawPerspectiveWarpedImage(
     const quadWidth = Math.max(1, maxX - minX);
     const quadHeight = Math.max(1, maxY - minY);
 
-    // Target corners relative to the quad's bounding box
+    // Detect device pixel ratio or canvas transform scale for crisp high-DPI snapshots
+    const transform = typeof context.getTransform === "function" ? context.getTransform() : null;
+    const scaleX = transform ? Math.hypot(transform.a, transform.b) || 1 : 1;
+    const scaleY = transform ? Math.hypot(transform.c, transform.d) || 1 : 1;
+    const renderScale = Math.max(1, Math.min(2, Math.round(Math.max(scaleX, scaleY))));
+
+    const targetWidth = Math.max(1, Math.round(quadWidth * renderScale));
+    const targetHeight = Math.max(1, Math.round(quadHeight * renderScale));
+
+    // Target corners relative to the quad's bounding box in local WebGL pixels
     const localTargetCorners: QuadrilateralCorners = [
-      { x: targetCorners[0].x - minX, y: targetCorners[0].y - minY },
-      { x: targetCorners[1].x - minX, y: targetCorners[1].y - minY },
-      { x: targetCorners[2].x - minX, y: targetCorners[2].y - minY },
-      { x: targetCorners[3].x - minX, y: targetCorners[3].y - minY },
+      { x: (targetCorners[0].x - minX) * renderScale, y: (targetCorners[0].y - minY) * renderScale },
+      { x: (targetCorners[1].x - minX) * renderScale, y: (targetCorners[1].y - minY) * renderScale },
+      { x: (targetCorners[2].x - minX) * renderScale, y: (targetCorners[2].y - minY) * renderScale },
+      { x: (targetCorners[3].x - minX) * renderScale, y: (targetCorners[3].y - minY) * renderScale },
     ];
 
     const srcCorners: QuadrilateralCorners = [
@@ -645,12 +686,12 @@ export function drawPerspectiveWarpedImage(
     const invH = computeHomographyMatrix(localTargetCorners, srcCorners);
 
     if (invH) {
-      if (glCanvas.width !== quadWidth || glCanvas.height !== quadHeight) {
-        glCanvas.width = quadWidth;
-        glCanvas.height = quadHeight;
+      if (glCanvas.width !== targetWidth || glCanvas.height !== targetHeight) {
+        glCanvas.width = targetWidth;
+        glCanvas.height = targetHeight;
       }
 
-      gl.viewport(0, 0, quadWidth, quadHeight);
+      gl.viewport(0, 0, targetWidth, targetHeight);
       gl.clearColor(0, 0, 0, 0);
       gl.clear(gl.COLOR_BUFFER_BIT);
 
@@ -662,12 +703,49 @@ export function drawPerspectiveWarpedImage(
       gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
 
       if (source instanceof HTMLCanvasElement || source instanceof HTMLImageElement) {
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
       }
+
+      let hasMipmaps = false;
+      if (webglState.isWebGL2) {
+        try {
+          gl.generateMipmap(gl.TEXTURE_2D);
+          hasMipmaps = true;
+        } catch {
+          hasMipmaps = false;
+        }
+      } else {
+        const npotExt = gl.getExtension("OES_texture_npot");
+        if (npotExt) {
+          try {
+            gl.generateMipmap(gl.TEXTURE_2D);
+            hasMipmaps = true;
+          } catch {
+            hasMipmaps = false;
+          }
+        }
+      }
+
+      if (hasMipmaps) {
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+        const anisoExt =
+          gl.getExtension("EXT_texture_filter_anisotropic") ||
+          gl.getExtension("WEBKIT_EXT_texture_filter_anisotropic") ||
+          gl.getExtension("MOZ_EXT_texture_filter_anisotropic");
+        if (anisoExt) {
+          const maxAniso = (gl.getParameter(anisoExt.MAX_TEXTURE_MAX_ANISOTROPY_EXT) as number) || 1;
+          gl.texParameterf(
+            gl.TEXTURE_2D,
+            anisoExt.TEXTURE_MAX_ANISOTROPY_EXT,
+            Math.min(maxAniso, 8),
+          );
+        }
+      } else {
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      }
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
 
       // In GLSL, mat3 uniform is column-major:
       // Column 0: invH[0], invH[3], invH[6]
@@ -680,7 +758,7 @@ export function drawPerspectiveWarpedImage(
       ]);
 
       gl.uniformMatrix3fv(uInvH, false, colMajorInvH);
-      gl.uniform2f(uResolution, quadWidth, quadHeight);
+      gl.uniform2f(uResolution, targetWidth, targetHeight);
       gl.uniform2f(uTexSize, sourceWidth, sourceHeight);
       gl.uniform4f(uSrcRect, left, top, width, height);
       gl.uniform1i(uTexture, 0);
@@ -688,7 +766,7 @@ export function drawPerspectiveWarpedImage(
       gl.drawArrays(gl.TRIANGLES, 0, 6);
 
       // Single blit to destination 2D canvas with zero internal seams
-      context.drawImage(glCanvas, minX, minY);
+      context.drawImage(glCanvas, minX, minY, quadWidth, quadHeight);
       return;
     }
   }

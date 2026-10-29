@@ -63,6 +63,7 @@ import {
   QuadrilateralCorners,
   ManualOcclusionPolygon,
   CompatibleAddon,
+  ProductComponentDefinition,
 } from "@/lib/visualization/types";
 import { calculateAddonBOM, type AddonBOMResult } from "@/lib/pricing/addonPricingEngine";
 import { calculateGrilleLinearBOM } from "@/lib/pricing/grillePricingEngine";
@@ -354,6 +355,24 @@ export function ProductModelWorkspace({
     }
     return "analok";
   });
+  const [includeHatch, setIncludeHatch] = useState<boolean>(() => {
+    if (initialConfiguration?.includeHatch !== undefined) {
+      return initialConfiguration.includeHatch;
+    }
+    return true;
+  });
+  const [screenMeshDensity, setScreenMeshDensity] = useState<"fine" | "micro" | "coarse">(() => {
+    if (initialConfiguration?.screenMeshDensity) {
+      return initialConfiguration.screenMeshDensity;
+    }
+    return "fine";
+  });
+  const [removableStates, setRemovableStates] = useState<Record<string, boolean>>(() => {
+    if (initialConfiguration?.removableStates) {
+      return initialConfiguration.removableStates;
+    }
+    return {};
+  });
 
   // Hardware Accessories Customization State (IMP-MS76)
   const [selectedAccessories, setSelectedAccessories] = useState<Record<string, SelectedAccessoryState>>(() => {
@@ -488,13 +507,16 @@ export function ProductModelWorkspace({
 
   useEffect(() => {
     if (activeCompatibleAddon) {
-      if (activeCompatibleAddon.allowedSides === "back") {
-        setAddonMountingSide("back");
-      } else if (activeCompatibleAddon.allowedSides === "front") {
-        setAddonMountingSide("front");
-      } else if (activeCompatibleAddon.allowedSides === "both") {
-        setAddonMountingSide(activeCompatibleAddon.defaultSide ?? "back");
-      }
+      const timer = window.setTimeout(() => {
+        if (activeCompatibleAddon.allowedSides === "back") {
+          setAddonMountingSide("back");
+        } else if (activeCompatibleAddon.allowedSides === "front") {
+          setAddonMountingSide("front");
+        } else if (activeCompatibleAddon.allowedSides === "both") {
+          setAddonMountingSide(activeCompatibleAddon.defaultSide ?? "back");
+        }
+      }, 0);
+      return () => window.clearTimeout(timer);
     }
   }, [activeCompatibleAddon]);
 
@@ -1004,22 +1026,44 @@ export function ProductModelWorkspace({
     return getAllCandidateMaterialsMap(structuralDefinition, allRawMaterials);
   }, [structuralDefinition, allRawMaterials]);
 
-  // Evaluates dynamic operator-aligned hatch count for host products (IMP-MS80, IMP-MS81)
-  const effectiveHatchCount = useMemo(() => {
-    if (effectiveSelectedAddon === "none") {
-      return 0;
+  // Evaluates target component keys for hatch alignment on host products
+  const effectiveHatchTargetKeys = useMemo(() => {
+    if (activeCompatibleAddon?.hatchTargetComponentKeys && activeCompatibleAddon.hatchTargetComponentKeys.length > 0) {
+      return activeCompatibleAddon.hatchTargetComponentKeys;
     }
+    if (!structuralDefinition?.components) return [];
+    return structuralDefinition.components
+      .filter((comp) => {
+        const key = (comp.componentKey || "").toLowerCase();
+        const name = (comp.componentName || "").toLowerCase();
+        const cat = (comp.presentationCategory || comp.componentType || "").toLowerCase();
+        const binding = (comp.dimensionBinding || (comp as Record<string, unknown>).dimension_binding || "").toString().toUpperCase();
+        return (
+          binding === "LOUVER_OPERATOR" ||
+          key.includes("operator") ||
+          key.includes("crank") ||
+          key.includes("cam") ||
+          key.includes("latch") ||
+          key.includes("handle") ||
+          key.includes("rotator") ||
+          key.includes("rotopers") ||
+          name.includes("operator") ||
+          name.includes("crank") ||
+          name.includes("cam") ||
+          name.includes("latch") ||
+          name.includes("handle") ||
+          name.includes("rotator") ||
+          cat.includes("hardware")
+        );
+      })
+      .map((c) => c.componentKey);
+  }, [structuralDefinition, activeCompatibleAddon]);
+
+  const dynamicOperatorCount = useMemo(() => {
+    if (effectiveHatchTargetKeys.length === 0) return 0;
     const operatorComp = structuralDefinition?.components?.find(
       (c) => c.dimensionBinding === "LOUVER_OPERATOR" || (c as Record<string, unknown>).dimension_binding === "LOUVER_OPERATOR"
     );
-    const targetKeys = (activeCompatibleAddon?.hatchTargetComponentKeys && activeCompatibleAddon.hatchTargetComponentKeys.length > 0)
-      ? activeCompatibleAddon.hatchTargetComponentKeys
-      : (operatorComp ? [operatorComp.componentKey] : []);
-
-    if (targetKeys.length === 0) {
-      return 0;
-    }
-
     if (operatorComp) {
       const pitchMm = operatorComp.jalousieConfig?.pitch_mm ?? operatorComp.jalousieConfig?.pitchMm ?? 175;
       const bladesPerOp = operatorComp.jalousieConfig?.blades_per_operator ?? operatorComp.jalousieConfig?.bladesPerOperator ?? 4;
@@ -1027,8 +1071,100 @@ export function ProductModelWorkspace({
       const louverCount = computeLouverBladeCount(heightValMm, pitchMm);
       return computeLouverOperatorCount(louverCount, bladesPerOp);
     }
-    return targetKeys.length;
-  }, [effectiveSelectedAddon, activeCompatibleAddon, structuralDefinition, heightCm]);
+    return effectiveHatchTargetKeys.length;
+  }, [structuralDefinition, effectiveHatchTargetKeys, heightCm]);
+
+  // Evaluates dynamic operator-aligned hatch count for host products (IMP-MS80, IMP-MS81)
+  const effectiveHatchCount = useMemo(() => {
+    if (effectiveSelectedAddon === "none" || !includeHatch) {
+      return 0;
+    }
+    return dynamicOperatorCount;
+  }, [effectiveSelectedAddon, includeHatch, dynamicOperatorCount]);
+
+  const hasScreenHatchPart = useMemo(() => {
+    if (effectiveSelectedAddon !== "screen") return false;
+    return Boolean(
+      activeCompatibleAddon?.components?.some((c) => {
+        const key = (c.componentKey || "").toLowerCase();
+        const name = (c.componentName || "").toLowerCase();
+        return key.includes("hatch") || name.includes("hatch");
+      })
+    );
+  }, [effectiveSelectedAddon, activeCompatibleAddon]);
+
+  const otherRemovableAddonParts = useMemo(() => {
+    if (effectiveSelectedAddon === "none" || !activeCompatibleAddon?.components) return [];
+    return activeCompatibleAddon.components.filter((c) => {
+      const isHatch =
+        (c.componentKey || "").toLowerCase().includes("hatch") ||
+        (c.componentName || "").toLowerCase().includes("hatch") ||
+        Boolean(c.togglePropertyKey && c.togglePropertyKey.toLowerCase().includes("hatch"));
+      if (isHatch) return false;
+      return Boolean(c.isRemovable || c.togglePropertyKey);
+    });
+  }, [effectiveSelectedAddon, activeCompatibleAddon]);
+
+  const handleHatchToggle = useCallback((checked: boolean) => {
+    setIncludeHatch(checked);
+    const nextStates: Record<string, boolean> = {
+      ...removableStates,
+      screen_access_hatch: checked,
+      has_screen_access_hatch: checked,
+      has_hatch: checked,
+    };
+    if (activeCompatibleAddon?.components) {
+      for (const comp of activeCompatibleAddon.components) {
+        const isHatch =
+          comp.componentKey.toLowerCase().includes("hatch") ||
+          (comp.componentName || "").toLowerCase().includes("hatch") ||
+          Boolean(comp.togglePropertyKey && comp.togglePropertyKey.toLowerCase().includes("hatch"));
+        if (isHatch) {
+          nextStates[comp.componentId] = checked;
+          nextStates[comp.componentKey] = checked;
+          if (comp.togglePropertyKey) {
+            nextStates[comp.togglePropertyKey] = checked;
+          }
+        }
+      }
+    }
+    setRemovableStates(nextStates);
+  }, [removableStates, activeCompatibleAddon]);
+
+  const handleRemovableToggle = useCallback((componentId: string, componentKey: string, checked: boolean) => {
+    setRemovableStates((prev) => ({
+      ...prev,
+      [componentId]: checked,
+      [componentKey]: checked,
+    }));
+  }, []);
+
+  const handleMeshDensityChange = useCallback((density: "fine" | "micro" | "coarse") => {
+    setScreenMeshDensity(density);
+  }, []);
+
+  const customizableComponents = useMemo(() => {
+    if (!structuralDefinition?.components) return [];
+    const list: (ProductComponentDefinition & { isFromAddon?: boolean; addonType?: string })[] = [
+      ...structuralDefinition.components.map((c) => ({ ...c, isFromAddon: false })),
+    ];
+    if (effectiveSelectedAddon !== "none" && activeCompatibleAddon?.components) {
+      for (const comp of activeCompatibleAddon.components) {
+        const isHatch =
+          comp.componentKey.toLowerCase().includes("hatch") ||
+          (comp.componentName || "").toLowerCase().includes("hatch") ||
+          Boolean(comp.togglePropertyKey && comp.togglePropertyKey.toLowerCase().includes("hatch"));
+        if (isHatch && !includeHatch) continue;
+        const isExcluded =
+          removableStates[comp.componentId] === false ||
+          removableStates[comp.componentKey] === false ||
+          Boolean(comp.togglePropertyKey && removableStates[comp.togglePropertyKey] === false);
+        if (isExcluded) continue;
+        list.push({ ...comp, isFromAddon: true, addonType: effectiveSelectedAddon });
+      }
+    }
+    return list;
+  }, [structuralDefinition, effectiveSelectedAddon, activeCompatibleAddon, includeHatch, removableStates]);
 
   // Real-time Dedicated Add-on Parametric BOM Calculation (Sub-50ms sync)
   const addonBOM = useMemo<AddonBOMResult | null>(() => {
@@ -1041,9 +1177,9 @@ export function ProductModelWorkspace({
       heightMm: heightValCm * 10,
       hatchCount: effectiveHatchCount,
       mountingSide: addonMountingSide,
-      hatchTargetKeys: activeCompatibleAddon?.hatchTargetComponentKeys ?? undefined,
+      hatchTargetKeys: includeHatch && effectiveHatchTargetKeys.length > 0 ? effectiveHatchTargetKeys : undefined,
     });
-  }, [effectiveSelectedAddon, widthCm, heightCm, effectiveHatchCount, addonMountingSide, activeCompatibleAddon]);
+  }, [effectiveSelectedAddon, widthCm, heightCm, effectiveHatchCount, addonMountingSide, includeHatch, effectiveHatchTargetKeys]);
 
   // Real-time Dedicated Grille Linear BOM Calculation (IMP-MS73 / Sub-50ms sync)
   const activeGrilleBOM = useMemo<GrilleLinearBOMResult | null>(() => {
@@ -1116,7 +1252,9 @@ export function ProductModelWorkspace({
       addonProductId: overrides?.addonProductId ?? selectedAddonProductId,
       addonAluminumFinish: overrides?.addonAluminumFinish ?? addonAlumFinish,
       addonMountingSide: overrides?.addonMountingSide ?? addonMountingSide,
-      hatchTargetComponentKeys: activeCompatibleAddon?.hatchTargetComponentKeys ?? undefined,
+      screenMeshDensity: overrides?.screenMeshDensity ?? screenMeshDensity,
+      hatchTargetComponentKeys: overrides?.hatchTargetComponentKeys ?? (includeHatch ? effectiveHatchTargetKeys : []),
+      removableStates: overrides?.removableStates ?? removableStates,
       addonConfig: {
         finishColor: getFinishHexColor(overrides?.addonAluminumFinish ?? addonAlumFinish),
         zOffsetMm: 18,
@@ -1150,7 +1288,8 @@ export function ProductModelWorkspace({
     }
 
     // 3. Mark skipPreparedBuildRef to prevent redundant debounced loadModel() rebuilds
-    const nextBuildKey = `${structuralDefinition?.product.productId}:${widthCm}:${heightCm}:${panelCount}:${currentOptions.includeSill}:${currentOptions.activeAddon}:${addonMountingSide}:${currentOptions.addonAluminumFinish}:${currentOptions.aluminumFinish}:${currentOptions.glassAppearance}:${currentOptions.glassColor}:${currentOptions.glassThicknessMm}`;
+    const nextRemovableKey = JSON.stringify(currentOptions.removableStates ?? {});
+    const nextBuildKey = `${structuralDefinition?.product.productId}:${widthCm}:${heightCm}:${panelCount}:${currentOptions.includeSill}:${currentOptions.activeAddon}:${addonMountingSide}:${currentOptions.addonAluminumFinish}:${currentOptions.aluminumFinish}:${currentOptions.glassAppearance}:${currentOptions.glassColor}:${currentOptions.glassThicknessMm}:${includeHatch}:${screenMeshDensity}:${nextRemovableKey}`;
     skipPreparedBuildRef.current = nextBuildKey;
 
     // 4. Invalidate model revision for outline measurement and UI updates
@@ -1165,7 +1304,10 @@ export function ProductModelWorkspace({
     selectedAddonProductId,
     addonAlumFinish,
     addonMountingSide,
-    activeCompatibleAddon,
+    includeHatch,
+    screenMeshDensity,
+    effectiveHatchTargetKeys,
+    removableStates,
     getFinishHexColor,
     perspectiveCorners,
     yaw,
@@ -1798,7 +1940,8 @@ export function ProductModelWorkspace({
   useEffect(() => {
     if (!mvpRendererRef.current || !structuralDefinition) return;
     const accessoriesKey = JSON.stringify(selectedAccessories);
-    const buildKey = `${structuralDefinition.product.productId}:${widthCm}:${heightCm}:${panelCount}:${includeSill}:${selectedAddon}:${addonMountingSide}:${selectedAddonProductId}:${addonAlumFinish}:${alumFinish}:${glassAppearance}:${glassColor}:${glassThicknessMm}:${accessoriesKey}`;
+    const removableStatesKey = JSON.stringify(removableStates);
+    const buildKey = `${structuralDefinition.product.productId}:${widthCm}:${heightCm}:${panelCount}:${includeSill}:${selectedAddon}:${addonMountingSide}:${selectedAddonProductId}:${addonAlumFinish}:${alumFinish}:${glassAppearance}:${glassColor}:${glassThicknessMm}:${includeHatch}:${accessoriesKey}:${removableStatesKey}`;
     if (skipPreparedBuildRef.current === buildKey) {
       skipPreparedBuildRef.current = null;
       return;
@@ -1829,7 +1972,9 @@ export function ProductModelWorkspace({
         activeAddon: selectedAddon,
         addonProductId: selectedAddonProductId,
         addonMountingSide,
-        hatchTargetComponentKeys: activeCompatibleAddon?.hatchTargetComponentKeys ?? undefined,
+        screenMeshDensity,
+        hatchTargetComponentKeys: includeHatch ? effectiveHatchTargetKeys : [],
+        removableStates,
         swappedAccessories: selectedAccessories,
       },
       {
@@ -1848,7 +1993,7 @@ export function ProductModelWorkspace({
       if (!cancelled) setProductBuildError(error instanceof Error ? error.message : "Could not build the product model.");
     });
     return () => { cancelled = true; };
-  }, [structuralDefinition, widthCm, heightCm, panelCount, includeSill, selectedAddon, selectedAddonProductId, addonAlumFinish, addonMountingSide, activeCompatibleAddon, glassAppearance, glassColor, glassThicknessMm, alumFinish, hasExplicitOverrides, selectedMaterials, candidateMaterialsMap, selectedAccessories]);
+  }, [structuralDefinition, widthCm, heightCm, panelCount, includeSill, selectedAddon, selectedAddonProductId, addonAlumFinish, addonMountingSide, activeCompatibleAddon, includeHatch, screenMeshDensity, effectiveHatchTargetKeys, removableStates, glassAppearance, glassColor, glassThicknessMm, alumFinish, hasExplicitOverrides, selectedMaterials, candidateMaterialsMap, selectedAccessories]);
 
   useEffect(() => {
     if (!mvpRendererRef.current) return;
@@ -2061,8 +2206,11 @@ export function ProductModelWorkspace({
       addonPrice: effectiveSelectedAddon !== "none" ? addonPrice : 0,
       addonAluminumFinish: effectiveSelectedAddon !== "none" ? addonAlumFinish : undefined,
       addonMountingSide: effectiveSelectedAddon !== "none" ? addonMountingSide : undefined,
+      screenMeshDensity: effectiveSelectedAddon === "screen" ? screenMeshDensity : undefined,
+      includeHatch,
+      removableStates,
       hatchCount: effectiveSelectedAddon !== "none" ? effectiveHatchCount : 0,
-      hatchTargetKeys: effectiveSelectedAddon !== "none" ? (activeCompatibleAddon?.hatchTargetComponentKeys ?? []) : [],
+      hatchTargetKeys: (effectiveSelectedAddon !== "none" && includeHatch) ? effectiveHatchTargetKeys : [],
       grilleBOM: activeGrilleBOM ?? null,
       baseUnitPrice: realtimePricing.baseUnitPrice,
       swappedAccessories: selectedAccessories,
@@ -2082,8 +2230,11 @@ export function ProductModelWorkspace({
           finish: addonAlumFinish,
           mounting_side: addonMountingSide,
           allowed_sides: activeCompatibleAddon?.allowedSides ?? "both",
+          screen_mesh_density: screenMeshDensity,
+          include_hatch: includeHatch,
+          removable_states: removableStates,
           hatch_count: effectiveHatchCount,
-          hatch_target_keys: activeCompatibleAddon?.hatchTargetComponentKeys ?? [],
+          hatch_target_keys: includeHatch ? effectiveHatchTargetKeys : [],
           price: addonPrice,
           grille_bom: activeGrilleBOM ?? null,
         } : null,
@@ -2137,6 +2288,10 @@ export function ProductModelWorkspace({
     activeCompatibleAddon,
     addonAlumFinish,
     addonMountingSide,
+    screenMeshDensity,
+    includeHatch,
+    effectiveHatchTargetKeys,
+    removableStates,
     effectiveHatchCount,
     addonPrice,
     addonBOM,
@@ -5037,10 +5192,10 @@ export function ProductModelWorkspace({
                           )}
 
                           {/* Choose Raw Materials for Each Part (IMP-MS70) */}
-                          {structuralDefinition?.components && structuralDefinition.components.length > 0 && (
+                          {customizableComponents.length > 0 && (
                             <div className="pt-1">
                               <PartMaterialsPicker
-                                components={structuralDefinition.components}
+                                components={customizableComponents}
                                 selectedMaterials={selectedMaterials}
                                 candidateMaterialsMap={candidateMaterialsMap}
                                 allRawMaterials={allRawMaterials}
@@ -5355,7 +5510,7 @@ export function ProductModelWorkspace({
                               <div className="flex flex-col gap-2 pt-3 border-t border-neutral-200/60">
                                 <div className="flex items-center justify-between">
                                   <span className="text-[#0f1422] text-sm font-medium">Mounting Placement</span>
-                                  {activeCompatibleAddon?.hatchTargetComponentKeys && activeCompatibleAddon.hatchTargetComponentKeys.length > 0 && effectiveHatchCount > 0 && (
+                                  {effectiveHatchCount > 0 && (
                                     <span className="text-[11px] text-[#07b6d3] bg-[#07b6d3]/10 font-semibold px-2 py-0.5 rounded-md">
                                       {effectiveHatchCount}x Aligned {effectiveHatchCount === 1 ? "Hatch" : "Hatches"}
                                     </span>
@@ -5401,6 +5556,145 @@ export function ProductModelWorkspace({
                                     </button>
                                   </div>
                                 )}
+                              </div>
+                            )}
+
+                            {/* Operator Access Hatch Toggle Switch (IMP-MS80) */}
+                            {effectiveSelectedAddon === "screen" && (dynamicOperatorCount > 0 || hasScreenHatchPart) && (
+                              <div className="flex flex-col gap-2 pt-3 border-t border-neutral-200/60">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-xs font-semibold text-[#0f1422]">
+                                      Operator Access Hatch
+                                    </span>
+                                    {dynamicOperatorCount > 0 ? (
+                                      <span
+                                        className={cn(
+                                          "text-[10px] px-1.5 py-0.5 rounded-full font-semibold border",
+                                          includeHatch
+                                            ? "bg-cyan-100/70 text-[#088395] border-cyan-200/80"
+                                            : "bg-neutral-100 text-neutral-500 border-neutral-200"
+                                        )}
+                                      >
+                                        {includeHatch
+                                          ? `${dynamicOperatorCount}x Aligned ${dynamicOperatorCount === 1 ? "Hatch" : "Hatches"}`
+                                          : "Disabled"}
+                                      </span>
+                                    ) : (
+                                      <span
+                                        className={cn(
+                                          "text-[10px] px-1.5 py-0.5 rounded-full font-semibold border",
+                                          includeHatch
+                                            ? "bg-cyan-100/70 text-[#088395] border-cyan-200/80"
+                                            : "bg-neutral-100 text-neutral-500 border-neutral-200"
+                                        )}
+                                      >
+                                        {includeHatch ? "Standard Hatch" : "Disabled"}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <label className="relative inline-flex items-center cursor-pointer shrink-0 ml-2">
+                                    <input
+                                      type="checkbox"
+                                      checked={includeHatch}
+                                      onChange={(e) => handleHatchToggle(e.target.checked)}
+                                      className="sr-only peer"
+                                    />
+                                    <div className="w-9 h-5 bg-neutral-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#07b6d3]"></div>
+                                  </label>
+                                </div>
+                                <p className="text-[11px] text-neutral-500">
+                                  Wicket door opening allows direct reach-through to operate window hardware without removing the insect screen frame.
+                                </p>
+                              </div>
+                            )}
+
+                            {/* Screen Mesh Density & Aperture Selection */}
+                            {effectiveSelectedAddon === "screen" && (
+                              <div className="flex flex-col gap-2 pt-3 border-t border-neutral-200/60">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-xs font-semibold text-[#0f1422]">
+                                    Screen Mesh Aperture
+                                  </span>
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold border bg-cyan-100/70 text-[#088395] border-cyan-200/80">
+                                    {screenMeshDensity === "fine"
+                                      ? "1.8mm Fine Weave"
+                                      : screenMeshDensity === "micro"
+                                      ? "1.2mm Micro-Mesh"
+                                      : "12mm Heavy Mesh"}
+                                  </span>
+                                </div>
+                                <div className="grid grid-cols-3 gap-1.5 p-1 bg-neutral-100 rounded-lg">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleMeshDensityChange("fine")}
+                                    className={cn(
+                                      "py-1 px-2 text-[11px] font-medium rounded-md transition-all text-center",
+                                      screenMeshDensity === "fine"
+                                        ? "bg-white text-[#0f1422] shadow-sm font-semibold"
+                                        : "text-neutral-600 hover:text-neutral-900"
+                                    )}
+                                  >
+                                    Fine (1.8mm)
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleMeshDensityChange("micro")}
+                                    className={cn(
+                                      "py-1 px-2 text-[11px] font-medium rounded-md transition-all text-center",
+                                      screenMeshDensity === "micro"
+                                        ? "bg-white text-[#0f1422] shadow-sm font-semibold"
+                                        : "text-neutral-600 hover:text-neutral-900"
+                                    )}
+                                  >
+                                    Micro (1.2mm)
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleMeshDensityChange("coarse")}
+                                    className={cn(
+                                      "py-1 px-2 text-[11px] font-medium rounded-md transition-all text-center",
+                                      screenMeshDensity === "coarse"
+                                        ? "bg-white text-[#0f1422] shadow-sm font-semibold"
+                                        : "text-neutral-600 hover:text-neutral-900"
+                                    )}
+                                  >
+                                    Heavy (12mm)
+                                  </button>
+                                </div>
+                                <p className="text-[11px] text-neutral-500">
+                                  {screenMeshDensity === "fine"
+                                    ? "Standard architectural insect screen: delicate weave stops mosquitoes while maximizing outdoor view clarity."
+                                    : screenMeshDensity === "micro"
+                                    ? "Ultra-fine anti-midge micro-mesh: enhanced insect barrier with subtle privacy screening."
+                                    : "Heavy-duty wire mesh with wide 12mm aperture for security barrier ventilation."}
+                                </p>
+                              </div>
+                            )}
+
+                            {/* Additional Removable Add-on Components */}
+                            {otherRemovableAddonParts.length > 0 && (
+                              <div className="flex flex-col gap-2 pt-3 border-t border-neutral-200/60">
+                                <span className="text-xs font-semibold text-[#0f1422]">
+                                  Optional Add-on Parts
+                                </span>
+                                {otherRemovableAddonParts.map((comp) => {
+                                  const isIncluded = removableStates[comp.componentId] ?? removableStates[comp.componentKey] ?? true;
+                                  return (
+                                    <div key={comp.componentId} className="flex items-center justify-between py-1">
+                                      <span className="text-xs text-neutral-700">{comp.componentName}</span>
+                                      <label className="relative inline-flex items-center cursor-pointer shrink-0 ml-2">
+                                        <input
+                                          type="checkbox"
+                                          checked={isIncluded}
+                                          onChange={(e) => handleRemovableToggle(comp.componentId, comp.componentKey, e.target.checked)}
+                                          className="sr-only peer"
+                                        />
+                                        <div className="w-8 h-4.5 bg-neutral-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-[#07b6d3]"></div>
+                                      </label>
+                                    </div>
+                                  );
+                                })}
                               </div>
                             )}
 
@@ -6408,9 +6702,18 @@ async function drawSnapshotOverlay({
       canvasBounds.height,
     );
 
+    const sourceWidth =
+      hasGeneratedProduct && generatedCanvas
+        ? generatedCanvas.width
+        : Math.max(1, Math.round(width));
+    const sourceHeight =
+      hasGeneratedProduct && generatedCanvas
+        ? generatedCanvas.height
+        : Math.max(1, Math.round(height));
+
     const offscreen = document.createElement("canvas");
-    offscreen.width = Math.max(1, Math.round(width));
-    offscreen.height = Math.max(1, Math.round(height));
+    offscreen.width = sourceWidth;
+    offscreen.height = sourceHeight;
     const offCtx = offscreen.getContext("2d");
 
     if (offCtx) {

@@ -14,7 +14,7 @@ import { PartInspectorDrawer, type PartInspectorConfig } from "./PartInspectorDr
 import { analyzeGrilleGeometry, type GrilleGeometryAnalysis } from "@/lib/pricing/grilleGeometryAnalyzer";
 import { analyzeJalousieGeometry } from "@/lib/visualization/jalousieGeometryAnalyzer";
 import { getRawMaterials } from "@/lib/admin/materials/materialActions";
-import type { RawMaterial, DimensionBinding, PresentationCategory, ComponentMaterialBinding, JalousieConfig } from "@/lib/pricing/types";
+import type { RawMaterial, DimensionBinding, PresentationCategory, ComponentMaterialBinding, JalousieConfig, DynamicBayRole } from "@/lib/pricing/types";
 import { Canvas, type ThreeEvent } from "@react-three/fiber";
 import { useThree } from "@react-three/fiber";
 import { Html, OrbitControls, Stage } from "@react-three/drei";
@@ -77,6 +77,8 @@ type MappedFile = {
     pricingMethod?: string;
     handingMetadata?: ComponentHandingMetadata | null;
     jalousieConfig?: JalousieConfig | null;
+    bayRole?: DynamicBayRole | null;
+    bay_role?: DynamicBayRole | null;
 };
 
 function formatKeyFromName(name: string) {
@@ -642,6 +644,7 @@ export function StructuralComponentsSection({
                 pricingMethod: resolvedPricingMethod,
                 handingMetadata: (compData.handing_metadata as ComponentHandingMetadata) || null,
                 jalousieConfig: ((comp.jalousie_config || compData.jalousie_config) as JalousieConfig) || null,
+                bayRole: ((comp.bay_role || compData.bay_role) as DynamicBayRole) || detected.bayRole || null,
                 sourceDimensions: compData.source_dimensions_mm as { x: number; y: number; z: number } | undefined,
                 persisted: true,
                 status: "success" as const,
@@ -846,6 +849,7 @@ export function StructuralComponentsSection({
                 pricingMethod: (isAccessory || (modelStrategy === "Fixed" && !isJalousie)) ? "Fixed" : undefined,
                 handingMetadata: null,
                 jalousieConfig,
+                bayRole: autoDetected.bayRole || null,
             };
         });
 
@@ -1018,6 +1022,7 @@ export function StructuralComponentsSection({
                         ...("unitPrice" in updates ? { unitPrice: updates.unitPrice } : {}),
                         ...(updates.pricingMethod !== undefined && { pricingMethod: updates.pricingMethod }),
                         ...("jalousieConfig" in updates ? { jalousieConfig: updates.jalousieConfig } : {}),
+                        ...("bayRole" in updates ? { bayRole: updates.bayRole } : {}),
                         status: "idle" as const,
                     };
                 }
@@ -1114,6 +1119,7 @@ export function StructuralComponentsSection({
                     ...(handingMetadata ? { handing_metadata: handingMetadata } : {}),
                     ...(mapped.accessoryCategory ? { accessory_category: mapped.accessoryCategory } : {}),
                     ...(mapped.jalousieConfig ? { jalousie_config: mapped.jalousieConfig } : {}),
+                    ...(mapped.bayRole ? { bay_role: mapped.bayRole } : {}),
                 },
                 isAccessorySlot: mapped.isAccessorySlot,
                 accessoryCategory: mapped.accessoryCategory,
@@ -1123,6 +1129,8 @@ export function StructuralComponentsSection({
                 pricingMethod: mapped.pricingMethod || (isAccessory ? "Fixed" : undefined),
                 handingMetadata,
                 jalousieConfig: mapped.jalousieConfig || undefined,
+                bayRole: mapped.bayRole || undefined,
+                bay_role: mapped.bayRole || undefined,
             });
             const payload = buildPayload(mapped.glbFileUrl || null);
             if (isAccessory && (!Number.isFinite(payload.unitPrice) || (payload.unitPrice ?? 0) <= 0)) {
@@ -1314,6 +1322,7 @@ export function StructuralComponentsSection({
                 unitPrice: m.unitPrice,
                 pricingMethod: m.pricingMethod,
                 jalousieConfig: m.jalousieConfig,
+                bayRole: m.bayRole,
             }));
     }, [mappedFiles, selectedIds]);
 
