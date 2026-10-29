@@ -172,24 +172,8 @@ export const DimensionBindingSchema = z.enum([
   "FIXED",
   "GRILLE_LINEAR",
   "PERIMETER",
-  "LOUVER_BLADE",
-  "LOUVER_OPERATOR",
 ]);
 export type DimensionBinding = z.infer<typeof DimensionBindingSchema>;
-
-export const JalousieConfigSchema = z.object({
-  pitch_mm: z.number().positive().optional(),
-  blade_height_mm: z.number().positive().optional(),
-  blades_per_operator: z.number().int().positive().optional(),
-  base_blade_count: z.number().int().positive().optional(),
-  base_operator_count: z.number().int().positive().optional(),
-  pitchMm: z.number().positive().optional(),
-  bladeHeightMm: z.number().positive().optional(),
-  bladesPerOperator: z.number().int().positive().optional(),
-  baseBladeCount: z.number().int().positive().optional(),
-  baseOperatorCount: z.number().int().positive().optional(),
-}).passthrough();
-export type JalousieConfig = z.infer<typeof JalousieConfigSchema>;
 
 export const PresentationCategorySchema = z.enum([
   "Framing",
@@ -244,7 +228,6 @@ export interface ProductComponent {
   unitPrice?: number;
   pricingMethod?: string;
   handingMetadata?: import("@/lib/admin/products/types").ComponentHandingMetadata | null;
-  jalousieConfig?: JalousieConfig | null;
   componentData?: Record<string, unknown>;
 }
 
@@ -267,7 +250,6 @@ export const ProductComponentBindingSchema = z.object({
   accessory_category: z.enum(["handle", "lock", "hinge", "roller", "other"]).nullable().optional(),
   allowed_accessory_ids: z.array(z.string().uuid()).nullable().optional(),
   position_options: z.record(z.string(), z.unknown()).optional(),
-  jalousie_config: JalousieConfigSchema.nullable().optional(),
 });
 export type ProductComponentBinding = z.infer<typeof ProductComponentBindingSchema>;
 

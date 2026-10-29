@@ -1,5 +1,4 @@
-import type { DimensionBinding, PresentationCategory, JalousieConfig } from "@/lib/pricing/types";
-export type { JalousieConfig };
+import type { DimensionBinding, PresentationCategory } from "@/lib/pricing/types";
 import type { ComponentMaterialBindingInput } from "@/lib/pricing/materialBindingUtils";
 
 export type AddonType = "screen" | "grill";
@@ -68,8 +67,6 @@ export type UpsertComponentInput = {
   unitPrice?: number;
   pricingMethod?: "Fixed" | "Included" | "Per Piece" | "Per Length" | "Per Area" | "Other" | string;
   handingMetadata?: ComponentHandingMetadata | null;
-  jalousieConfig?: JalousieConfig | null;
-  jalousie_config?: JalousieConfig | null;
 };
 
 export interface UpsertComponentPayload {
@@ -97,8 +94,6 @@ export interface UpsertComponentPayload {
   unitPrice?: number;
   pricingMethod?: "Fixed" | "Included" | "Per Piece" | "Per Length" | "Per Area" | "Other" | string;
   handingMetadata?: ComponentHandingMetadata | null;
-  jalousieConfig?: JalousieConfig | null;
-  jalousie_config?: JalousieConfig | null;
 }
 
 export type ProductRole = "standard" | "addon" | "accessory";

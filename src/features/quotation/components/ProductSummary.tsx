@@ -13,7 +13,6 @@ import {
   calculateOverlayPricing,
   aggregateMultiProductBOM,
 } from "@/lib/pricing/pricingEngine";
-import { computeLouverBladeCount, computeLouverOperatorCount } from "@/lib/visualization/jalousieGeometryAnalyzer";
 import type { ItemizedProductQuotation } from "@/lib/pricing/types";
 import { PriceCard, ProductDetailsData } from "./PriceCard";
 
@@ -235,11 +234,6 @@ function createProductSummaryItemFromOverlay(
 
   const baseUnitPrice = unitPrice - addonPrice;
 
-  const isJalousieOverlay = (overlay.productName || "").toLowerCase().includes("jalousie");
-  const jalousieOverlaySpec = isJalousieOverlay
-    ? `${computeLouverBladeCount(heightMm, 175)}x Glass Louver Blades | ${computeLouverOperatorCount(computeLouverBladeCount(heightMm, 175), 4)}x Window Operators`
-    : null;
-
   const item: ProductItem = {
     itemId,
     productId: overlay.productId,
@@ -249,7 +243,6 @@ function createProductSummaryItemFromOverlay(
       dimension,
       !hasSill ? "Flush Base (No Sill)" : null,
       panelCount > 2 ? `${panelCount}-Panel` : null,
-      jalousieOverlaySpec,
       formattedAddonName && selectedAddon && selectedAddon !== "none" ? `Add-on: ${formattedAddonName}` : null,
     ]
       .filter(Boolean)
@@ -405,20 +398,6 @@ function createProductSummaryItem(
   const totalPrice = unitPrice * qty;
   const itemId = definition.product.productId;
 
-  const isJalousie = (definition.product.productType || "").toLowerCase().includes("jalousie") ||
-    definition.components.some((c) => c.dimensionBinding === "LOUVER_BLADE" || (c as Record<string, unknown>).dimension_binding === "LOUVER_BLADE");
-
-  let jalousieSpec: string | null = null;
-  if (isJalousie) {
-    const louverComp = definition.components.find((c) => c.dimensionBinding === "LOUVER_BLADE" || (c as Record<string, unknown>).dimension_binding === "LOUVER_BLADE");
-    const opComp = definition.components.find((c) => c.dimensionBinding === "LOUVER_OPERATOR" || (c as Record<string, unknown>).dimension_binding === "LOUVER_OPERATOR");
-    const pitchMm = louverComp?.jalousieConfig?.pitch_mm ?? louverComp?.jalousieConfig?.pitchMm ?? 175;
-    const louverCount = computeLouverBladeCount(heightMm, pitchMm);
-    const bladesPerOp = opComp?.jalousieConfig?.blades_per_operator ?? opComp?.jalousieConfig?.bladesPerOperator ?? 4;
-    const opCount = computeLouverOperatorCount(louverCount, bladesPerOp);
-    jalousieSpec = `${louverCount}x Glass Louver Blades | ${opCount}x Window Operators`;
-  }
-
   const item: ProductItem = {
     itemId,
     productId: definition.product.productId,
@@ -429,7 +408,6 @@ function createProductSummaryItem(
       dimension,
       !hasSill ? "Flush Base (No Sill)" : null,
       panelCount > 2 ? `${panelCount}-Panel` : null,
-      jalousieSpec,
       formattedAddonName && selectedAddon && selectedAddon !== "none" ? `Add-on: ${formattedAddonName}` : null,
     ]
       .filter(Boolean)
