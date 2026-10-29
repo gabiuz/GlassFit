@@ -5,9 +5,9 @@
 **Version:** 1.0.0  
 **Date:** October 28, 2026  
 **Owner:** Reynard John B. Rabanal (Lead Product / Systems Architect) & GlassFit Capstone Team (PUP CCIS)  
-**Status:** Ready for Implementation; pointer hover requires separate verification  
+**Status:** Partial implementation; original-draft browser acceptance pending
 **Upstream Specifications:** `docs/brd-glassfit.md` (BRD-M4), `docs/prd-glassfit.md` (PRD-F5, PRD-F14), `docs/sdd-glassfit.md` (SDD-C4, SDD-C9), `docs/dsd-glassfit.md` (DSD-UI10), `docs/qad-glassfit.md` (QAD-TC94.4, QAD-TC94.5, QAD-TC94.6), `docs/implementation/ms79.md`  
-**Implementation State:** Not started; this document and its QA screenshot are the only deliverables of this pass.  
+**Implementation State:** Front-surface selection parity implemented; original right-frame coordinate defect remains unverified.
 
 ---
 
@@ -30,7 +30,7 @@ This document records the reproduced click defect and defines the future fix. No
 | Product and step | Jealousy Window draft, Step 4: Components |
 | Viewer state | Assembled (Built), 18 parts |
 | Screenshot size | 2940 by 1726 pixels |
-| Evidence | [Right-frame offset screenshot](../../artifacts/fix-ui6/right-frame-offset.png) |
+| Evidence | Right-frame offset screenshot captured during the original review; retained outside the repository. |
 
 The coordinates below are screenshot pixels from that browser session. They are useful for comparing locations within this capture; they are not CSS pixel or device-pixel-ratio measurements.
 
@@ -128,7 +128,13 @@ After implementation, run `npm run lint`, `npx tsc --noEmit`, `npm run build`, a
 
 ## 8. Readiness Decision
 
-The reported off-model right-frame selection is reproduced in the authenticated admin viewer and documented with a screenshot and coordinates. The plan is ready for a measured implementation pass. Hover-only behavior and the root cause remain open and are explicit first steps of that pass. No application code was changed.
+The original planning pass reproduced the reported off-model right-frame selection in the authenticated admin viewer and documented it with a screenshot and coordinates. No application code was changed in that planning pass.
+
+### October 29, 2026 implementation note
+
+The exact Jalousie draft URL in Section 2 returned HTTP 404 in the authenticated Brave session during implementation, so its on-bar and off-bar intersections and hover-only behavior could not be remeasured. The available Awning Window Step 4 viewer loaded, but it is a different asset and cannot establish resolution of the recorded 88-pixel offset.
+
+Source inspection found a separate selection inconsistency: hover used the nearest mesh while click offered every intersected part, including occluded parts. `partPicking.ts` now excludes hidden and fully transparent meshes, uses the same eligible hits for hover and click, and limits the overlap choice to coincident front surfaces. Three focused tests cover occluded, coincident, and invisible surfaces. FIX-UI6-V1 through V5, especially the original right-frame offset, remain pending browser acceptance when the Jalousie draft or equivalent assets are available.
 
 ---
 
