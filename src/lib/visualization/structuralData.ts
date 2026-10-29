@@ -135,7 +135,7 @@ async function fetchCompatibleAddons(
       .in("product_id", addonIds),
     supabase
       .from("product_templates")
-      .select("template_id, product_id, template_name, model_strategy, measurement_unit, base_configuration, status")
+      .select("template_id, product_id, template_name, model_strategy, measurement_unit, base_configuration, dynamic_bay_config, status")
       .in("product_id", addonIds),
     supabase
       .from("product_assets")
@@ -161,6 +161,7 @@ async function fetchCompatibleAddons(
           raw_material_id,
           dimension_binding,
           jalousie_config,
+          bay_role,
           span_ratio,
           is_removable,
           toggle_property_key,
@@ -259,6 +260,7 @@ async function fetchCompatibleAddons(
         pricingMethod: ((compRow as Record<string, unknown>).pricing_method as string) || undefined,
         handingMetadata: (compData?.handing_metadata as import("@/lib/admin/products/types").ComponentHandingMetadata) || null,
         jalousieConfig: ((compRow as Record<string, unknown>).jalousie_config || compData?.jalousie_config) as import("@/lib/pricing/types").JalousieConfig || null,
+        bayRole: ((compRow as Record<string, unknown>).bay_role || compData?.bay_role) as import("@/lib/pricing/types").DynamicBayRole || null,
         model: {
           assetId: asset.asset_id,
           r2ObjectKey: asset.r2_object_key,
@@ -310,7 +312,7 @@ export async function getProductStructuralDefinition(
 
   const { data: product, error: productError } = await supabase
     .from("products")
-    .select("product_id, product_name, product_type, description, base_price, status, is_addon, addon_type, is_accessory, accessory_category, accessory_mounting_type")
+    .select("product_id, product_name, product_type, description, base_price, status, is_addon, addon_type, is_accessory, accessory_category, accessory_mounting_type, dynamic_bay_config")
     .eq("product_id", productId)
     .eq("status", "Active")
     .single();
@@ -321,7 +323,7 @@ export async function getProductStructuralDefinition(
 
   const { data: template, error: templateError } = await supabase
     .from("product_templates")
-    .select("template_id, template_name, model_strategy, measurement_unit, base_configuration")
+    .select("template_id, template_name, model_strategy, measurement_unit, base_configuration, dynamic_bay_config")
     .eq("product_id", productId)
     .eq("status", "Active")
     .single();
@@ -368,6 +370,7 @@ export async function getProductStructuralDefinition(
         raw_material_id,
         dimension_binding,
         jalousie_config,
+        bay_role,
         span_ratio,
         is_removable,
         toggle_property_key,
@@ -517,6 +520,7 @@ export async function getProductStructuralDefinition(
       pricingMethod: ((row as Record<string, unknown>).pricing_method as string) || undefined,
       handingMetadata: (componentData?.handing_metadata as import("@/lib/admin/products/types").ComponentHandingMetadata) || null,
       jalousieConfig: ((row as Record<string, unknown>).jalousie_config || componentData?.jalousie_config) as import("@/lib/pricing/types").JalousieConfig || null,
+      bayRole: ((row as Record<string, unknown>).bay_role || componentData?.bay_role) as import("@/lib/pricing/types").DynamicBayRole || null,
       model: {
         assetId: asset.asset_id,
         r2ObjectKey: asset.r2_object_key,
@@ -562,6 +566,8 @@ export async function getProductStructuralDefinition(
       isAccessory: Boolean(product.is_accessory),
       accessoryCategory: product.accessory_category || null,
       accessoryMountingType: product.accessory_mounting_type || null,
+      dynamicBayConfig: (product.dynamic_bay_config || template.dynamic_bay_config) as import("@/lib/pricing/types").DynamicBayConfig || null,
+      dynamic_bay_config: (product.dynamic_bay_config || template.dynamic_bay_config) as import("@/lib/pricing/types").DynamicBayConfig || null,
     },
     template: {
       templateId,
@@ -569,6 +575,8 @@ export async function getProductStructuralDefinition(
       modelStrategy: template.model_strategy,
       measurementUnit: template.measurement_unit,
       baseConfiguration: toJsonObject(template.base_configuration),
+      dynamicBayConfig: (template.dynamic_bay_config || product.dynamic_bay_config) as import("@/lib/pricing/types").DynamicBayConfig || null,
+      dynamic_bay_config: (template.dynamic_bay_config || product.dynamic_bay_config) as import("@/lib/pricing/types").DynamicBayConfig || null,
     },
     parameters: (parametersResult.data ?? []).map<ProductParameter>((row) => ({
       parameterId: row.parameter_id,
@@ -604,7 +612,7 @@ export async function getDraftStructuralDefinition(
   // Same as getProductStructuralDefinition but without eq("status", "Active") for product and template
   const { data: product, error: productError } = await supabase
     .from("products")
-    .select("product_id, product_name, product_type, description, base_price, status, is_addon, addon_type, is_accessory, accessory_category, accessory_mounting_type")
+    .select("product_id, product_name, product_type, description, base_price, status, is_addon, addon_type, is_accessory, accessory_category, accessory_mounting_type, dynamic_bay_config")
     .eq("product_id", productId)
     .single();
 
@@ -614,7 +622,7 @@ export async function getDraftStructuralDefinition(
 
   const { data: template, error: templateError } = await supabase
     .from("product_templates")
-    .select("template_id, template_name, model_strategy, measurement_unit, base_configuration")
+    .select("template_id, template_name, model_strategy, measurement_unit, base_configuration, dynamic_bay_config")
     .eq("product_id", productId)
     .single();
 
@@ -659,6 +667,7 @@ export async function getDraftStructuralDefinition(
         raw_material_id,
         dimension_binding,
         jalousie_config,
+        bay_role,
         span_ratio,
         is_removable,
         toggle_property_key,
@@ -791,6 +800,7 @@ export async function getDraftStructuralDefinition(
       pricingMethod: ((row as Record<string, unknown>).pricing_method as string) || undefined,
       handingMetadata: (componentData?.handing_metadata as import("@/lib/admin/products/types").ComponentHandingMetadata) || null,
       jalousieConfig: ((row as Record<string, unknown>).jalousie_config || componentData?.jalousie_config) as import("@/lib/pricing/types").JalousieConfig || null,
+      bayRole: ((row as Record<string, unknown>).bay_role || componentData?.bay_role) as import("@/lib/pricing/types").DynamicBayRole || null,
       model: {
         assetId: asset.asset_id,
         r2ObjectKey: asset.r2_object_key,
@@ -822,6 +832,8 @@ export async function getDraftStructuralDefinition(
       isAccessory: Boolean(product.is_accessory),
       accessoryCategory: product.accessory_category || null,
       accessoryMountingType: product.accessory_mounting_type || null,
+      dynamicBayConfig: (product.dynamic_bay_config || template.dynamic_bay_config) as import("@/lib/pricing/types").DynamicBayConfig || null,
+      dynamic_bay_config: (product.dynamic_bay_config || template.dynamic_bay_config) as import("@/lib/pricing/types").DynamicBayConfig || null,
     },
     template: {
       templateId,
@@ -829,6 +841,8 @@ export async function getDraftStructuralDefinition(
       modelStrategy: template.model_strategy,
       measurementUnit: template.measurement_unit,
       baseConfiguration: toJsonObject(template.base_configuration),
+      dynamicBayConfig: (template.dynamic_bay_config || product.dynamic_bay_config) as import("@/lib/pricing/types").DynamicBayConfig || null,
+      dynamic_bay_config: (template.dynamic_bay_config || product.dynamic_bay_config) as import("@/lib/pricing/types").DynamicBayConfig || null,
     },
     parameters: (parametersResult.data ?? []).map<ProductParameter>((row) => ({
       parameterId: row.parameter_id,

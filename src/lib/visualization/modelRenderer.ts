@@ -31,9 +31,11 @@ export type ModelPresentationOptions = {
   addonProductId?: string | null;
   addonAluminumFinish?: string;
   addonMountingSide?: "front" | "back";
+  screenMeshDensity?: "fine" | "micro" | "coarse";
   hatchTargetComponentKeys?: string[];
   addonConfig?: AddonGeometryConfig;
   swappedAccessories?: Record<string, import("./types").SelectedAccessoryState>;
+  removableStates?: Record<string, boolean>;
 };
 
 export type LoadedModelResult = {
@@ -324,6 +326,25 @@ export class ProductModelRenderer {
       });
     }
 
+    if (presentation.removableStates) {
+      const states = presentation.removableStates;
+      this.modelGroup.traverse((child) => {
+        const compId = child.userData?.componentId as string | undefined;
+        const compKey = child.userData?.componentKey as string | undefined;
+        const toggleKey = child.userData?.togglePropertyKey as string | undefined;
+        const isHatch = child.userData?.isHatchClone || child.name?.toLowerCase().includes("hatch");
+        if (compId && states[compId] !== undefined) {
+          child.visible = states[compId];
+        } else if (compKey && states[compKey] !== undefined) {
+          child.visible = states[compKey];
+        } else if (toggleKey && states[toggleKey] !== undefined) {
+          child.visible = states[toggleKey];
+        } else if (isHatch && (states.screen_access_hatch !== undefined || states.has_screen_access_hatch !== undefined || states.has_hatch !== undefined)) {
+          child.visible = (states.screen_access_hatch ?? states.has_screen_access_hatch ?? states.has_hatch) !== false;
+        }
+      });
+    }
+
     return this.materialCapabilities;
   }
 
@@ -383,8 +404,10 @@ export class ProductModelRenderer {
       addonAluminumFinish: presentation.addonAluminumFinish,
       addonMountingSide: presentation.addonMountingSide,
       hatchTargetComponentKeys: presentation.hatchTargetComponentKeys,
+      screenMeshDensity: presentation.screenMeshDensity,
       addonConfig: presentation.addonConfig,
       swappedAccessories: presentation.swappedAccessories,
+      removableStates: presentation.removableStates,
     });
 
     return group;

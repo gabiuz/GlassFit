@@ -16,6 +16,7 @@ import type {
   RawMaterial,
   ComponentMaterialBinding,
   JalousieConfig,
+  DynamicBayRole,
 } from '@/lib/pricing/types';
 import type {
   ComponentType,
@@ -48,6 +49,7 @@ export interface PartInspectorConfig {
   unitPrice?: number;
   pricingMethod?: string;
   jalousieConfig?: JalousieConfig | null;
+  bayRole?: DynamicBayRole | null;
 }
 
 interface PartInspectorDrawerProps {
@@ -923,6 +925,41 @@ export function PartInspectorDrawer({
             placeholder="Custom Ratio"
           />
         </div>
+
+        {/* Modular Bay Role (IMP-MS82) */}
+        {!isAccessory && (
+          <div className="space-y-1.5 pt-2 border-t border-neutral-100">
+            <div className="flex items-center justify-between">
+              <label htmlFor="modular-bay-role" className="text-xs font-medium text-neutral-700 block">
+                Modular Bay Role
+              </label>
+              <span className="text-[10px] text-neutral-400">Smart bay expansion</span>
+            </div>
+            <select
+              id="modular-bay-role"
+              value={primary.bayRole || ""}
+              onChange={(e) => {
+                const val = (e.target.value || null) as DynamicBayRole | null;
+                onUpdateParts({ bayRole: val });
+              }}
+              className="w-full border border-neutral-200 rounded-[8px] px-3 py-2 text-xs font-medium text-[#0f1422] focus:border-[#07b6d3] outline-none bg-white shadow-xs cursor-pointer"
+            >
+              <option value="">None / Unassigned</option>
+              <option value="OUTER_JAMB_LEFT">Outer Left Jamb (OUTER_JAMB_LEFT)</option>
+              <option value="OUTER_JAMB_RIGHT">Outer Right Jamb (OUTER_JAMB_RIGHT)</option>
+              <option value="OUTER_HEAD">Outer Head Framing (OUTER_HEAD)</option>
+              <option value="OUTER_SILL">Outer Sill Framing (OUTER_SILL)</option>
+              <option value="REMOVABLE_SILL">Removable Window Sill (REMOVABLE_SILL)</option>
+              <option value="BAY_DIVIDER">Modular Bay Divider Mullion (BAY_DIVIDER)</option>
+              <option value="BAY_INFILL">Modular Bay Infill (BAY_INFILL)</option>
+              <option value="BAY_HARDWARE">Modular Bay Hardware (BAY_HARDWARE)</option>
+              <option value="GLOBAL_ACCESSORY">Global Accessory (GLOBAL_ACCESSORY)</option>
+            </select>
+            <p className="text-[10px] text-neutral-500">
+              Assigns this part to replicate or anchor during multi-bay fenestration width changes.
+            </p>
+          </div>
+        )}
         </>
         )}
 

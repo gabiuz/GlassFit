@@ -104,6 +104,23 @@ export function getAllCandidateMaterialsMap(
     }
   }
 
+  if (definition?.compatibleAddons) {
+    for (const addon of definition.compatibleAddons) {
+      for (const comp of addon.components ?? []) {
+        if (comp.rawMaterial?.id) {
+          map.set(comp.rawMaterial.id, comp.rawMaterial);
+        }
+        if (comp.allowedMaterials) {
+          for (const b of comp.allowedMaterials) {
+            if (b.rawMaterial?.id) {
+              map.set(b.rawMaterial.id, b.rawMaterial);
+            }
+          }
+        }
+      }
+    }
+  }
+
   if (definition?.componentMaterials) {
     for (const b of definition.componentMaterials) {
       if (b.rawMaterial?.id) {

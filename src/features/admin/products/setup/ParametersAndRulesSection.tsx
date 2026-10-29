@@ -7,6 +7,7 @@ import {
     UpsertParameterInput,
     UpsertRuleInput,
 } from "@/lib/admin/products/parameterMutations";
+import type { DynamicBayConfig } from "@/lib/pricing/types";
 import { AddonInheritanceSection } from "./AddonInheritanceSection";
 
 export type ParametersAndRulesSectionProps = {
@@ -19,6 +20,7 @@ export type ParametersAndRulesSectionProps = {
         parameters?: UpsertParameterInput[];
         rules?: UpsertRuleInput[];
         components?: Record<string, unknown>[];
+        dynamicBayConfig?: DynamicBayConfig | null;
     };
     onSave: () => void;
 };
@@ -137,11 +139,45 @@ export function ParametersAndRulesSection({ productId, isAddon = false, template
         return [];
     });
 
+    const [dynamicBayConfig, setDynamicBayConfig] = useState<DynamicBayConfig>(() => {
+        const initial = initialData?.dynamicBayConfig;
+        if (initial) {
+            return {
+                enabled: Boolean(initial.enabled),
+                primary_dimension: initial.primary_dimension ?? "width",
+                nominal_bay_pitch_mm: initial.nominal_bay_pitch_mm ?? 600,
+                min_bay_width_mm: initial.min_bay_width_mm ?? 400,
+                max_bay_width_mm: initial.max_bay_width_mm ?? 1000,
+                default_bay_count: initial.default_bay_count ?? 2,
+                expansion_anchor: initial.expansion_anchor ?? "symmetric",
+                expansion_anchor_mode: initial.expansion_anchor_mode ?? initial.expansion_anchor ?? "symmetric",
+                bay_infill_component_keys: initial.bay_infill_component_keys ?? [],
+                bay_hardware_component_keys: initial.bay_hardware_component_keys ?? [],
+            };
+        }
+        return {
+            enabled: false,
+            primary_dimension: "width",
+            nominal_bay_pitch_mm: 600,
+            min_bay_width_mm: 400,
+            max_bay_width_mm: 1000,
+            default_bay_count: 2,
+            expansion_anchor: "symmetric",
+            expansion_anchor_mode: "symmetric",
+            bay_infill_component_keys: [],
+            bay_hardware_component_keys: [],
+        };
+    });
+
     // Auto-save logic with debounce
     const isFirstMount = useRef(true);
     const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-    const performAutoSave = useCallback(async (paramsToSave: UpsertParameterInput[], rulesToSave: UpsertRuleInput[]) => {
+    const performAutoSave = useCallback(async (
+        paramsToSave: UpsertParameterInput[],
+        rulesToSave: UpsertRuleInput[],
+        bayConfigToSave?: DynamicBayConfig
+    ) => {
         if (!templateId || modelStrategy !== "Parametric") return;
         
         try {
@@ -159,7 +195,7 @@ export function ParametersAndRulesSection({ productId, isAddon = false, template
                 return true;
             });
 
-            await upsertParametersAndRules(templateId, paramsToSave, validRules);
+            await upsertParametersAndRules(templateId, paramsToSave, validRules, bayConfigToSave);
             setAutoSaveStatus("saved");
         } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : "Auto-save failed";
@@ -176,21 +212,34 @@ export function ParametersAndRulesSection({ productId, isAddon = false, template
         const hasDbParams = Array.isArray(initialData?.parameters) && initialData.parameters.length > 0;
         if (!hasDbParams && parameters.length > 0 && isFirstMount.current) {
             isFirstMount.current = false;
-            performAutoSave(parameters, rules);
+            performAutoSave(parameters, rules, dynamicBayConfig);
         } else {
             isFirstMount.current = false;
         }
-    }, [templateId, modelStrategy, initialData?.parameters, parameters, rules, performAutoSave]);
+    }, [templateId, modelStrategy, initialData?.parameters, parameters, rules, dynamicBayConfig, performAutoSave]);
 
     // Trigger debounced auto-save on parameter or rule edits
-    const triggerDebouncedSave = (newParams: UpsertParameterInput[], newRules: UpsertRuleInput[]) => {
+    const triggerDebouncedSave = (
+        newParams: UpsertParameterInput[],
+        newRules: UpsertRuleInput[],
+        newBayConfig: DynamicBayConfig = dynamicBayConfig
+    ) => {
         if (saveTimerRef.current) {
             clearTimeout(saveTimerRef.current);
         }
         setAutoSaveStatus("saving");
         saveTimerRef.current = setTimeout(() => {
-            performAutoSave(newParams, newRules);
+            performAutoSave(newParams, newRules, newBayConfig);
         }, 600);
+    };
+
+    const updateDynamicBayConfig = (updates: Partial<DynamicBayConfig>) => {
+        const updated: DynamicBayConfig = {
+            ...dynamicBayConfig,
+            ...updates,
+        };
+        setDynamicBayConfig(updated);
+        triggerDebouncedSave(parameters, rules, updated);
     };
 
     const addParameter = () => {
@@ -285,7 +334,7 @@ export function ParametersAndRulesSection({ productId, isAddon = false, template
                 }
             }
 
-            await upsertParametersAndRules(templateId, parameters, rules);
+            await upsertParametersAndRules(templateId, parameters, rules, dynamicBayConfig);
             setAutoSaveStatus("saved");
             onSave();
         } catch (e: unknown) {
@@ -465,11 +514,159 @@ export function ParametersAndRulesSection({ productId, isAddon = false, template
             {/* Rules Tab */}
             {activeTab === "rules" && (
                 <div className="flex flex-col gap-4 mt-2">
-                    {rules.length === 0 && (
-                        <div className="p-6 text-center text-neutral-500 bg-neutral-50 rounded-[12px] border border-dashed border-neutral-200">
-                            No rules defined. Components will use their base quantity.
+                    {/* Smart Dynamic Bay Replication Card */}
+                    <div className="bg-[#fcfcfc] border border-neutral-200 rounded-[12px] p-4 flex flex-col gap-4 shadow-xs">
+                        <div className="flex items-start justify-between gap-4">
+                            <div className="flex flex-col gap-1">
+                                <label className="flex items-center gap-2 cursor-pointer select-none">
+                                    <input
+                                        type="checkbox"
+                                        checked={dynamicBayConfig.enabled}
+                                        onChange={(e) => updateDynamicBayConfig({ enabled: e.target.checked })}
+                                        className="rounded border-neutral-300 text-[#07b6d3] focus:ring-[#07b6d3] size-4 cursor-pointer"
+                                    />
+                                    <span className="font-semibold text-sm text-[#0f1422]">
+                                        Enable Smart Dynamic Bay Replication
+                                    </span>
+                                </label>
+                                <p className="text-xs text-neutral-500 pl-6">
+                                    Automatically generates intermediate mullions, infills, and operating hardware as aperture dimensions scale, eliminating manual WHEN/THEN rules.
+                                </p>
+                            </div>
+                            <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${dynamicBayConfig.enabled ? "bg-teal-50 text-teal-700 border border-teal-200" : "bg-neutral-100 text-neutral-500"}`}>
+                                {dynamicBayConfig.enabled ? "Active" : "Disabled"}
+                            </span>
                         </div>
-                    )}
+
+                        {dynamicBayConfig.enabled && (
+                            <div className="flex flex-col gap-4 pt-3 border-t border-neutral-200">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                                    <div className="flex flex-col gap-1">
+                                        <label className="text-xs font-medium text-neutral-600">
+                                            Baseline Bay Count
+                                        </label>
+                                        <input
+                                            type="number"
+                                            min="1"
+                                            max="10"
+                                            value={dynamicBayConfig.default_bay_count ?? 2}
+                                            onChange={(e) => updateDynamicBayConfig({ default_bay_count: parseInt(e.target.value, 10) || 1 })}
+                                            className="border border-neutral-200 rounded-[8px] px-3 py-1.5 text-sm outline-none focus:border-[#07b6d3] bg-white font-mono"
+                                        />
+                                        <span className="text-[11px] text-neutral-400">Baseline dual-bay unit</span>
+                                    </div>
+                                    <div className="flex flex-col gap-1">
+                                        <label className="text-xs font-medium text-neutral-600">
+                                            Nominal Bay Pitch (mm)
+                                        </label>
+                                        <input
+                                            type="number"
+                                            min="200"
+                                            max="2000"
+                                            step="10"
+                                            value={dynamicBayConfig.nominal_bay_pitch_mm ?? 600}
+                                            onChange={(e) => updateDynamicBayConfig({ nominal_bay_pitch_mm: parseFloat(e.target.value) || 600 })}
+                                            className="border border-neutral-200 rounded-[8px] px-3 py-1.5 text-sm outline-none focus:border-[#07b6d3] bg-white font-mono"
+                                        />
+                                        <span className="text-[11px] text-neutral-400">Target modular width per bay</span>
+                                    </div>
+                                    <div className="flex flex-col gap-1">
+                                        <label className="text-xs font-medium text-neutral-600">
+                                            Min Bay Width (mm)
+                                        </label>
+                                        <input
+                                            type="number"
+                                            min="100"
+                                            max="2000"
+                                            step="10"
+                                            value={dynamicBayConfig.min_bay_width_mm ?? 400}
+                                            onChange={(e) => updateDynamicBayConfig({ min_bay_width_mm: parseFloat(e.target.value) || 400 })}
+                                            className="border border-neutral-200 rounded-[8px] px-3 py-1.5 text-sm outline-none focus:border-[#07b6d3] bg-white font-mono"
+                                        />
+                                        <span className="text-[11px] text-neutral-400">Narrowest structural aperture</span>
+                                    </div>
+                                    <div className="flex flex-col gap-1">
+                                        <label className="text-xs font-medium text-neutral-600">
+                                            Max Bay Width (mm)
+                                        </label>
+                                        <input
+                                            type="number"
+                                            min="200"
+                                            max="4000"
+                                            step="10"
+                                            value={dynamicBayConfig.max_bay_width_mm ?? 1000}
+                                            onChange={(e) => updateDynamicBayConfig({ max_bay_width_mm: parseFloat(e.target.value) || 1000 })}
+                                            className="border border-neutral-200 rounded-[8px] px-3 py-1.5 text-sm outline-none focus:border-[#07b6d3] bg-white font-mono"
+                                        />
+                                        <span className="text-[11px] text-neutral-400">Widest structural aperture</span>
+                                    </div>
+                                </div>
+
+                                <div className="flex flex-col gap-1.5">
+                                    <label className="text-xs font-medium text-neutral-600">
+                                        Default Expansion Anchor
+                                    </label>
+                                    <div className="inline-flex rounded-lg border border-neutral-200 p-0.5 bg-neutral-100 self-start">
+                                        <button
+                                            type="button"
+                                            onClick={() => updateDynamicBayConfig({ expansion_anchor: "symmetric" })}
+                                            className={`text-xs px-3 py-1.5 rounded-md font-medium transition-colors ${
+                                                (dynamicBayConfig.expansion_anchor || "symmetric") === "symmetric"
+                                                    ? "bg-white text-[#0f1422] shadow-xs"
+                                                    : "text-neutral-600 hover:text-neutral-900"
+                                            }`}
+                                        >
+                                            Symmetric (Center)
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => updateDynamicBayConfig({ expansion_anchor: "rightward" })}
+                                            className={`text-xs px-3 py-1.5 rounded-md font-medium transition-colors ${
+                                                dynamicBayConfig.expansion_anchor === "rightward"
+                                                    ? "bg-white text-[#0f1422] shadow-xs"
+                                                    : "text-neutral-600 hover:text-neutral-900"
+                                            }`}
+                                        >
+                                            Expand Rightward
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => updateDynamicBayConfig({ expansion_anchor: "leftward" })}
+                                            className={`text-xs px-3 py-1.5 rounded-md font-medium transition-colors ${
+                                                dynamicBayConfig.expansion_anchor === "leftward"
+                                                    ? "bg-white text-[#0f1422] shadow-xs"
+                                                    : "text-neutral-600 hover:text-neutral-900"
+                                            }`}
+                                        >
+                                            Expand Leftward
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div className="p-3 bg-sky-50 border border-sky-100 rounded-[8px] text-xs text-sky-800 flex items-center gap-2">
+                                    <Info className="size-4 shrink-0 text-[#07b6d3]" />
+                                    <span>
+                                        Smart Bay Replication is active. Component quantities for mullions, louvers, and operators are computed dynamically.
+                                    </span>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {dynamicBayConfig.enabled ? (
+                        <div className="p-4 bg-neutral-50 border border-dashed border-neutral-200 rounded-[12px] text-xs text-neutral-500 flex flex-col gap-2">
+                            <span className="font-medium text-neutral-700">Manual Rules Suppressed</span>
+                            <span>
+                                Manual WHEN/THEN and Step Loop rules are bypassed while Smart Dynamic Bay Replication is active. Intermediate mullions and modular arrays will be replicated dynamically based on aperture width.
+                            </span>
+                        </div>
+                    ) : (
+                        <>
+                            {rules.length === 0 && (
+                                <div className="p-6 text-center text-neutral-500 bg-neutral-50 rounded-[12px] border border-dashed border-neutral-200">
+                                    No rules defined. Components will use their base quantity.
+                                </div>
+                            )}
                     {rules.map((rule, index) => {
                         const isLoop = rule.condition_data.rule_type === "loop";
                         return (
@@ -674,9 +871,11 @@ export function ParametersAndRulesSection({ productId, isAddon = false, template
                         );
                     })}
 
-                    <button onClick={addRule} className="flex items-center gap-2 text-sm text-[#07b6d3] font-medium hover:text-[#06a2bc] px-2 py-1 self-start transition-colors">
-                        <Plus className="size-4" /> Add Rule
-                    </button>
+                            <button onClick={addRule} className="flex items-center gap-2 text-sm text-[#07b6d3] font-medium hover:text-[#06a2bc] px-2 py-1 self-start transition-colors">
+                                <Plus className="size-4" /> Add Rule
+                            </button>
+                        </>
+                    )}
                 </div>
             )}
 

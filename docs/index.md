@@ -61,6 +61,9 @@ GlassFit is a responsive, web-based photo-simulation and consultation-support pl
 | IMP-MS62 | Separate Automatic Detection from Paper Reference Calibration | `docs/implementation/ms62.md` | Implemented; browser acceptance pending | October 21, 2026 | GlassFit Capstone Team |
 | IMP-MS63 | Resilient HEIC Space Image Ingestion, Network-Tolerant Conversion, and Low-Latency Paper Detection Pipeline | `docs/implementation/ms63.md` | Implemented | October 21, 2026 | GlassFit Capstone Team |
 | IMP-MS79 | Admin Components Workspace Usability, Material Assignment, Selection Clarity, and Save Integrity | `docs/implementation/ms79.md` | Ready for Implementation (plan only) | October 28, 2026 | GlassFit Capstone Team |
+| IMP-MS80 | Directional Add-on Placement Side Compatibility and Operator-Targeted Multi-Hatch Alignment | `docs/implementation/ms80.md` | Implemented | October 29, 2026 | GlassFit Capstone Team |
+| IMP-MS81 | Parametric Jalousie Dynamic Louver and Operator Generation, Automated Pitch Counting, and Per-Piece BOM Pricing Engine | `docs/implementation/ms81.md` | Implemented | October 29, 2026 | GlassFit Capstone Team |
+| IMP-MS82 | Smart Dynamic Modular Bay Replication, Directional Aperture Expansion, and Automated Infill and Hardware Generation | `docs/implementation/ms82.md` | Implemented | October 29, 2026 | GlassFit Capstone Team |
 
 ---
 
@@ -89,6 +92,7 @@ GlassFit is a responsive, web-based photo-simulation and consultation-support pl
 | BRD-M2, BRD-M4 (Parametric Scalability & Catalog Flexibility) | PRD-F5, PRD-F14 | SDD-C4, SDD-C9 | ERD-E4, ERD-E5, ERD-E6, ERD-E7 | QAD-TC58 | Implemented |
 | BRD-M2, BRD-M4 (Cross-Product Workspace Continuity) | PRD-F6 | SDD-C4, SDD-C5, SDD-C6 | ERD-E4, ERD-E5, ERD-E6, ERD-E7 | QAD-TC59 | Implemented, pending manual QA |
 | BRD-M1, BRD-M5, BRD-M6 (Precision Scale & Quotation Grounding) | PRD-F3, PRD-F4, PRD-F6, PRD-F10 | SDD-C2, SDD-C3, SDD-C5, SDD-C7 | ERD-E10, ERD-E14 | QAD-TC60, QAD-TC61, QAD-TC62, QAD-TC63, QAD-TC64 | Implemented |
+| BRD-M2, BRD-M4, BRD-M5 (Smart Dynamic Modular Bay Replication) | PRD-F5, PRD-F10, PRD-F14, PRD-F19 | SDD-C4, SDD-C5, SDD-C7, SDD-C9 | ERD-E3, ERD-E4, ERD-E6, ERD-E7, ERD-E14, ERD-E17 | QAD-TC97.1 through QAD-TC97.14 | Implemented |
 
 ---
 

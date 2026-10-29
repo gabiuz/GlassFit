@@ -30,7 +30,19 @@ import {
   computeOperatorYCoordinates,
   extractLouverBladePrototype,
   extractOperatorTracks,
+  extractOperatorPrototype,
+  extractBayInfillPrototype,
 } from "./jalousieGeometryAnalyzer";
+import {
+  computeDynamicBayCount,
+  computeMullionCount,
+  computeClearBayWidth,
+  computeBayCenters,
+  computeMullionCenters,
+  computeOuterJambPositions,
+} from "./bayReplicationEngine";
+import { autoDetectBayRole } from "../admin/products/autoDetection";
+import type { DynamicBayConfig, ExpansionAnchorMode } from "../pricing/types";
 
 export {
   createWindowGlassMaterial,
@@ -71,6 +83,9 @@ export interface ParametricProductBuilderOptions {
   swappedAccessories?: Record<string, SelectedAccessoryState>;
   accessoryModels?: Map<string, THREE.Object3D>;
   removableStates?: Record<string, boolean>;
+  screenMeshDensity?: "fine" | "micro" | "coarse";
+  dynamicBayConfig?: DynamicBayConfig | null;
+  expansionAnchorMode?: ExpansionAnchorMode;
 }
 
 export function buildParametricProduct(
@@ -170,8 +185,10 @@ export function buildParametricProduct(
     };
   }
 
+  const group = buildAssembledProduct(definition, resolved, cache, options);
+  group.updateMatrixWorld(true);
   return {
-    group: buildAssembledProduct(definition, resolved, cache, options),
+    group,
     resolved,
   };
 }
@@ -391,6 +408,81 @@ export function mountAccessoryMesh(
   return clone;
 }
 
+/**
+ * Prepares a swapped or handed modular hardware accessory mesh for louver tracks or operator banks.
+ * Resolves mesh across catalog models, cache, procedural fallback, applies bilateral mirroring,
+ * centers geometry at local (0, 0, 0), and applies PBR hardware finish material.
+ */
+export function prepareAccessoryTrackMesh(
+  swapped: SelectedAccessoryState,
+  trackHanding: "left" | "right",
+  cache: ComponentModelCache,
+  options: ParametricProductBuilderOptions,
+  fallbackSourceHanding: "left" | "right" = "right",
+): THREE.Object3D {
+  let resolvedMesh: THREE.Object3D | null = null;
+  if (options.accessoryModels) {
+    resolvedMesh = options.accessoryModels.get(`${swapped.accessoryId}_${trackHanding}`) ??
+      options.accessoryModels.get(swapped.accessoryId) ??
+      null;
+  }
+  if (!resolvedMesh) {
+    try {
+      resolvedMesh = cache.getClone(swapped.accessoryId);
+    } catch {
+      // fallback
+    }
+  }
+  if (!resolvedMesh && (swapped.accessoryId.startsWith("canonical_") || swapped.accessoryId.startsWith("acc_"))) {
+    try {
+      resolvedMesh = createAccessoryMeshById(swapped.accessoryId);
+    } catch {
+      // fallback
+    }
+  }
+  if (!resolvedMesh) {
+    resolvedMesh = createProceduralAccessoryMesh(swapped.category, swapped.accessoryName, swapped.finish);
+  }
+
+  const clonedAcc = resolvedMesh.clone(true);
+  clonedAcc.updateMatrixWorld(true);
+  const curBox = new THREE.Box3().setFromObject(clonedAcc);
+  const curCenter = new THREE.Vector3();
+  curBox.getCenter(curCenter);
+  clonedAcc.position.sub(curCenter);
+  clonedAcc.updateMatrixWorld(true);
+
+  const sourceHanding = swapped.handingMetadata?.sourceHanding ?? fallbackSourceHanding;
+
+  let finalMesh: THREE.Object3D = clonedAcc;
+  if (trackHanding !== sourceHanding && !options.accessoryModels?.has(`${swapped.accessoryId}_${trackHanding}`)) {
+    finalMesh = mirrorObjectHierarchyAcrossX(clonedAcc);
+    finalMesh.updateMatrixWorld(true);
+    const postBox = new THREE.Box3().setFromObject(finalMesh);
+    const postCenter = new THREE.Vector3();
+    postBox.getCenter(postCenter);
+    finalMesh.position.sub(postCenter);
+    finalMesh.updateMatrixWorld(true);
+  }
+
+  if (swapped.finish) {
+    const hwMat = createHardwareFinishMaterial(swapped.finish);
+    finalMesh.traverse((c) => {
+      if (c instanceof THREE.Mesh) {
+        c.material = hwMat;
+        c.userData.preserveMaterial = true;
+        c.castShadow = true;
+        c.receiveShadow = true;
+      }
+    });
+  }
+
+  const wrapper = new THREE.Group();
+  wrapper.name = `PreparedAccessory_${trackHanding}`;
+  wrapper.add(finalMesh);
+  return wrapper;
+}
+
 function buildWindowLikeProduct(
   definition: ProductStructuralDefinition,
   resolved: ResolvedStructure,
@@ -565,10 +657,10 @@ function buildWindowLikeProduct(
     options.includeSill !== undefined
       ? Boolean(options.includeSill)
       : (
-        readBoolean(resolved.resolvedValues.includeSill, true) &&
-        readBoolean(resolved.resolvedValues.include_sill, true) &&
-        readBoolean(resolved.resolvedValues.has_sill, true) &&
-        readBoolean(resolved.resolvedValues.hasSill, true)
+        readBoolean(resolved.resolvedValues?.includeSill, true) &&
+        readBoolean(resolved.resolvedValues?.include_sill, true) &&
+        readBoolean(resolved.resolvedValues?.has_sill, true) &&
+        readBoolean(resolved.resolvedValues?.hasSill, true)
       );
 
   const isSillExcluded = Boolean(
@@ -740,7 +832,63 @@ function findDimensionMm(resolved: ResolvedStructure, keys: string[]): number | 
     }
   }
 
+  const resolvedRecord = resolved as unknown as Record<string, unknown>;
+  if (resolvedRecord.dimensions && typeof resolvedRecord.dimensions === "object") {
+    const dims = resolvedRecord.dimensions as Record<string, unknown>;
+    for (const key of keys) {
+      const lower = key.toLowerCase();
+      if ((lower === "width" || lower === "w") && typeof dims.width === "number" && dims.width > 0) {
+        return Math.round(dims.width * 1000);
+      }
+      if ((lower === "height" || lower === "h") && typeof dims.height === "number" && dims.height > 0) {
+        return Math.round(dims.height * 1000);
+      }
+      if ((lower === "depth" || lower === "d") && typeof dims.depth === "number" && dims.depth > 0) {
+        return Math.round(dims.depth * 1000);
+      }
+    }
+  }
+
   return null;
+}
+
+/**
+ * Wraps and mounts a component part centered at target metric coordinates (IMP-MS82).
+ * Normalizes pre-offset CAD meshes by subtracting bounding box center to local origin (0, 0, 0)
+ * before applying target translation and scale transforms.
+ */
+function mountCenteredPart(
+  part: THREE.Object3D,
+  targetPos: { x: number; y: number; z: number },
+  targetScale: { x: number; y: number; z: number },
+): THREE.Group {
+  part.updateMatrixWorld(true);
+  const bounds = new THREE.Box3().setFromObject(part);
+  const center = new THREE.Vector3();
+  bounds.getCenter(center);
+  part.position.sub(center);
+  part.updateMatrixWorld(true);
+
+  if (part.userData?.componentKey) {
+    part.traverse((child) => {
+      child.userData.componentKey = part.userData.componentKey;
+      child.userData.componentId = part.userData.componentId;
+      if (part.userData.rawMaterialId) {
+        child.userData.rawMaterialId = part.userData.rawMaterialId;
+      }
+      if (part.userData.rawMaterial) {
+        child.userData.rawMaterial = part.userData.rawMaterial;
+      }
+    });
+  }
+
+  const container = new THREE.Group();
+  container.name = `${part.name || "part"}_container`;
+  container.userData = { ...part.userData };
+  container.add(part);
+  container.position.set(targetPos.x, targetPos.y, targetPos.z);
+  container.scale.set(targetScale.x, targetScale.y, targetScale.z);
+  return container;
 }
 
 function buildAssembledProduct(
@@ -756,10 +904,10 @@ function buildAssembledProduct(
     options.includeSill !== undefined
       ? Boolean(options.includeSill)
       : (
-        readBoolean(resolved.resolvedValues.includeSill, true) &&
-        readBoolean(resolved.resolvedValues.include_sill, true) &&
-        readBoolean(resolved.resolvedValues.has_sill, true) &&
-        readBoolean(resolved.resolvedValues.hasSill, true)
+        readBoolean(resolved.resolvedValues?.includeSill, true) &&
+        readBoolean(resolved.resolvedValues?.include_sill, true) &&
+        readBoolean(resolved.resolvedValues?.has_sill, true) &&
+        readBoolean(resolved.resolvedValues?.hasSill, true)
       );
 
   // Natural Assembly: Identify accessory slots and measure host geometry
@@ -778,23 +926,31 @@ function buildAssembledProduct(
       (component.presentationCategory || "")
     ).toLowerCase();
 
+    const isSillComp =
+      component.bayRole === "REMOVABLE_SILL" ||
+      compIdentity.includes("window_sill") ||
+      (compIdentity.includes("sill") && !compIdentity.includes("bottom") && !compIdentity.includes("rail")) ||
+      Boolean(component.togglePropertyKey && component.togglePropertyKey.toLowerCase().includes("sill"));
+
     const isFrameOrMeshOrPanel =
-      component.presentationCategory === "Framing" ||
-      component.componentType === "Frame" ||
-      component.componentType === "Model" ||
-      component.componentType === "Mesh" ||
-      component.componentType === "Screen" ||
-      component.componentType === "Glass" ||
-      compIdentity.includes("frame") ||
-      compIdentity.includes("mesh") ||
-      compIdentity.includes("glass") ||
-      compIdentity.includes("sill") ||
-      compIdentity.includes("jamb") ||
-      compIdentity.includes("header") ||
-      compIdentity.includes("rail") ||
-      compIdentity.includes("stile") ||
-      compIdentity.includes("mullion") ||
-      compIdentity.includes("bar");
+      !isSillComp &&
+      (
+        component.presentationCategory === "Framing" ||
+        component.componentType === "Frame" ||
+        component.componentType === "Model" ||
+        component.componentType === "Mesh" ||
+        component.componentType === "Screen" ||
+        component.componentType === "Glass" ||
+        compIdentity.includes("frame") ||
+        compIdentity.includes("mesh") ||
+        compIdentity.includes("glass") ||
+        compIdentity.includes("jamb") ||
+        compIdentity.includes("header") ||
+        compIdentity.includes("rail") ||
+        compIdentity.includes("stile") ||
+        compIdentity.includes("mullion") ||
+        compIdentity.includes("bar")
+      );
 
     const isLouverBlade = Boolean(
       component.dimensionBinding === "LOUVER_BLADE" ||
@@ -828,9 +984,11 @@ function buildAssembledProduct(
       compIdentity.includes("lock")
     );
 
-    if (isSlot || (isFixedDimension && !isFrameOrMeshOrPanel)) {
-      accessorySlotKeys.add(component.componentId);
-      accessorySlotKeys.add(component.componentKey);
+    if (isSlot || isSillComp || (isFixedDimension && !isFrameOrMeshOrPanel)) {
+      if (isSlot || (isFixedDimension && !isFrameOrMeshOrPanel)) {
+        accessorySlotKeys.add(component.componentId);
+        accessorySlotKeys.add(component.componentKey);
+      }
     } else {
       try {
         const cModel = cache.getClone(component.componentId);
@@ -1004,6 +1162,152 @@ function buildAssembledProduct(
     ? Math.round(naturalApertureHeightM * scaleY * 1000)
     : (targetHeightMm ?? (naturalHeightM > 0 ? Math.round(naturalHeightM * 1000) : 1200));
 
+  const dynamicBayConfig = (
+    options.dynamicBayConfig ??
+    (definition.template as Record<string, unknown>)?.dynamic_bay_config ??
+    (definition.template as Record<string, unknown>)?.dynamicBayConfig ??
+    (definition.product as Record<string, unknown>)?.dynamic_bay_config ??
+    (definition.product as Record<string, unknown>)?.dynamicBayConfig ??
+    null
+  ) as DynamicBayConfig | null;
+
+  const isBayReplicationActive = Boolean(dynamicBayConfig?.enabled);
+
+  const currentWidthMm = targetWidthMm ?? (naturalWidthM > 0 ? Math.round(naturalWidthM * 1000) : 1200);
+  const nominalPitch = dynamicBayConfig?.nominal_bay_pitch_mm ?? dynamicBayConfig?.nominalBayPitchMm ?? 600;
+  const bayCount = computeDynamicBayCount(currentWidthMm, nominalPitch);
+  const mullionCount = computeMullionCount(bayCount);
+  const anchorMode: ExpansionAnchorMode = options.expansionAnchorMode ?? dynamicBayConfig?.expansion_anchor ?? dynamicBayConfig?.expansion_anchor_mode ?? "symmetric";
+  const defaultWidthMm = naturalWidthM > 0 ? Math.round(naturalWidthM * 1000) : 1200;
+
+  let safeLeftJambWidthMm = 60;
+  let safeRightJambWidthMm = 60;
+  let safeMullionWidthMm = 80;
+  let safeTopRailHeightM = 0.12;
+  let safeBottomRailHeightM = 0.12;
+  let safeSillHeightM = 0.10;
+  let detectedTopRailWidthM: number | undefined;
+  let detectedBottomRailWidthM: number | undefined;
+
+  if (isBayReplicationActive) {
+    let detectedLeftJambWidthMm: number | undefined;
+    let detectedRightJambWidthMm: number | undefined;
+    let detectedMullionWidthMm: number | undefined;
+
+    for (const comp of definition.components) {
+      const compKeyLower = (comp.componentKey + " " + comp.componentName).toLowerCase();
+      const role = comp.bayRole || (comp as Record<string, unknown>).bay_role || autoDetectBayRole(comp.componentKey);
+
+      const isLeft = role === "OUTER_JAMB_LEFT" || (compKeyLower.includes("left") && (compKeyLower.includes("jamb") || compKeyLower.includes("frame") || compKeyLower.includes("stile")));
+      const isRight = role === "OUTER_JAMB_RIGHT" || (compKeyLower.includes("right") && (compKeyLower.includes("jamb") || compKeyLower.includes("frame") || compKeyLower.includes("stile")));
+      const isMul = role === "BAY_DIVIDER" || compKeyLower.includes("center") || compKeyLower.includes("mullion");
+      const isTop = role === "OUTER_HEAD" || compKeyLower.includes("top") || compKeyLower.includes("header");
+      const isBottom = role === "OUTER_SILL" || (compKeyLower.includes("bottom") && !compKeyLower.includes("window_sill"));
+      const isSill = role === "REMOVABLE_SILL" || compKeyLower.includes("window_sill");
+
+      try {
+        const probeClone = cache.getClone(comp.componentId);
+        probeClone.updateMatrixWorld(true);
+        const bBox = new THREE.Box3().setFromObject(probeClone);
+        const bSize = new THREE.Vector3();
+        bBox.getSize(bSize);
+
+        if (isLeft && bSize.x > 0.001) {
+          detectedLeftJambWidthMm = Math.round(bSize.x * 1000);
+        } else if (isRight && bSize.x > 0.001) {
+          detectedRightJambWidthMm = Math.round(bSize.x * 1000);
+        } else if (isMul && bSize.x > 0.001) {
+          detectedMullionWidthMm = Math.round(bSize.x * 1000);
+        } else if (isTop && bSize.y > 0.001) {
+          safeTopRailHeightM = bSize.y;
+          detectedTopRailWidthM = bSize.x;
+        } else if (isBottom && bSize.y > 0.001) {
+          safeBottomRailHeightM = bSize.y;
+          detectedBottomRailWidthM = bSize.x;
+        } else if (isSill && bSize.y > 0.001) {
+          safeSillHeightM = bSize.y;
+        }
+      } catch {
+        // ignore probe error
+      }
+    }
+
+    if (detectedLeftJambWidthMm !== undefined && detectedRightJambWidthMm === undefined) {
+      detectedRightJambWidthMm = detectedLeftJambWidthMm;
+    } else if (detectedRightJambWidthMm !== undefined && detectedLeftJambWidthMm === undefined) {
+      detectedLeftJambWidthMm = detectedRightJambWidthMm;
+    }
+    if (detectedLeftJambWidthMm !== undefined) safeLeftJambWidthMm = detectedLeftJambWidthMm;
+    if (detectedRightJambWidthMm !== undefined) safeRightJambWidthMm = detectedRightJambWidthMm;
+    if (detectedMullionWidthMm !== undefined) safeMullionWidthMm = detectedMullionWidthMm;
+  }
+
+  const clearBayWidthMm = computeClearBayWidth(
+    currentWidthMm,
+    bayCount,
+    safeLeftJambWidthMm,
+    safeRightJambWidthMm,
+    safeMullionWidthMm,
+  );
+  const bayCenters = computeBayCenters({
+    targetWidthMm: currentWidthMm,
+    bayCount,
+    leftJambWidthMm: safeLeftJambWidthMm,
+    rightJambWidthMm: safeRightJambWidthMm,
+    mullionWidthMm: safeMullionWidthMm,
+    anchorMode,
+    defaultWidthMm,
+  });
+  const mullionCenters = computeMullionCenters({
+    targetWidthMm: currentWidthMm,
+    bayCount,
+    leftJambWidthMm: safeLeftJambWidthMm,
+    rightJambWidthMm: safeRightJambWidthMm,
+    mullionWidthMm: safeMullionWidthMm,
+    anchorMode,
+    defaultWidthMm,
+  });
+  const outerJambs = computeOuterJambPositions({
+    targetWidthMm: currentWidthMm,
+    leftJambWidthMm: safeLeftJambWidthMm,
+    rightJambWidthMm: safeRightJambWidthMm,
+    anchorMode,
+    defaultWidthMm,
+  });
+  const headSillCenterX = (outerJambs.leftJambX + outerJambs.rightJambX) / 2;
+  const targetHeightM = targetHeightMm ? targetHeightMm / 1000 : (naturalHeightM > 0 ? naturalHeightM : 1.2);
+  const targetWidthM = currentWidthMm / 1000;
+  const baseY = naturalApertureCenterY;
+
+  const targetTopRailY = baseY + (targetHeightM / 2) - (safeTopRailHeightM / 2);
+  const targetBottomRailY = baseY - (targetHeightM / 2) + (safeBottomRailHeightM / 2);
+  const targetSillY = targetBottomRailY - (safeBottomRailHeightM / 2) - (safeSillHeightM / 2);
+
+  const targetInnerSpanM = (outerJambs.rightJambX - safeRightJambWidthMm / 2000) - (outerJambs.leftJambX + safeLeftJambWidthMm / 2000);
+  const baseFramingWidthM = naturalWidthM > 0 ? naturalWidthM : 1.2;
+
+  // Outer jambs scale along full window height
+  const jambScaleY = scaleY;
+
+  // Exact inner aperture height between top rail and bottom rail
+  const targetApertureHeightM = Math.max(0.1, targetHeightM - safeTopRailHeightM - safeBottomRailHeightM);
+
+  // Center mullion scales cleanly to bridge the inner aperture span
+  const naturalMullionHeightM = naturalApertureHeightM > 0.01 ? naturalApertureHeightM : 1.26;
+  const mullionScaleY = naturalMullionHeightM > 0.01 ? targetApertureHeightM / naturalMullionHeightM : scaleY;
+
+  const isInnerTopRail = detectedTopRailWidthM !== undefined && detectedTopRailWidthM < (naturalWidthM > 0 ? naturalWidthM - 0.05 : 1.15);
+  const topRailScaleX = isInnerTopRail && detectedTopRailWidthM !== undefined && detectedTopRailWidthM > 0.01
+    ? targetInnerSpanM / detectedTopRailWidthM
+    : targetWidthM / baseFramingWidthM;
+
+  const isInnerBottomRail = detectedBottomRailWidthM !== undefined && detectedBottomRailWidthM < (naturalWidthM > 0 ? naturalWidthM - 0.05 : 1.15);
+  const bottomRailScaleX = isInnerBottomRail && detectedBottomRailWidthM !== undefined && detectedBottomRailWidthM > 0.01
+    ? targetInnerSpanM / detectedBottomRailWidthM
+    : targetWidthM / baseFramingWidthM;
+
+  const sillScaleX = targetWidthM / baseFramingWidthM;
+
   // Natural Assembly: Place each component at its modeled origin
   for (const component of definition.components) {
     const key = normalizeComponentKey(component.componentKey);
@@ -1048,6 +1352,291 @@ function buildAssembledProduct(
     clone.userData.rawMaterialId = component.rawMaterialId ?? null;
     clone.userData.rawMaterialCategory = component.rawMaterial?.category ?? null;
     clone.userData.rawMaterial = component.rawMaterial ?? null;
+    clone.userData.bayRole = component.bayRole ?? (component as Record<string, unknown>).bay_role ?? null;
+
+    if (isBayReplicationActive) {
+      const compKeyLower = (component.componentKey + " " + component.componentName).toLowerCase();
+      const role = component.bayRole || (component as Record<string, unknown>).bay_role || autoDetectBayRole(component.componentKey);
+
+      const isMullion = role === "BAY_DIVIDER" || compKeyLower.includes("center") || compKeyLower.includes("mullion");
+      const isBayInfill = role === "BAY_INFILL" || component.dimensionBinding === "LOUVER_BLADE" || (component as Record<string, unknown>).dimension_binding === "LOUVER_BLADE" || compKeyLower.includes("louver") || compKeyLower.includes("clips_and_glass");
+      const isBayHardware = role === "BAY_HARDWARE" || component.dimensionBinding === "LOUVER_OPERATOR" || (component as Record<string, unknown>).dimension_binding === "LOUVER_OPERATOR" || compKeyLower.includes("operator") || compKeyLower.includes("crank");
+      const isLeftJamb = role === "OUTER_JAMB_LEFT" || (compKeyLower.includes("left") && (compKeyLower.includes("jamb") || compKeyLower.includes("frame") || compKeyLower.includes("stile")));
+      const isRightJamb = role === "OUTER_JAMB_RIGHT" || (compKeyLower.includes("right") && (compKeyLower.includes("jamb") || compKeyLower.includes("frame") || compKeyLower.includes("stile")));
+      const isHead = role === "OUTER_HEAD" || compKeyLower.includes("top") || compKeyLower.includes("header");
+      const isSillRail = role === "OUTER_SILL" || (compKeyLower.includes("bottom") && !compKeyLower.includes("window_sill"));
+      const isRemovableSill = role === "REMOVABLE_SILL" || compKeyLower.includes("window_sill");
+
+      if (isMullion) {
+        if (mullionCount > 0) {
+          for (let m = 0; m < mullionCount; m++) {
+            const mullionInstance = clone.clone(true);
+            mullionInstance.name = `${component.componentName || "center_mullion"}_instance_${m}`;
+            mullionInstance.userData = {
+              ...clone.userData,
+              componentKey: component.componentKey,
+              componentId: component.componentId,
+              isDynamicMullion: true,
+              mullionIndex: m,
+              totalMullions: mullionCount,
+              dimensionBinding: "HEIGHT",
+            };
+            const mounted = mountCenteredPart(
+              mullionInstance,
+              { x: mullionCenters[m], y: naturalApertureCenterY, z: 0 },
+              { x: 1, y: mullionScaleY, z: 1 },
+            );
+            group.add(mounted);
+          }
+        }
+        continue;
+      }
+
+      if (isBayInfill) {
+        const bayPrototype = extractBayInfillPrototype(clone);
+        bayPrototype.updateMatrixWorld(true);
+        const bayBox = new THREE.Box3().setFromObject(bayPrototype);
+        const protoBayWidthM = Math.max(0.1, bayBox.max.x - bayBox.min.x);
+        const bayScaleX = (clearBayWidthMm / 1000) / protoBayWidthM;
+
+        const jalousieCfg = component.jalousieConfig ?? (component.componentData as Record<string, unknown>)?.jalousie_config as import("../pricing/types").JalousieConfig | undefined;
+        const pitchMm = jalousieCfg?.pitch_mm ?? jalousieCfg?.pitchMm ?? 175;
+        let louverCount = computeLouverBladeCount(currentApertureHeightMm, pitchMm);
+        const bladeHeightMm = jalousieCfg?.blade_height_mm ?? jalousieCfg?.bladeHeightMm ?? 105.3;
+        const bladeHeightM = bladeHeightMm / 1000;
+        const pitchM = pitchMm / 1000;
+        const effectiveApertureHeightM = currentApertureHeightMm / 1000;
+        while (louverCount > 1 && ((louverCount - 1) * pitchM + bladeHeightM) > (effectiveApertureHeightM - 0.01)) {
+          louverCount--;
+        }
+
+        const bladeElevations = computeLouverBladeYCoordinates(louverCount, pitchMm);
+        const prototypeBlade = extractLouverBladePrototype(bayPrototype);
+        prototypeBlade.updateMatrixWorld(true);
+        const bladeBox = new THREE.Box3().setFromObject(prototypeBlade);
+        const bladeCenter = new THREE.Vector3();
+        bladeBox.getCenter(bladeCenter);
+        if (Math.abs(bladeCenter.x) > 0.0001 || Math.abs(bladeCenter.y) > 0.0001) {
+          prototypeBlade.position.x -= bladeCenter.x;
+          prototypeBlade.position.y -= bladeCenter.y;
+          prototypeBlade.updateMatrixWorld(true);
+        }
+
+        for (let b = 0; b < bayCount; b++) {
+          const bayContainer = new THREE.Group();
+          bayContainer.name = `${component.componentName || "bay_infill"}_bay_${b}`;
+          bayContainer.userData = {
+            ...clone.userData,
+            componentKey: component.componentKey,
+            componentId: component.componentId,
+            isDynamicBay: true,
+            bayIndex: b,
+            totalBays: bayCount,
+            isLouverAssembly: true,
+            louverCount,
+            dimensionBinding: "LOUVER_BLADE",
+          };
+
+          for (let i = 0; i < louverCount; i++) {
+            const bladeInstance = prototypeBlade.clone(true);
+            bladeInstance.name = `${component.componentName || "louver_blade"}_bay_${b}_blade_${i}`;
+            bladeInstance.userData = {
+              ...clone.userData,
+              isLouverBladeInstance: true,
+              bayIndex: b,
+              bladeIndex: i,
+              dimensionBinding: "LOUVER_BLADE",
+            };
+            bladeInstance.scale.set(bayScaleX, 1, 1);
+            bladeInstance.position.set(0, naturalApertureCenterY + bladeElevations[i], 0);
+            bayContainer.add(bladeInstance);
+          }
+
+          bayContainer.position.set(bayCenters[b], 0, 0);
+          group.add(bayContainer);
+        }
+        continue;
+      }
+
+      if (isBayHardware) {
+        const opTracks = extractOperatorTracks(clone);
+        const leftOpProto = opTracks[0]?.prototype ?? extractOperatorPrototype(clone);
+        const rightOpProto = opTracks[1]?.prototype ?? leftOpProto;
+        const targetZ = opTracks[0]?.modeledCenterZ ?? 0.08;
+
+        const swapped = options.swappedAccessories?.[component.componentId] ??
+          options.swappedAccessories?.[component.componentKey];
+        const isAlternativeAccessory = Boolean(
+          swapped &&
+          swapped.accessoryId !== "default" &&
+          swapped.accessoryId !== component.componentId
+        );
+
+        if (!isAlternativeAccessory && swapped?.finish) {
+          const hwMat = createHardwareFinishMaterial(swapped.finish);
+          leftOpProto.traverse((c) => {
+            if (c instanceof THREE.Mesh) {
+              c.material = hwMat;
+              c.userData.preserveMaterial = true;
+              c.castShadow = true;
+              c.receiveShadow = true;
+            }
+          });
+          rightOpProto.traverse((c) => {
+            if (c instanceof THREE.Mesh) {
+              c.material = hwMat;
+              c.userData.preserveMaterial = true;
+              c.castShadow = true;
+              c.receiveShadow = true;
+            }
+          });
+        }
+
+        const leftProto = isAlternativeAccessory
+          ? prepareAccessoryTrackMesh(swapped!, "left", cache, options, component.handingMetadata?.sourceHanding ?? "right")
+          : leftOpProto;
+        const rightProto = isAlternativeAccessory
+          ? prepareAccessoryTrackMesh(swapped!, "right", cache, options, component.handingMetadata?.sourceHanding ?? "right")
+          : rightOpProto;
+
+        const jalousieCfg = component.jalousieConfig ?? (component.componentData as Record<string, unknown>)?.jalousie_config as import("../pricing/types").JalousieConfig | undefined;
+        const pitchMm = jalousieCfg?.pitch_mm ?? jalousieCfg?.pitchMm ?? 175;
+        let louverCount = computeLouverBladeCount(currentApertureHeightMm, pitchMm);
+        const bladeHeightMm = jalousieCfg?.blade_height_mm ?? jalousieCfg?.bladeHeightMm ?? 105.3;
+        const bladeHeightM = bladeHeightMm / 1000;
+        const pitchM = pitchMm / 1000;
+        const effectiveApertureHeightM = currentApertureHeightMm / 1000;
+        while (louverCount > 1 && ((louverCount - 1) * pitchM + bladeHeightM) > (effectiveApertureHeightM - 0.01)) {
+          louverCount--;
+        }
+        const bladesPerOp = jalousieCfg?.blades_per_operator ?? jalousieCfg?.bladesPerOperator ?? 4;
+        const opCountPerBay = computeLouverOperatorCount(louverCount, bladesPerOp);
+        const opElevations = computeOperatorYCoordinates(louverCount, opCountPerBay, pitchMm);
+
+        const stileOffsetX = (clearBayWidthMm / 2000) - 0.025;
+
+        for (let b = 0; b < bayCount; b++) {
+          const bayOpContainer = new THREE.Group();
+          bayOpContainer.name = isAlternativeAccessory
+            ? `${swapped!.accessoryName || "bay_operators"}_bay_${b}`
+            : `${component.componentName || "bay_operators"}_bay_${b}`;
+          bayOpContainer.userData = {
+            ...clone.userData,
+            componentKey: component.componentKey,
+            componentId: component.componentId,
+            isDynamicBayHardware: true,
+            bayIndex: b,
+            totalBays: bayCount,
+            isOperatorAssembly: true,
+            operatorCount: opCountPerBay,
+            dimensionBinding: "LOUVER_OPERATOR",
+            isAccessoryReplacement: isAlternativeAccessory,
+          };
+
+          // In standard multi-bay jalousies (and matching 2-bay fenestration reference):
+          // First bay (b = 0) has operators on the left stile (-stileOffsetX) using left track.
+          // Last bay (b = bayCount - 1) has operators on the right stile (+stileOffsetX) using right track.
+          // For single-bay fixtures (bayCount === 1): handing follows swapped.horizontalPosition.
+          // For multi-bay intermediate bays: defaults to right stile.
+          const isRightStile = bayCount === 1
+            ? (swapped?.horizontalPosition !== "left")
+            : (b === bayCount - 1 || (b > 0 && swapped?.horizontalPosition === "right"));
+          const targetX = isRightStile
+            ? bayCenters[b] + stileOffsetX
+            : bayCenters[b] - stileOffsetX;
+          const activeOpProto = isRightStile ? rightProto : leftProto;
+
+          for (let k = 0; k < opCountPerBay; k++) {
+            const opInstance = activeOpProto.clone(true);
+            const globalIdx = b * opCountPerBay + k;
+            opInstance.name = isAlternativeAccessory
+              ? `${swapped!.accessoryName || "window_operator"}_instance_${globalIdx}`
+              : `${component.componentName || "window_operator"}_instance_${globalIdx}`;
+            opInstance.userData = {
+              ...clone.userData,
+              componentKey: component.componentKey,
+              componentId: component.componentId,
+              componentName: component.componentName,
+              isLouverOperatorInstance: true,
+              isFixedDimension: true,
+              isAccessoryReplacement: isAlternativeAccessory,
+              operatorIndex: globalIdx,
+              bayIndex: b,
+              bankIndex: k,
+              dimensionBinding: "LOUVER_OPERATOR",
+            };
+            opInstance.scale.set(1, 1, 1);
+            opInstance.position.set(targetX, naturalApertureCenterY + opElevations[k], targetZ);
+            bayOpContainer.add(opInstance);
+          }
+
+          group.add(bayOpContainer);
+        }
+        continue;
+      }
+
+      if (isLeftJamb) {
+        const mounted = mountCenteredPart(
+          clone,
+          { x: outerJambs.leftJambX, y: naturalApertureCenterY, z: 0 },
+          { x: 1, y: jambScaleY, z: 1 },
+        );
+        group.add(mounted);
+        continue;
+      }
+
+      if (isRightJamb) {
+        const mounted = mountCenteredPart(
+          clone,
+          { x: outerJambs.rightJambX, y: naturalApertureCenterY, z: 0 },
+          { x: 1, y: jambScaleY, z: 1 },
+        );
+        group.add(mounted);
+        continue;
+      }
+
+      if (isHead) {
+        const mounted = mountCenteredPart(
+          clone,
+          { x: headSillCenterX, y: targetTopRailY, z: 0 },
+          { x: topRailScaleX, y: 1, z: 1 },
+        );
+        group.add(mounted);
+        continue;
+      }
+
+      if (isSillRail) {
+        const mounted = mountCenteredPart(
+          clone,
+          { x: headSillCenterX, y: targetBottomRailY, z: 0 },
+          { x: bottomRailScaleX, y: 1, z: 1 },
+        );
+        group.add(mounted);
+        continue;
+      }
+
+      if (isRemovableSill) {
+        const mounted = mountCenteredPart(
+          clone,
+          { x: headSillCenterX, y: targetSillY, z: 0 },
+          { x: sillScaleX, y: 1, z: 1 },
+        );
+        group.add(mounted);
+        continue;
+      }
+
+      const isSlot = Boolean(
+        component.isAccessorySlot ||
+        (component as Record<string, unknown>).is_accessory_slot ||
+        accessorySlotKeys.has(component.componentId) ||
+        accessorySlotKeys.has(component.componentKey)
+      );
+
+      if (!isSlot) {
+        group.add(clone);
+        continue;
+      }
+    }
 
     const compIdentity = (
       component.componentKey +
@@ -1460,68 +2049,13 @@ function buildAssembledProduct(
       );
 
       const getPreparedAccessoryMesh = (trackHanding: "left" | "right"): THREE.Object3D => {
-        let resolvedMesh: THREE.Object3D | null = null;
-        if (options.accessoryModels) {
-          resolvedMesh = options.accessoryModels.get(`${swapped!.accessoryId}_${trackHanding}`) ??
-            options.accessoryModels.get(swapped!.accessoryId) ??
-            null;
-        }
-        if (!resolvedMesh) {
-          try {
-            resolvedMesh = cache.getClone(swapped!.accessoryId);
-          } catch {
-            // fallback
-          }
-        }
-        if (!resolvedMesh && (swapped!.accessoryId.startsWith("canonical_") || swapped!.accessoryId.startsWith("acc_"))) {
-          try {
-            resolvedMesh = createAccessoryMeshById(swapped!.accessoryId);
-          } catch {
-            // fallback
-          }
-        }
-        if (!resolvedMesh) {
-          resolvedMesh = createProceduralAccessoryMesh(swapped!.category, swapped!.accessoryName, swapped!.finish);
-        }
-
-        const clonedAcc = resolvedMesh.clone(true);
-        clonedAcc.updateMatrixWorld(true);
-        const curBox = new THREE.Box3().setFromObject(clonedAcc);
-        const curCenter = new THREE.Vector3();
-        curBox.getCenter(curCenter);
-        clonedAcc.position.sub(curCenter);
-        clonedAcc.updateMatrixWorld(true);
-
-        const sourceHanding = swapped!.handingMetadata?.sourceHanding ??
-          component.handingMetadata?.sourceHanding ??
-          "right";
-
-        let finalMesh: THREE.Object3D = clonedAcc;
-        if (trackHanding !== sourceHanding && !options.accessoryModels?.has(`${swapped!.accessoryId}_${trackHanding}`)) {
-          finalMesh = mirrorObjectHierarchyAcrossX(clonedAcc);
-          finalMesh.updateMatrixWorld(true);
-          const postBox = new THREE.Box3().setFromObject(finalMesh);
-          const postCenter = new THREE.Vector3();
-          postBox.getCenter(postCenter);
-          finalMesh.position.sub(postCenter);
-          finalMesh.updateMatrixWorld(true);
-        }
-
-        if (swapped!.finish) {
-          const hwMat = createHardwareFinishMaterial(swapped!.finish);
-          finalMesh.traverse((c) => {
-            if (c instanceof THREE.Mesh) {
-              c.material = hwMat;
-              c.castShadow = true;
-              c.receiveShadow = true;
-            }
-          });
-        }
-
-        const wrapper = new THREE.Group();
-        wrapper.name = `PreparedAccessory_${trackHanding}`;
-        wrapper.add(finalMesh);
-        return wrapper;
+        return prepareAccessoryTrackMesh(
+          swapped!,
+          trackHanding,
+          cache,
+          options,
+          swapped!.handingMetadata?.sourceHanding ?? component.handingMetadata?.sourceHanding ?? "right"
+        );
       };
 
       if (!isAlternativeAccessory && swapped?.finish) {
@@ -1652,41 +2186,47 @@ function buildAssembledProduct(
     group.add(clone);
   }
 
-  // Recenter assembled product around host structural components (invariant to swappable accessories)
-  if (hasHostComponents) {
-    group.position.sub(hostCenterVec);
+  if (!isBayReplicationActive) {
+    // Recenter assembled product around host structural components (invariant to swappable accessories)
+    if (hasHostComponents) {
+      group.position.sub(hostCenterVec);
+      group.updateMatrixWorld(true);
+    } else {
+      recenterChildAtOrigin(group);
+    }
+
+    // Apply parametric scaling based on host structural components
     group.updateMatrixWorld(true);
-  } else {
-    recenterChildAtOrigin(group);
-  }
+    group.scale.set(scaleX, scaleY, scaleZ);
 
-  // Apply parametric scaling based on host structural components
-  group.updateMatrixWorld(true);
-  group.scale.set(scaleX, scaleY, scaleZ);
-
-  // Maintain 1:1 metric scale on hardware accessories and fixed parts
-  if (scaleX !== 1 || scaleY !== 1 || scaleZ !== 1) {
-    group.children.forEach((child) => {
-      if (child.userData?.isLouverAssembly || child.userData?.isOperatorAssembly) {
-        return;
-      }
-      const binding = child.userData?.dimensionBinding;
-      const isFixed = Boolean(
-        binding === "FIXED" ||
-        child.userData?.isFixedDimension ||
-        child.userData?.isAccessoryReplacement ||
-        (child.userData?.componentId && accessorySlotKeys.has(child.userData.componentId)) ||
-        (child.userData?.componentKey && accessorySlotKeys.has(child.userData.componentKey))
-      );
-
-      if (isFixed) {
-        child.scale.set(
-          scaleX > 0 ? 1 / scaleX : 1,
-          scaleY > 0 ? 1 / scaleY : 1,
-          scaleZ > 0 ? 1 / scaleZ : 1,
+    // Maintain 1:1 metric scale on hardware accessories and fixed parts
+    if (scaleX !== 1 || scaleY !== 1 || scaleZ !== 1) {
+      group.children.forEach((child) => {
+        if (child.userData?.isLouverAssembly || child.userData?.isOperatorAssembly) {
+          return;
+        }
+        const binding = child.userData?.dimensionBinding;
+        const isFixed = Boolean(
+          binding === "FIXED" ||
+          child.userData?.isFixedDimension ||
+          child.userData?.isAccessoryReplacement ||
+          (child.userData?.componentId && accessorySlotKeys.has(child.userData.componentId)) ||
+          (child.userData?.componentKey && accessorySlotKeys.has(child.userData.componentKey))
         );
-      }
-    });
+
+        if (isFixed) {
+          child.scale.set(
+            scaleX > 0 ? 1 / scaleX : 1,
+            scaleY > 0 ? 1 / scaleY : 1,
+            scaleZ > 0 ? 1 / scaleZ : 1,
+          );
+        }
+      });
+    }
+  } else {
+    // Dynamic modular bay fenestration: parts are already positioned at exact metric coordinates
+    group.position.set(0, 0, 0);
+    group.scale.set(1, 1, 1);
   }
   group.updateMatrixWorld(true);
 
@@ -1722,27 +2262,50 @@ function buildAssembledProduct(
                 : "front"
             ));
 
-    // Position on front or back of product with an 8mm clearance gap, aligned with host product frame center (world origin)
-    const clearanceGapMeters = 0.008;
-    const localX = scaleX > 0 ? (0 - group.position.x) / scaleX : 0;
-    const localY = scaleY > 0 ? (0 - group.position.y) / scaleY : 0;
+    // Calculate reference perimeter frame bounds, isolating from projecting exterior sills and interior operator handles
+    const hostFrameBounds = new THREE.Box3();
+    let hasFrameComponent = false;
+    group.traverse((c) => {
+      if (c instanceof THREE.Mesh) {
+        const cat = (c.userData?.presentationCategory || "").toString().toLowerCase();
+        const type = (c.userData?.componentType || "").toString().toLowerCase();
+        const key = (c.userData?.componentKey || c.name || "").toString().toLowerCase();
+        const isProjectingSill = type === "sill" || key.includes("window_sill") || key.includes("projecting_sill");
+        const isHardware = cat === "hardware" || type === "hardware" || key.includes("operator") || key.includes("crank") || key.includes("handle");
+        if (!isProjectingSill && !isHardware) {
+          hostFrameBounds.expandByObject(c);
+          hasFrameComponent = true;
+        }
+      }
+    });
+
+    const refHostBounds = hasFrameComponent && !hostFrameBounds.isEmpty() ? hostFrameBounds : hostBounds;
+
+    // Position on front or back of product with an architecturally realistic 3mm mounting clearance gap
+    const clearanceGapMeters = 0.003;
+    const hostScaleX = isBayReplicationActive ? 1 : scaleX;
+    const hostScaleY = isBayReplicationActive ? 1 : scaleY;
+    const hostScaleZ = isBayReplicationActive ? 1 : scaleZ;
+
+    const localX = hostScaleX > 0 ? (0 - group.position.x) / hostScaleX : 0;
+    const localY = hostScaleY > 0 ? (0 - group.position.y) / hostScaleY : 0;
 
     // In architectural window/door systems:
     // - "back" is the Interior face (inside the room, where operator handles, cam handles, and cranks reside) -> positive Z (+Z)
     // - "front" is the Exterior face (outside the building, where window sills and weather drip caps project) -> negative Z (-Z)
     const targetWorldZ = resolvedMountingSide === "back"
       ? hostBounds.max.z - addonBounds.min.z + clearanceGapMeters
-      : hostBounds.min.z - addonBounds.max.z - clearanceGapMeters;
+      : refHostBounds.min.z - addonBounds.max.z - clearanceGapMeters;
 
-    const localZ = scaleZ > 0
-      ? (targetWorldZ - group.position.z) / scaleZ
+    const localZ = hostScaleZ > 0
+      ? (targetWorldZ - group.position.z) / hostScaleZ
       : targetWorldZ;
 
     // Cancel out parent group scaling so add-on geometry maintains exact metric dimensions
     addonGroup.scale.set(
-      scaleX > 0 ? 1 / scaleX : 1,
-      scaleY > 0 ? 1 / scaleY : 1,
-      scaleZ > 0 ? 1 / scaleZ : 1,
+      hostScaleX > 0 ? 1 / hostScaleX : 1,
+      hostScaleY > 0 ? 1 / hostScaleY : 1,
+      hostScaleZ > 0 ? 1 / hostScaleZ : 1,
     );
     addonGroup.position.set(localX, localY, localZ);
     group.add(addonGroup);
@@ -1807,10 +2370,13 @@ function buildAssembledProduct(
         );
 
         // Cancel out group scaling on mounted accessory so it preserves exact dimensions
+        const hostScaleX = isBayReplicationActive ? 1 : scaleX;
+        const hostScaleY = isBayReplicationActive ? 1 : scaleY;
+        const hostScaleZ = isBayReplicationActive ? 1 : scaleZ;
         mounted.scale.set(
-          scaleX > 0 ? 1 / scaleX : 1,
-          scaleY > 0 ? 1 / scaleY : 1,
-          scaleZ > 0 ? 1 / scaleZ : 1,
+          hostScaleX > 0 ? 1 / hostScaleX : 1,
+          hostScaleY > 0 ? 1 / hostScaleY : 1,
+          hostScaleZ > 0 ? 1 / hostScaleZ : 1,
         );
       }
     }
@@ -2158,21 +2724,119 @@ function buildAddonAttachment(
           clone.userData.presentationCategory = comp.presentationCategory;
           clone.userData.dimensionBinding = comp.dimensionBinding ?? (comp as Record<string, unknown>).dimension_binding ?? "FIXED";
 
+          const compIdentity = (
+            (comp.componentKey || "") + " " +
+            (comp.componentName || "") + " " +
+            (comp.componentType || "")
+          ).toLowerCase();
+
           const isHatch = Boolean(
-            comp.componentKey.toLowerCase().includes("hatch") ||
-            (comp.componentName || "").toLowerCase().includes("hatch") ||
+            compIdentity.includes("hatch") ||
             Boolean(comp.togglePropertyKey && comp.togglePropertyKey.toLowerCase().includes("hatch"))
           );
 
-          const targetOperatorKeys = options.hatchTargetComponentKeys ?? matchingAddon.hatchTargetComponentKeys ?? [];
+          const isMeshComp = Boolean(
+            compIdentity.includes("mesh") ||
+            compIdentity.includes("wire") ||
+            comp.componentType === "Mesh"
+          ) && !isHatch;
 
-          if (isHatch && targetOperatorKeys.length > 0) {
+          if (isMeshComp) {
+            clone.updateMatrixWorld(true);
+            const partBox = new THREE.Box3().setFromObject(clone);
+            const partCenter = new THREE.Vector3();
+            const partSize = new THREE.Vector3();
+            partBox.getCenter(partCenter);
+            partBox.getSize(partSize);
+
+            // Compute metric dimensions in final assembled product space
+            const worldMeshWidthMm = Math.max(10, partSize.x * scaleX * 1000);
+            const worldMeshHeightMm = Math.max(10, partSize.y * scaleY * 1000);
+
+            // Wire pitch:
+            // "fine" = 3.2mm (delicate, authentic architectural insect screen)
+            // "micro" = 2.0mm (dense anti-midge screening)
+            // "coarse" = 6.5mm (heavy wire barrier mesh)
+            const pitchMm = options.screenMeshDensity === "micro"
+              ? 2.0
+              : options.screenMeshDensity === "coarse"
+                ? 6.5
+                : 3.2;
+
+            const thicknessRatio = options.screenMeshDensity === "micro"
+              ? 0.28
+              : options.screenMeshDensity === "coarse"
+                ? 0.22
+                : 0.25;
+
+            const meshMat = createInsectScreenMaterial(worldMeshWidthMm, worldMeshHeightMm, {
+              wirePitchMm: pitchMm,
+              wireThicknessRatio: thicknessRatio,
+            });
+
+            const meshGeo = new THREE.PlaneGeometry(Math.max(0.01, partSize.x), Math.max(0.01, partSize.y));
+            const meshPlane = new THREE.Mesh(meshGeo, meshMat);
+            meshPlane.name = comp.componentKey || "screen_mesh";
+            meshPlane.userData = {
+              ...clone.userData,
+              componentId: comp.componentId,
+              componentKey: comp.componentKey,
+              componentName: comp.componentName,
+              componentType: comp.componentType,
+              presentationCategory: comp.presentationCategory,
+              dimensionBinding: "AREA",
+              isAddon: true,
+              addonType: "screen",
+              isScreenMesh: true,
+              preserveMaterial: true,
+            };
+            meshPlane.renderOrder = 0;
+            meshPlane.castShadow = true;
+            meshPlane.receiveShadow = true;
+            meshPlane.position.copy(partCenter);
+            uploadedGroup.add(meshPlane);
+            clonedCount++;
+            continue;
+          }
+
+          let targetOperatorKeys = options.hatchTargetComponentKeys ?? matchingAddon.hatchTargetComponentKeys ?? [];
+          if (targetOperatorKeys.length === 0 && definition?.components) {
+            targetOperatorKeys = definition.components
+              .filter((c) => {
+                const key = (c.componentKey || "").toLowerCase();
+                const name = (c.componentName || "").toLowerCase();
+                const cat = (c.presentationCategory || c.componentType || "").toLowerCase();
+                const binding = (c.dimensionBinding || (c as Record<string, unknown>).dimension_binding || "").toString().toUpperCase();
+                return (
+                  binding === "LOUVER_OPERATOR" ||
+                  key.includes("operator") ||
+                  key.includes("crank") ||
+                  key.includes("cam") ||
+                  key.includes("latch") ||
+                  key.includes("handle") ||
+                  key.includes("rotator") ||
+                  key.includes("rotopers") ||
+                  name.includes("operator") ||
+                  name.includes("crank") ||
+                  name.includes("cam") ||
+                  name.includes("latch") ||
+                  name.includes("handle") ||
+                  name.includes("rotator") ||
+                  cat.includes("hardware")
+                );
+              })
+              .map((c) => c.componentKey);
+          }
+
+          const resolvedTargets = (isHatch && (targetOperatorKeys.length > 0 || Boolean(hostGroup)))
+            ? resolveAllHostTargetCoordinates(targetOperatorKeys, hostGroup, definition, cache)
+            : [];
+
+          if (isHatch && resolvedTargets.length > 0) {
             clone.updateMatrixWorld(true);
             const partBox = new THREE.Box3().setFromObject(clone);
             const partCenter = new THREE.Vector3();
             partBox.getCenter(partCenter);
-
-            const resolvedTargets = resolveAllHostTargetCoordinates(targetOperatorKeys, hostGroup, definition, cache);
 
             for (let i = 0; i < resolvedTargets.length; i++) {
               const targetCoords = resolvedTargets[i];
@@ -2229,6 +2893,65 @@ function buildAddonAttachment(
                 finalMesh.position.sub(postCenter);
                 finalMesh.updateMatrixWorld(true);
               }
+
+              const hatchPitchMm = options.screenMeshDensity === "micro"
+                ? 2.0
+                : options.screenMeshDensity === "coarse"
+                  ? 6.5
+                  : 3.2;
+
+              finalMesh.traverse((child) => {
+                if (child instanceof THREE.Mesh) {
+                  const matName = (
+                    Array.isArray(child.material)
+                      ? child.material.map((m) => m.name).join(" ")
+                      : (child.material?.name || "")
+                  ).toLowerCase();
+
+                  const isWireMesh =
+                    matName.includes("wire") ||
+                    matName.includes("scd_screen_wire") ||
+                    child.name === "Screen_Access_Hatch_Mesh_1";
+
+                  const isHatchFrame =
+                    matName.includes("aluminium") ||
+                    matName.includes("aluminum") ||
+                    child.name === "Screen_Access_Hatch_Mesh";
+
+                  const isHatchHardware =
+                    matName.includes("hardware") ||
+                    child.name === "Screen_Access_Hatch_Mesh_2";
+
+                  if (isWireMesh) {
+                    child.userData.isScreenMesh = true;
+                    child.userData.preserveMaterial = true;
+                    child.userData.presentationCategory = "Mesh";
+                    child.material = createInsectScreenMaterial(origSize.x * 1000, origSize.y * 1000, {
+                      wirePitchMm: hatchPitchMm,
+                      wireThicknessRatio: 0.25,
+                    });
+                    child.renderOrder = 0;
+                    child.castShadow = true;
+                    child.receiveShadow = true;
+                  } else if (isHatchFrame) {
+                    child.userData.isScreenMesh = false;
+                    child.userData.preserveMaterial = true;
+                    child.userData.presentationCategory = "Framing";
+                    child.material = frameMat.clone();
+                    child.renderOrder = 0;
+                    child.castShadow = true;
+                    child.receiveShadow = true;
+                  } else if (isHatchHardware) {
+                    child.userData.isScreenMesh = false;
+                    child.userData.preserveMaterial = true;
+                    child.userData.presentationCategory = "Hardware";
+                    child.material = createHardwareFinishMaterial("black");
+                    child.renderOrder = 0;
+                    child.castShadow = true;
+                    child.receiveShadow = true;
+                  }
+                }
+              });
 
               // Clamp hatch coordinates so it stays strictly within the screen perimeter
               const halfHatchW = origSize.x / 2;
@@ -2355,12 +3078,13 @@ function buildAddonAttachment(
               const halfPartW = partSize.x / 2;
               let targetX = partCenter.x;
               if (hasAddonGeom && scaleX > 0 && Math.abs(scaleX - 1) > 0.0001) {
+                const screenInnerHalfW = (targetWidthM / 2) - 0.035;
                 if (deltaX > 0.02) {
                   const modeledOuterEdgeDist = partBox.max.x - addonBaseCenterX;
-                  targetX = addonBaseCenterX + modeledOuterEdgeDist - (halfPartW / scaleX);
+                  targetX = addonBaseCenterX + Math.min(modeledOuterEdgeDist - (halfPartW / scaleX), (screenInnerHalfW - halfPartW) / scaleX);
                 } else if (deltaX < -0.02) {
                   const modeledOuterEdgeDist = addonBaseCenterX - partBox.min.x;
-                  targetX = addonBaseCenterX - modeledOuterEdgeDist + (halfPartW / scaleX);
+                  targetX = addonBaseCenterX - Math.min(modeledOuterEdgeDist - (halfPartW / scaleX), (screenInnerHalfW - halfPartW) / scaleX);
                 }
               }
 
@@ -2383,9 +3107,11 @@ function buildAddonAttachment(
     }
 
     if (clonedCount > 0) {
-      // Center the internal mesh geometry so that (0, 0, 0) is the exact center of the add-on
+      // Center the internal mesh geometry so that (0, 0, 0) is the exact center of the add-on frame
+      // Keep Z centered at 0 (the frame rails centerline) to prevent hatch projection from skewing mesh Z
+      const addonFrameCenterZ = 0;
       for (const child of uploadedGroup.children) {
-        child.position.sub(addonNaturalCenter);
+        child.position.sub(new THREE.Vector3(addonNaturalCenter.x, addonNaturalCenter.y, addonFrameCenterZ));
       }
       uploadedGroup.position.set(0, 0, 0);
       uploadedGroup.updateMatrixWorld(true);
@@ -2418,17 +3144,20 @@ function buildAddonAttachment(
         child.userData.isAddon = true;
         child.userData.addonType = addonType;
         if (child instanceof THREE.Mesh) {
-          const nameKey = (child.name + " " + (child.userData.componentKey || "") + " " + (child.parent?.name || "")).toLowerCase();
-          const isMesh =
-            nameKey.includes("mesh") ||
-            nameKey.includes("wire") ||
-            nameKey.includes("screen") ||
-            child.userData.isScreenMesh;
+          if (child.userData.preserveMaterial) {
+            // Already explicitly customized (hatch frame, hatch mesh, hatch latch, or main mesh plane)
+            return;
+          }
 
-          if (isMesh) {
-            // Preserve author's uploaded 3D component geometry & material from GLB
+          const isScreenWireMesh =
+            child.userData.isScreenMesh === true ||
+            child.userData.componentKey === "screen_mesh" ||
+            child.name === "screen_mesh";
+
+          if (isScreenWireMesh) {
             child.userData.isScreenMesh = true;
             child.userData.preserveMaterial = true;
+            child.userData.presentationCategory = "Mesh";
             child.renderOrder = 0;
             child.castShadow = true;
             child.receiveShadow = true;
@@ -2439,7 +3168,7 @@ function buildAddonAttachment(
                 m.depthWrite = true;
                 m.side = THREE.DoubleSide;
                 if (m.transparent) {
-                  m.alphaTest = m.alphaTest || 0.2;
+                  m.alphaTest = m.alphaTest || 0.02;
                 }
               });
             }

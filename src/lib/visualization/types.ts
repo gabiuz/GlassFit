@@ -115,6 +115,8 @@ export type ProductComponentDefinition = {
   pricingMethod?: string;
   handingMetadata?: import("@/lib/admin/products/types").ComponentHandingMetadata | null;
   jalousieConfig?: import("@/lib/pricing/types").JalousieConfig | null;
+  bayRole?: import("@/lib/pricing/types").DynamicBayRole | null;
+  bay_role?: import("@/lib/pricing/types").DynamicBayRole | null;
 };
 
 export interface AccessorySlotOverride {
@@ -175,6 +177,8 @@ export type ProductStructuralDefinition = {
     isAccessory?: boolean;
     accessoryCategory?: "handle" | "lock" | "hinge" | "roller" | "other" | null;
     accessoryMountingType?: "surface_mount" | "mortise" | "recessed" | "clamp" | null;
+    dynamicBayConfig?: import("@/lib/pricing/types").DynamicBayConfig | null;
+    dynamic_bay_config?: import("@/lib/pricing/types").DynamicBayConfig | null;
   };
   template: {
     templateId: string;
@@ -184,6 +188,8 @@ export type ProductStructuralDefinition = {
     baseConfiguration: JsonObject;
     category?: string;
     parametricRules?: JsonObject;
+    dynamicBayConfig?: import("@/lib/pricing/types").DynamicBayConfig | null;
+    dynamic_bay_config?: import("@/lib/pricing/types").DynamicBayConfig | null;
   };
   parameters: ProductParameter[];
   components: ProductComponentDefinition[];
@@ -384,12 +390,16 @@ export type ProductConfigurationSnapshot = {
   addonPrice?: number;
   addonAluminumFinish?: string;
   addonMountingSide?: "front" | "back";
+  screenMeshDensity?: "fine" | "micro" | "coarse";
+  includeHatch?: boolean;
+  removableStates?: Record<string, boolean>;
   hatchCount?: number;
   hatchTargetKeys?: string[];
   baseUnitPrice?: number;
   grilleBOM?: import("@/lib/pricing/types").GrilleLinearBOMResult | null;
   swappedAccessories?: Record<string, SelectedAccessoryState>;
   accessoryPriceDelta?: number;
+  dynamicBayConfig?: import("@/lib/pricing/types").DynamicBayConfig | null;
   visualParameterValues: Record<string, unknown>;
 };
 

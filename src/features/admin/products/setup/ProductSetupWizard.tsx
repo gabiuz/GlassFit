@@ -15,6 +15,7 @@ import type { UpsertParameterInput, UpsertRuleInput } from "@/lib/admin/products
 import { buildProductSetupUrl, getStepsForProduct, type StepKey } from "@/lib/admin/products/wizardSteps";
 
 import type { AccessoryCategory, AccessoryMountingType } from "@/lib/admin/products/types";
+import type { DynamicBayConfig } from "@/lib/pricing/types";
 
 export interface ProductAssetSummary {
     asset_id?: string;
@@ -238,7 +239,8 @@ export function ProductSetupWizard({ productId, initialData, initialStep }: Prod
                         initialData={{
                             parameters: (Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.product_parameters : productData?.product_templates?.product_parameters) as UpsertParameterInput[] | undefined,
                             rules: (Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.structural_rules : productData?.product_templates?.structural_rules) as UpsertRuleInput[] | undefined,
-                            components: ((Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.product_components : productData?.product_templates?.product_components) as Record<string, unknown>[]) || []
+                            components: ((Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.product_components : productData?.product_templates?.product_components) as Record<string, unknown>[]) || [],
+                            dynamicBayConfig: ((productData?.dynamic_bay_config || (Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.dynamic_bay_config : productData?.product_templates?.dynamic_bay_config)) as DynamicBayConfig | null) || null,
                         }}
                         onSave={() => handleStepChange("validation")}
                     />
