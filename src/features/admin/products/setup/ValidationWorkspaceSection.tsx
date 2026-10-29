@@ -9,12 +9,14 @@ import {
   AlertTriangle,
   Calculator,
   ShieldAlert,
+  ShieldCheck,
   Sparkles,
   Layers,
   Sliders,
 } from "lucide-react";
 import { fetchDraftStructuralDefinition } from "@/lib/admin/products/validationMutations";
-import { ProductComponentDefinition, ProductStructuralDefinition, ResolvedStructure, SelectedAccessoryState } from "@/lib/visualization/types";
+import { getAvailableAddonProducts } from "@/lib/admin/products/addonMutations";
+import { CompatibleAddon, ProductComponentDefinition, ProductStructuralDefinition, ResolvedStructure, SelectedAccessoryState } from "@/lib/visualization/types";
 import { ComponentModelCache, preloadComponentModels } from "@/lib/visualization/componentModelCache";
 import { resolveProductStructure } from "@/lib/visualization/structuralResolver";
 import { buildParametricProduct } from "@/lib/visualization/parametricProductBuilder";
@@ -58,6 +60,9 @@ function ParametricModelView({
   materialOverrides,
   rawMaterials,
   activeAddon = "none",
+  addonProductId,
+  addonMountingSide,
+  hatchTargetComponentKeys,
   addonAluminumFinish = "analok",
   swappedAccessories,
   accessoryModels,
@@ -71,6 +76,9 @@ function ParametricModelView({
   materialOverrides: Record<string, string>;
   rawMaterials: RawMaterial[];
   activeAddon?: "screen" | "grill" | "none" | null;
+  addonProductId?: string;
+  addonMountingSide?: "front" | "back";
+  hatchTargetComponentKeys?: string[];
   addonAluminumFinish?: string;
   swappedAccessories?: Record<string, SelectedAccessoryState>;
   accessoryModels?: Map<string, THREE.Object3D>;
@@ -97,6 +105,9 @@ function ParametricModelView({
       includeSill: hasSill,
       removableStates,
       activeAddon,
+      addonProductId,
+      addonMountingSide,
+      hatchTargetComponentKeys,
       addonAluminumFinish,
       swappedAccessories,
       accessoryModels,
@@ -114,7 +125,21 @@ function ParametricModelView({
     });
 
     return built.group;
-  }, [definition, resolved, cache, hasSill, removableStates, hiddenComponents, activeAddon, addonAluminumFinish, swappedAccessories, accessoryModels]);
+  }, [
+    definition,
+    resolved,
+    cache,
+    hasSill,
+    removableStates,
+    hiddenComponents,
+    activeAddon,
+    addonProductId,
+    addonMountingSide,
+    hatchTargetComponentKeys,
+    addonAluminumFinish,
+    swappedAccessories,
+    accessoryModels,
+  ]);
 
   // Dynamic Three.js Material Shading: Update mesh materials in place without reloading geometry
   useEffect(() => {
@@ -211,6 +236,10 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
   const [activeTab, setActiveTab] = useState<"dimensions" | "materials">("dimensions");
   const [activeAddon, setActiveAddon] = useState<"screen" | "grill" | "none">("none");
   const [addonAlumFinish, setAddonAlumFinish] = useState<string>("analok");
+  const [selectedScreenProductId, setSelectedScreenProductId] = useState<string>("");
+  const [selectedGrillProductId, setSelectedGrillProductId] = useState<string>("");
+  const [addonMountingSide, setAddonMountingSide] = useState<"front" | "back">("back");
+  const [includeHatch, setIncludeHatch] = useState<boolean>(true);
 
   // Step 6 Modular Hardware Accessory Swapping State (IMP-MS75)
   const [swappedAccessories, setSwappedAccessories] = useState<Record<string, SelectedAccessoryState>>({});
@@ -266,7 +295,16 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
         }
       }
     }
-    return list.filter((c) => Boolean(c.isRemovable || c.togglePropertyKey));
+    return list.filter((c) => {
+      const isRemovable = Boolean(c.isRemovable || c.togglePropertyKey);
+      if (!isRemovable) return false;
+      const isHatch =
+        c.componentKey.toLowerCase().includes("hatch") ||
+        (c.componentName || "").toLowerCase().includes("hatch") ||
+        Boolean(c.togglePropertyKey && c.togglePropertyKey.toLowerCase().includes("hatch"));
+      if (isHatch) return false;
+      return true;
+    });
   }, [definition, activeAddon]);
 
   useEffect(() => {
@@ -277,8 +315,99 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
           fetchDraftStructuralDefinition(productId),
           getRawMaterials({ is_active: true }),
         ]);
+
+        const isOutward = def.product.productType === "Awning Window" || def.product.productType === "Casement Window";
+        const compatibleAddons = def.compatibleAddons ? [...def.compatibleAddons] : [];
+
+        // If definition has no screen add-ons bound yet, fetch catalog screen add-ons as candidate fallback
+        if (!compatibleAddons.some((a) => a.addonType === "screen")) {
+          try {
+            const availableScreens = await getAvailableAddonProducts("screen");
+            if (availableScreens.length > 0) {
+              const primaryScreen = availableScreens[0];
+              const screenDef = await fetchDraftStructuralDefinition(primaryScreen.productId);
+              const discoveredOperatorKeys = def.components
+                .filter((c) => {
+                  const k = (c.componentKey || "").toLowerCase();
+                  const n = (c.componentName || "").toLowerCase();
+                  const cat = (c.presentationCategory || c.componentType || "").toLowerCase();
+                  return (
+                    k.includes("operator") || k.includes("crank") || k.includes("cam") || k.includes("latch") || k.includes("handle") ||
+                    n.includes("operator") || n.includes("crank") || n.includes("cam") || n.includes("latch") || n.includes("handle") ||
+                    cat.includes("hardware")
+                  );
+                })
+                .map((c) => c.componentKey);
+
+              const candidateScreenAddon: CompatibleAddon = {
+                id: `candidate-${primaryScreen.productId}`,
+                parentProductId: productId,
+                addonProductId: primaryScreen.productId,
+                addonType: "screen",
+                isDefaultEnabled: false,
+                allowedSides: isOutward ? "back" : "both",
+                defaultSide: isOutward ? "back" : "front",
+                hatchTargetComponentKeys: discoveredOperatorKeys,
+                addonProduct: {
+                  productId: primaryScreen.productId,
+                  productName: primaryScreen.productName,
+                  basePrice: primaryScreen.basePrice,
+                  status: primaryScreen.status,
+                },
+                template: screenDef.template,
+                components: screenDef.components,
+              };
+              compatibleAddons.push(candidateScreenAddon);
+            }
+          } catch (err) {
+            console.warn("Could not load candidate screen add-on fallback:", err);
+          }
+        }
+
+        // If definition has no grill add-ons bound yet, fetch catalog grill add-ons as candidate fallback
+        if (!compatibleAddons.some((a) => a.addonType === "grill")) {
+          try {
+            const availableGrills = await getAvailableAddonProducts("grill");
+            if (availableGrills.length > 0) {
+              const primaryGrill = availableGrills[0];
+              const grillDef = await fetchDraftStructuralDefinition(primaryGrill.productId);
+              const candidateGrillAddon: CompatibleAddon = {
+                id: `candidate-${primaryGrill.productId}`,
+                parentProductId: productId,
+                addonProductId: primaryGrill.productId,
+                addonType: "grill",
+                isDefaultEnabled: false,
+                allowedSides: "both",
+                defaultSide: "front",
+                addonProduct: {
+                  productId: primaryGrill.productId,
+                  productName: primaryGrill.productName,
+                  basePrice: primaryGrill.basePrice,
+                  status: primaryGrill.status,
+                },
+                template: grillDef.template,
+                components: grillDef.components,
+              };
+              compatibleAddons.push(candidateGrillAddon);
+            }
+          } catch (err) {
+            console.warn("Could not load candidate grill add-on fallback:", err);
+          }
+        }
+
+        def.compatibleAddons = compatibleAddons;
         setDefinition(def);
         setRawMaterials(mats);
+
+        const screenAddon = compatibleAddons.find((a) => a.addonType === "screen");
+        if (screenAddon) {
+          setSelectedScreenProductId(screenAddon.addonProductId);
+          setAddonMountingSide(screenAddon.defaultSide ?? (isOutward ? "back" : "front"));
+        }
+        const grillAddon = compatibleAddons.find((a) => a.addonType === "grill");
+        if (grillAddon) {
+          setSelectedGrillProductId(grillAddon.addonProductId);
+        }
 
         const allComponents = [
           ...def.components,
@@ -288,7 +417,11 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
         setCache(loadedCache);
 
         // Initialize parameters to default and identify removable components
-        const initialRemovable: Record<string, boolean> = {};
+        const initialRemovable: Record<string, boolean> = {
+          screen_access_hatch: true,
+          has_screen_access_hatch: true,
+          has_hatch: true,
+        };
         const initialParams: Record<string, number> = {};
         def.parameters.forEach((p) => {
           initialParams[p.parameterKey] = Number(p.defaultValue);
@@ -316,6 +449,7 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
           });
         }
         setRemovableStates(initialRemovable);
+        setIncludeHatch(true);
         setParameters(initialParams);
 
         const resolved = resolveProductStructure({ definition: def, values: initialParams });
@@ -710,6 +844,94 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
     }, 0);
   }, [swappedAccessories, removableStates]);
 
+  const isOutwardProjecting = useMemo(() => {
+    const pType = definition?.product?.productType || "";
+    return pType === "Awning Window" || pType === "Casement Window";
+  }, [definition]);
+
+  const boundScreens = useMemo(() => {
+    return (definition?.compatibleAddons || []).filter((a) => a.addonType === "screen");
+  }, [definition]);
+
+  const activeScreenAddon = useMemo(() => {
+    if (boundScreens.length === 0) return null;
+    if (selectedScreenProductId) {
+      return boundScreens.find((s) => s.addonProductId === selectedScreenProductId) || boundScreens[0];
+    }
+    return boundScreens[0];
+  }, [boundScreens, selectedScreenProductId]);
+
+  const boundGrills = useMemo(() => {
+    return (definition?.compatibleAddons || []).filter((a) => a.addonType === "grill");
+  }, [definition]);
+
+  const activeGrillAddon = useMemo(() => {
+    if (boundGrills.length === 0) return null;
+    if (selectedGrillProductId) {
+      return boundGrills.find((g) => g.addonProductId === selectedGrillProductId) || boundGrills[0];
+    }
+    return boundGrills[0];
+  }, [boundGrills, selectedGrillProductId]);
+
+  const targetOperatorKeys = useMemo(() => {
+    if (activeScreenAddon?.hatchTargetComponentKeys && activeScreenAddon.hatchTargetComponentKeys.length > 0) {
+      return activeScreenAddon.hatchTargetComponentKeys;
+    }
+    if (!definition?.components) return [];
+    return definition.components
+      .filter((comp) => {
+        const key = (comp.componentKey || "").toLowerCase();
+        const name = (comp.componentName || "").toLowerCase();
+        const cat = (comp.presentationCategory || comp.componentType || "").toLowerCase();
+        return (
+          key.includes("operator") ||
+          key.includes("crank") ||
+          key.includes("cam") ||
+          key.includes("latch") ||
+          key.includes("handle") ||
+          key.includes("rotator") ||
+          name.includes("operator") ||
+          name.includes("crank") ||
+          name.includes("cam") ||
+          name.includes("latch") ||
+          name.includes("handle") ||
+          name.includes("rotator") ||
+          cat.includes("hardware")
+        );
+      })
+      .map((c) => c.componentKey);
+  }, [definition, activeScreenAddon]);
+
+  const handleHatchToggle = (checked: boolean) => {
+    setIncludeHatch(checked);
+    setRemovableStates((prev) => {
+      const next: Record<string, boolean> = {
+        ...prev,
+        screen_access_hatch: checked,
+        has_screen_access_hatch: checked,
+        has_hatch: checked,
+      };
+      if (definition?.compatibleAddons) {
+        for (const addon of definition.compatibleAddons) {
+          for (const comp of addon.components ?? []) {
+            const isHatch =
+              comp.componentKey.toLowerCase().includes("hatch") ||
+              (comp.componentName || "").toLowerCase().includes("hatch") ||
+              Boolean(comp.togglePropertyKey && comp.togglePropertyKey.toLowerCase().includes("hatch"));
+            if (isHatch) {
+              next[comp.componentId] = checked;
+              next[comp.componentKey] = checked;
+              if (comp.togglePropertyKey) {
+                next[comp.togglePropertyKey] = checked;
+              }
+            }
+          }
+        }
+      }
+      return next;
+    });
+  };
+
   // Calculate real-time Parametric Bill of Materials (with active material overrides)
   const bomCalculation: CalculatedBOMResult | null = useMemo(() => {
     if (!definition) return null;
@@ -758,8 +980,11 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
       panelCount: currentPanels,
       hasSill,
       removableStates,
+      addonMountingSide,
+      hatchCount: includeHatch ? targetOperatorKeys.length : 0,
+      hatchTargetKeys: includeHatch ? targetOperatorKeys : [],
     });
-  }, [definition, rawMaterials, parameters, hasSill, removableStates, materialOverrides]);
+  }, [definition, rawMaterials, parameters, hasSill, removableStates, materialOverrides, addonMountingSide, includeHatch, targetOperatorKeys]);
 
   // Baseline BOM Calculation (strictly default configuration for sensitivity comparison)
   const baselineBOMResult: CalculatedBOMResult | null = useMemo(() => {
@@ -807,8 +1032,11 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
       panelCount: currentPanels,
       hasSill,
       removableStates,
+      addonMountingSide,
+      hatchCount: includeHatch ? targetOperatorKeys.length : 0,
+      hatchTargetKeys: includeHatch ? targetOperatorKeys : [],
     });
-  }, [definition, rawMaterials, parameters, hasSill, removableStates]);
+  }, [definition, rawMaterials, parameters, hasSill, removableStates, addonMountingSide, includeHatch, targetOperatorKeys]);
 
   // Material Price Sensitivity Delta
   const priceSensitivityDelta = useMemo(() => {
@@ -993,16 +1221,24 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
 
   const addonHelperText = useMemo(() => {
     if (activeAddon === "screen") {
-      return `Simulating 4-piece extruded aluminum screen frame matching ${currentWidthMm.toLocaleString()} mm x ${currentHeightMm.toLocaleString()} mm opening.`;
+      const screenName = activeScreenAddon?.addonProduct?.productName || "Insect Screen";
+      const sideLabel = addonMountingSide === "back" ? "Interior (Back)" : "Exterior (Front)";
+      const hatchText = includeHatch && targetOperatorKeys.length > 0
+        ? `With access hatch aligned to ${targetOperatorKeys.join(", ")}.`
+        : includeHatch
+          ? "With access hatch enabled."
+          : "Wicket access hatch disabled.";
+      return `Mounted ${screenName} on ${sideLabel} face (${currentWidthMm.toLocaleString()} mm × ${currentHeightMm.toLocaleString()} mm). ${hatchText}`;
     }
     if (activeAddon === "grill") {
+      const grillName = activeGrillAddon?.addonProduct?.productName || "Security Grille";
       const tieBarNote = currentHeightMm > 1000
         ? ` Includes ${grillPattern.horizontalBarCount} horizontal tie bar${grillPattern.horizontalBarCount > 1 ? "s" : ""}.`
         : "";
-      return `Simulating repeated vertical picket pattern (${grillPattern.verticalBarCount} bars at ${Math.round(grillPattern.actualPitchMm)} mm pitch).${tieBarNote}`;
+      return `Simulating ${grillName} (${grillPattern.verticalBarCount} vertical bars at ${Math.round(grillPattern.actualPitchMm)} mm pitch).${tieBarNote}`;
     }
     return "Standard window fixture without front-layer attachments.";
-  }, [activeAddon, currentWidthMm, currentHeightMm, grillPattern]);
+  }, [activeAddon, activeScreenAddon, activeGrillAddon, addonMountingSide, includeHatch, targetOperatorKeys, currentWidthMm, currentHeightMm, grillPattern]);
 
   const runAutomaticTests = () => {
     if (!definition) return;
@@ -1122,6 +1358,9 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
                     materialOverrides={materialOverrides}
                     rawMaterials={rawMaterials}
                     activeAddon={definition?.product?.isAccessory ? "none" : activeAddon}
+                    addonProductId={activeAddon === "screen" ? activeScreenAddon?.addonProductId : activeAddon === "grill" ? activeGrillAddon?.addonProductId : undefined}
+                    addonMountingSide={addonMountingSide}
+                    hatchTargetComponentKeys={includeHatch ? targetOperatorKeys : []}
                     addonAluminumFinish={addonAlumFinish}
                     swappedAccessories={swappedAccessories}
                     accessoryModels={accessoryModels}
@@ -1135,7 +1374,7 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
               <span>{definition?.product?.isAccessory ? "Hardware Accessory 3D View" : `Live 3D Geometry (${currentWidthMm}mm × ${currentHeightMm}mm)`}</span>
               {!definition?.product?.isAccessory && activeAddon !== "none" && (
                 <span className="ml-1 text-[#07b6d3] font-semibold">
-                  + {activeAddon === "screen" ? "Screen" : "Grille"}
+                  + {activeAddon === "screen" ? (activeScreenAddon?.addonProduct?.productName || "Screen") : (activeGrillAddon?.addonProduct?.productName || "Grille")}
                 </span>
               )}
             </div>
@@ -1271,7 +1510,14 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
                     </button>
                     <button
                       type="button"
-                      onClick={() => setActiveAddon("screen")}
+                      onClick={() => {
+                        setActiveAddon("screen");
+                        if (activeScreenAddon?.defaultSide) {
+                          setAddonMountingSide(activeScreenAddon.defaultSide);
+                        } else if (isOutwardProjecting) {
+                          setAddonMountingSide("back");
+                        }
+                      }}
                       className={`flex-1 py-1.5 px-3 rounded-[8px] text-xs font-medium transition-all cursor-pointer ${
                         activeAddon === "screen"
                           ? "bg-white text-[#0f1422] shadow-2xs font-semibold"
@@ -1282,7 +1528,14 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
                     </button>
                     <button
                       type="button"
-                      onClick={() => setActiveAddon("grill")}
+                      onClick={() => {
+                        setActiveAddon("grill");
+                        if (activeGrillAddon?.defaultSide) {
+                          setAddonMountingSide(activeGrillAddon.defaultSide);
+                        } else {
+                          setAddonMountingSide("front");
+                        }
+                      }}
                       className={`flex-1 py-1.5 px-3 rounded-[8px] text-xs font-medium transition-all cursor-pointer ${
                         activeAddon === "grill"
                           ? "bg-white text-[#0f1422] shadow-2xs font-semibold"
@@ -1292,6 +1545,219 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
                       Security Grille
                     </button>
                   </div>
+
+                  {/* Screen Add-on Product & Operator Hatch Controls */}
+                  {activeAddon === "screen" && (
+                    <div className="space-y-3 mb-3">
+                      {/* Exact Screen Add-on Product Card / Selector */}
+                      {boundScreens.length > 1 ? (
+                        <div className="flex flex-col gap-1.5">
+                          <label className="text-[11px] font-semibold text-neutral-700 uppercase tracking-wider">
+                            Compatible Screen Add-on
+                          </label>
+                          <div className="flex gap-1.5 flex-wrap">
+                            {boundScreens.map((screen) => {
+                              const isSelected = (selectedScreenProductId || boundScreens[0].addonProductId) === screen.addonProductId;
+                              return (
+                                <button
+                                  key={screen.addonProductId}
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedScreenProductId(screen.addonProductId);
+                                    if (screen.defaultSide) {
+                                      setAddonMountingSide(screen.defaultSide);
+                                    }
+                                  }}
+                                  className={`px-2.5 py-1.5 rounded-[6px] text-xs border transition-colors cursor-pointer flex items-center gap-1.5 ${
+                                    isSelected
+                                      ? "border-[#07b6d3] bg-cyan-50/50 font-semibold text-[#0f1422]"
+                                      : "border-neutral-200 bg-white hover:bg-neutral-50 text-neutral-600"
+                                  }`}
+                                >
+                                  <Layers className="size-3 text-[#07b6d3]" />
+                                  <span>{screen.addonProduct?.productName || "Insect Screen"}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between bg-neutral-50 border border-neutral-200/80 rounded-[8px] px-3 py-2">
+                          <div className="flex items-center gap-2">
+                            <Layers className="size-3.5 text-[#07b6d3]" />
+                            <span className="text-xs font-semibold text-[#0f1422]">
+                              {activeScreenAddon?.addonProduct?.productName || "Mesh Screen"}
+                            </span>
+                          </div>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 font-medium border border-emerald-100 flex items-center gap-1">
+                            <CheckCircle2 className="size-2.5" />
+                            Bound Add-on
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Directional Mounting Placement */}
+                      <div className="flex flex-col gap-1.5">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-semibold text-neutral-800">Mounting Placement</span>
+                          <span className="text-[11px] text-neutral-500 font-medium">
+                            {addonMountingSide === "back" ? "Interior (Back)" : "Exterior (Front)"}
+                          </span>
+                        </div>
+                        {activeScreenAddon?.allowedSides === "both" && !isOutwardProjecting ? (
+                          <div className="flex bg-neutral-100 p-0.5 rounded-[8px] gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setAddonMountingSide("front")}
+                              className={`flex-1 py-1 px-2 rounded-[6px] text-xs font-medium transition-all cursor-pointer ${
+                                addonMountingSide === "front"
+                                  ? "bg-white text-[#0f1422] shadow-2xs font-semibold"
+                                  : "text-neutral-500 hover:text-neutral-800"
+                              }`}
+                            >
+                              Exterior (Front)
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setAddonMountingSide("back")}
+                              className={`flex-1 py-1 px-2 rounded-[6px] text-xs font-medium transition-all cursor-pointer ${
+                                addonMountingSide === "back"
+                                  ? "bg-white text-[#0f1422] shadow-2xs font-semibold"
+                                  : "text-neutral-500 hover:text-neutral-800"
+                              }`}
+                            >
+                              Interior (Back)
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="bg-amber-50/70 border border-amber-200/80 rounded-[8px] p-2 text-[11px] text-amber-900 flex items-start gap-2">
+                            <ShieldCheck className="size-3.5 text-amber-600 mt-0.5 shrink-0" />
+                            <span>
+                              <strong>Interior Mount (Back)</strong>: Required for outward-projecting sash fixtures to eliminate collision hazards with opening vents.
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Operator Access Hatch Toggle Switch */}
+                      <div className="bg-neutral-50 border border-neutral-200/80 rounded-[10px] p-3 flex items-center justify-between gap-3">
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-semibold text-[#0f1422]">
+                              Operator Access Hatch
+                            </span>
+                            {targetOperatorKeys.length > 0 ? (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-cyan-100/70 text-[#088395] font-medium border border-cyan-200/80">
+                                {targetOperatorKeys.length}x Aligned ({targetOperatorKeys.join(", ")})
+                              </span>
+                            ) : (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-neutral-200/70 text-neutral-600 font-medium">
+                                Standard Hatch
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-neutral-500">
+                            Wicket door opening allows direct reach-through to operate window hardware without removing the insect screen frame.
+                          </p>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer shrink-0 ml-2">
+                          <input
+                            type="checkbox"
+                            checked={includeHatch}
+                            onChange={(e) => handleHatchToggle(e.target.checked)}
+                            className="sr-only peer"
+                          />
+                          <div className="w-9 h-5 bg-neutral-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#07b6d3]"></div>
+                        </label>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Security Grille Product Controls */}
+                  {activeAddon === "grill" && (
+                    <div className="space-y-3 mb-3">
+                      {boundGrills.length > 1 ? (
+                        <div className="flex flex-col gap-1.5">
+                          <label className="text-[11px] font-semibold text-neutral-700 uppercase tracking-wider">
+                            Compatible Grille Add-on
+                          </label>
+                          <div className="flex gap-1.5 flex-wrap">
+                            {boundGrills.map((grill) => {
+                              const isSelected = (selectedGrillProductId || boundGrills[0].addonProductId) === grill.addonProductId;
+                              return (
+                                <button
+                                  key={grill.addonProductId}
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedGrillProductId(grill.addonProductId);
+                                    if (grill.defaultSide) {
+                                      setAddonMountingSide(grill.defaultSide);
+                                    }
+                                  }}
+                                  className={`px-2.5 py-1.5 rounded-[6px] text-xs border transition-colors cursor-pointer flex items-center gap-1.5 ${
+                                    isSelected
+                                      ? "border-[#07b6d3] bg-cyan-50/50 font-semibold text-[#0f1422]"
+                                      : "border-neutral-200 bg-white hover:bg-neutral-50 text-neutral-600"
+                                  }`}
+                                >
+                                  <Layers className="size-3 text-[#07b6d3]" />
+                                  <span>{grill.addonProduct?.productName || "Security Grille"}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between bg-neutral-50 border border-neutral-200/80 rounded-[8px] px-3 py-2">
+                          <div className="flex items-center gap-2">
+                            <Layers className="size-3.5 text-[#07b6d3]" />
+                            <span className="text-xs font-semibold text-[#0f1422]">
+                              {activeGrillAddon?.addonProduct?.productName || "Security Grille"}
+                            </span>
+                          </div>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 font-medium border border-emerald-100 flex items-center gap-1">
+                            <CheckCircle2 className="size-2.5" />
+                            Bound Add-on
+                          </span>
+                        </div>
+                      )}
+
+                      <div className="flex flex-col gap-1.5">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-semibold text-neutral-800">Mounting Placement</span>
+                          <span className="text-[11px] text-neutral-500 font-medium">
+                            {addonMountingSide === "front" ? "Exterior (Front)" : "Interior (Back)"}
+                          </span>
+                        </div>
+                        {activeGrillAddon?.allowedSides === "both" ? (
+                          <div className="flex bg-neutral-100 p-0.5 rounded-[8px] gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setAddonMountingSide("front")}
+                              className={`flex-1 py-1 px-2 rounded-[6px] text-xs font-medium transition-all cursor-pointer ${
+                                addonMountingSide === "front"
+                                  ? "bg-white text-[#0f1422] shadow-2xs font-semibold"
+                                  : "text-neutral-500 hover:text-neutral-800"
+                              }`}
+                            >
+                              Exterior (Front)
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setAddonMountingSide("back")}
+                              className={`flex-1 py-1 px-2 rounded-[6px] text-xs font-medium transition-all cursor-pointer ${
+                                addonMountingSide === "back"
+                                  ? "bg-white text-[#0f1422] shadow-2xs font-semibold"
+                                  : "text-neutral-500 hover:text-neutral-800"
+                              }`}
+                            >
+                              Interior (Back)
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  )}
 
                   <div className="bg-neutral-50 border border-neutral-200/80 rounded-[8px] p-2.5 text-xs text-neutral-600 flex items-start gap-2">
                     <div className="size-1.5 rounded-full bg-[#07b6d3] mt-1.5 shrink-0" />

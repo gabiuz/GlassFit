@@ -643,28 +643,40 @@ export function PartInspectorDrawer({
             Dimension Driver
           </label>
           <div className="grid grid-cols-2 gap-2">
-            {(['WIDTH', 'HEIGHT', 'AREA', 'FIXED', 'GRILLE_LINEAR'] as DimensionBinding[]).map((driver) => (
+            {(['WIDTH', 'HEIGHT', 'PERIMETER', 'AREA', 'FIXED', 'GRILLE_LINEAR'] as DimensionBinding[]).map((driver) => (
               <button
                 key={driver}
                 type="button"
                 aria-pressed={primary.dimensionBinding === driver}
                 onClick={() => onUpdateParts({ dimensionBinding: driver })}
-                className={`${
-                  driver === 'GRILLE_LINEAR' ? 'col-span-2 ' : ''
-                }${
+                className={
                   primary.dimensionBinding === driver
                     ? 'px-3 py-2 rounded-[8px] text-xs font-medium border text-center transition-all border-[#07b6d3] bg-[#07b6d3]/10 text-[#07b6d3]'
                     : 'px-3 py-2 rounded-[8px] text-xs font-medium border text-center transition-all border-neutral-200 text-neutral-600 hover:bg-neutral-50'
-                }`}
+                }
               >
                 {driver === 'WIDTH' && 'Width (1D)'}
                 {driver === 'HEIGHT' && 'Height (1D)'}
+                {driver === 'PERIMETER' && 'Perimeter (2W + 2H)'}
                 {driver === 'AREA' && 'Area (2D)'}
                 {driver === 'FIXED' && 'Static / Fixed'}
                 {driver === 'GRILLE_LINEAR' && 'Grille Linear (Per Meter)'}
               </button>
             ))}
           </div>
+
+          {/* Perimeter Linear Summary Card */}
+          {primary.dimensionBinding === 'PERIMETER' && (
+            <div className="mt-3 p-3 rounded-[10px] bg-cyan-50/80 border border-[#07b6d3]/30 text-xs text-neutral-700">
+              <div className="flex items-center gap-1.5 font-semibold text-[#067f98] pb-1 border-b border-cyan-100">
+                <span className="w-2 h-2 rounded-full bg-[#07b6d3]" />
+                <h4>Perimeter Driver Active</h4>
+              </div>
+              <p className="text-[11px] text-neutral-600 mt-1.5 leading-relaxed">
+                Calculates total linear cut length as <span className="font-mono font-semibold text-neutral-800 bg-white px-1 py-0.5 rounded border border-cyan-200/80">2 × (Width + Height) × Span Ratio</span> in linear meters. Designed for outer tubular sub-frames, casings, perimeter seals, and perimeter flashing.
+              </p>
+            </div>
+          )}
 
           {/* Grille Linear Analysis Summary Card (IMP-MS72) */}
           {primary.dimensionBinding === 'GRILLE_LINEAR' && (

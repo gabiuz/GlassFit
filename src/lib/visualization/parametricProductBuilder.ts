@@ -56,6 +56,8 @@ export interface ParametricProductBuilderOptions {
   activeAddon?: "screen" | "grill" | "none" | null;
   addonProductId?: string | null;
   addonAluminumFinish?: string;
+  addonMountingSide?: "front" | "back";
+  hatchTargetComponentKeys?: string[];
   addonConfig?: AddonGeometryConfig;
   grilleBOM?: GrilleLinearBOMResult;
   swappedAccessories?: Record<string, SelectedAccessoryState>;
@@ -585,9 +587,9 @@ function buildWindowLikeProduct(
     accessories.add(sillMesh);
   }
 
-  // Attach procedural or uploaded front-layer add-on if active (IMP-MS68, IMP-MS69, IMP-MS70)
+  // Attach procedural or uploaded front-layer add-on if active (IMP-MS68, IMP-MS69, IMP-MS70, IMP-MS80)
   if (options.activeAddon === "screen" || options.activeAddon === "grill") {
-    const addonGroup = buildAddonAttachment(definition, widthMm, heightMm, cache, options);
+    const addonGroup = buildAddonAttachment(definition, widthMm, heightMm, cache, options, group);
 
     // Compute bounding surfaces of host window components
     group.updateMatrixWorld(true);
@@ -596,10 +598,25 @@ function buildWindowLikeProduct(
     addonGroup.updateMatrixWorld(true);
     const addonBounds = new THREE.Box3().setFromObject(addonGroup);
 
-    const isRearMount = options.addonConfig?.mountPosition === "rear" || (options.addonConfig?.zOffsetMm !== undefined && options.addonConfig.zOffsetMm < 0);
+    const matchingAddon = definition.compatibleAddons?.find((a) =>
+      options.addonProductId ? a.addonProductId === options.addonProductId : a.addonType === options.activeAddon
+    );
+
+    const resolvedMountingSide: "front" | "back" =
+      options.addonMountingSide ??
+      (matchingAddon?.allowedSides === "back"
+        ? "back"
+        : matchingAddon?.allowedSides === "front"
+          ? "front"
+          : matchingAddon?.defaultSide ?? (
+              options.addonConfig?.mountPosition === "rear" || (options.addonConfig?.zOffsetMm !== undefined && options.addonConfig.zOffsetMm < 0)
+                ? "back"
+                : "front"
+            ));
+
     const clearanceGapMeters = 0.008;
 
-    if (isRearMount) {
+    if (resolvedMountingSide === "back") {
       // Rear mount: position behind the back-most surface of host window components
       const rearZ = hostBounds.min.z;
       const targetZ = rearZ - addonBounds.max.z - clearanceGapMeters;
@@ -1188,29 +1205,55 @@ function buildAssembledProduct(
       }
     });
   }
+  group.updateMatrixWorld(true);
 
-  // Attach procedural or uploaded front-layer add-on if active (IMP-MS68, IMP-MS69)
+  // Attach procedural or uploaded front-layer add-on if active (IMP-MS68, IMP-MS69, IMP-MS80)
   if (options.activeAddon === "screen" || options.activeAddon === "grill") {
     const targetW = targetWidthMm ?? (naturalWidthM > 0 ? naturalWidthM * 1000 : 1200);
     const targetH = targetHeightMm ?? (naturalHeightM > 0 ? naturalHeightM * 1000 : 1200);
 
-    const addonGroup = buildAddonAttachment(definition, targetW, targetH, cache, options);
+    const addonGroup = buildAddonAttachment(definition, targetW, targetH, cache, options, group);
 
-    // Compute front-most surface and geometric center of host assembled product in world coordinates
+    // Compute bounding surfaces and geometric center of host assembled product in world coordinates
     group.updateMatrixWorld(true);
     const hostBounds = new THREE.Box3().setFromObject(group);
     const hostCenter = new THREE.Vector3();
     hostBounds.getCenter(hostCenter);
-    const frontZ = hostBounds.max.z;
 
     addonGroup.updateMatrixWorld(true);
     const addonBounds = new THREE.Box3().setFromObject(addonGroup);
 
-    // Position on front of product with an 8mm clearance gap, aligned with host product center
+    const matchingAddon = definition.compatibleAddons?.find((a) =>
+      options.addonProductId ? a.addonProductId === options.addonProductId : a.addonType === options.activeAddon
+    );
+
+    const resolvedMountingSide: "front" | "back" =
+      options.addonMountingSide ??
+      (matchingAddon?.allowedSides === "back"
+        ? "back"
+        : matchingAddon?.allowedSides === "front"
+          ? "front"
+          : matchingAddon?.defaultSide ?? (
+              options.addonConfig?.mountPosition === "rear" || (options.addonConfig?.zOffsetMm !== undefined && options.addonConfig.zOffsetMm < 0)
+                ? "back"
+                : "front"
+            ));
+
+    // Position on front or back of product with an 8mm clearance gap, aligned with host product frame center (world origin)
     const clearanceGapMeters = 0.008;
-    const localX = scaleX > 0 ? (hostCenter.x - group.position.x) / scaleX : 0;
-    const localY = scaleY > 0 ? (hostCenter.y - group.position.y) / scaleY : 0;
-    const localZ = scaleZ > 0 ? ((frontZ - group.position.z) - addonBounds.min.z + clearanceGapMeters) / scaleZ : frontZ + clearanceGapMeters;
+    const localX = scaleX > 0 ? (0 - group.position.x) / scaleX : 0;
+    const localY = scaleY > 0 ? (0 - group.position.y) / scaleY : 0;
+
+    // In architectural window/door systems:
+    // - "back" is the Interior face (inside the room, where operator handles, cam handles, and cranks reside) -> positive Z (+Z)
+    // - "front" is the Exterior face (outside the building, where window sills and weather drip caps project) -> negative Z (-Z)
+    const targetWorldZ = resolvedMountingSide === "back"
+      ? hostBounds.max.z - addonBounds.min.z + clearanceGapMeters
+      : hostBounds.min.z - addonBounds.max.z - clearanceGapMeters;
+
+    const localZ = scaleZ > 0
+      ? (targetWorldZ - group.position.z) / scaleZ
+      : targetWorldZ;
 
     // Cancel out parent group scaling so add-on geometry maintains exact metric dimensions
     addonGroup.scale.set(
@@ -1304,12 +1347,70 @@ function buildAssembledProduct(
   return group;
 }
 
+function resolveHostTargetCoordinates(
+  targetKey: string,
+  hostGroup?: THREE.Group,
+  definition?: ProductStructuralDefinition,
+  cache?: ComponentModelCache,
+): { x: number; y: number; z: number } | null {
+  if (hostGroup) {
+    hostGroup.updateMatrixWorld(true);
+    let found: THREE.Object3D | null = null;
+    hostGroup.traverse((child) => {
+      if (found) return;
+      if (
+        child.userData?.componentKey === targetKey ||
+        child.userData?.componentId === targetKey ||
+        child.name === targetKey
+      ) {
+        found = child;
+      }
+    });
+    if (found) {
+      (found as THREE.Object3D).updateMatrixWorld(true);
+      const b = new THREE.Box3().setFromObject(found);
+      const c = new THREE.Vector3();
+      b.getCenter(c);
+      return { x: c.x, y: c.y, z: c.z };
+    }
+  }
+
+  // Fallback: check definition.components and cache
+  if (definition && cache) {
+    const comp = definition.components?.find(
+      (c) => c.componentKey === targetKey || c.componentId === targetKey
+    );
+    if (comp) {
+      try {
+        let m: THREE.Object3D | null = null;
+        try {
+          m = cache.getClone(comp.componentId);
+        } catch {
+          m = cache.getClone(comp.componentKey);
+        }
+        if (m) {
+          m.updateMatrixWorld(true);
+          const b = new THREE.Box3().setFromObject(m);
+          const c = new THREE.Vector3();
+          b.getCenter(c);
+          return { x: c.x, y: c.y, z: c.z };
+        }
+      } catch {
+        // ignore missing model in fallback
+      }
+    }
+  }
+
+  return null;
+}
+
 function buildAddonAttachment(
   definition: ProductStructuralDefinition,
   targetWidthMm: number,
   targetHeightMm: number,
   cache: ComponentModelCache,
   options: ParametricProductBuilderOptions,
+  hostGroup?: THREE.Group,
 ): THREE.Group {
   const addonType = options.activeAddon;
   if (addonType !== "screen" && addonType !== "grill") {
@@ -1372,13 +1473,23 @@ function buildAddonAttachment(
     let clonedCount = 0;
     for (const comp of matchingAddon.components) {
       const toggleKey = comp.togglePropertyKey || `has_${comp.componentKey.replace(/-/g, "_")}`;
+      const isHatch = Boolean(
+        comp.componentKey.toLowerCase().includes("hatch") ||
+        (comp.componentName || "").toLowerCase().includes("hatch") ||
+        Boolean(comp.togglePropertyKey && comp.togglePropertyKey.toLowerCase().includes("hatch"))
+      );
       const isRemovableExcluded = Boolean(
-        (comp.isRemovable || comp.togglePropertyKey) &&
+        (comp.isRemovable || comp.togglePropertyKey || isHatch) &&
         options.removableStates && (
           options.removableStates[comp.componentId] === false ||
           options.removableStates[comp.componentKey] === false ||
           options.removableStates[toggleKey] === false ||
-          (comp.togglePropertyKey && options.removableStates[comp.togglePropertyKey] === false)
+          (comp.togglePropertyKey && options.removableStates[comp.togglePropertyKey] === false) ||
+          (isHatch && (
+            options.removableStates["screen_access_hatch"] === false ||
+            options.removableStates["has_screen_access_hatch"] === false ||
+            options.removableStates["has_hatch"] === false
+          ))
         )
       );
       if (isRemovableExcluded) {
@@ -1399,6 +1510,146 @@ function buildAddonAttachment(
           clone.userData.componentType = comp.componentType;
           clone.userData.presentationCategory = comp.presentationCategory;
           clone.userData.dimensionBinding = comp.dimensionBinding ?? (comp as Record<string, unknown>).dimension_binding ?? "FIXED";
+
+          const isHatch = Boolean(
+            comp.componentKey.toLowerCase().includes("hatch") ||
+            (comp.componentName || "").toLowerCase().includes("hatch") ||
+            Boolean(comp.togglePropertyKey && comp.togglePropertyKey.toLowerCase().includes("hatch"))
+          );
+
+          const targetOperatorKeys = options.hatchTargetComponentKeys ?? matchingAddon.hatchTargetComponentKeys ?? [];
+
+          if (isHatch && targetOperatorKeys.length > 0) {
+            clone.updateMatrixWorld(true);
+            const partBox = new THREE.Box3().setFromObject(clone);
+            const partCenter = new THREE.Vector3();
+            partBox.getCenter(partCenter);
+
+            for (let i = 0; i < targetOperatorKeys.length; i++) {
+              const targetKey = targetOperatorKeys[i];
+              const targetCoords = resolveHostTargetCoordinates(targetKey, hostGroup, definition, cache);
+
+              const targetXi = targetCoords ? targetCoords.x : partCenter.x;
+              const targetYi = targetCoords ? targetCoords.y : partCenter.y;
+
+              const targetComp = definition?.components?.find(
+                (c) => c.componentKey === targetKey || c.componentId === targetKey
+              );
+              const targetKeyLower = (targetKey || "").toLowerCase();
+              const targetNameLower = (targetComp?.componentName || "").toLowerCase();
+              const productTypeLower = (definition?.product?.productType || "").toLowerCase();
+
+              const isAwningOrHopper =
+                productTypeLower.includes("awning") ||
+                productTypeLower.includes("hopper") ||
+                targetKeyLower.includes("aw_") ||
+                targetKeyLower.includes("awning") ||
+                targetKeyLower.includes("hopper");
+
+              const isBottomPosition = targetYi < -targetHeightM * 0.25 && Math.abs(targetXi) < targetWidthM * 0.40;
+              const isTopPosition = targetYi > targetHeightM * 0.25 && Math.abs(targetXi) < targetWidthM * 0.40;
+              const isBottomOrTop =
+                isBottomPosition ||
+                isTopPosition ||
+                targetKeyLower.includes("bottom") ||
+                targetKeyLower.includes("top") ||
+                targetNameLower.includes("bottom") ||
+                targetNameLower.includes("top");
+
+              const isHorizontalHatch = isAwningOrHopper || isBottomOrTop;
+
+              let hatchInstanceMesh: THREE.Object3D | null = null;
+              try {
+                hatchInstanceMesh = cache.getClone(comp.componentId);
+              } catch {
+                hatchInstanceMesh = cache.getClone(comp.componentKey);
+              }
+              if (!hatchInstanceMesh) continue;
+
+              // Rotate 90 degrees around Z if operator is on top/bottom rail (IMP-MS80)
+              if (isHorizontalHatch) {
+                hatchInstanceMesh.rotation.z = Math.PI / 2;
+                hatchInstanceMesh.updateMatrixWorld(true);
+              }
+
+              hatchInstanceMesh.updateMatrixWorld(true);
+              const origBox = new THREE.Box3().setFromObject(hatchInstanceMesh);
+              const origCenter = new THREE.Vector3();
+              origBox.getCenter(origCenter);
+              const origSize = new THREE.Vector3();
+              origBox.getSize(origSize);
+
+              hatchInstanceMesh.position.sub(origCenter);
+              hatchInstanceMesh.updateMatrixWorld(true);
+
+              let finalMesh = hatchInstanceMesh;
+              const targetHanding: "left" | "right" = targetXi >= 0 ? "right" : "left";
+              const modeledHanding: "left" | "right" = (origCenter.x - addonBaseCenterX) >= 0 ? "right" : "left";
+
+              if (!isHorizontalHatch && targetHanding !== modeledHanding) {
+                finalMesh = mirrorObjectHierarchyAcrossX(hatchInstanceMesh);
+                finalMesh.updateMatrixWorld(true);
+                const postBox = new THREE.Box3().setFromObject(finalMesh);
+                const postCenter = new THREE.Vector3();
+                postBox.getCenter(postCenter);
+                finalMesh.position.sub(postCenter);
+                finalMesh.updateMatrixWorld(true);
+              }
+
+              // Clamp hatch coordinates so it stays strictly within the screen perimeter
+              const halfHatchW = origSize.x / 2;
+              const halfHatchH = origSize.y / 2;
+              const screenHalfW = targetWidthM / 2;
+              const screenHalfH = targetHeightM / 2;
+              const frameRailMargin = 0.02; // 20mm extrusion rail margin
+
+              let clampedXi = targetXi;
+              let clampedYi = targetYi;
+
+              if (isBottomOrTop || isAwningOrHopper) {
+                if (targetYi - halfHatchH < -screenHalfH) {
+                  clampedYi = -screenHalfH + frameRailMargin + halfHatchH;
+                } else if (targetYi + halfHatchH > screenHalfH) {
+                  clampedYi = screenHalfH - frameRailMargin - halfHatchH;
+                }
+              }
+
+              if (Math.abs(targetXi) + halfHatchW > screenHalfW) {
+                clampedXi = targetXi >= 0
+                  ? screenHalfW - halfHatchW
+                  : -screenHalfW + halfHatchW;
+              }
+
+              const container = new THREE.Group();
+              container.name = `${comp.componentKey || "screen_access_hatch"}_${isHorizontalHatch ? "horiz" : targetHanding}_instance_${i}`;
+              container.userData = {
+                ...clone.userData,
+                componentId: comp.componentId,
+                componentKey: comp.componentKey,
+                componentName: comp.componentName,
+                componentType: comp.componentType,
+                presentationCategory: comp.presentationCategory,
+                dimensionBinding: "FIXED",
+                isFixedDimension: true,
+                isAddon: true,
+                addonType: "screen",
+                hatchIndex: i,
+                targetComponentKey: targetKey,
+                isHorizontalHatch,
+                isMirroredHanding: !isHorizontalHatch && targetHanding !== modeledHanding,
+                isHatchClone: true,
+              };
+              container.add(finalMesh);
+
+              const localTargetX = scaleX > 0 ? (clampedXi / scaleX) + addonNaturalCenter.x : clampedXi;
+              const localTargetY = scaleY > 0 ? (clampedYi / scaleY) + addonNaturalCenter.y : clampedYi;
+              container.position.set(localTargetX, localTargetY, origCenter.z);
+
+              uploadedGroup.add(container);
+              clonedCount++;
+            }
+            continue;
+          }
 
           const swapped = options.swappedAccessories?.[comp.componentId] ?? options.swappedAccessories?.[comp.componentKey];
           const hasHanding = Boolean(
@@ -1586,7 +1837,48 @@ function buildAddonAttachment(
   }
 
   // 2. Procedural parametric generation fallback (IMP-MS68)
-  const proceduralGroup = buildParametricScreenGroup(targetWidthMm, targetHeightMm, options.addonConfig, frameMat);
+  const isHatchDisabled = Boolean(
+    options.removableStates && (
+      options.removableStates["screen_access_hatch"] === false ||
+      options.removableStates["has_screen_access_hatch"] === false ||
+      options.removableStates["has_hatch"] === false
+    )
+  );
+  const targetOperatorKeys = options.hatchTargetComponentKeys ?? matchingAddon?.hatchTargetComponentKeys ?? [];
+  const proceduralHasHatch = options.addonConfig?.hasHatch !== undefined
+    ? options.addonConfig.hasHatch
+    : (!isHatchDisabled && targetOperatorKeys.length > 0);
+
+  const isProceduralHorizHatch = Boolean(
+    targetOperatorKeys.some((k) => {
+      const kl = k.toLowerCase();
+      return kl.includes("aw_") || kl.includes("awning") || kl.includes("hopper") || kl.includes("bottom") || kl.includes("top");
+    }) ||
+    definition?.product?.productType === "Awning Window" ||
+    definition?.product?.productType === "Hopper Window"
+  );
+
+  const proceduralHatchPositions: { x: number; y: number }[] = [];
+  if (hostGroup && targetOperatorKeys.length > 0) {
+    for (const targetKey of targetOperatorKeys) {
+      const coords = resolveHostTargetCoordinates(targetKey, hostGroup, definition, cache);
+      if (coords) {
+        proceduralHatchPositions.push({ x: coords.x, y: coords.y });
+      }
+    }
+  }
+
+  const proceduralGroup = buildParametricScreenGroup(
+    targetWidthMm,
+    targetHeightMm,
+    {
+      ...options.addonConfig,
+      hasHatch: proceduralHasHatch,
+      isHatchHorizontal: isProceduralHorizHatch,
+      hatchPositions: options.addonConfig?.hatchPositions ?? (proceduralHatchPositions.length > 0 ? proceduralHatchPositions : undefined),
+    },
+    frameMat
+  );
 
   // Mark all procedural meshes with preserveMaterial=true to retain independent frame finish
   proceduralGroup.traverse((child) => {

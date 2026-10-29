@@ -47,6 +47,9 @@ export interface CalculateBOMOptions {
   panelCount?: number;
   hasSill?: boolean;
   removableStates?: Record<string, boolean>;
+  hatchCount?: number;
+  hatchTargetKeys?: string[];
+  addonMountingSide?: "front" | "back";
   aluminumScrapRate?: number; // default 0.12 (12%)
   glassScrapRate?: number; // default 0.10 (10%)
   laborFloor?: number; // default 750.00 PHP
@@ -150,6 +153,10 @@ export function calculateParametricBOM(
             computedQty = heightM * comp.spanRatio * comp.baseQuantity;
             unitLabel = "m";
             break;
+          case "PERIMETER":
+            computedQty = 2 * (widthM + heightM) * comp.spanRatio * comp.baseQuantity;
+            unitLabel = "m";
+            break;
           case "AREA":
             computedQty = widthM * heightM * comp.spanRatio * comp.baseQuantity;
             unitLabel = "sqm";
@@ -172,14 +179,25 @@ export function calculateParametricBOM(
             break;
           }
           case "FIXED":
-          default:
-            computedQty = comp.baseQuantity;
+          default: {
+            const isHatchPart = comp.componentKey.toLowerCase().includes("hatch") ||
+              Boolean(comp.componentName && comp.componentName.toLowerCase().includes("hatch"));
+            const hatchMultiplier = (isHatchPart && options.hatchCount && options.hatchCount > 0)
+              ? options.hatchCount
+              : 1;
+            computedQty = comp.baseQuantity * hatchMultiplier;
             unitLabel = mat.billing_unit || "pc";
             break;
+          }
         }
       }
     } else if (isFixedComponent) {
-      computedQty = comp.baseQuantity;
+      const isHatchPart = comp.componentKey.toLowerCase().includes("hatch") ||
+        Boolean(comp.componentName && comp.componentName.toLowerCase().includes("hatch"));
+      const hatchMultiplier = (isHatchPart && options.hatchCount && options.hatchCount > 0)
+        ? options.hatchCount
+        : 1;
+      computedQty = comp.baseQuantity * hatchMultiplier;
       unitLabel = "pc";
     }
 

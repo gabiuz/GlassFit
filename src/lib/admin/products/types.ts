@@ -2,6 +2,8 @@ import type { DimensionBinding, PresentationCategory } from "@/lib/pricing/types
 import type { ComponentMaterialBindingInput } from "@/lib/pricing/materialBindingUtils";
 
 export type AddonType = "screen" | "grill";
+export type AddonMountingSide = "front" | "back";
+export type AddonAllowedSides = "front" | "back" | "both";
 
 export type ComponentType = "Procedural" | "Model" | "Glass" | "Frame" | "Panel" | "Hardware" | "Other";
 
@@ -131,6 +133,10 @@ export interface CompatibleAddonBinding {
   addonType: AddonType;
   isDefaultEnabled: boolean;
   displayOrder: number;
+  allowedSides?: AddonAllowedSides;
+  defaultSide?: AddonMountingSide;
+  hatchTargetComponentKeys?: string[] | null;
+  hatchAlignmentConfig?: Record<string, unknown> | null;
   addonProduct?: {
     productId: string;
     productName: string;
@@ -143,7 +149,15 @@ export interface HostProductAddonConfig {
   hasScreen: boolean;
   screenAddonProductId?: string | null;
   screenAddonProductIds?: string[];
+  screenAllowedSides?: AddonAllowedSides;
+  screenDefaultSide?: AddonMountingSide;
+  screenHatchTargetComponentKeys?: string[];
+  screenHatchAlignmentConfig?: Record<string, unknown> | null;
   hasGrill: boolean;
   grillAddonProductId?: string | null;
   grillAddonProductIds?: string[];
+  grillAllowedSides?: AddonAllowedSides;
+  grillDefaultSide?: AddonMountingSide;
+  grillHatchTargetComponentKeys?: string[];
+  grillHatchAlignmentConfig?: Record<string, unknown> | null;
 }

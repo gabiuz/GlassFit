@@ -160,6 +160,30 @@ export function autoDetectComponentSettings(fileName: string): AutoDetectionResu
     };
   }
 
+  // Perimeter frames, tubular subframes, surrounds, and outer casings
+  if (
+    name.includes("perimeter") ||
+    name.includes("subframe") ||
+    name.includes("sub_frame") ||
+    name.includes("surround") ||
+    name.includes("tubular_frame") ||
+    name.includes("casing_frame") ||
+    name.includes("outer_casing") ||
+    name.includes("perimeter_tube") ||
+    name.includes("frame_perimeter") ||
+    (name.includes("outer_frame") && !name.includes("left") && !name.includes("right") && !name.includes("top") && !name.includes("bottom"))
+  ) {
+    return {
+      dimensionBinding: "PERIMETER",
+      spanRatio: 1.0,
+      isRemovable: false,
+      togglePropertyKey: null,
+      presentationCategory: "Framing",
+      componentType: "Frame",
+      suggestedMaterialCategory: "Aluminum",
+    };
+  }
+
   // 1. Sill profiles
   if (name.includes("sill") || name.includes("threshold") || name.includes("bottom_track") || name.includes("bottom_sliding_track")) {
     return {

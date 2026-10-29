@@ -119,7 +119,7 @@ async function fetchCompatibleAddons(
 ): Promise<CompatibleAddon[]> {
   const { data: addonsData, error } = await supabase
     .from("product_compatible_addons")
-    .select("id, parent_product_id, addon_product_id, addon_type, is_default_enabled, display_order")
+    .select("id, parent_product_id, addon_product_id, addon_type, is_default_enabled, display_order, allowed_sides, default_side, hatch_target_component_keys, hatch_alignment_config")
     .eq("parent_product_id", productId)
     .order("display_order", { ascending: true });
 
@@ -274,6 +274,10 @@ async function fetchCompatibleAddons(
       addonType: row.addon_type as "screen" | "grill",
       isDefaultEnabled: Boolean(row.is_default_enabled),
       displayOrder: typeof row.display_order === "number" ? row.display_order : 0,
+      allowedSides: (row.allowed_sides as "front" | "back" | "both") || "both",
+      defaultSide: (row.default_side as "front" | "back") || "back",
+      hatchTargetComponentKeys: (row.hatch_target_component_keys as string[]) || null,
+      hatchAlignmentConfig: (row.hatch_alignment_config as Record<string, unknown>) || null,
       addonProduct: prod
         ? {
             productId: prod.product_id,

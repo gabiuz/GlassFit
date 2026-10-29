@@ -589,6 +589,13 @@ Administrators explicitly approve published, renderable Accessories products for
 
 Plans a bounded 60/40 admin Components workbench that keeps the model visible while browsing many materials, a focused allowed/default material chooser, exact part navigation, glass-safe selection outline, and responsive review layout. Also plans explicit save and removal persistence, truthful readiness and upload feedback, accessible controls, and browser acceptance using the existing 18-part Jalousie product. No application code is implemented by this milestone document.
 
+## MS80: Directional Add-on Placement Side Compatibility and Operator-Targeted Multi-Hatch Alignment
+
+**Status:** Implemented (October 29, 2026); automated unit test suite passing (`npm run test:ms80`). **Specification:** [IMP-MS80](implementation/ms80.md). **Traceability:** BRD-M2, BRD-M4, BRD-M5; PRD-F5, PRD-F10, PRD-F14, PRD-F19; SDD-C4, SDD-C5, SDD-C7, SDD-C9; DSD-UI4, DSD-UI7, DSD-UI10; ERD-E3, ERD-E6, ERD-E14; QAD-TC95.1 through QAD-TC95.12.
+
+Enforces directional mounting side compatibility (Front exterior, Back interior, or Both customer selectable) for add-on attachments (insect screens and security grilles) to prevent physical projection collisions on outward-projecting fixtures (awning and casement windows). Dynamically binds screen access hatches directly to host product operating mechanisms (jalousie window operators), automatically cloning and positioning N distinct hatches centered at target operator centroids in 3D space, mirroring handing laterally for left-side operators, and scaling parametric BOM hardware quantities by N. All 12 acceptance scenarios in QAD-TC95 verified.
+
+
 
 
 

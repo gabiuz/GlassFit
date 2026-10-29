@@ -683,7 +683,12 @@ export function ParametersAndRulesSection({ productId, isAddon = false, template
             {/* Compatible Add-ons Tab */}
             {activeTab === "addons" && productId && (
                 <div className="mt-2">
-                    <AddonInheritanceSection productId={productId} isAddon={isAddon} />
+                    <AddonInheritanceSection
+                        productId={productId}
+                        isAddon={isAddon}
+                        productType={productType}
+                        hostComponents={Array.isArray(rawComponents) ? (rawComponents as Array<Record<string, unknown>>) : []}
+                    />
                 </div>
             )}
 
