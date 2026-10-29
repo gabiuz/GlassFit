@@ -160,6 +160,7 @@ async function fetchCompatibleAddons(
           base_quantity,
           raw_material_id,
           dimension_binding,
+          jalousie_config,
           span_ratio,
           is_removable,
           toggle_property_key,
@@ -257,6 +258,7 @@ async function fetchCompatibleAddons(
           : ((compRow as Record<string, unknown>).unit_price ? Number((compRow as Record<string, unknown>).unit_price) : undefined),
         pricingMethod: ((compRow as Record<string, unknown>).pricing_method as string) || undefined,
         handingMetadata: (compData?.handing_metadata as import("@/lib/admin/products/types").ComponentHandingMetadata) || null,
+        jalousieConfig: ((compRow as Record<string, unknown>).jalousie_config || compData?.jalousie_config) as import("@/lib/pricing/types").JalousieConfig || null,
         model: {
           assetId: asset.asset_id,
           r2ObjectKey: asset.r2_object_key,
@@ -365,6 +367,7 @@ export async function getProductStructuralDefinition(
         base_quantity,
         raw_material_id,
         dimension_binding,
+        jalousie_config,
         span_ratio,
         is_removable,
         toggle_property_key,
@@ -513,6 +516,7 @@ export async function getProductStructuralDefinition(
         : ((row as Record<string, unknown>).unit_price ? Number((row as Record<string, unknown>).unit_price) : undefined),
       pricingMethod: ((row as Record<string, unknown>).pricing_method as string) || undefined,
       handingMetadata: (componentData?.handing_metadata as import("@/lib/admin/products/types").ComponentHandingMetadata) || null,
+      jalousieConfig: ((row as Record<string, unknown>).jalousie_config || componentData?.jalousie_config) as import("@/lib/pricing/types").JalousieConfig || null,
       model: {
         assetId: asset.asset_id,
         r2ObjectKey: asset.r2_object_key,
@@ -654,6 +658,7 @@ export async function getDraftStructuralDefinition(
         base_quantity,
         raw_material_id,
         dimension_binding,
+        jalousie_config,
         span_ratio,
         is_removable,
         toggle_property_key,
@@ -785,6 +790,7 @@ export async function getDraftStructuralDefinition(
         : ((row as Record<string, unknown>).unit_price ? Number((row as Record<string, unknown>).unit_price) : undefined),
       pricingMethod: ((row as Record<string, unknown>).pricing_method as string) || undefined,
       handingMetadata: (componentData?.handing_metadata as import("@/lib/admin/products/types").ComponentHandingMetadata) || null,
+      jalousieConfig: ((row as Record<string, unknown>).jalousie_config || componentData?.jalousie_config) as import("@/lib/pricing/types").JalousieConfig || null,
       model: {
         assetId: asset.asset_id,
         r2ObjectKey: asset.r2_object_key,

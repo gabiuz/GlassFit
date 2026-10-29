@@ -199,19 +199,29 @@ export function buildParametricScreenGroup(
       }
     });
 
-    const rawPosX = config.hatchPositions?.[0]?.x ?? (isHorizontal ? 0 : (innerWidthM / 2 - hatchW / 2 - 0.03));
-    const rawPosY = config.hatchPositions?.[0]?.y ?? (-innerHeightM / 2 + hatchH / 2 + 0.02);
+    const positions = (config.hatchPositions && config.hatchPositions.length > 0)
+      ? config.hatchPositions
+      : [{ x: isHorizontal ? 0 : (innerWidthM / 2 - hatchW / 2 - 0.03), y: -innerHeightM / 2 + hatchH / 2 + 0.02 }];
 
-    const minX = -innerWidthM / 2 + hatchW / 2 + 0.01;
-    const maxX = innerWidthM / 2 - hatchW / 2 - 0.01;
-    const minY = -innerHeightM / 2 + hatchH / 2 + 0.01;
-    const maxY = innerHeightM / 2 - hatchH / 2 - 0.01;
+    positions.forEach((pos, idx) => {
+      const hGroup = hatchGroup.clone(true);
+      hGroup.name = `Screen_Access_Hatch_Procedural_${idx}`;
+      hGroup.userData = {
+        ...hatchGroup.userData,
+        hatchIndex: idx,
+      };
 
-    const posX = Math.max(minX, Math.min(maxX, rawPosX));
-    const posY = Math.max(minY, Math.min(maxY, rawPosY));
+      const minX = -innerWidthM / 2 + hatchW / 2 + 0.01;
+      const maxX = innerWidthM / 2 - hatchW / 2 - 0.01;
+      const minY = -innerHeightM / 2 + hatchH / 2 + 0.01;
+      const maxY = innerHeightM / 2 - hatchH / 2 - 0.01;
 
-    hatchGroup.position.set(posX, posY, zOffset + 0.002);
-    group.add(hatchGroup);
+      const posX = Math.max(minX, Math.min(maxX, pos.x));
+      const posY = Math.max(minY, Math.min(maxY, pos.y));
+
+      hGroup.position.set(posX, posY, zOffset + 0.002);
+      group.add(hGroup);
+    });
   }
 
   group.userData.addonType = "screen";

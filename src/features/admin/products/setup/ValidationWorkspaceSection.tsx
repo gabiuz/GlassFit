@@ -29,7 +29,8 @@ import {
   analyzeGrilleGeometry,
   type GrilleGeometryAnalysis,
 } from "@/lib/pricing/grilleGeometryAnalyzer";
-import type { RawMaterial, GrilleLinearBOMResult } from "@/lib/pricing/types";
+import { computeLouverBladeCount, computeLouverOperatorCount } from "@/lib/visualization/jalousieGeometryAnalyzer";
+import type { RawMaterial, GrilleLinearBOMResult, JalousieConfig } from "@/lib/pricing/types";
 import { applyPBRToMesh } from "@/lib/visualization/materialClassifier";
 import {
   computeGrillPattern,
@@ -263,6 +264,14 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
       if (definition.product.isAccessory) {
         return true;
       }
+      const binding = c.dimensionBinding || (c as Record<string, unknown>).dimension_binding;
+      const isSlot = Boolean(c.isAccessorySlot || (c as Record<string, unknown>).is_accessory_slot);
+      if (binding === "LOUVER_BLADE") {
+        return false;
+      }
+      if (binding === "LOUVER_OPERATOR" && !isSlot) {
+        return false;
+      }
       const isFramingOrMesh =
         c.presentationCategory === "Framing" ||
         c.componentType === "Frame" ||
@@ -272,10 +281,10 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
         c.componentKey.includes("mesh") ||
         c.componentKey.includes("sill") ||
         c.componentKey.includes("bar");
-      if (isFramingOrMesh && !c.isAccessorySlot) return false;
+      if (isFramingOrMesh && !isSlot) return false;
 
       return (
-        c.isAccessorySlot ||
+        isSlot ||
         Boolean(c.positionOptions?.allowHorizontalToggle) ||
         Boolean(c.positionOptions?.allowVerticalToggle) ||
         Boolean(c.handingMetadata?.leftGlbUrl && c.handingMetadata?.rightGlbUrl)
@@ -469,6 +478,15 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
         // Initialize accessory slot overrides and positional handing
         const initialSwapped: Record<string, SelectedAccessoryState> = {};
         const initSwappedForComp = (comp: ProductComponentDefinition) => {
+          const binding = comp.dimensionBinding || (comp as Record<string, unknown>).dimension_binding;
+          const isSlot = Boolean(comp.isAccessorySlot || (comp as Record<string, unknown>).is_accessory_slot);
+          if (binding === "LOUVER_BLADE") {
+            return;
+          }
+          if (binding === "LOUVER_OPERATOR" && !isSlot) {
+            return;
+          }
+
           const isAccessoryProduct = Boolean(def.product?.isAccessory);
           if (!isAccessoryProduct) {
             const isFramingOrMesh =
@@ -480,23 +498,24 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
               comp.componentKey.includes("mesh") ||
               comp.componentKey.includes("sill") ||
               comp.componentKey.includes("bar");
-            if (isFramingOrMesh && !comp.isAccessorySlot) return;
+            if (isFramingOrMesh && !isSlot) return;
           }
 
           const hasHanding = Boolean(
             isAccessoryProduct ||
-            comp.isAccessorySlot ||
+            isSlot ||
             comp.positionOptions?.allowHorizontalToggle ||
             comp.positionOptions?.allowVerticalToggle ||
             (comp.handingMetadata?.leftGlbUrl && comp.handingMetadata?.rightGlbUrl)
           );
 
           if (hasHanding) {
+            const slotCategory = comp.accessoryCategory || (comp as Record<string, unknown>).accessory_category || "handle";
             initialSwapped[comp.componentId] = {
               slotComponentId: comp.componentId,
               accessoryId: "default",
               accessoryName: comp.componentName || "Default Sub-Mesh",
-              category: (comp.accessoryCategory as AccessoryCategory) || "handle",
+              category: slotCategory as AccessoryCategory,
               price: 0,
               priceDelta: 0,
               finish: "satin",
@@ -714,8 +733,9 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
         };
       }
 
-      const allowedIds = slot?.allowedAccessoryIds ?? [];
-      const catalogItem = catalogAccessories.find((o) => o.id === accessoryId && allowedIds.includes(o.id) && o.category === slot?.accessoryCategory);
+      const slotCategory = slot?.accessoryCategory || (slot as Record<string, unknown>)?.accessory_category || "handle";
+      const allowedIds = slot?.allowedAccessoryIds ?? ((slot as Record<string, unknown>)?.allowed_accessory_ids as string[] | undefined) ?? [];
+      const catalogItem = catalogAccessories.find((o) => o.id === accessoryId && allowedIds.includes(o.id) && o.category === slotCategory);
       if (catalogItem) {
         if (catalogItem.glbUrl && !accessoryModels.has(catalogItem.id)) {
           accessoryGltfLoader.loadAsync(catalogItem.glbUrl).then((gltf) => {
@@ -883,13 +903,16 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
         const key = (comp.componentKey || "").toLowerCase();
         const name = (comp.componentName || "").toLowerCase();
         const cat = (comp.presentationCategory || comp.componentType || "").toLowerCase();
+        const binding = (comp.dimensionBinding || (comp as Record<string, unknown>).dimension_binding || "").toString().toUpperCase();
         return (
+          binding === "LOUVER_OPERATOR" ||
           key.includes("operator") ||
           key.includes("crank") ||
           key.includes("cam") ||
           key.includes("latch") ||
           key.includes("handle") ||
           key.includes("rotator") ||
+          key.includes("rotopers") ||
           name.includes("operator") ||
           name.includes("crank") ||
           name.includes("cam") ||
@@ -901,6 +924,20 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
       })
       .map((c) => c.componentKey);
   }, [definition, activeScreenAddon]);
+
+  const dynamicOperatorCount = useMemo(() => {
+    const operatorComp = definition?.components?.find(
+      (c) => c.dimensionBinding === "LOUVER_OPERATOR" || (c as Record<string, unknown>).dimension_binding === "LOUVER_OPERATOR"
+    );
+    if (operatorComp) {
+      const pitchMm = operatorComp.jalousieConfig?.pitch_mm ?? operatorComp.jalousieConfig?.pitchMm ?? 175;
+      const bladesPerOp = operatorComp.jalousieConfig?.blades_per_operator ?? operatorComp.jalousieConfig?.bladesPerOperator ?? 4;
+      const currentHeightMm = parameters.height ?? parameters.quotation_height ?? 1200;
+      const louverCount = computeLouverBladeCount(currentHeightMm, pitchMm);
+      return computeLouverOperatorCount(louverCount, bladesPerOp);
+    }
+    return targetOperatorKeys.length;
+  }, [definition, parameters, targetOperatorKeys]);
 
   const handleHatchToggle = (checked: boolean) => {
     setIncludeHatch(checked);
@@ -965,6 +1002,7 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
         rawMaterial: boundMat,
         unitPrice: comp.unitPrice,
         pricingMethod: comp.pricingMethod,
+        jalousieConfig: comp.jalousieConfig || (comp.componentData?.jalousie_config as JalousieConfig) || null,
       };
     });
 
@@ -981,10 +1019,10 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
       hasSill,
       removableStates,
       addonMountingSide,
-      hatchCount: includeHatch ? targetOperatorKeys.length : 0,
+      hatchCount: includeHatch ? dynamicOperatorCount : 0,
       hatchTargetKeys: includeHatch ? targetOperatorKeys : [],
     });
-  }, [definition, rawMaterials, parameters, hasSill, removableStates, materialOverrides, addonMountingSide, includeHatch, targetOperatorKeys]);
+  }, [definition, rawMaterials, parameters, hasSill, removableStates, materialOverrides, addonMountingSide, includeHatch, dynamicOperatorCount, targetOperatorKeys]);
 
   // Baseline BOM Calculation (strictly default configuration for sensitivity comparison)
   const baselineBOMResult: CalculatedBOMResult | null = useMemo(() => {
@@ -1018,6 +1056,7 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
         rawMaterial: boundMat,
         unitPrice: comp.unitPrice,
         pricingMethod: comp.pricingMethod,
+        jalousieConfig: comp.jalousieConfig || (comp.componentData?.jalousie_config as JalousieConfig) || null,
       };
     });
 
@@ -1033,10 +1072,10 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
       hasSill,
       removableStates,
       addonMountingSide,
-      hatchCount: includeHatch ? targetOperatorKeys.length : 0,
+      hatchCount: includeHatch ? dynamicOperatorCount : 0,
       hatchTargetKeys: includeHatch ? targetOperatorKeys : [],
     });
-  }, [definition, rawMaterials, parameters, hasSill, removableStates, addonMountingSide, includeHatch, targetOperatorKeys]);
+  }, [definition, rawMaterials, parameters, hasSill, removableStates, addonMountingSide, includeHatch, dynamicOperatorCount, targetOperatorKeys]);
 
   // Material Price Sensitivity Delta
   const priceSensitivityDelta = useMemo(() => {
@@ -1824,11 +1863,14 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
 
                   <div className="space-y-3.5">
                     {dockComponents.map((slot) => {
+                      const isSlotAccessory = Boolean(slot.isAccessorySlot || (slot as Record<string, unknown>).is_accessory_slot);
+                      const slotCategory = (slot.accessoryCategory || ((slot as Record<string, unknown>).accessory_category as AccessoryCategory) || "handle") as string;
+                      const allowedIds = slot.allowedAccessoryIds ?? ((slot as Record<string, unknown>).allowed_accessory_ids as string[] | undefined) ?? [];
                       const currentSelection = swappedAccessories[slot.componentId] ?? {
                         slotComponentId: slot.componentId,
                         accessoryId: "default",
                         accessoryName: slot.componentName || "Default Sub-Mesh",
-                        category: slot.accessoryCategory || "handle",
+                        category: slotCategory,
                         price: 0,
                         finish: "satin",
                         horizontalPosition: slot.handingMetadata?.sourceHanding || slot.positionOptions?.defaultHorizontal || "right",
@@ -1836,8 +1878,6 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
                       };
 
                       // QAD-TC92.7: only explicitly approved, active catalog products.
-                      const slotCategory = slot.accessoryCategory || "handle";
-                      const allowedIds = slot.allowedAccessoryIds ?? [];
                       const compatibleCatalog = catalogAccessories.filter(
                         (o) => o.category === slotCategory && allowedIds.includes(o.id)
                       );
@@ -1861,12 +1901,12 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
                               )}
                             </div>
                             <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-neutral-200/60 text-neutral-700">
-                              {slot.isAccessorySlot ? slotCategory : "Handing"}
+                              {isSlotAccessory ? slotCategory : "Handing"}
                             </span>
                           </div>
 
                           {/* Accessory Picker Dropdown (Only for Swappable Accessory Slots) */}
-                          {slot.isAccessorySlot && (
+                          {isSlotAccessory && (
                             <div className="space-y-1">
                               <label className="text-[11px] font-medium text-neutral-600 block">
                                 Active Hardware Accessory

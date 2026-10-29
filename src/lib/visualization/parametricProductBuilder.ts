@@ -23,6 +23,14 @@ import type { AccessoryPositionOptions } from "@/lib/admin/products/types";
 import type { SelectedAccessoryState } from "./types";
 import { createAccessoryMeshById } from "./accessoryMeshFactory";
 import { mirrorObjectHierarchyAcrossX, mirrorPartAcrossCenterline } from "@/lib/admin/products/meshMirroring";
+import {
+  computeLouverBladeCount,
+  computeLouverOperatorCount,
+  computeLouverBladeYCoordinates,
+  computeOperatorYCoordinates,
+  extractLouverBladePrototype,
+  extractOperatorTracks,
+} from "./jalousieGeometryAnalyzer";
 
 export {
   createWindowGlassMaterial,
@@ -95,7 +103,7 @@ export function buildParametricProduct(
   }
 
   // If this product is a modular security grill add-on (e.g. authoring/validating in admin sandbox):
-  if (definition.product.isAddon && definition.product.addonType === "grill") {
+  if (definition.product?.isAddon && definition.product.addonType === "grill") {
     const targetWidthMm = findDimensionMm(resolved, ["width", "quotation_width", "quotationWidth", "w"]) ?? 1200;
     const targetHeightMm = findDimensionMm(resolved, ["height", "quotation_height", "quotationHeight", "h"]) ?? 1200;
     const frameMat = createMaterialPalette(options.addonAluminumFinish ?? options.alumFinish ?? "analok").framing;
@@ -114,7 +122,7 @@ export function buildParametricProduct(
   }
 
   // If this product is a standalone hardware accessory (IMP-MS78):
-  if (definition.product.isAccessory) {
+  if (definition.product?.isAccessory) {
     const group = new THREE.Group();
     group.name = "hardware_accessory_assembly";
 
@@ -692,8 +700,8 @@ function buildWindowLikeProduct(
     glassColor: options.glassColor ?? "clear",
     glassThicknessMm: options.glassThicknessMm ?? 6,
   });
-  group.userData.productId = definition.product.productId;
-  group.userData.templateId = definition.template.templateId;
+  group.userData.productId = definition.product?.productId;
+  group.userData.templateId = definition.template?.templateId;
   group.userData.resolvedStructure = resolved;
 
   return group;
@@ -714,6 +722,24 @@ function findDimensionMm(resolved: ResolvedStructure, keys: string[]): number | 
       }
     }
   }
+
+  // Compound key fallback (e.g. window_height, aperture_height, total_height)
+  for (const key of keys) {
+    const lower = key.toLowerCase();
+    if (lower.length < 4) continue;
+    for (const [k, v] of Object.entries(resolved.numericValuesMm || {})) {
+      if (k.toLowerCase().includes(lower) && typeof v === "number" && Number.isFinite(v) && v > 0) {
+        return v;
+      }
+    }
+    for (const [k, v] of Object.entries(resolved.resolvedValues || {})) {
+      if (k.toLowerCase().includes(lower)) {
+        const num = toNumber(v, 0);
+        if (num > 0) return num;
+      }
+    }
+  }
+
   return null;
 }
 
@@ -769,6 +795,23 @@ function buildAssembledProduct(
       compIdentity.includes("stile") ||
       compIdentity.includes("mullion") ||
       compIdentity.includes("bar");
+
+    const isLouverBlade = Boolean(
+      component.dimensionBinding === "LOUVER_BLADE" ||
+      (component as Record<string, unknown>).dimension_binding === "LOUVER_BLADE"
+    );
+    const isLouverOperator = Boolean(
+      component.dimensionBinding === "LOUVER_OPERATOR" ||
+      (component as Record<string, unknown>).dimension_binding === "LOUVER_OPERATOR"
+    );
+
+    if (isLouverBlade || isLouverOperator) {
+      if (isLouverOperator && (component.isAccessorySlot || (component as Record<string, unknown>).is_accessory_slot)) {
+        accessorySlotKeys.add(component.componentId);
+        accessorySlotKeys.add(component.componentKey);
+      }
+      continue;
+    }
 
     const isFixedDimension = (
       component.dimensionBinding === "FIXED" ||
@@ -830,6 +873,136 @@ function buildAssembledProduct(
 
   const _hostHalfWidth = naturalWidthM > 0.0001 ? naturalWidthM / 2 : 0;
   void _hostHalfWidth;
+
+  // Detect natural aperture vertical bounds from frame top and bottom rails if present
+  let naturalApertureTopY: number | null = null;
+  let naturalApertureBottomY: number | null = null;
+
+  for (const comp of definition.components) {
+    const compKeyLower = (comp.componentKey + " " + comp.componentName).toLowerCase();
+    const isTopRail = (compKeyLower.includes("top") || compKeyLower.includes("head")) && (compKeyLower.includes("frame") || compKeyLower.includes("rail"));
+    const isBottomRail = (compKeyLower.includes("bottom") || compKeyLower.includes("sill")) && (compKeyLower.includes("frame") || compKeyLower.includes("rail")) && !compKeyLower.includes("window_sill");
+
+    if (isTopRail || isBottomRail) {
+      try {
+        const fClone = cache.getClone(comp.componentId);
+        fClone.updateMatrixWorld(true);
+        const fBox = new THREE.Box3().setFromObject(fClone);
+        if (isTopRail && Number.isFinite(fBox.min.y)) {
+          naturalApertureTopY = fBox.min.y;
+        }
+        if (isBottomRail && Number.isFinite(fBox.max.y)) {
+          naturalApertureBottomY = fBox.max.y;
+        }
+      } catch {
+        // ignore missing model in cache
+      }
+    }
+  }
+
+  // Fallback: If no separate top/bottom rails exist (e.g. single perimeter frame GLB),
+  // detect aperture bounds from the modeled louver blade assembly and frame geometry
+  if (naturalApertureTopY === null || naturalApertureBottomY === null) {
+    let louverBox: THREE.Box3 | null = null;
+    for (const comp of definition.components) {
+      const isLouverBladeComp = Boolean(
+        comp.dimensionBinding === "LOUVER_BLADE" ||
+        (comp as Record<string, unknown>).dimension_binding === "LOUVER_BLADE" ||
+        (comp.componentKey + " " + comp.componentName).toLowerCase().includes("louver") ||
+        (comp.componentKey + " " + comp.componentName).toLowerCase().includes("blade") ||
+        (comp.componentKey + " " + comp.componentName).toLowerCase().includes("clips_and_glass")
+      );
+      if (isLouverBladeComp) {
+        try {
+          const lClone = cache.getClone(comp.componentId);
+          lClone.updateMatrixWorld(true);
+          const b = new THREE.Box3().setFromObject(lClone);
+          if (Number.isFinite(b.min.y) && Number.isFinite(b.max.y) && b.max.y > b.min.y) {
+            louverBox = b;
+            break;
+          }
+        } catch {
+          // ignore missing model in cache
+        }
+      }
+    }
+
+    if (louverBox) {
+      // Find the perimeter frame mesh to scan for exact inner aperture boundaries
+      let frameMesh: THREE.Object3D | null = null;
+      for (const comp of definition.components) {
+        const compKeyLower = (comp.componentKey + " " + comp.componentName).toLowerCase();
+        if (
+          compKeyLower.includes("frame") ||
+          compKeyLower.includes("perimeter") ||
+          comp.presentationCategory === "Framing" ||
+          comp.componentType === "Frame"
+        ) {
+          try {
+            frameMesh = cache.getClone(comp.componentId);
+            frameMesh.updateMatrixWorld(true);
+            break;
+          } catch {
+            // ignore
+          }
+        }
+      }
+
+      if (frameMesh) {
+        // Scan frame vertices horizontally spanning the louver opening
+        let detectedTopInnerY: number | null = null;
+        let detectedBottomInnerY: number | null = null;
+        const xMin = louverBox.min.x + 0.05;
+        const xMax = louverBox.max.x - 0.05;
+
+        frameMesh.traverse((child) => {
+          if (child instanceof THREE.Mesh && child.geometry?.attributes.position) {
+            const pos = child.geometry.attributes.position;
+            const vertex = new THREE.Vector3();
+            for (let i = 0; i < pos.count; i++) {
+              vertex.fromBufferAttribute(pos, i);
+              vertex.applyMatrix4(child.matrixWorld);
+
+              if (vertex.x >= xMin && vertex.x <= xMax) {
+                if (vertex.y >= louverBox.max.y - 0.02) {
+                  if (detectedTopInnerY === null || vertex.y < detectedTopInnerY) {
+                    detectedTopInnerY = vertex.y;
+                  }
+                }
+                if (vertex.y <= louverBox.min.y + 0.02) {
+                  if (detectedBottomInnerY === null || vertex.y > detectedBottomInnerY) {
+                    detectedBottomInnerY = vertex.y;
+                  }
+                }
+              }
+            }
+          }
+        });
+
+        if (detectedTopInnerY !== null && detectedBottomInnerY !== null && detectedTopInnerY > detectedBottomInnerY) {
+          naturalApertureTopY = detectedTopInnerY;
+          naturalApertureBottomY = detectedBottomInnerY;
+        }
+      }
+
+      // If vertex scan did not establish rails, bound tightly using louverBox with nominal clearance
+      if (naturalApertureTopY === null || naturalApertureBottomY === null) {
+        naturalApertureTopY = louverBox.max.y + 0.02;
+        naturalApertureBottomY = louverBox.min.y - 0.02;
+      }
+    }
+  }
+
+  const hasApertureRails = naturalApertureTopY !== null && naturalApertureBottomY !== null && naturalApertureTopY > naturalApertureBottomY;
+  const naturalApertureHeightM = (naturalApertureTopY !== null && naturalApertureBottomY !== null && naturalApertureTopY > naturalApertureBottomY)
+    ? (naturalApertureTopY - naturalApertureBottomY)
+    : naturalHeightM;
+  const naturalApertureCenterY = (naturalApertureTopY !== null && naturalApertureBottomY !== null && naturalApertureTopY > naturalApertureBottomY)
+    ? ((naturalApertureTopY + naturalApertureBottomY) / 2)
+    : (hasHostComponents ? hostCenterVec.y : 0);
+  const currentApertureHeightMm = hasApertureRails && scaleY > 0 && naturalHeightM > 0
+    ? Math.round(naturalApertureHeightM * scaleY * 1000)
+    : (targetHeightMm ?? (naturalHeightM > 0 ? Math.round(naturalHeightM * 1000) : 1200));
 
   // Natural Assembly: Place each component at its modeled origin
   for (const component of definition.components) {
@@ -933,12 +1106,21 @@ function buildAssembledProduct(
       compIdentity.includes("mullion") ||
       compIdentity.includes("bar");
 
-    const isAccessorySlot = !isFrameOrMeshOrPanel && (
+    const isLouverBladeComp = Boolean(
+      component.dimensionBinding === "LOUVER_BLADE" ||
+      (component as Record<string, unknown>).dimension_binding === "LOUVER_BLADE"
+    );
+    const isLouverOperatorComp = Boolean(
+      component.dimensionBinding === "LOUVER_OPERATOR" ||
+      (component as Record<string, unknown>).dimension_binding === "LOUVER_OPERATOR"
+    );
+
+    const isAccessorySlot = !isFrameOrMeshOrPanel && !isLouverBladeComp && !isLouverOperatorComp && (
       accessorySlotKeys.has(component.componentId) ||
       accessorySlotKeys.has(component.componentKey)
     );
     const isAccessoryProduct = Boolean(definition.product?.isAccessory);
-    const hasHanding = !isFrameOrMeshOrPanel && Boolean(
+    const hasHanding = !isFrameOrMeshOrPanel && !isLouverBladeComp && !isLouverOperatorComp && Boolean(
       (component.positionOptions?.allowHorizontalToggle) ||
       (isAccessorySlot && component.positionOptions?.defaultHorizontal) ||
       (options.swappedAccessories?.[component.componentId]?.horizontalPosition && component.positionOptions?.allowHorizontalToggle) ||
@@ -1125,6 +1307,304 @@ function buildAssembledProduct(
       continue;
     }
 
+    const isLouverBlade = Boolean(
+      component.dimensionBinding === "LOUVER_BLADE" ||
+      (component as Record<string, unknown>).dimension_binding === "LOUVER_BLADE"
+    );
+
+    if (isLouverBlade) {
+      const pitchMm = component.jalousieConfig?.pitch_mm ?? component.jalousieConfig?.pitchMm ?? 175;
+      const bladeHeightMm = component.jalousieConfig?.blade_height_mm ?? component.jalousieConfig?.bladeHeightMm ?? 105.3;
+      const bladeHeightM = bladeHeightMm / 1000;
+      const pitchM = pitchMm / 1000;
+      const effectiveApertureHeightM = currentApertureHeightMm / 1000;
+
+      let louverCount = computeLouverBladeCount(currentApertureHeightMm, pitchMm);
+      while (louverCount > 1 && ((louverCount - 1) * pitchM + bladeHeightM) > (effectiveApertureHeightM - 0.01)) {
+        louverCount--;
+      }
+
+      const bladeElevations = computeLouverBladeYCoordinates(louverCount, pitchMm);
+      const prototypeBlade = extractLouverBladePrototype(clone);
+
+      const louverContainer = new THREE.Group();
+      louverContainer.name = `${component.componentName || "louver_blades"}_assembly`;
+      louverContainer.userData = {
+        ...clone.userData,
+        dimensionBinding: "LOUVER_BLADE",
+        isLouverAssembly: true,
+        louverCount,
+      };
+
+      for (let i = 0; i < louverCount; i++) {
+        const bladeInstance = prototypeBlade.clone(true);
+        bladeInstance.name = `${component.componentName || "louver_blade"}_instance_${i}`;
+        bladeInstance.userData = {
+          ...clone.userData,
+          dimensionBinding: "LOUVER_BLADE",
+          isLouverBladeInstance: true,
+          bladeIndex: i,
+        };
+        // Clamping scale along Y and Z strictly to 1.0 (unscaled in world space)
+        // Along X: 1.0 inside parent group scaled by scaleX -> net world scale along X is scaleX
+        bladeInstance.scale.set(
+          1,
+          scaleY > 0 ? 1 / scaleY : 1,
+          scaleZ > 0 ? 1 / scaleZ : 1
+        );
+        bladeInstance.position.set(
+          0,
+          scaleY > 0 ? (naturalApertureCenterY + bladeElevations[i] / scaleY) : (naturalApertureCenterY + bladeElevations[i]),
+          0
+        );
+        louverContainer.add(bladeInstance);
+      }
+
+      group.add(louverContainer);
+      continue;
+    }
+
+    const isLouverOperator = Boolean(
+      component.dimensionBinding === "LOUVER_OPERATOR" ||
+      (component as Record<string, unknown>).dimension_binding === "LOUVER_OPERATOR"
+    );
+
+    if (isLouverOperator) {
+      const pitchMm = component.jalousieConfig?.pitch_mm ?? component.jalousieConfig?.pitchMm ?? 175;
+      const bladeHeightMm = component.jalousieConfig?.blade_height_mm ?? component.jalousieConfig?.bladeHeightMm ?? 105.3;
+      const bladeHeightM = bladeHeightMm / 1000;
+      const pitchM = pitchMm / 1000;
+      const effectiveApertureHeightM = currentApertureHeightMm / 1000;
+
+      let louverCount = computeLouverBladeCount(currentApertureHeightMm, pitchMm);
+      while (louverCount > 1 && ((louverCount - 1) * pitchM + bladeHeightM) > (effectiveApertureHeightM - 0.01)) {
+        louverCount--;
+      }
+
+      const bladesPerOp = component.jalousieConfig?.blades_per_operator ?? component.jalousieConfig?.bladesPerOperator ?? 4;
+      const operatorCount = computeLouverOperatorCount(louverCount, bladesPerOp);
+      const operatorElevations = computeOperatorYCoordinates(louverCount, operatorCount, pitchMm);
+      const operatorTracks = extractOperatorTracks(clone);
+
+      const baseCenterX = hasHostComponents ? hostCenterVec.x : 0;
+      const halfHostW = hasHostComponents ? hostSizeVec.x / 2 : (naturalWidthM > 0 ? naturalWidthM / 2 : 1.05);
+
+      // Detect aperture reference boundaries from louver blade or jamb components
+      let leftAnchorX: number | null = null;
+      let rightAnchorX: number | null = null;
+
+      for (const comp of definition.components) {
+        const isLouverBladeComp = Boolean(
+          comp.dimensionBinding === "LOUVER_BLADE" ||
+          (comp as Record<string, unknown>).dimension_binding === "LOUVER_BLADE"
+        );
+        if (isLouverBladeComp) {
+          try {
+            const lClone = cache.getClone(comp.componentId);
+            lClone.updateMatrixWorld(true);
+            const lBox = new THREE.Box3().setFromObject(lClone);
+            if (Number.isFinite(lBox.min.x) && Number.isFinite(lBox.max.x) && lBox.max.x > lBox.min.x) {
+              leftAnchorX = lBox.min.x;
+              rightAnchorX = lBox.max.x;
+              break;
+            }
+          } catch {
+            // ignore missing model in cache
+          }
+        }
+      }
+
+      if (leftAnchorX === null || rightAnchorX === null) {
+        for (const comp of definition.components) {
+          const compKeyLower = (comp.componentKey + " " + comp.componentName).toLowerCase();
+          const isLeftJamb = compKeyLower.includes("left") && (compKeyLower.includes("jamb") || compKeyLower.includes("frame") || compKeyLower.includes("stile"));
+          const isRightJamb = compKeyLower.includes("right") && (compKeyLower.includes("jamb") || compKeyLower.includes("frame") || compKeyLower.includes("stile"));
+
+          if (isLeftJamb || isRightJamb) {
+            try {
+              const jClone = cache.getClone(comp.componentId);
+              jClone.updateMatrixWorld(true);
+              const jBox = new THREE.Box3().setFromObject(jClone);
+              if (isLeftJamb && Number.isFinite(jBox.max.x)) {
+                leftAnchorX = jBox.max.x;
+              }
+              if (isRightJamb && Number.isFinite(jBox.min.x)) {
+                rightAnchorX = jBox.min.x;
+              }
+            } catch {
+              // ignore missing model
+            }
+          }
+        }
+      }
+
+      if (leftAnchorX === null) leftAnchorX = baseCenterX - halfHostW;
+      if (rightAnchorX === null) rightAnchorX = baseCenterX + halfHostW;
+
+      const operatorContainer = new THREE.Group();
+      operatorContainer.name = `${component.componentName || "window_operators"}_assembly`;
+      operatorContainer.userData = {
+        ...clone.userData,
+        dimensionBinding: "LOUVER_OPERATOR",
+        isOperatorAssembly: true,
+        operatorCount: operatorCount * operatorTracks.length,
+      };
+
+      // Check for swapped modular hardware accessory (IMP-MS76, IMP-MS81)
+      const swapped = options.swappedAccessories?.[component.componentId] ??
+        options.swappedAccessories?.[component.componentKey];
+      const isAlternativeAccessory = Boolean(
+        swapped &&
+        swapped.accessoryId !== "default" &&
+        swapped.accessoryId !== component.componentId
+      );
+
+      const getPreparedAccessoryMesh = (trackHanding: "left" | "right"): THREE.Object3D => {
+        let resolvedMesh: THREE.Object3D | null = null;
+        if (options.accessoryModels) {
+          resolvedMesh = options.accessoryModels.get(`${swapped!.accessoryId}_${trackHanding}`) ??
+            options.accessoryModels.get(swapped!.accessoryId) ??
+            null;
+        }
+        if (!resolvedMesh) {
+          try {
+            resolvedMesh = cache.getClone(swapped!.accessoryId);
+          } catch {
+            // fallback
+          }
+        }
+        if (!resolvedMesh && (swapped!.accessoryId.startsWith("canonical_") || swapped!.accessoryId.startsWith("acc_"))) {
+          try {
+            resolvedMesh = createAccessoryMeshById(swapped!.accessoryId);
+          } catch {
+            // fallback
+          }
+        }
+        if (!resolvedMesh) {
+          resolvedMesh = createProceduralAccessoryMesh(swapped!.category, swapped!.accessoryName, swapped!.finish);
+        }
+
+        const clonedAcc = resolvedMesh.clone(true);
+        clonedAcc.updateMatrixWorld(true);
+        const curBox = new THREE.Box3().setFromObject(clonedAcc);
+        const curCenter = new THREE.Vector3();
+        curBox.getCenter(curCenter);
+        clonedAcc.position.sub(curCenter);
+        clonedAcc.updateMatrixWorld(true);
+
+        const sourceHanding = swapped!.handingMetadata?.sourceHanding ??
+          component.handingMetadata?.sourceHanding ??
+          "right";
+
+        let finalMesh: THREE.Object3D = clonedAcc;
+        if (trackHanding !== sourceHanding && !options.accessoryModels?.has(`${swapped!.accessoryId}_${trackHanding}`)) {
+          finalMesh = mirrorObjectHierarchyAcrossX(clonedAcc);
+          finalMesh.updateMatrixWorld(true);
+          const postBox = new THREE.Box3().setFromObject(finalMesh);
+          const postCenter = new THREE.Vector3();
+          postBox.getCenter(postCenter);
+          finalMesh.position.sub(postCenter);
+          finalMesh.updateMatrixWorld(true);
+        }
+
+        if (swapped!.finish) {
+          const hwMat = createHardwareFinishMaterial(swapped!.finish);
+          finalMesh.traverse((c) => {
+            if (c instanceof THREE.Mesh) {
+              c.material = hwMat;
+              c.castShadow = true;
+              c.receiveShadow = true;
+            }
+          });
+        }
+
+        const wrapper = new THREE.Group();
+        wrapper.name = `PreparedAccessory_${trackHanding}`;
+        wrapper.add(finalMesh);
+        return wrapper;
+      };
+
+      if (!isAlternativeAccessory && swapped?.finish) {
+        const hwMat = createHardwareFinishMaterial(swapped.finish);
+        operatorTracks.forEach((track) => {
+          track.prototype.traverse((c) => {
+            if (c instanceof THREE.Mesh) {
+              c.material = hwMat;
+              c.castShadow = true;
+              c.receiveShadow = true;
+            }
+          });
+        });
+      }
+
+      operatorTracks.forEach((track) => {
+        let targetX = track.modeledCenterX;
+
+        if (hasHostComponents && scaleX > 0 && Math.abs(scaleX - 1) > 0.0001) {
+          const distToLeft = Math.abs(track.modeledCenterX - (leftAnchorX ?? -halfHostW));
+          const distToRight = Math.abs((rightAnchorX ?? halfHostW) - track.modeledCenterX);
+          const distToCenter = Math.abs(track.modeledCenterX - baseCenterX);
+
+          if (distToLeft < distToRight && distToLeft < distToCenter && leftAnchorX !== null) {
+            // Left jamb bank: anchored to left aperture/louver boundary with fixed physical offset
+            const modeledOffset = track.modeledCenterX - leftAnchorX;
+            targetX = leftAnchorX + (modeledOffset / scaleX);
+          } else if (distToRight < distToLeft && distToRight < distToCenter && rightAnchorX !== null) {
+            // Right jamb bank: anchored to right aperture/louver boundary with fixed physical offset
+            const modeledOffset = rightAnchorX - track.modeledCenterX;
+            targetX = rightAnchorX - (modeledOffset / scaleX);
+          } else {
+            // Center mullion bank: anchored to centerline
+            const modeledOffset = track.modeledCenterX - baseCenterX;
+            targetX = baseCenterX + (modeledOffset / scaleX);
+          }
+        }
+
+        const isLeftTrack = track.modeledCenterX < (baseCenterX - 0.02);
+        const trackHanding: "left" | "right" = isLeftTrack ? "left" : "right";
+        const prototypeToUse = isAlternativeAccessory
+          ? getPreparedAccessoryMesh(trackHanding)
+          : track.prototype;
+
+        for (let k = 0; k < operatorCount; k++) {
+          const opInstance = prototypeToUse.clone(true);
+          const globalIdx = track.trackIndex * operatorCount + k;
+          opInstance.name = isAlternativeAccessory
+            ? `${swapped!.accessoryName || "window_operator"}_instance_${globalIdx}`
+            : `${component.componentName || "window_operator"}_instance_${globalIdx}`;
+          opInstance.userData = {
+            ...clone.userData,
+            componentKey: component.componentKey,
+            componentId: component.componentId,
+            componentName: component.componentName,
+            dimensionBinding: "LOUVER_OPERATOR",
+            isFixedDimension: true,
+            isLouverOperatorInstance: true,
+            isAccessoryReplacement: isAlternativeAccessory,
+            operatorIndex: globalIdx,
+            trackIndex: track.trackIndex,
+            bankIndex: k,
+          };
+
+          // Clamping scale strictly to 1.0 along all axes in world space
+          opInstance.scale.set(
+            scaleX > 0 ? 1 / scaleX : 1,
+            scaleY > 0 ? 1 / scaleY : 1,
+            scaleZ > 0 ? 1 / scaleZ : 1
+          );
+          opInstance.position.set(
+            targetX,
+            scaleY > 0 ? (naturalApertureCenterY + operatorElevations[k] / scaleY) : (naturalApertureCenterY + operatorElevations[k]),
+            track.modeledCenterZ
+          );
+          operatorContainer.add(opInstance);
+        }
+      });
+
+      group.add(operatorContainer);
+      continue;
+    }
+
     const isFixedDimension = Boolean(
       component.dimensionBinding === "FIXED" ||
       (component as Record<string, unknown>).dimension_binding === "FIXED" ||
@@ -1187,6 +1667,9 @@ function buildAssembledProduct(
   // Maintain 1:1 metric scale on hardware accessories and fixed parts
   if (scaleX !== 1 || scaleY !== 1 || scaleZ !== 1) {
     group.children.forEach((child) => {
+      if (child.userData?.isLouverAssembly || child.userData?.isOperatorAssembly) {
+        return;
+      }
       const binding = child.userData?.dimensionBinding;
       const isFixed = Boolean(
         binding === "FIXED" ||
@@ -1340,11 +1823,77 @@ function buildAssembledProduct(
     glassThicknessMm: options.glassThicknessMm ?? 6,
   });
 
-  group.userData.productId = definition.product.productId;
-  group.userData.templateId = definition.template.templateId;
+  group.userData.productId = definition.product?.productId;
+  group.userData.templateId = definition.template?.templateId;
   group.userData.resolvedStructure = resolved;
 
   return group;
+}
+
+function isTargetPartHorizontal(
+  foundObj: THREE.Object3D | null,
+  compDef?: ProductComponentDefinition | null,
+  key?: string
+): boolean {
+  const kLower = (key || compDef?.componentKey || "").toLowerCase();
+  const nLower = (compDef?.componentName || foundObj?.name || "").toLowerCase();
+
+  // 1. Explicit keywords indicating horizontal parts (e.g. horizontal cam handle, awning handle, cam latch)
+  if (
+    kLower.includes("horizontal") ||
+    kLower.includes("horiz") ||
+    kLower.includes("cam_handle") ||
+    kLower.includes("cam_latch") ||
+    kLower.includes("camhandle") ||
+    kLower.includes("camlock") ||
+    nLower.includes("horizontal") ||
+    nLower.includes("horiz") ||
+    nLower.includes("cam_handle") ||
+    nLower.includes("cam_latch") ||
+    nLower.includes("camhandle") ||
+    nLower.includes("camlock")
+  ) {
+    return true;
+  }
+
+  // 2. Explicit keywords indicating vertical hardware (e.g. jalousie operator, cremone bolt, espagnolette)
+  if (
+    kLower.includes("vertical") ||
+    kLower.includes("vert") ||
+    kLower.includes("operator") ||
+    kLower.includes("rotopers") ||
+    kLower.includes("cremone") ||
+    nLower.includes("vertical") ||
+    nLower.includes("vert") ||
+    nLower.includes("operator") ||
+    nLower.includes("rotopers") ||
+    nLower.includes("cremone")
+  ) {
+    return false;
+  }
+
+  if (compDef?.model?.sourceDimensionsMm) {
+    const w = compDef.model.sourceDimensionsMm.width;
+    const h = compDef.model.sourceDimensionsMm.height;
+    if (w > 0 && h > 0) {
+      if (w > h * 1.05) return true;
+      if (h > w * 1.05) return false;
+    }
+  }
+
+  if (foundObj) {
+    foundObj.updateMatrixWorld(true);
+    const b = new THREE.Box3().setFromObject(foundObj);
+    const sz = b.getSize(new THREE.Vector3());
+    if (sz.x > sz.y * 1.05) {
+      return true;
+    }
+    if (sz.y > sz.x * 1.05) {
+      return false;
+    }
+  }
+
+  return false;
 }
 
 function resolveHostTargetCoordinates(
@@ -1352,7 +1901,7 @@ function resolveHostTargetCoordinates(
   hostGroup?: THREE.Group,
   definition?: ProductStructuralDefinition,
   cache?: ComponentModelCache,
-): { x: number; y: number; z: number } | null {
+): { x: number; y: number; z: number; isHorizontal?: boolean } | null {
   if (hostGroup) {
     hostGroup.updateMatrixWorld(true);
     let found: THREE.Object3D | null = null;
@@ -1371,7 +1920,11 @@ function resolveHostTargetCoordinates(
       const b = new THREE.Box3().setFromObject(found);
       const c = new THREE.Vector3();
       b.getCenter(c);
-      return { x: c.x, y: c.y, z: c.z };
+      const comp = definition?.components?.find(
+        (cp) => cp.componentKey === targetKey || cp.componentId === targetKey
+      );
+      const isHorizontal = isTargetPartHorizontal(found, comp, targetKey);
+      return { x: c.x, y: c.y, z: c.z, isHorizontal };
     }
   }
 
@@ -1393,7 +1946,8 @@ function resolveHostTargetCoordinates(
           const b = new THREE.Box3().setFromObject(m);
           const c = new THREE.Vector3();
           b.getCenter(c);
-          return { x: c.x, y: c.y, z: c.z };
+          const isHorizontal = isTargetPartHorizontal(m, comp, targetKey);
+          return { x: c.x, y: c.y, z: c.z, isHorizontal };
         }
       } catch {
         // ignore missing model in fallback
@@ -1402,6 +1956,99 @@ function resolveHostTargetCoordinates(
   }
 
   return null;
+}
+
+function resolveAllHostTargetCoordinates(
+  targetKeys: string[],
+  hostGroup?: THREE.Group,
+  definition?: ProductStructuralDefinition,
+  cache?: ComponentModelCache,
+): Array<{ x: number; y: number; z: number; targetKey: string; isHorizontal?: boolean }> {
+  const results: Array<{ x: number; y: number; z: number; targetKey: string; isHorizontal?: boolean }> = [];
+
+  if (hostGroup) {
+    hostGroup.updateMatrixWorld(true);
+
+    // 1. Check if host has dynamic jalousie operator instances (IMP-MS81, QAD-TC96.12)
+    const operatorInstances: THREE.Object3D[] = [];
+    hostGroup.traverse((child) => {
+      if (child.userData?.isLouverOperatorInstance === true) {
+        if (
+          targetKeys.length === 0 ||
+          targetKeys.some(
+            (k) =>
+              child.userData?.componentKey === k ||
+              child.userData?.componentId === k ||
+              child.name.toLowerCase().includes("operator") ||
+              k.toLowerCase().includes("operator")
+          )
+        ) {
+          operatorInstances.push(child);
+        }
+      }
+    });
+
+    if (operatorInstances.length > 0) {
+      // Sort vertically from bottom to top
+      operatorInstances.sort((a, b) => a.position.y - b.position.y);
+      for (const op of operatorInstances) {
+        op.updateMatrixWorld(true);
+        const b = new THREE.Box3().setFromObject(op);
+        const c = new THREE.Vector3();
+        b.getCenter(c);
+        const comp = definition?.components?.find(
+          (cp) => cp.componentKey === op.userData?.componentKey || cp.componentId === op.userData?.componentId
+        );
+        const isHorizontal = isTargetPartHorizontal(op, comp, op.userData?.componentKey);
+        results.push({
+          x: c.x,
+          y: c.y,
+          z: c.z,
+          targetKey: op.userData?.componentKey || targetKeys[0] || "operator",
+          isHorizontal,
+        });
+      }
+      return results;
+    }
+
+    // 2. Otherwise search for matching objects for each key in targetKeys
+    for (const targetKey of targetKeys) {
+      let found: THREE.Object3D | null = null;
+      hostGroup.traverse((child) => {
+        if (found) return;
+        if (
+          child.userData?.componentKey === targetKey ||
+          child.userData?.componentId === targetKey ||
+          child.name === targetKey
+        ) {
+          found = child;
+        }
+      });
+      if (found) {
+        (found as THREE.Object3D).updateMatrixWorld(true);
+        const b = new THREE.Box3().setFromObject(found);
+        const c = new THREE.Vector3();
+        b.getCenter(c);
+        const comp = definition?.components?.find(
+          (cp) => cp.componentKey === targetKey || cp.componentId === targetKey
+        );
+        const isHorizontal = isTargetPartHorizontal(found, comp, targetKey);
+        results.push({ x: c.x, y: c.y, z: c.z, targetKey, isHorizontal });
+      }
+    }
+  }
+
+  // Fallback to resolveHostTargetCoordinates if results is empty
+  if (results.length === 0 && targetKeys.length > 0) {
+    for (const targetKey of targetKeys) {
+      const coords = resolveHostTargetCoordinates(targetKey, hostGroup, definition, cache);
+      if (coords) {
+        results.push({ ...coords, targetKey });
+      }
+    }
+  }
+
+  return results;
 }
 
 function buildAddonAttachment(
@@ -1525,38 +2172,25 @@ function buildAddonAttachment(
             const partCenter = new THREE.Vector3();
             partBox.getCenter(partCenter);
 
-            for (let i = 0; i < targetOperatorKeys.length; i++) {
-              const targetKey = targetOperatorKeys[i];
-              const targetCoords = resolveHostTargetCoordinates(targetKey, hostGroup, definition, cache);
+            const resolvedTargets = resolveAllHostTargetCoordinates(targetOperatorKeys, hostGroup, definition, cache);
 
-              const targetXi = targetCoords ? targetCoords.x : partCenter.x;
-              const targetYi = targetCoords ? targetCoords.y : partCenter.y;
+            for (let i = 0; i < resolvedTargets.length; i++) {
+              const targetCoords = resolvedTargets[i];
+              const targetKey = targetCoords.targetKey;
+              const targetXi = targetCoords.x;
+              const targetYi = targetCoords.y;
 
               const targetComp = definition?.components?.find(
                 (c) => c.componentKey === targetKey || c.componentId === targetKey
               );
-              const targetKeyLower = (targetKey || "").toLowerCase();
-              const targetNameLower = (targetComp?.componentName || "").toLowerCase();
-              const productTypeLower = (definition?.product?.productType || "").toLowerCase();
-
-              const isAwningOrHopper =
-                productTypeLower.includes("awning") ||
-                productTypeLower.includes("hopper") ||
-                targetKeyLower.includes("aw_") ||
-                targetKeyLower.includes("awning") ||
-                targetKeyLower.includes("hopper");
-
-              const isBottomPosition = targetYi < -targetHeightM * 0.25 && Math.abs(targetXi) < targetWidthM * 0.40;
-              const isTopPosition = targetYi > targetHeightM * 0.25 && Math.abs(targetXi) < targetWidthM * 0.40;
-              const isBottomOrTop =
-                isBottomPosition ||
-                isTopPosition ||
-                targetKeyLower.includes("bottom") ||
-                targetKeyLower.includes("top") ||
-                targetNameLower.includes("bottom") ||
-                targetNameLower.includes("top");
-
-              const isHorizontalHatch = isAwningOrHopper || isBottomOrTop;
+              // Only make the screen hatch horizontal when the target part is also horizontal
+              const isHorizontalHatch = Boolean(
+                targetCoords.isHorizontal ?? (
+                  targetComp?.model?.sourceDimensionsMm
+                    ? targetComp.model.sourceDimensionsMm.width > targetComp.model.sourceDimensionsMm.height * 1.05
+                    : false
+                )
+              );
 
               let hatchInstanceMesh: THREE.Object3D | null = null;
               try {
@@ -1606,7 +2240,7 @@ function buildAddonAttachment(
               let clampedXi = targetXi;
               let clampedYi = targetYi;
 
-              if (isBottomOrTop || isAwningOrHopper) {
+              if (isHorizontalHatch) {
                 if (targetYi - halfHatchH < -screenHalfH) {
                   clampedYi = -screenHalfH + frameRailMargin + halfHatchH;
                 } else if (targetYi + halfHatchH > screenHalfH) {
@@ -1849,24 +2483,20 @@ function buildAddonAttachment(
     ? options.addonConfig.hasHatch
     : (!isHatchDisabled && targetOperatorKeys.length > 0);
 
-  const isProceduralHorizHatch = Boolean(
-    targetOperatorKeys.some((k) => {
-      const kl = k.toLowerCase();
-      return kl.includes("aw_") || kl.includes("awning") || kl.includes("hopper") || kl.includes("bottom") || kl.includes("top");
-    }) ||
-    definition?.product?.productType === "Awning Window" ||
-    definition?.product?.productType === "Hopper Window"
-  );
-
   const proceduralHatchPositions: { x: number; y: number }[] = [];
+  let isAnyTargetHorizontal = false;
   if (hostGroup && targetOperatorKeys.length > 0) {
-    for (const targetKey of targetOperatorKeys) {
-      const coords = resolveHostTargetCoordinates(targetKey, hostGroup, definition, cache);
-      if (coords) {
-        proceduralHatchPositions.push({ x: coords.x, y: coords.y });
+    const resolvedTargets = resolveAllHostTargetCoordinates(targetOperatorKeys, hostGroup, definition, cache);
+    for (const target of resolvedTargets) {
+      proceduralHatchPositions.push({ x: target.x, y: target.y });
+      if (target.isHorizontal) {
+        isAnyTargetHorizontal = true;
       }
     }
   }
+
+  // Only make procedural screen hatch horizontal when the aligned target part is actually horizontal
+  const isProceduralHorizHatch = isAnyTargetHorizontal;
 
   const proceduralGroup = buildParametricScreenGroup(
     targetWidthMm,
