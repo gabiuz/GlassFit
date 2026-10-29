@@ -13,6 +13,9 @@
 # testing
 /coverage
 
+# local UI review screenshots
+/artifacts/
+
 # IMP-MS57 private captures, annotations and benchmark evidence
 /tests/private/ms57/
 

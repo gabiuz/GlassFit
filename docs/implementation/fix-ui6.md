@@ -30,7 +30,7 @@ This document records the reproduced click defect and defines the future fix. No
 | Product and step | Jealousy Window draft, Step 4: Components |
 | Viewer state | Assembled (Built), 18 parts |
 | Screenshot size | 2940 by 1726 pixels |
-| Evidence | [Right-frame offset screenshot](../../artifacts/fix-ui6/right-frame-offset.png) |
+| Evidence | Right-frame offset screenshot captured during the original review; retained outside the repository. |
 
 The coordinates below are screenshot pixels from that browser session. They are useful for comparing locations within this capture; they are not CSS pixel or device-pixel-ratio measurements.
 
