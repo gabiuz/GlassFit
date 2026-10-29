@@ -113,6 +113,7 @@ MS57 traceability: BRD-M1, BRD-M5, BRD-M6 -> PRD-F3, PRD-F4, PRD-F5, PRD-F6, PRD
 
 | Revision Date | Target Document | Author | Nature of Revision | Pull Request Ref |
 |---|---|---|---|---|
+| October 29, 2026 | `docs/implementation/ms81.md`, `docs/milestone.md`, `docs/index.md`, `docs/qad-glassfit.md` | GlassFit Capstone Team | Planned Parametric Jalousie Dynamic Louver and Operator Generation, Automated Pitch Counting, and Per-Piece BOM Pricing Engine (QAD-TC96); specification only | Pending |
 | October 29, 2026 | `docs/implementation/ms80.md`, `src/features/admin/products/setup/`, `src/features/visualization/`, `src/lib/visualization/`, `src/lib/pricing/`, `supabase/migrations/026_addon_mounting_side_and_hatch_alignment.sql` | GlassFit Capstone Team | Implemented Directional Add-on Placement Side Compatibility and Operator-Targeted Multi-Hatch Alignment (QAD-TC95) | Pending |
 | October 28, 2026 | `docs/implementation/ms79.md`, `docs/milestone.md`, `docs/index.md` | GlassFit Capstone Team | Planned admin Components workspace usability, material assignment, selection clarity, and save integrity with proposed QAD-TC94 acceptance; no implementation | Pending |
 | October 26, 2026 | `docs/implementation/ms76.md`, `src/features/visualization/`, `src/lib/visualization/`, `src/lib/pricing/` | GlassFit Capstone Team | Implemented Customer Visualization Workspace Dynamic Accessory Swapping, Positional Matrix Alignment, Real-Time BOM Recalculation, and Itemized Quotation/PDF Handoff (QAD-TC91) | Pending |

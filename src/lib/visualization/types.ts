@@ -114,6 +114,7 @@ export type ProductComponentDefinition = {
   unitPrice?: number;
   pricingMethod?: string;
   handingMetadata?: import("@/lib/admin/products/types").ComponentHandingMetadata | null;
+  jalousieConfig?: import("@/lib/pricing/types").JalousieConfig | null;
 };
 
 export interface AccessorySlotOverride {
