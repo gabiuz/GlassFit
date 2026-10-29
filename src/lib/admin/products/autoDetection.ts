@@ -137,6 +137,45 @@ export function autoDetectComponentSettings(fileName: string): AutoDetectionResu
     };
   }
 
+  // Jalousie Louver Blades (IMP-MS81, PRD-F5, PRD-F14, QAD-TC96.3)
+  if (
+    name.includes("louver") ||
+    name.includes("jalousie") ||
+    name.includes("blade") ||
+    name.includes("clips_and_glass") ||
+    name.includes("louver_glass")
+  ) {
+    return {
+      dimensionBinding: "LOUVER_BLADE",
+      spanRatio: 1.0,
+      isRemovable: false,
+      togglePropertyKey: null,
+      presentationCategory: "Glazing",
+      componentType: "Glass",
+      suggestedMaterialCategory: "Glass",
+    };
+  }
+
+  // Jalousie Window Operators (IMP-MS81, PRD-F5, PRD-F14, QAD-TC96.3)
+  if (
+    name.includes("operator") ||
+    name.includes("rotopers") ||
+    name.includes("crank") ||
+    name.includes("jw_operators")
+  ) {
+    return {
+      dimensionBinding: "LOUVER_OPERATOR",
+      spanRatio: 1.0,
+      isRemovable: false,
+      togglePropertyKey: null,
+      presentationCategory: "Hardware",
+      componentType: "Hardware",
+      suggestedMaterialCategory: "Hardware",
+      isAccessorySlot: true,
+      accessoryCategory: "handle",
+    };
+  }
+
   // Grille middle bars, center infill, pickets, lattices, and louvers (IMP-MS72)
   if (
     name.includes("center_grille") ||
@@ -223,7 +262,11 @@ export function autoDetectComponentSettings(fileName: string): AutoDetectionResu
     name.includes("stile") ||
     name.includes("interlock") ||
     name.includes("lockstile") ||
-    name.includes("mullion")
+    name.includes("mullion") ||
+    name.includes("frame_center") ||
+    name.includes("center_frame") ||
+    name.includes("center_mullion") ||
+    name.includes("frame_middle")
   ) {
     return {
       dimensionBinding: "HEIGHT",
@@ -386,7 +429,8 @@ export interface SuggestedMaterialConfig {
 export function suggestCandidateMaterials(
   presentationCategory: PresentationCategory,
   rawMaterials: RawMaterial[],
-  preferredFinish?: string
+  preferredFinish?: string,
+  dimensionBinding?: DimensionBinding,
 ): SuggestedMaterialConfig {
   if (!rawMaterials || rawMaterials.length === 0) {
     return { materialBindings: [], defaultRawMaterialId: null };
@@ -410,12 +454,20 @@ export function suggestCandidateMaterials(
       targetCategory = "Aluminum";
   }
 
-  const matches = rawMaterials.filter(
+  let matches = rawMaterials.filter(
     (m) => m.category.toLowerCase() === targetCategory.toLowerCase() && m.is_active !== false
   );
 
   if (matches.length === 0) {
     return { materialBindings: [], defaultRawMaterialId: null };
+  }
+
+  // Filter or prioritize per-piece ('pc') billing for louver blades and operators (IMP-MS81 Section 5.1)
+  if (dimensionBinding === "LOUVER_BLADE" || dimensionBinding === "LOUVER_OPERATOR") {
+    const pcMatches = matches.filter((m) => m.billing_unit === "pc");
+    if (pcMatches.length > 0) {
+      matches = [...pcMatches, ...matches.filter((m) => m.billing_unit !== "pc")];
+    }
   }
 
   // Determine default material index based on preferredFinish or standard conventions

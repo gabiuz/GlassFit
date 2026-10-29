@@ -470,6 +470,31 @@ QAD-TC94.1 through QAD-TC94.18 are defined in [MS79](implementation/ms79.md). Co
 | QAD-TC95.11 | Quotation modal and Consultation PDF specification disclosure | Customer creates quotation for 2-operator Jalousie with screen mounted to Back | 1. Generate quotation and PDF | Specification line states `Insect Screen (Interior Mount / Back, with 2x Operator Access Hatches)` | P0 |
 | QAD-TC95.12 | Wizard round-trip state persistence | Admin configures mounting side and 2 operator targets, saves, and reloads | 1. Navigate between steps<br>2. Refresh page | Selections, radio values, and target operator tags are faithfully restored from database state | P0 |
 
+## QAD-TC96: Parametric Jalousie Dynamic Louver and Operator Sizing (IMP-MS81)
+
+**Status:** Implemented (October 29, 2026); all 12 test cases verified passing in `tests/unit/jalousiePricing.test.ts`. Traces to IMP-MS81, PRD-F5, PRD-F10, PRD-F14, PRD-F19, SDD-C4, SDD-C5, SDD-C7, SDD-C9, DSD-UI4, DSD-UI7, DSD-UI10, ERD-E3, ERD-E6, ERD-E14, ERD-E17, BRD-M2, BRD-M4, BRD-M5. See [MS81 implementation specification](implementation/ms81.md) for automated pitch detection, unscaled 1:1 metric height preservation, and per-piece quotation details.
+
+| Test ID | Scenario | Preconditions | Execution Steps | Expected Outcome | Severity |
+|---|---|---|---|---|---|
+| QAD-TC96.1 | Louver GLB geometry analysis and automated blade counting | Admin uploads `JW_Louver_Clips_And_Glass.glb` in Step 3 Components | 1. Upload GLB<br>2. Inspect detected fields | System automatically detects 7 louver blades, sets baseQuantity = 7, and detects 175mm pitch | P0 |
+| QAD-TC96.2 | Operator GLB geometry analysis and unit count | Admin uploads `JW_Operators.glb` in Step 3 Components | 1. Upload GLB<br>2. Inspect detected fields | System automatically detects 2 operator units and sets baseQuantity = 2 | P0 |
+| QAD-TC96.3 | Automated dimension binding assignment | Admin uploads louver glass and operator meshes | 1. Review Part Inspector drawer | Louver mesh binds to `LOUVER_BLADE`; operator mesh binds to `LOUVER_OPERATOR` | P0 |
+| QAD-TC96.4 | Dynamic louver blade addition on height increase | Jalousie window aperture height expanded from 1200mm to 2100mm | 1. Adjust height slider in Step 6 / workspace | Scene graph adds discrete louver instances, increasing blade count from 7 to 12 louvers | P0 |
+| QAD-TC96.5 | Dynamic louver blade deletion on height decrease | Jalousie window aperture height reduced from 1200mm to 600mm | 1. Adjust height slider in Step 6 / workspace | Scene graph deletes louver instances, decreasing blade count from 7 to 3 louvers | P0 |
+| QAD-TC96.6 | Louver blade 1:1 metric height preservation | Window height adjusted across range (600mm to 2400mm) | 1. Measure rendered blade bounding box | Individual blade height remains exactly 105.3mm ($scaleY = 1.0$); no mesh distortion | P0 |
+| QAD-TC96.7 | Louver blade width span scaling | Window aperture width expanded from 800mm to 1200mm | 1. Adjust width slider | Louver blades scale along X ($scaleX = 1.5$) spanning frame aperture width cleanly | P0 |
+| QAD-TC96.8 | Operator proportional count scaling | Window height expanded to 2100mm (12 louvers) with blades_per_operator = 4 | 1. Inspect rendered operator count | System evaluates 12 / 4 = 3 operators; scene graph instantiates 3 operator handles | P0 |
+| QAD-TC96.9 | Operator vertical bank positioning | Window height set to 2100mm with 3 operators | 1. Inspect operator Y coordinates | Operators are positioned at vertical centroids of upper, middle, and lower banks | P0 |
+| QAD-TC96.10 | Louver and operator per-piece pricing calculation | Jalousie at 2100mm: 12 blades @ ₱45.00/pc, 3 operators @ ₱450.00/pc | 1. Run parametric BOM calculation | BOM calculates glass = ₱540.00 and operators = ₱1,350.00 without area conversions | P0 |
+| QAD-TC96.11 | Quotation modal and Consultation PDF disclosure | Customer requests quotation for 2100mm Jalousie window | 1. Generate quotation and PDF | Quotation and PDF itemize: 12x Glass Louver Blades and 3x Window Operators | P0 |
+| QAD-TC96.12 | Synergy with MS80 operator-targeted screen access hatches | Insect screen add-on enabled on 2100mm Jalousie with 3 operators | 1. Mount screen add-on in 3D canvas | MS80 engine generates exactly 3 screen access hatches aligned to the 3 operators | P0 |
+| QAD-TC96.13 | Frame uploads strictly assigned to Framing/Aluminum | Admin uploads frame profile GLB with glass material or keyword | 1. Inspect auto-detection result | Assigns `Framing` and `Aluminum` without defaulting to glazing | P0 |
+| QAD-TC96.14 | Operators stay anchored to jambs without floating outside | Jalousie window scaled to different widths (800mm to 2000mm) | 1. Build 3D assembly<br>2. Inspect operator X position | Operator mechanism remains anchored to frame jamb/stile boundaries | P0 |
+| QAD-TC96.15 | Dynamic operator count adaptation to height | Jalousie window height adjusted from 600mm to 2400mm | 1. Vary height in workspace | Operator count increases and decreases proportionally with blade count | P0 |
+| QAD-TC96.16 | Screen hatch targeting operator hardware | Window has components with `LOUVER_OPERATOR` dimension binding | 1. Inspect hatch target candidates | Identifies operator mechanism as valid screen hatch target | P0 |
+| QAD-TC96.17 | Louver blades strictly bound within clear aperture | Jalousie window scaled across height range (800mm to 2200mm) | 1. Inspect rendered blade bounding box | Top and bottom louver blades never penetrate frame header or sill | P0 |
+
+
 
 
 
