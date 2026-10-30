@@ -280,19 +280,27 @@ export function calculateParametricBOM(
       subtotal: itemSubtotal,
     };
 
-    if (comp.presentationCategory === "Framing") {
+    // FIX-UI11-V4: A bound material is authoritative when an imported component's
+    // presentation category disagrees with the material actually being charged.
+    const pricingCategory = mat?.category === "Glass" ? "Glazing"
+      : mat?.category === "Aluminum" ? "Framing"
+      : mat?.category === "Hardware" ? "Hardware"
+      : mat?.category === "Consumable" ? "Consumable"
+      : comp.presentationCategory;
+
+    if (pricingCategory === "Framing") {
       framingItems.push(itemDetail);
       rawFramingSubtotal += itemSubtotal;
       if (unitLabel === "m") {
         totalLinearMetersFraming += computedQty;
       }
-    } else if (comp.presentationCategory === "Glazing") {
+    } else if (pricingCategory === "Glazing") {
       glazingItems.push(itemDetail);
       rawGlazingSubtotal += itemSubtotal;
       if (unitLabel === "sqm") {
         glazingAreaSqm += computedQty;
       }
-    } else if (comp.presentationCategory === "Hardware" || mat?.category === "Hardware") {
+    } else if (pricingCategory === "Hardware") {
       hardwareItems.push(itemDetail);
       hardwareSubtotal += itemSubtotal;
     } else {
@@ -343,7 +351,7 @@ export function calculateParametricBOM(
   ];
 
   const finishType = components.find(c => c.presentationCategory === "Framing" && c.rawMaterial)?.rawMaterial?.finish_type || "Analok";
-  const glassDesc = glazingItems[0]?.description || "6mm Tinted Bronze Float Glass";
+  const glassDesc = glazingItems[0]?.description || "None";
 
   const frozenDetails: FrozenPricingDetails = {
     width_m: widthM,
@@ -362,7 +370,7 @@ export function calculateParametricBOM(
     total_estimate: finalQuotation,
   };
 
-  const totalGlazingQty = glazingAreaSqm > 0 ? round2(glazingAreaSqm) : (glazingItems.reduce((sum, g) => sum + g.quantity, 0) || 1);
+  const totalGlazingQty = glazingAreaSqm > 0 ? round2(glazingAreaSqm) : glazingItems.reduce((sum, g) => sum + g.quantity, 0);
   const glazingUnit = glazingAreaSqm > 0 ? "sqm" : "pc";
 
   const groups: QuotationBOMGroupItem[] = [

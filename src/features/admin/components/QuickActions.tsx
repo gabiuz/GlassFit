@@ -25,7 +25,7 @@ export function QuickActions({ actions }: QuickActionsProps) {
       <h2 className="text-black text-xl sm:text-2xl font-medium leading-tight tracking-tight">
         Quick Actions
       </h2>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-4 sm:gap-5 w-full">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-1 gap-4 sm:gap-5 w-full">
         {actions.map((action) => (
           <QuickActionCard key={action.title} action={action} />
         ))}

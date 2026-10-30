@@ -286,13 +286,13 @@ export function PriceCard({
                         </span>
                         <span className="text-[10px] text-neutral-400 block mt-0.5">Incl. 12% offcut allowance</span>
                       </div>
-                      <div className="bg-neutral-50 p-3 rounded-[12px] border border-neutral-100">
+                      {details.bomGroups.glazingAmount > 0 && <div className="bg-neutral-50 p-3 rounded-[12px] border border-neutral-100">
                         <span className="text-xs text-neutral-500 block">2. Glass Infill</span>
                         <span className="text-sm font-semibold text-neutral-800">
                           {new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" }).format(details.bomGroups.glazingAmount)}
                         </span>
                         <span className="text-[10px] text-neutral-400 block mt-0.5">Incl. 10% handling scrap</span>
-                      </div>
+                      </div>}
                       <div className="bg-neutral-50 p-3 rounded-[12px] border border-neutral-100">
                         <span className="text-xs text-neutral-500 block">3. Hardware & Consumables</span>
                         <span className="text-sm font-semibold text-neutral-800">

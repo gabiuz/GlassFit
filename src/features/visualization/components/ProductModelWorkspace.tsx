@@ -4227,7 +4227,7 @@ export function ProductModelWorkspace({
                 crossOrigin="anonymous"
                 alt="Space image background"
                 draggable={false}
-                className="w-full h-full object-cover select-none"
+                className="absolute inset-0 h-full w-full object-contain select-none"
               />
 
               {/* ── Calibration Scale HUD Indicator (IMP-MS47, IMP-MS52) ── */}
