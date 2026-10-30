@@ -484,7 +484,7 @@ export function ProductModelWorkspace({
   // Reconcile effective add-on selection if active product does not support current choice
   const effectiveSelectedAddon: AddonSelectionType =
     (selectedAddon === "screen" && !hasScreenConfigured && compatibleAddonsList.length > 0) ||
-    (selectedAddon === "grill" && !hasGrillConfigured && compatibleAddonsList.length > 0)
+      (selectedAddon === "grill" && !hasGrillConfigured && compatibleAddonsList.length > 0)
       ? "none"
       : selectedAddon;
 
@@ -723,9 +723,11 @@ export function ProductModelWorkspace({
     }
   }
 
-  const metricFrame = useMemo(() => ({ imageId: spaceImageSession?.sessionId ?? sessionContext?.spaceImageSession?.sessionId ?? "",
+  const metricFrame = useMemo(() => ({
+    imageId: spaceImageSession?.sessionId ?? sessionContext?.spaceImageSession?.sessionId ?? "",
     width: spaceImageSession?.workspaceImage?.width ?? sessionContext?.spaceImageSession?.workspaceImage?.width ?? 0,
-    height: spaceImageSession?.workspaceImage?.height ?? sessionContext?.spaceImageSession?.workspaceImage?.height ?? 0 }), [spaceImageSession, sessionContext?.spaceImageSession]);
+    height: spaceImageSession?.workspaceImage?.height ?? sessionContext?.spaceImageSession?.workspaceImage?.height ?? 0
+  }), [spaceImageSession, sessionContext?.spaceImageSession]);
   const referenceEligibility = evaluatePlaneEligibility(activeCalibrationMeta, activeCalibrationMeta?.metricReference?.planeId, null, metricFrame);
   const metricReference = referenceEligibility.status === "eligible_planar_estimate" ? activeCalibrationMeta?.metricReference ?? null : null;
   const latestFitIdentityRef = useRef({ imageId: metricFrame.imageId, productId: structuralDefinition?.product.productId });
@@ -1597,8 +1599,8 @@ export function ProductModelWorkspace({
   const workspaceFinishOptions = supportedProductType
     ? getAvailableFinishOptions(supportedProductType)
     : ALUMINUM_FINISH_OPTIONS.filter((option) =>
-        option.id === "white" || option.id === "al_1009" || option.id === "al_1001",
-      );
+      option.id === "white" || option.id === "al_1009" || option.id === "al_1001",
+    );
   const workspaceGlassTypeOptions = supportedProductType
     ? getAvailableGlassTypeOptions(supportedProductType)
     : [];
@@ -2252,8 +2254,10 @@ export function ProductModelWorkspace({
         dimension_source: manualDimensions ? "manual_tape" : isVerifiedCalibrated ? "planar_paper_estimate" : "heuristic",
         calibration_provenance: isVerifiedCalibrated ? activeMeasurementRecord : null,
         metric_measurement: isVerifiedCalibrated ? activeMetricMeasurement : null,
-        photo_disagreement_mm: manualPhotoComparison ? { width: manualPhotoComparison.width_mm - width * 10,
-          height: manualPhotoComparison.height_mm - height * 10 } : null,
+        photo_disagreement_mm: manualPhotoComparison ? {
+          width: manualPhotoComparison.width_mm - width * 10,
+          height: manualPhotoComparison.height_mm - height * 10
+        } : null,
         metric_eligibility: isVerifiedCalibrated ? "eligible_planar_estimate" : referenceEligibility.status,
         placement_review: activeCalibrationMeta?.placementReview ?? null,
         measurement_source: manualDimensions ? "manual_tape" : isVerifiedCalibrated ? "planar_photo_estimate" : "heuristic_preview",
@@ -2385,7 +2389,7 @@ export function ProductModelWorkspace({
       setGlassAppearance(configuration.glassAppearance);
       setGlassType(
         normalizeGlassType(configuration.glassType)
-          ?? deriveGlassTypeFromAppearance(configuration.glassAppearance),
+        ?? deriveGlassTypeFromAppearance(configuration.glassAppearance),
       );
       setGlassColor(normalizeGlassColor(configuration.glassColor));
       setGlassThicknessMm(normalizeGlassThickness(configuration.glassThicknessMm));
@@ -2537,57 +2541,57 @@ export function ProductModelWorkspace({
       const targetConfiguration: ProductConfigurationSnapshot = intent.mode === "edit" && intent.targetOverlay
         ? intent.targetOverlay.configuration
         : {
-            ...currentConfiguration,
-            widthCm: stagedWidthCm,
-            heightCm: stagedHeightCm,
-            thicknessMm: Number(definition.parameters.find((parameter) => parameter.parameterKey === "thickness")?.defaultValue) || 3,
-            panelCount: Number(definition.parameters.find((parameter) => parameter.parameterKey === "pane_count")?.defaultValue) || 2,
+          ...currentConfiguration,
+          widthCm: stagedWidthCm,
+          heightCm: stagedHeightCm,
+          thicknessMm: Number(definition.parameters.find((parameter) => parameter.parameterKey === "thickness")?.defaultValue) || 3,
+          panelCount: Number(definition.parameters.find((parameter) => parameter.parameterKey === "pane_count")?.defaultValue) || 2,
+          includeSill: Boolean(definition.template.baseConfiguration.includeSill ?? true),
+          selectedAddon: intent.mode === "change" ? selectedAddon : "none",
+          addonProductId: intent.mode === "change" && selectedAddon !== "none" ? (activeCompatibleAddon?.addonProductId ?? null) : null,
+          addonName: intent.mode === "change" && selectedAddon !== "none" ? (activeCompatibleAddon?.addonProduct?.productName ?? addonBOM?.addonName ?? null) : null,
+          addonPrice: intent.mode === "change" ? addonPrice : 0,
+          addonAluminumFinish: intent.mode === "change" ? (selectedAddon !== "none" ? addonAlumFinish : "analok") : "analok",
+          structuralWaiver: false,
+          aluminumFinish: "white",
+          glassAppearance: "clear",
+          glassColor: "clear",
+          glassThicknessMm: 6,
+          glassType: "regular",
+          quantity: 1,
+          yaw: 0,
+          pitch: 0,
+          rotateAngle: intent.mode === "change" ? currentConfiguration.rotateAngle : 0,
+          isFlipped: intent.mode === "change" ? currentConfiguration.isFlipped : false,
+          zoomLevel: intent.mode === "change" ? currentConfiguration.zoomLevel : DEFAULT_SCENE_ZOOM,
+          positionX: intent.mode === "change" ? currentConfiguration.positionX : 0,
+          positionY: intent.mode === "change" ? currentConfiguration.positionY : 0,
+          targetPlaneId: null,
+          perspectiveFitCorners: null,
+          activeOcclusionIds: [],
+          manualOcclusionMaskDataUrl: null,
+          manualOcclusionPolygons: [],
+          visualParameterValues: {
+            width: Math.round(stagedWidthCm * 10),
+            height: Math.round(stagedHeightCm * 10),
+            thickness: Number(definition.parameters.find((parameter) => parameter.parameterKey === "thickness")?.defaultValue) || 3,
+            pane_count: Number(definition.parameters.find((parameter) => parameter.parameterKey === "pane_count")?.defaultValue) || 2,
             includeSill: Boolean(definition.template.baseConfiguration.includeSill ?? true),
-            selectedAddon: intent.mode === "change" ? selectedAddon : "none",
-            addonProductId: intent.mode === "change" && selectedAddon !== "none" ? (activeCompatibleAddon?.addonProductId ?? null) : null,
-            addonName: intent.mode === "change" && selectedAddon !== "none" ? (activeCompatibleAddon?.addonProduct?.productName ?? addonBOM?.addonName ?? null) : null,
-            addonPrice: intent.mode === "change" ? addonPrice : 0,
-            addonAluminumFinish: intent.mode === "change" ? (selectedAddon !== "none" ? addonAlumFinish : "analok") : "analok",
-            structuralWaiver: false,
-            aluminumFinish: "white",
-            glassAppearance: "clear",
-            glassColor: "clear",
-            glassThicknessMm: 6,
-            glassType: "regular",
-            quantity: 1,
-            yaw: 0,
-            pitch: 0,
-            rotateAngle: intent.mode === "change" ? currentConfiguration.rotateAngle : 0,
-            isFlipped: intent.mode === "change" ? currentConfiguration.isFlipped : false,
-            zoomLevel: intent.mode === "change" ? currentConfiguration.zoomLevel : DEFAULT_SCENE_ZOOM,
-            positionX: intent.mode === "change" ? currentConfiguration.positionX : 0,
-            positionY: intent.mode === "change" ? currentConfiguration.positionY : 0,
-            targetPlaneId: null,
-            perspectiveFitCorners: null,
-            activeOcclusionIds: [],
-            manualOcclusionMaskDataUrl: null,
-            manualOcclusionPolygons: [],
-            visualParameterValues: {
-              width: Math.round(stagedWidthCm * 10),
-              height: Math.round(stagedHeightCm * 10),
-              thickness: Number(definition.parameters.find((parameter) => parameter.parameterKey === "thickness")?.defaultValue) || 3,
-              pane_count: Number(definition.parameters.find((parameter) => parameter.parameterKey === "pane_count")?.defaultValue) || 2,
-              includeSill: Boolean(definition.template.baseConfiguration.includeSill ?? true),
-              include_sill: Boolean(definition.template.baseConfiguration.includeSill ?? true),
-              selected_addon: intent.mode === "change" && selectedAddon !== "none" ? {
-                type: selectedAddon,
-                addon_product_id: activeCompatibleAddon?.addonProductId ?? null,
-                addon_name: activeCompatibleAddon?.addonProduct?.productName ?? addonBOM?.addonName ?? null,
-                finish: addonAlumFinish,
-                price: addonPrice,
-              } : null,
-              dimension_source: "default_heuristic",
-              metric_measurement: null, calibration_provenance: null,
-              paper_standard: activeCalibrationMeta?.paperStandard ?? null,
-              calibration_scale_cm_per_px: verifiedScaleCmPerPx ?? scaleSignal?.best_scale_cm_per_px ?? null,
-              user_verified: Boolean(activeCalibrationMeta?.user_verified),
-            },
-          };
+            include_sill: Boolean(definition.template.baseConfiguration.includeSill ?? true),
+            selected_addon: intent.mode === "change" && selectedAddon !== "none" ? {
+              type: selectedAddon,
+              addon_product_id: activeCompatibleAddon?.addonProductId ?? null,
+              addon_name: activeCompatibleAddon?.addonProduct?.productName ?? addonBOM?.addonName ?? null,
+              finish: addonAlumFinish,
+              price: addonPrice,
+            } : null,
+            dimension_source: "default_heuristic",
+            metric_measurement: null, calibration_provenance: null,
+            paper_standard: activeCalibrationMeta?.paperStandard ?? null,
+            calibration_scale_cm_per_px: verifiedScaleCmPerPx ?? scaleSignal?.best_scale_cm_per_px ?? null,
+            user_verified: Boolean(activeCalibrationMeta?.user_verified),
+          },
+        };
       const renderer = mvpRendererRef.current;
       if (!renderer) throw new Error("The product renderer is unavailable.");
       const prepared = await renderer.prepareModel(definition, {
@@ -2676,8 +2680,10 @@ export function ProductModelWorkspace({
     if (product.id !== currentProductId) {
       let maxNum = activeLayerNumber;
       for (const overlay of placedOverlays) maxNum = Math.max(maxNum, overlay.layerNumber ?? 0);
-      await activateDifferentProduct({ requestId, productId: product.id, mode, placedOverlay: newlyPlacedOverlay,
-        targetLayerNumber: mode === "add" ? maxNum + 1 : activeLayerNumber, targetOverlayId: nextActiveOverlayId });
+      await activateDifferentProduct({
+        requestId, productId: product.id, mode, placedOverlay: newlyPlacedOverlay,
+        targetLayerNumber: mode === "add" ? maxNum + 1 : activeLayerNumber, targetOverlayId: nextActiveOverlayId
+      });
       return;
     }
     setActiveOverlayId(nextActiveOverlayId);
@@ -2854,37 +2860,37 @@ export function ProductModelWorkspace({
       } : undefined;
       const variationAssetRefs = assetSessionId && variationRenderRecipe
         ? await (async () => {
-            try {
-              const fingerprint = createVariationRenderFingerprint(
-                variationRenderRecipe,
-                currentFinish,
-              );
-              const captured = await captureTransparentCanvasBlob(capturedCanvas);
-              const asset = await variationAssetStore.put({
-                cacheKey: createVariationCacheKey(
-                  assetSessionId,
-                  uniqueOverlayId,
-                  currentFinish,
-                  fingerprint,
-                ),
+          try {
+            const fingerprint = createVariationRenderFingerprint(
+              variationRenderRecipe,
+              currentFinish,
+            );
+            const captured = await captureTransparentCanvasBlob(capturedCanvas);
+            const asset = await variationAssetStore.put({
+              cacheKey: createVariationCacheKey(
                 assetSessionId,
-                overlayId: uniqueOverlayId,
-                finish: currentFinish,
+                uniqueOverlayId,
+                currentFinish,
                 fingerprint,
-                width: captured.width,
-                height: captured.height,
-                mimeType: captured.mimeType,
-                blob: captured.blob,
-                createdAt: Date.now(),
-                lastAccessedAt: Date.now(),
-                priority: "visible",
-              });
-              return { [currentFinish]: asset };
-            } catch (assetErr) {
-              console.warn("[Snapshot] Could not generate or store variation asset ref:", assetErr);
-              return undefined;
-            }
-          })()
+              ),
+              assetSessionId,
+              overlayId: uniqueOverlayId,
+              finish: currentFinish,
+              fingerprint,
+              width: captured.width,
+              height: captured.height,
+              mimeType: captured.mimeType,
+              blob: captured.blob,
+              createdAt: Date.now(),
+              lastAccessedAt: Date.now(),
+              priority: "visible",
+            });
+            return { [currentFinish]: asset };
+          } catch (assetErr) {
+            console.warn("[Snapshot] Could not generate or store variation asset ref:", assetErr);
+            return undefined;
+          }
+        })()
         : undefined;
 
       return {
@@ -3163,9 +3169,9 @@ export function ProductModelWorkspace({
       const activeComparisonOverlay = patchedComparisonOverlays.find((o) => o.isActive);
       const completePlacedOverlays = activeComparisonOverlay
         ? [
-            ...patchedOverlays.filter((o) => o.overlayId !== activeComparisonOverlay.overlayId),
-            activeComparisonOverlay,
-          ]
+          ...patchedOverlays.filter((o) => o.overlayId !== activeComparisonOverlay.overlayId),
+          activeComparisonOverlay,
+        ]
         : patchedOverlays;
 
       // Clear the pending ref
@@ -3263,8 +3269,10 @@ export function ProductModelWorkspace({
         selectedCandidateId: scaleResult.selectedCandidateId,
         paperStandardConfirmed: true,
         samePlaneConfirmed: true,
-        placementReview: { version: "plane-placement-v1", assessment: "user_confirmed_same_plane",
-          riskReasons: scaleResult.placementRiskReasons ?? [], targetPlaneId: geometry.reference.planeId },
+        placementReview: {
+          version: "plane-placement-v1", assessment: "user_confirmed_same_plane",
+          riskReasons: scaleResult.placementRiskReasons ?? [], targetPlaneId: geometry.reference.planeId
+        },
         user_verified: true,
         verified_corners: orderedCorners,
         verified_scale_cm_per_px: scaleResult.scaleCmPerPx,
@@ -3323,8 +3331,10 @@ export function ProductModelWorkspace({
       homographyMatrix: null, detectedCorners: null, user_verified: false,
       verified_corners: null, verified_scale_cm_per_px: null, paperStandardConfirmed: false,
       samePlaneConfirmed: false, selectedCandidateId: null,
-      placementReview: { version: "plane-placement-v1", assessment: review?.placementAssessment ?? "unknown",
-        riskReasons: review?.placementRiskReasons ?? [], targetPlaneId: null },
+      placementReview: {
+        version: "plane-placement-v1", assessment: review?.placementAssessment ?? "unknown",
+        riskReasons: review?.placementRiskReasons ?? [], targetPlaneId: null
+      },
     };
     setActiveCalibrationMeta(updatedMeta);
     const signalToCommit: ScaleEstimationSignal = {
@@ -3600,6 +3610,7 @@ export function ProductModelWorkspace({
     ) => {
       event.preventDefault();
       event.stopPropagation();
+      event.currentTarget.setPointerCapture(event.pointerId);
 
       const resizeSession: ResizeSession = {
         pointerId: event.pointerId,
@@ -3777,6 +3788,7 @@ export function ProductModelWorkspace({
       event.preventDefault();
       event.stopPropagation();
       if (!perspectiveCorners) return;
+      event.currentTarget.setPointerCapture(event.pointerId);
 
       const session = {
         pointerId: event.pointerId,
@@ -4215,7 +4227,7 @@ export function ProductModelWorkspace({
                 crossOrigin="anonymous"
                 alt="Space image background"
                 draggable={false}
-                className="w-full h-full object-cover select-none"
+                className="absolute inset-0 h-full w-full object-contain select-none"
               />
 
               {/* ── Calibration Scale HUD Indicator (IMP-MS47, IMP-MS52) ── */}
@@ -4380,9 +4392,8 @@ export function ProductModelWorkspace({
                       <div
                         ref={overlayBoxRef}
                         onPointerDown={isEditingProduct ? startPerspectiveMove : undefined}
-                        className={`absolute pointer-events-auto select-none transition-all ${
-                          isEditingProduct ? "cursor-grab active:cursor-grabbing" : "cursor-default"
-                        } ${activeFocusPulse ? "ring-4 ring-[#07b6d3] ring-offset-2 animate-pulse rounded-[6px]" : ""}`}
+                        className={`absolute pointer-events-auto select-none transition-all ${isEditingProduct ? "cursor-grab active:cursor-grabbing" : "cursor-default"
+                          } ${activeFocusPulse ? "ring-4 ring-[#07b6d3] ring-offset-2 animate-pulse rounded-[6px]" : ""}`}
                         style={{
                           left: 0,
                           top: 0,
@@ -4598,17 +4609,21 @@ export function ProductModelWorkspace({
 
                           {/* 4 Edge Midpoint Handles */}
                           {perspectiveHandlePoints.edges.map((e) => (
-                            <div
+                            <button
+                              type="button"
                               key={e.id}
                               onPointerDown={(evt) => startPerspectiveResize(evt, e.mode, e.signX, e.signY)}
-                              className={`absolute size-3 bg-[#07b6d3] rounded-full shadow-md z-20 ${e.cursor} pointer-events-auto`}
+                              className={`absolute flex size-11 items-center justify-center z-40 ${e.cursor} pointer-events-auto touch-none`}
                               style={{
                                 left: e.x,
                                 top: e.y,
                                 transform: "translate(-50%, -50%)",
                               }}
                               title={e.mode === "width" ? "Drag to resize width" : "Drag to resize length/height"}
-                            />
+                              aria-label={e.mode === "width" ? `Resize fitted product width from ${e.id}` : `Resize fitted product height from ${e.id}`}
+                            >
+                              <span className="size-3 rounded-full bg-[#07b6d3] shadow-md" />
+                            </button>
                           ))}
 
                           {/* 1 Center Move Handle */}
@@ -4638,54 +4653,6 @@ export function ProductModelWorkspace({
                         }}
                         className="relative pointer-events-none"
                       >
-                        {!shouldLockMobileEditor && <div
-                          className="absolute flex items-center gap-2.5 select-none animate-in fade-in slide-in-from-bottom-2 duration-200 pointer-events-auto"
-                          style={toolbarControlsStyle}
-                        >
-                          {supportsPerspectivePlane && (
-                            <button
-                              type="button"
-                              onClick={() => setShowPerspectivePicker(true)}
-                              className="bg-[#0f1422] hover:bg-black text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
-                            >
-                              <Maximize className="w-4 h-4 text-white" />
-                              <span className="text-[13px] font-normal tracking-[-0.266px]">Fit</span>
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            onClick={handleRotate}
-                            className="bg-[#0f1422] hover:bg-black text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
-                          >
-                            <RotateCw className="w-4 h-4 text-white" />
-                            <span className="text-[13px] font-normal tracking-[-0.266px]">Rotate</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleFlip}
-                            className="bg-[#0f1422] hover:bg-black text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
-                          >
-                            <FlipHorizontal className="w-4 h-4 text-white" />
-                            <span className="text-[13px] font-normal tracking-[-0.266px]">Flip</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleReset}
-                            className="bg-[#0f1422] hover:bg-black text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
-                          >
-                            <RotateCcw className="w-4 h-4 text-white" />
-                            <span className="text-[13px] font-normal tracking-[-0.266px]">Reset</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleRemove}
-                            className="bg-[#c50000] hover:bg-[#a30000] text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
-                          >
-                            <Trash2 className="w-4 h-4 text-white" />
-                            <span className="text-[13px] font-normal tracking-[-0.266px]">Remove</span>
-                          </button>
-                        </div>}
-
                         <div
                           className="relative pointer-events-none"
                           style={{
@@ -4710,10 +4677,10 @@ export function ProductModelWorkspace({
                             <button type="button" aria-label="Resize from bottom left" onPointerDown={(event) => startResize(event, "scale", -1, 1)} className="absolute bottom-0 left-0 -translate-x-1/2 translate-y-1/2 flex size-11 items-center justify-center z-40 cursor-nesw-resize pointer-events-auto touch-none"><span className="size-4 rounded-[2px] bg-white border border-[#06e5ff] shadow-md" /></button>
                             <button type="button" aria-label="Resize from bottom right" onPointerDown={(event) => startResize(event, "scale", 1, 1)} className="absolute bottom-0 right-0 translate-x-1/2 translate-y-1/2 flex size-11 items-center justify-center z-40 cursor-nwse-resize pointer-events-auto touch-none"><span className="size-4 rounded-[2px] bg-white border border-[#06e5ff] shadow-md" /></button>
 
-                            <div onPointerDown={(event) => startResize(event, "height", 0, -1)} className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 size-3 bg-[#07b6d3] rounded-full shadow-md z-20 cursor-ns-resize pointer-events-auto" />
-                            <div onPointerDown={(event) => startResize(event, "height", 0, 1)} className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 size-3 bg-[#07b6d3] rounded-full shadow-md z-20 cursor-ns-resize pointer-events-auto" />
-                            <div onPointerDown={(event) => startResize(event, "width", -1, 0)} className="absolute left-0 top-1/2 -translate-x-1/2 -translate-y-1/2 size-3 bg-[#07b6d3] rounded-full shadow-md z-20 cursor-ew-resize pointer-events-auto" />
-                            <div onPointerDown={(event) => startResize(event, "width", 1, 0)} className="absolute right-0 top-1/2 translate-x-1/2 -translate-y-1/2 size-3 bg-[#07b6d3] rounded-full shadow-md z-20 cursor-ew-resize pointer-events-auto" />
+                            <button type="button" aria-label="Resize product height from top" onPointerDown={(event) => startResize(event, "height", 0, -1)} className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 flex size-11 items-center justify-center z-40 cursor-ns-resize pointer-events-auto touch-none"><span className="size-3 rounded-full bg-[#07b6d3] shadow-md" /></button>
+                            <button type="button" aria-label="Resize product height from bottom" onPointerDown={(event) => startResize(event, "height", 0, 1)} className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 flex size-11 items-center justify-center z-40 cursor-ns-resize pointer-events-auto touch-none"><span className="size-3 rounded-full bg-[#07b6d3] shadow-md" /></button>
+                            <button type="button" aria-label="Resize product width from left" onPointerDown={(event) => startResize(event, "width", -1, 0)} className="absolute left-0 top-1/2 -translate-x-1/2 -translate-y-1/2 flex size-11 items-center justify-center z-40 cursor-ew-resize pointer-events-auto touch-none"><span className="size-3 rounded-full bg-[#07b6d3] shadow-md" /></button>
+                            <button type="button" aria-label="Resize product width from right" onPointerDown={(event) => startResize(event, "width", 1, 0)} className="absolute right-0 top-1/2 translate-x-1/2 -translate-y-1/2 flex size-11 items-center justify-center z-40 cursor-ew-resize pointer-events-auto touch-none"><span className="size-3 rounded-full bg-[#07b6d3] shadow-md" /></button>
 
                             <div onPointerDown={startOverlayDrag} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 size-6 rounded-full bg-[#07b6d3] flex items-center justify-center shadow-md cursor-grab active:cursor-grabbing z-20 pointer-events-auto">
                               <div className="size-2 bg-white rounded-full" />
@@ -4759,86 +4726,153 @@ export function ProductModelWorkspace({
                 />
               )}
             </div>
+            {!shouldLockMobileEditor && selectedProduct && isEditingProduct && !perspectiveCorners && (
+              <motion.div
+                className="pointer-events-none absolute z-50 hidden lg:block"
+                style={{
+                  left: `calc(50% - ${overlaySize.width / 2}px)`,
+                  top: `calc(50% - ${overlaySize.height / 2}px)`,
+                  width: overlaySize.width,
+                  height: overlaySize.height,
+                  x: overlayX,
+                  y: overlayY,
+                }}
+              >
+                <div
+                  className="absolute flex items-center gap-2.5 select-none animate-in fade-in slide-in-from-bottom-2 duration-200 pointer-events-auto"
+                  style={toolbarControlsStyle}
+                >
+                  {supportsPerspectivePlane && (
+                    <button type="button" onClick={() => setShowPerspectivePicker(true)} className="bg-[#0f1422] hover:bg-black text-white w-25 h-12 px-2 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md">
+                      <Maximize className="w-4 h-4 text-white" />
+                      <span className="text-[13px] font-normal tracking-[-0.266px]">Fit</span>
+                    </button>
+                  )}
+                  <button type="button" onClick={handleRotate} className="bg-[#0f1422] hover:bg-black text-white w-25 h-12 px-2 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md">
+                    <RotateCw className="w-4 h-4 text-white" />
+                    <span className="text-[13px] font-normal tracking-[-0.266px]">Rotate</span>
+                  </button>
+                  <button type="button" onClick={handleFlip} className="bg-[#0f1422] hover:bg-black text-white w-25 h-12 px-2 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md">
+                    <FlipHorizontal className="w-4 h-4 text-white" />
+                    <span className="text-[13px] font-normal tracking-[-0.266px]">Flip</span>
+                  </button>
+                  <button type="button" onClick={handleReset} className="bg-[#0f1422] hover:bg-black text-white w-25 h-12 px-2 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md">
+                    <RotateCcw className="w-4 h-4 text-white" />
+                    <span className="text-[13px] font-normal tracking-[-0.266px]">Reset</span>
+                  </button>
+                  <button type="button" onClick={handleRemove} className="bg-[#c50000] hover:bg-[#a30000] text-white w-25 h-12 px-2 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md">
+                    <Trash2 className="w-4 h-4 text-white" />
+                    <span className="text-[13px] font-normal tracking-[-0.266px]">Remove</span>
+                  </button>
+                </div>
+              </motion.div>
+            )}
             {perspectiveToolbarPosition && !shouldLockMobileEditor && selectedProduct && isEditingProduct && perspectiveCorners && (
-                        <div
-                          className="absolute z-50 hidden lg:flex items-center gap-2.5 select-none animate-in fade-in slide-in-from-bottom-2 duration-200 pointer-events-auto"
-                          style={{
-                            left: `calc(50% + ${perspectiveToolbarPosition.left - canvasDisplaySize.width / 2}px)`,
-                            top: `calc(50% + ${perspectiveToolbarPosition.top - canvasDisplaySize.height / 2}px)`,
-                            transform: "translateX(-50%)",
-                          }}
-                        >
-                          <button type="button" onClick={() => setShowPerspectivePicker(true)} className="bg-[#0f1422] hover:bg-black text-white w-25 h-12 px-2 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md">
-                            <Maximize className="w-4 h-4 text-white" />
-                            <span className="text-[13px] font-normal tracking-[-0.266px]">Edit Corners</span>
-                          </button>
-                          <button type="button" onClick={() => { setPerspectiveCorners(null); setModelRevision((prev) => prev + 1); }} className="bg-[#0f1422] hover:bg-black text-white w-25 h-12 px-2 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md">
-                            <Move className="w-4 h-4 text-white" />
-                            <span className="text-[13px] font-normal tracking-[-0.266px]">Free Place</span>
-                          </button>
-                          <button type="button" onClick={handleFlip} className="bg-[#0f1422] hover:bg-black text-white w-25 h-12 px-2 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md">
-                            <FlipHorizontal className="w-4 h-4 text-white" />
-                            <span className="text-[13px] font-normal tracking-[-0.266px]">Flip</span>
-                          </button>
-                          <button type="button" onClick={handleReset} className="bg-[#0f1422] hover:bg-black text-white w-25 h-12 px-2 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md">
-                            <RotateCcw className="w-4 h-4 text-white" />
-                            <span className="text-[13px] font-normal tracking-[-0.266px]">Reset</span>
-                          </button>
-                          <button type="button" onClick={handleRemove} className="bg-[#c50000] hover:bg-[#a30000] text-white w-25 h-12 px-2 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md">
-                            <Trash2 className="w-4 h-4 text-white" />
-                            <span className="text-[13px] font-normal tracking-[-0.266px]">Remove</span>
-                          </button>
-                        </div>
-                      )}
-                      {!shouldLockMobileEditor && selectedProduct && isEditingProduct && perspectiveCorners && (
-                        <div
-                          className="grid w-full max-w-[600px] grid-cols-2 gap-2 select-none sm:grid-cols-5 lg:hidden"
-                        >
-                          <button
-                            type="button"
-                            onClick={() => setShowPerspectivePicker(true)}
-                            className="bg-[#0f1422] hover:bg-black text-white min-h-11 min-w-0 px-2 py-2 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]"
-                          >
-                            <Maximize className="w-4 h-4 text-white" />
-                            <span className="text-[13px] font-normal tracking-[-0.266px] text-center">Edit Corners</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setPerspectiveCorners(null);
-                              setModelRevision((prev) => prev + 1);
-                            }}
-                            className="bg-[#0f1422] hover:bg-black text-white min-h-11 min-w-0 px-2 py-2 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]"
-                          >
-                            <Move className="w-4 h-4 text-white" />
-                            <span className="text-[13px] font-normal tracking-[-0.266px] text-center">Free Place</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleFlip}
-                            className="bg-[#0f1422] hover:bg-black text-white min-h-11 min-w-0 px-2 py-2 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]"
-                          >
-                            <FlipHorizontal className="w-4 h-4 text-white" />
-                            <span className="text-[13px] font-normal tracking-[-0.266px] text-center">Flip</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleReset}
-                            className="bg-[#0f1422] hover:bg-black text-white min-h-11 min-w-0 px-2 py-2 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]"
-                          >
-                            <RotateCcw className="w-4 h-4 text-white" />
-                            <span className="text-[13px] font-normal tracking-[-0.266px] text-center">Reset</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleRemove}
-                            className="bg-[#c50000] hover:bg-[#a30000] text-white min-h-11 min-w-0 px-2 py-2 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]"
-                          >
-                            <Trash2 className="w-4 h-4 text-white" />
-                            <span className="text-[13px] font-normal tracking-[-0.266px] text-center">Remove</span>
-                          </button>
-                        </div>
-                      )}
+              <div
+                className="absolute z-50 hidden lg:flex items-center gap-2.5 select-none animate-in fade-in slide-in-from-bottom-2 duration-200 pointer-events-auto"
+                style={{
+                  left: `calc(50% + ${perspectiveToolbarPosition.left - canvasDisplaySize.width / 2}px)`,
+                  top: `calc(50% + ${perspectiveToolbarPosition.top - canvasDisplaySize.height / 2}px)`,
+                  transform: "translateX(-50%)",
+                }}
+              >
+                <button type="button" onClick={() => setShowPerspectivePicker(true)} className="bg-[#0f1422] hover:bg-black text-white w-25 h-12 px-2 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md">
+                  <Maximize className="w-4 h-4 text-white" />
+                  <span className="text-[13px] font-normal tracking-[-0.266px]">Edit Corners</span>
+                </button>
+                <button type="button" onClick={() => { setPerspectiveCorners(null); setModelRevision((prev) => prev + 1); }} className="bg-[#0f1422] hover:bg-black text-white w-25 h-12 px-2 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md">
+                  <Move className="w-4 h-4 text-white" />
+                  <span className="text-[13px] font-normal tracking-[-0.266px]">Free Place</span>
+                </button>
+                <button type="button" onClick={handleFlip} className="bg-[#0f1422] hover:bg-black text-white w-25 h-12 px-2 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md">
+                  <FlipHorizontal className="w-4 h-4 text-white" />
+                  <span className="text-[13px] font-normal tracking-[-0.266px]">Flip</span>
+                </button>
+                <button type="button" onClick={handleReset} className="bg-[#0f1422] hover:bg-black text-white w-25 h-12 px-2 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md">
+                  <RotateCcw className="w-4 h-4 text-white" />
+                  <span className="text-[13px] font-normal tracking-[-0.266px]">Reset</span>
+                </button>
+                <button type="button" onClick={handleRemove} className="bg-[#c50000] hover:bg-[#a30000] text-white w-25 h-12 px-2 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md">
+                  <Trash2 className="w-4 h-4 text-white" />
+                  <span className="text-[13px] font-normal tracking-[-0.266px]">Remove</span>
+                </button>
+              </div>
+            )}
+            {!shouldLockMobileEditor && selectedProduct && isEditingProduct && !perspectiveCorners && (
+              <div className="grid w-full max-w-[600px] grid-cols-2 gap-2 select-none sm:grid-cols-5 lg:hidden">
+                {supportsPerspectivePlane && (
+                  <button type="button" onClick={() => setShowPerspectivePicker(true)} className="bg-[#0f1422] hover:bg-black text-white min-h-11 min-w-0 px-2 py-2 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]">
+                    <Maximize className="w-4 h-4 text-white" />
+                    <span className="text-[13px] font-normal tracking-[-0.266px] text-center">Fit</span>
+                  </button>
+                )}
+                <button type="button" onClick={handleRotate} className="bg-[#0f1422] hover:bg-black text-white min-h-11 min-w-0 px-2 py-2 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]">
+                  <RotateCw className="w-4 h-4 text-white" />
+                  <span className="text-[13px] font-normal tracking-[-0.266px] text-center">Rotate</span>
+                </button>
+                <button type="button" onClick={handleFlip} className="bg-[#0f1422] hover:bg-black text-white min-h-11 min-w-0 px-2 py-2 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]">
+                  <FlipHorizontal className="w-4 h-4 text-white" />
+                  <span className="text-[13px] font-normal tracking-[-0.266px] text-center">Flip</span>
+                </button>
+                <button type="button" onClick={handleReset} className="bg-[#0f1422] hover:bg-black text-white min-h-11 min-w-0 px-2 py-2 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]">
+                  <RotateCcw className="w-4 h-4 text-white" />
+                  <span className="text-[13px] font-normal tracking-[-0.266px] text-center">Reset</span>
+                </button>
+                <button type="button" onClick={handleRemove} className="bg-[#c50000] hover:bg-[#a30000] text-white min-h-11 min-w-0 px-2 py-2 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">
+                  <Trash2 className="w-4 h-4 text-white" />
+                  <span className="text-[13px] font-normal tracking-[-0.266px] text-center">Remove</span>
+                </button>
+              </div>
+            )}
+            {!shouldLockMobileEditor && selectedProduct && isEditingProduct && perspectiveCorners && (
+              <div
+                className="grid w-full max-w-[600px] grid-cols-2 gap-2 select-none sm:grid-cols-5 lg:hidden"
+              >
+                <button
+                  type="button"
+                  onClick={() => setShowPerspectivePicker(true)}
+                  className="bg-[#0f1422] hover:bg-black text-white min-h-11 min-w-0 px-2 py-2 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]"
+                >
+                  <Maximize className="w-4 h-4 text-white" />
+                  <span className="text-[13px] font-normal tracking-[-0.266px] text-center">Edit Corners</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPerspectiveCorners(null);
+                    setModelRevision((prev) => prev + 1);
+                  }}
+                  className="bg-[#0f1422] hover:bg-black text-white min-h-11 min-w-0 px-2 py-2 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]"
+                >
+                  <Move className="w-4 h-4 text-white" />
+                  <span className="text-[13px] font-normal tracking-[-0.266px] text-center">Free Place</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleFlip}
+                  className="bg-[#0f1422] hover:bg-black text-white min-h-11 min-w-0 px-2 py-2 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]"
+                >
+                  <FlipHorizontal className="w-4 h-4 text-white" />
+                  <span className="text-[13px] font-normal tracking-[-0.266px] text-center">Flip</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleReset}
+                  className="bg-[#0f1422] hover:bg-black text-white min-h-11 min-w-0 px-2 py-2 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]"
+                >
+                  <RotateCcw className="w-4 h-4 text-white" />
+                  <span className="text-[13px] font-normal tracking-[-0.266px] text-center">Reset</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRemove}
+                  className="bg-[#c50000] hover:bg-[#a30000] text-white min-h-11 min-w-0 px-2 py-2 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]"
+                >
+                  <Trash2 className="w-4 h-4 text-white" />
+                  <span className="text-[13px] font-normal tracking-[-0.266px] text-center">Remove</span>
+                </button>
+              </div>
+            )}
 
           </div>
 
@@ -5337,11 +5371,10 @@ export function ProductModelWorkspace({
                                   type="button"
                                   onClick={() => handleAddonSelect("none")}
                                   aria-pressed={selectedAddon === "none"}
-                                  className={`py-2 px-3 text-sm rounded-[10px] font-medium transition-all cursor-pointer ${
-                                    selectedAddon === "none"
-                                      ? "bg-[#0f1422] text-white shadow-xs"
-                                      : "text-neutral-600 hover:text-black"
-                                  }`}
+                                  className={`py-2 px-3 text-sm rounded-[10px] font-medium transition-all cursor-pointer ${selectedAddon === "none"
+                                    ? "bg-[#0f1422] text-white shadow-xs"
+                                    : "text-neutral-600 hover:text-black"
+                                    }`}
                                 >
                                   None
                                 </button>
@@ -5351,11 +5384,10 @@ export function ProductModelWorkspace({
                                     type="button"
                                     onClick={() => handleAddonSelect("screen")}
                                     aria-pressed={selectedAddon === "screen"}
-                                    className={`py-2 px-3 text-sm rounded-[10px] font-medium transition-all cursor-pointer ${
-                                      selectedAddon === "screen"
-                                        ? "bg-[#0f1422] text-white shadow-xs"
-                                        : "text-neutral-600 hover:text-black"
-                                    }`}
+                                    className={`py-2 px-3 text-sm rounded-[10px] font-medium transition-all cursor-pointer ${selectedAddon === "screen"
+                                      ? "bg-[#0f1422] text-white shadow-xs"
+                                      : "text-neutral-600 hover:text-black"
+                                      }`}
                                   >
                                     Screen
                                   </button>
@@ -5366,11 +5398,10 @@ export function ProductModelWorkspace({
                                     type="button"
                                     onClick={() => handleAddonSelect("grill")}
                                     aria-pressed={selectedAddon === "grill"}
-                                    className={`py-2 px-3 text-sm rounded-[10px] font-medium transition-all cursor-pointer ${
-                                      selectedAddon === "grill"
-                                        ? "bg-[#0f1422] text-white shadow-xs"
-                                        : "text-neutral-600 hover:text-black"
-                                    }`}
+                                    className={`py-2 px-3 text-sm rounded-[10px] font-medium transition-all cursor-pointer ${selectedAddon === "grill"
+                                      ? "bg-[#0f1422] text-white shadow-xs"
+                                      : "text-neutral-600 hover:text-black"
+                                      }`}
                                   >
                                     Grille
                                   </button>
@@ -5713,11 +5744,10 @@ export function ProductModelWorkspace({
                                         type="button"
                                         onClick={() => handleAddonFinishSelect(option.id)}
                                         aria-pressed={isSelected}
-                                        className={`flex items-center gap-2 rounded-[10px] border p-2 text-left transition-all cursor-pointer ${
-                                          isSelected
-                                            ? "border-[#07b6d3] bg-[#07b6d3]/5 ring-1 ring-[#07b6d3]/30"
-                                            : "border-neutral-200 bg-white hover:border-neutral-300"
-                                        }`}
+                                        className={`flex items-center gap-2 rounded-[10px] border p-2 text-left transition-all cursor-pointer ${isSelected
+                                          ? "border-[#07b6d3] bg-[#07b6d3]/5 ring-1 ring-[#07b6d3]/30"
+                                          : "border-neutral-200 bg-white hover:border-neutral-300"
+                                          }`}
                                       >
                                         <span
                                           className="size-4 shrink-0 rounded-full border border-black/15"
@@ -6370,12 +6400,12 @@ export function ProductModelWorkspace({
             (activeCalibrationMeta?.detectedCorners
               ? activeCalibrationMeta.detectedCorners.map((c) => ({ x: c[0], y: c[1] }))
               : spaceImageSession?.calibrationMeta?.verified_corners ??
-                (spaceImageSession?.calibrationMeta?.detectedCorners
-                  ? spaceImageSession.calibrationMeta.detectedCorners.map((c) => ({ x: c[0], y: c[1] }))
-                  : sessionContext?.spaceImageSession?.calibrationMeta?.verified_corners ??
-                    (sessionContext?.spaceImageSession?.calibrationMeta?.detectedCorners
-                      ? sessionContext.spaceImageSession.calibrationMeta.detectedCorners.map((c) => ({ x: c[0], y: c[1] }))
-                      : null)))
+              (spaceImageSession?.calibrationMeta?.detectedCorners
+                ? spaceImageSession.calibrationMeta.detectedCorners.map((c) => ({ x: c[0], y: c[1] }))
+                : sessionContext?.spaceImageSession?.calibrationMeta?.verified_corners ??
+                (sessionContext?.spaceImageSession?.calibrationMeta?.detectedCorners
+                  ? sessionContext.spaceImageSession.calibrationMeta.detectedCorners.map((c) => ({ x: c[0], y: c[1] }))
+                  : null)))
           }
           onConfirm={(corners, scaleResult, paperStandard) =>
             handlePaperPinConfirm(corners, scaleResult, paperStandard)

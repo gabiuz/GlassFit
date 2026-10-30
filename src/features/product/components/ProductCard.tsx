@@ -142,25 +142,25 @@ export function ProductCard({ product }: ProductCardProps) {
               </div>
             </>
           )}
-          <div className="flex flex-col sm:flex-row gap-2 w-full">
+          <div className="flex w-full min-w-0 flex-col gap-2 sm:flex-row sm:gap-1.5">
             {/* feat/sql: routed buttons */}
-            <Link href={`/product-details/${product.id}`} className="w-full sm:flex-1">
+            <Link href={`/product-details/${product.id}`} className="w-full sm:min-w-0 sm:flex-1">
               <Button
                 leftIcon={null}
                 rightIcon={null}
                 variant="greenBtnWhiteText"
                 value="View Product"
-                className="min-h-11 sm:min-h-0 whitespace-nowrap text-sm! w-full justify-center"
+                className="min-h-11 w-full min-w-0 justify-center whitespace-nowrap text-sm! sm:min-h-0"
                 style={{
                   gap: "8px",
                   borderRadius: "10px",
-                  padding: "5px 10px",
+                  padding: "5px 6px",
                   width: "100%",
                   justifyContent: "center",
                 }}
               />
             </Link>
-            <Link href={`/visualize/${product.id}/upload`} className="w-full sm:flex-1">
+            <Link href={`/visualize/${product.id}/upload`} className="w-full sm:min-w-0 sm:flex-1">
               <Button
                 leftIcon={null}
                 rightIcon={
@@ -173,11 +173,11 @@ export function ProductCard({ product }: ProductCardProps) {
                 }
                 variant="blackBtnWhiteText"
                 value="Visualize"
-                className="min-h-11 sm:min-h-0 whitespace-nowrap text-sm! w-full justify-center"
+                className="min-h-11 w-full min-w-0 justify-center whitespace-nowrap text-sm! sm:min-h-0"
                 style={{
                   gap: "8px",
                   borderRadius: "10px",
-                  padding: "5px 10px",
+                  padding: "5px 6px",
                   width: "100%",
                   justifyContent: "center",
                 }}

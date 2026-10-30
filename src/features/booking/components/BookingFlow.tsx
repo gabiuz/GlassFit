@@ -499,6 +499,7 @@ export function BookingFlow() {
             totalEstimatePhp={displayedTotal}
             quotationNumber={quotationNumber}
             dateFormatted={dateFormatted}
+            productName={productNameSummary}
           />
         )}
         {step === 2 && (

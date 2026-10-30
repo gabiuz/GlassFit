@@ -104,6 +104,7 @@ export class ProductModelRenderer {
   private camera: THREE.PerspectiveCamera;
   private orthoCamera: THREE.OrthographicCamera;
   private canvas: HTMLCanvasElement;
+  private fittedCanvas: HTMLCanvasElement;
   private modelGroup: THREE.Group;
   private modelLoadVersion = 0;
   private materialCapabilities: ProductMaterialCapabilities = {
@@ -121,6 +122,9 @@ export class ProductModelRenderer {
     this.canvas = document.createElement("canvas");
     this.canvas.width = width;
     this.canvas.height = height;
+    this.fittedCanvas = document.createElement("canvas");
+    this.fittedCanvas.width = width;
+    this.fittedCanvas.height = height;
 
     this.renderer = new THREE.WebGLRenderer({
       canvas: this.canvas,
@@ -188,6 +192,8 @@ export class ProductModelRenderer {
   setSize(width: number, height: number) {
     this.canvas.width = width;
     this.canvas.height = height;
+    this.fittedCanvas.width = width;
+    this.fittedCanvas.height = height;
     this.renderer.setSize(width, height, false);
 
     const aspect = Math.max(width / Math.max(height, 1), 0.01);
@@ -530,28 +536,30 @@ export class ProductModelRenderer {
       this.modelGroup.updateMatrixWorld(true);
 
       const baseBounds = computeHostProductBounds(this.modelGroup);
+      const fitBounds = computeFitFrameBounds(this.modelGroup) ?? baseBounds;
       const baseSize = new THREE.Vector3();
       const baseCenter = new THREE.Vector3();
-      baseBounds.getSize(baseSize);
-      baseBounds.getCenter(baseCenter);
+      fitBounds.getSize(baseSize);
+      fitBounds.getCenter(baseCenter);
 
       if (baseSize.x > 0 && baseSize.y > 0) {
-        // Edge-to-edge 3D perspective camera projection:
-        // Position camera directly in front of the model at distance d so that
-        // the unrotated front of the model (baseBounds.max.z) exactly fits the canvas boundaries.
-        // Rays diverge toward the edges, rendering frame reveals, jamb thickness, and glass parallax.
+        // PRD-F6: fit the installation frame to the chosen opening corners.
+        // Keep a perspective camera so frame depth and glass parallax remain visible.
         const fovDegrees = CAMERA_BASE_VERTICAL_FOV_DEGREES;
         const fovRad = THREE.MathUtils.degToRad(fovDegrees);
         const distance = (baseSize.y / 2) / Math.tan(fovRad / 2);
 
         this.camera.fov = fovDegrees;
         this.camera.aspect = this.canvas.width / this.canvas.height;
-        this.camera.position.set(baseCenter.x, baseCenter.y, baseBounds.max.z + distance);
-        this.camera.lookAt(baseCenter.x, baseCenter.y, baseBounds.max.z);
+        const cameraZ = baseBounds.max.z + distance;
+        this.camera.position.set(baseCenter.x, baseCenter.y, cameraZ);
+        this.camera.lookAt(baseCenter.x, baseCenter.y, fitBounds.max.z);
 
         const near = this.camera.near;
         const far = this.camera.far;
-        const scale = near / distance;
+        // Fit the visible installation frame, even when handles or other host
+        // parts protrude in front of it. The entire 3D model still renders.
+        const scale = near / (cameraZ - fitBounds.max.z);
         const halfWidth = (baseSize.x / 2) * scale;
         const halfHeight = (baseSize.y / 2) * scale;
 
@@ -575,6 +583,26 @@ export class ProductModelRenderer {
         this.modelGroup.updateMatrixWorld(true);
 
         this.renderer.render(this.scene, this.camera);
+        // PRD-F6: the chosen quadrilateral must map to visible product pixels,
+        // not transparent space left around the WebGL render.
+        if (yaw === 0 && pitch === 0) {
+          const fittedContext = this.fittedCanvas.getContext("2d", { willReadFrequently: true });
+          if (fittedContext) {
+            const { width, height } = this.canvas;
+            fittedContext.clearRect(0, 0, width, height);
+            fittedContext.drawImage(this.canvas, 0, 0);
+            const bounds = getVisibleAlphaBounds(fittedContext.getImageData(0, 0, width, height));
+            if (bounds && bounds.width > 0 && bounds.height > 0) {
+              fittedContext.clearRect(0, 0, width, height);
+              fittedContext.drawImage(
+                this.canvas,
+                bounds.x, bounds.y, bounds.width, bounds.height,
+                0, 0, width, height,
+              );
+              return this.fittedCanvas;
+            }
+          }
+        }
         return this.canvas;
       }
     }
@@ -604,6 +632,24 @@ export class ProductModelRenderer {
     }
     this.renderer.dispose();
   }
+}
+
+export function getVisibleAlphaBounds(image: ImageData): { x: number; y: number; width: number; height: number } | null {
+  const { width, height, data } = image;
+  let minX = width;
+  let minY = height;
+  let maxX = -1;
+  let maxY = -1;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      if (data[(y * width + x) * 4 + 3] < 16) continue;
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
+    }
+  }
+  return maxX < minX ? null : { x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 };
 }
 
 function releaseModelGroup(root: THREE.Object3D, sharedGeometry: boolean) {
@@ -666,6 +712,33 @@ export function computeHostProductBounds(modelGroup: THREE.Group): THREE.Box3 {
   }
 
   return hostBounds;
+}
+
+export function computeFitFrameBounds(modelGroup: THREE.Group): THREE.Box3 | null {
+  const frameBounds = new THREE.Box3();
+  let hasFrameMesh = false;
+
+  modelGroup.traverse((child) => {
+    if (!(child instanceof THREE.Mesh) || isAddonObject(child)) return;
+    let ancestor: THREE.Object3D | null = child;
+    let isFrame = false;
+    while (ancestor && ancestor !== modelGroup) {
+      const key = String(ancestor.userData.componentKey ?? "").toLowerCase();
+      const type = String(ancestor.userData.componentType ?? "").toLowerCase();
+      const category = String(ancestor.userData.presentationCategory ?? "").toLowerCase();
+      if (ancestor.name === "Frame" || type === "frame" || category === "framing" || key.includes("frame")) {
+        isFrame = true;
+        break;
+      }
+      ancestor = ancestor.parent;
+    }
+    if (!isFrame) return;
+    child.updateMatrixWorld(true);
+    frameBounds.expandByObject(child);
+    hasFrameMesh = true;
+  });
+
+  return hasFrameMesh && !frameBounds.isEmpty() ? frameBounds : null;
 }
 
 function normalizeModelForViewer(container: THREE.Group, source: THREE.Object3D) {

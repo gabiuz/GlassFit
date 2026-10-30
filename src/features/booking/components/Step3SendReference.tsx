@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import Image from "next/image";
 import { ArrowRight } from "lucide-react";
 
@@ -30,6 +30,8 @@ export function Step3SendReference({
   addonSummary = null,
 }: Step3SendReferenceProps) {
   const [copied, setCopied] = useState(false);
+  const [feedback, setFeedback] = useState("");
+  const launchPending = useRef(false);
 
   const workableUrl =
     shareableUrl && shareableUrl.trim() !== ""
@@ -48,19 +50,33 @@ export function Step3SendReference({
     addonSummary,
   });
 
-  const handleCopyMessage = () => {
-    navigator.clipboard.writeText(messageText);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopyMessage = async () => {
+    try {
+      await navigator.clipboard.writeText(messageText);
+      setCopied(true);
+      setFeedback("Full message copied. Paste it into your conversation.");
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setFeedback("Copy was blocked. Select the message above and copy it manually.");
+    }
   };
 
-  const handleShare = (method: "Messenger" | "Viber") => {
-    navigator.clipboard.writeText(messageText);
-    onSend(method);
-    if (typeof window !== "undefined") {
-      const url = method === "Messenger" ? messengerUrl : viberUrl;
-      window.open(url, "_blank");
+  const handleShare = () => {
+    if (launchPending.current) return;
+    launchPending.current = true;
+    setTimeout(() => { launchPending.current = false; }, 1500);
+    setFeedback("If Messenger does not open, copy and paste the message manually.");
+    window.open(messengerUrl, "_blank");
+    onSend("Messenger");
+  };
+
+  const handleViberShare = () => {
+    if (!viberUrl) {
+      setFeedback("The reference is too long for Viber's pre-filled message. Copy the full message above instead.");
+      return;
     }
+    window.location.href = viberUrl;
+    onSend("Viber");
   };
 
   return (
@@ -87,7 +103,7 @@ export function Step3SendReference({
               Pre-Filled Message · Edit Before Sending
             </h3>
             <button
-              onClick={handleCopyMessage}
+              onClick={() => { void handleCopyMessage(); }}
               className="text-[#0f1422] hover:text-[#07b6d3] transition-colors focus:outline-none flex items-center shrink-0 cursor-pointer"
               title="Copy message"
             >
@@ -116,8 +132,8 @@ export function Step3SendReference({
           </h3>
           <div className="flex flex-col lg:flex-row gap-[37px] w-full">
             {/* Messenger button */}
-            <div
-              onClick={() => handleShare("Messenger")}
+            <button type="button"
+              onClick={handleShare}
               className="bg-[#f5f5f5] border border-[#f5f5f5] rounded-[20px] px-4 py-4 md:px-[30px] md:py-[20px] flex items-center justify-between gap-4 md:gap-[30px] cursor-pointer hover:bg-neutral-100 transition-all flex-1 w-full"
             >
               <div className="flex items-center gap-4 md:gap-[30px]">
@@ -139,11 +155,11 @@ export function Step3SendReference({
                 </div>
               </div>
               <ArrowRight className="w-[26px] h-[21px] text-[#0f1422] shrink-0" />
-            </div>
+            </button>
 
             {/* Viber button */}
-            <div
-              onClick={() => handleShare("Viber")}
+            <button type="button"
+              onClick={handleViberShare}
               className="bg-[#f5f5f5] border border-[#f5f5f5] rounded-[20px] px-4 py-4 md:px-[30px] md:py-[20px] flex items-center justify-between gap-4 md:gap-[30px] cursor-pointer hover:bg-neutral-100 transition-all flex-1 w-full"
             >
               <div className="flex items-center gap-4 md:gap-[30px]">
@@ -160,20 +176,20 @@ export function Step3SendReference({
                     Send via Viber
                   </p>
                   <p className="font-normal text-sm sm:text-[16px] tracking-[-0.304px] leading-[1.4] text-[#c3c3c3]">
-                    Opens in external browser
+                    Opens a short quote with the full reference link
                   </p>
                 </div>
               </div>
               <ArrowRight className="w-[26px] h-[21px] text-[#0f1422] shrink-0" />
-            </div>
+            </button>
           </div>
         </div>
       </div>
 
       {/* Floating success toast */}
-      {copied && (
+      {feedback && (
         <div className="fixed bottom-6 left-6 z-50 bg-[#0f1422] text-white py-3.5 px-5 rounded-[12px] shadow-xl flex items-center gap-3 border border-neutral-800 transition-all duration-300">
-          <div className="bg-[#05b64b] flex items-center justify-center w-5 h-5 rounded-full shrink-0">
+          {copied && <div className="bg-[#05b64b] flex items-center justify-center w-5 h-5 rounded-full shrink-0">
             <Image
               src="/send-booking/check.svg"
               alt="Success"
@@ -181,8 +197,8 @@ export function Step3SendReference({
               height={10}
               className="object-contain"
             />
-          </div>
-          <span className="text-sm font-normal tracking-tight">Copied message successfully</span>
+          </div>}
+          <span role="status" className="text-sm font-normal tracking-tight">{feedback}</span>
         </div>
       )}
     </div>

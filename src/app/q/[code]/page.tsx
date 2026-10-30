@@ -372,37 +372,39 @@ export default async function PublicQuotationPage({ params }: PublicQuotationPag
         </div>
 
         {/* Itemized 4-Group BOM Table */}
-        <div className="bg-[#f5f5f5] rounded-[24px] p-6 md:p-8 flex flex-col gap-4">
+        <div className="min-w-0 bg-[#f5f5f5] rounded-[24px] p-4 md:p-8 flex flex-col gap-4">
           <h2 className="font-semibold text-xl text-[#0f1422]">Itemized Cost Breakdown</h2>
-          <div className="w-full overflow-x-auto bg-white rounded-[16px] shadow-xs">
-            <table className="w-full text-left border-collapse text-sm">
+          <div className="min-w-0 w-full overflow-x-auto bg-white rounded-[16px] shadow-xs">
+            <div className="min-w-max p-3 md:p-0">
+            <table className="w-full min-w-[640px] text-left border-collapse text-sm">
               <thead>
                 <tr className="border-b border-neutral-200 bg-neutral-50 text-neutral-600">
                   <th className="py-3.5 px-4 font-semibold">Item Group</th>
-                  <th className="py-3.5 px-4 font-semibold text-right">Quantity</th>
-                  <th className="py-3.5 px-4 font-semibold text-right">Unit Price</th>
-                  <th className="py-3.5 px-4 font-semibold text-right">Subtotal</th>
+                  <th className="py-3.5 px-4 font-semibold text-right whitespace-nowrap">Quantity</th>
+                  <th className="py-3.5 px-4 font-semibold text-right whitespace-nowrap">Unit Price</th>
+                  <th className="py-3.5 px-4 font-semibold text-right whitespace-nowrap">Subtotal</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100">
                 {data.groups.map((group, idx) => (
                   <tr key={idx} className="hover:bg-neutral-50/50">
-                    <td className="py-3.5 px-4 font-medium text-[#0f1422]">
+                    <td className="max-w-[240px] py-3.5 px-4 font-medium text-[#0f1422] [overflow-wrap:anywhere]">
                       {group.item_group_name}
                     </td>
-                    <td className="py-3.5 px-4 text-neutral-600 text-right">
+                    <td className="py-3.5 px-4 text-neutral-600 text-right whitespace-nowrap">
                       {group.quantity} {group.unit_label}
                     </td>
-                    <td className="py-3.5 px-4 text-neutral-600 text-right">
+                    <td className="py-3.5 px-4 text-neutral-600 text-right whitespace-nowrap">
                       ₱{group.unit_price.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
                     </td>
-                    <td className="py-3.5 px-4 font-semibold text-[#0f1422] text-right">
+                    <td className="py-3.5 px-4 font-semibold text-[#0f1422] text-right whitespace-nowrap">
                       ₱{group.estimated_subtotal.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
       </div>

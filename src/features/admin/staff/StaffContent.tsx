@@ -37,7 +37,7 @@ export function StaffContent({ initialStaff }: StaffContentProps) {
     };
 
     return (
-        <div className="flex flex-col gap-6 sm:gap-8 w-full max-w-[1240px] pb-12">
+        <div className="flex flex-col gap-6 sm:gap-8 w-full min-w-0 max-w-[1240px] pb-12">
             {/* Header */}
             <div className="w-full flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <h1 className="text-black text-2xl sm:text-3xl lg:text-[32px] font-medium leading-tight tracking-tight">
@@ -69,9 +69,9 @@ export function StaffContent({ initialStaff }: StaffContentProps) {
             )}
 
             {/* Staff Table */}
-            <div className="bg-white rounded-[20px] shadow-xs overflow-hidden">
+            <div className="min-w-0 bg-white rounded-[20px] shadow-xs overflow-hidden">
                 <div className="overflow-x-auto">
-                    <table className="w-full min-w-[700px]">
+                    <table className="w-full min-w-[800px]">
                         <thead>
                             <tr className="border-b border-[#e5e5e5]">
                                 <th className="text-left px-6 py-4 text-xs font-medium text-black tracking-tight">
@@ -86,7 +86,7 @@ export function StaffContent({ initialStaff }: StaffContentProps) {
                                 <th className="text-left px-6 py-4 text-xs font-medium text-black tracking-tight">
                                     Status
                                 </th>
-                                <th className="text-left px-6 py-4 text-xs font-medium text-black tracking-tight">
+                                <th className="min-w-[150px] whitespace-nowrap text-left px-6 py-4 text-xs font-medium text-black tracking-tight">
                                     Created
                                 </th>
                                 <th className="text-right px-6 py-4 text-xs font-medium text-black tracking-tight">
@@ -182,7 +182,7 @@ function StaffTableRow({
             <td className="px-6 py-4">
                 <StaffStatusBadge status={member.status} />
             </td>
-            <td className="px-6 py-4">
+            <td className="min-w-[150px] whitespace-nowrap px-6 py-4">
                 <span className="text-sm text-[#c3c3c3]">{createdDate}</span>
             </td>
             <td className="px-6 py-4 text-right">

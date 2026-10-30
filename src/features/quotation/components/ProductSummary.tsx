@@ -152,8 +152,8 @@ export function ProductSummary() {
           </div>
         )}
 
-        <div className="flex flex-col md:flex-row gap-4 items-center justify-between w-full">
-          <div className="flex flex-col items-start">
+        <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between w-full min-w-0">
+          <div className="flex flex-col items-start min-w-0">
             <span className="text-xl sm:text-2xl font-medium leading-7">
               {productsData.length > 1
                 ? "Final Estimated Quotation (Overall Total)"
@@ -163,7 +163,7 @@ export function ProductSummary() {
               Includes material offcuts, hardware, workshop labor, and contractor margin
             </span>
           </div>
-          <span className="text-3xl md:text-5xl font-medium leading-tight md:leading-[57.60px]">
+          <span className="max-w-full min-w-0 text-3xl md:text-5xl font-medium leading-tight md:leading-[57.60px] [overflow-wrap:anywhere]">
             {formattedTotal}
           </span>
         </div>
@@ -274,10 +274,10 @@ function createProductSummaryItemFromOverlay(
       category: "Window & Door",
       variant:
         panelCount > 2 ? `${panelCount}-Panel Configuration` : "2-Panel Standard",
-      material: "Aluminum/Glass",
+      material: bomCalc.glazingItems.length > 0 ? "Aluminum/Glass" : "Aluminum",
       aluminumFinish,
-      glassFinish,
-      glassType: glassFinish,
+      glassFinish: bomCalc.glazingItems.length > 0 ? glassFinish : "None",
+      glassType: bomCalc.glazingItems.length > 0 ? glassFinish : "None",
       thickness: `${thicknessMm}mm`,
       profileGrade: "Series 798",
       dimension,
@@ -463,8 +463,8 @@ function createProductSummaryItem(
       variant: definition.template.templateName,
       material,
       aluminumFinish,
-      glassFinish,
-      glassType: glassFinish,
+      glassFinish: bomCalc.glazingItems.length > 0 ? glassFinish : "None",
+      glassType: bomCalc.glazingItems.length > 0 ? glassFinish : "None",
       thickness: `${thicknessMm}mm`,
       profileGrade: definition.template.modelStrategy,
       dimension,

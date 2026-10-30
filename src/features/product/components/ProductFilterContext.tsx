@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useMemo, useEffect } from "react";
+import React, { createContext, useContext, useState, useMemo } from "react";
 import type { CatalogProduct } from "@/lib/products/types";
 
 export { type CatalogProduct };
@@ -165,17 +165,18 @@ export function ProductFilterProvider({ children, initialProducts }: ProductFilt
   const [draftFilters, setDraftFilters] = useState<FilterState>(initialFilterState);
   const [isMobileSheetOpen, setIsMobileSheetOpen] = useState(false);
 
-  // Sync draft filters when mobile sheet opens
-  useEffect(() => {
-    if (isMobileSheetOpen) {
+  const openOrCloseMobileSheet = (open: boolean) => {
+    if (open && !isMobileSheetOpen) {
       setDraftFilters({ ...filters });
     }
-  }, [isMobileSheetOpen, filters]);
+    setIsMobileSheetOpen(open);
+  };
 
   const updateFilter = <K extends keyof FilterState>(key: K, value: FilterState[K]) => {
     setFilters((prev) => ({
       ...prev,
       [key]: value,
+      ...(key === "selectedCategory" && value !== "Doors" ? { checkedDoors: [] } : {}),
     }));
   };
 
@@ -183,6 +184,7 @@ export function ProductFilterProvider({ children, initialProducts }: ProductFilt
     setDraftFilters((prev) => ({
       ...prev,
       [key]: value,
+      ...(key === "selectedCategory" && value !== "Doors" ? { checkedDoors: [] } : {}),
     }));
   };
 
@@ -215,6 +217,7 @@ export function ProductFilterProvider({ children, initialProducts }: ProductFilt
           break;
         case "category":
           next.selectedCategory = "All";
+          next.checkedDoors = [];
           break;
         case "checkedDoors":
           if (value) {
@@ -285,7 +288,7 @@ export function ProductFilterProvider({ children, initialProducts }: ProductFilt
         filters,
         draftFilters,
         isMobileSheetOpen,
-        setIsMobileSheetOpen,
+        setIsMobileSheetOpen: openOrCloseMobileSheet,
         updateFilter,
         updateDraftFilter,
         applyDraftFilters,

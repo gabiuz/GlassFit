@@ -180,51 +180,61 @@ function BatchPriceModalInner({
         )}
 
         {/* Quick percentage calculation bar */}
-        <div className="bg-neutral-50 border border-neutral-200 rounded-[16px] p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-2 flex-wrap">
+        <div className="bg-neutral-50 border border-neutral-200 rounded-[16px] p-4 flex flex-col gap-3 min-w-0">
+          <div className="flex flex-col gap-2 min-w-0">
             <span className="text-xs font-semibold text-neutral-700">Filter Category:</span>
-            {CATEGORIES.map((cat) => (
-              <button
-                key={cat}
-                type="button"
-                onClick={() => setSelectedCategory(cat)}
-                className={`text-xs px-3 py-1.5 rounded-full transition-all cursor-pointer font-medium ${
-                  selectedCategory === cat
-                    ? "bg-[#097283] text-white shadow-xs"
-                    : "bg-white text-neutral-600 border border-neutral-200 hover:bg-neutral-100"
-                }`}
-              >
-                {cat}
-              </button>
-            ))}
+            <div className="flex flex-wrap gap-2" role="group" aria-label="Filter materials by category">
+              {CATEGORIES.map((cat) => (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => setSelectedCategory(cat)}
+                  aria-pressed={selectedCategory === cat}
+                  className={`text-xs px-3 py-1.5 rounded-full transition-all cursor-pointer font-medium ${
+                    selectedCategory === cat
+                      ? "bg-[#097283] text-white shadow-xs"
+                      : "bg-white text-neutral-600 border border-neutral-200 hover:bg-neutral-100"
+                  }`}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
           </div>
 
-          <div className="flex items-center gap-2 self-end sm:self-auto">
-            <div className="flex items-center gap-1.5 bg-white border border-neutral-300 rounded-xl px-2.5 py-1">
-              <span className="text-xs font-medium text-neutral-500">%</span>
-              <input
-                type="number"
-                step="0.5"
-                value={percentageDelta}
-                onChange={(e) => setPercentageDelta(parseFloat(e.target.value) || 0)}
-                className="w-14 text-xs font-mono text-right text-[#0f1422] outline-none"
-              />
+          <div className="flex flex-wrap items-center gap-2 border-t border-neutral-200 pt-3">
+            <label htmlFor="batch-price-percentage" className="text-xs font-semibold text-neutral-700 mr-auto">
+              Percentage adjustment
+            </label>
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-1.5 bg-white border border-neutral-300 rounded-xl px-2.5 py-1.5 focus-within:border-[#097283]">
+                <span className="text-xs font-medium text-neutral-500">%</span>
+                <input
+                  id="batch-price-percentage"
+                  type="number"
+                  step="0.5"
+                  value={percentageDelta}
+                  onChange={(e) => setPercentageDelta(parseFloat(e.target.value) || 0)}
+                  className="w-14 text-xs font-mono text-right text-[#0f1422] outline-none"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => handleApplyPercentage(percentageDelta)}
+                className="min-h-8 border border-[#097283] bg-white text-[#097283] hover:bg-[#097283]/10 text-xs font-medium px-3 rounded-xl transition-colors cursor-pointer"
+              >
+                Apply
+              </button>
+              <button
+                type="button"
+                onClick={handleResetToOriginal}
+                title="Reset current view to original prices"
+                aria-label="Reset current view to original prices"
+                className="size-8 flex items-center justify-center rounded-xl border border-neutral-300 text-neutral-500 hover:text-black hover:bg-white transition-colors cursor-pointer"
+              >
+                <RefreshCw className="size-3.5" />
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => handleApplyPercentage(percentageDelta)}
-              className="bg-[#0f1422] hover:bg-black text-white text-xs font-medium px-3 py-1.5 rounded-xl transition-colors cursor-pointer"
-            >
-              Apply {percentageDelta >= 0 ? `+${percentageDelta}%` : `${percentageDelta}%`}
-            </button>
-            <button
-              type="button"
-              onClick={handleResetToOriginal}
-              title="Reset current view to original prices"
-              className="p-1.5 rounded-xl border border-neutral-300 text-neutral-500 hover:text-black hover:bg-white transition-colors cursor-pointer"
-            >
-              <RefreshCw className="size-3.5" />
-            </button>
           </div>
         </div>
 
