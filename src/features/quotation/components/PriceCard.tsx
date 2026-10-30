@@ -131,14 +131,14 @@ export function PriceCard({
               />
             ) : null}
           </div>
-          <div className="flex flex-col gap-2 items-start min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex w-full min-w-0 flex-col gap-2 items-start">
+            <div className="flex w-full min-w-0 flex-wrap items-center gap-2">
               {itemIndex !== undefined && totalItems !== undefined && totalItems > 1 && (
                 <span className="bg-[#07b6d3]/15 text-[#078da4] text-xs font-semibold px-2.5 py-0.5 rounded-full border border-[#07b6d3]/30">
                   Item {itemIndex} of {totalItems}
                 </span>
               )}
-              <span className="text-[#c3c3c3] text-sm font-normal tracking-[-0.266px] leading-[1.4] whitespace-nowrap">
+              <span className="max-w-full break-all text-[#c3c3c3] text-sm font-normal tracking-[-0.266px] leading-[1.4]">
                 {productId}
               </span>
               {details.addonName && details.selectedAddon && details.selectedAddon !== "none" && (
