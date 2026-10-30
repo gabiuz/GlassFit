@@ -264,8 +264,9 @@ export function ProductFilter({ isMobile = false }: { isMobile?: boolean }) {
           <button
             key={option.label}
             type="button"
-            onClick={() => update("selectedCategory", option.label)}
-            className="flex w-full items-center gap-3 px-3.75 py-2.5 text-left cursor-pointer"
+            onClick={() => update("selectedCategory", isSelected ? "All" : option.label)}
+            aria-pressed={isSelected}
+            className="flex w-full items-center gap-3 px-3.75 py-2.5 text-left cursor-pointer rounded-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
           >
             <span
               className={
@@ -275,7 +276,7 @@ export function ProductFilter({ isMobile = false }: { isMobile?: boolean }) {
               }
               aria-hidden="true"
             />
-            <Image src={option.icon} alt={option.label} width={25} height={25} />
+            <Image src={option.icon} alt="" width={25} height={25} />
             <span className="text-[16px] leading-[1.4] tracking-[-0.304px] text-black">
               {option.label}
             </span>
