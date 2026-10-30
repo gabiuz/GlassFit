@@ -125,7 +125,7 @@ export function PriceCard({
             {imageUrl ? (
               <img
                 alt={productName}
-                className="size-full object-cover"
+                className="size-full object-contain"
                 draggable={false}
                 src={imageUrl}
               />
