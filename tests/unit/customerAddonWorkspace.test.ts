@@ -14,7 +14,7 @@ import {
   getAddonShortLabel,
 } from "../../src/lib/pricing/addonPricingEngine.js";
 import { buildParametricProduct } from "../../src/lib/visualization/parametricProductBuilder.js";
-import { computeHostProductBounds } from "../../src/lib/visualization/modelRenderer.js";
+import { computeFitFrameBounds, computeHostProductBounds, getVisibleAlphaBounds } from "../../src/lib/visualization/modelRenderer.js";
 import { calculateStandardSeries798 } from "../../src/lib/pricing/pricingEngine.js";
 import {
   createQuotationDocumentSnapshotV1,
@@ -785,6 +785,36 @@ describe("IMP-MS69 / QAD-TC84: Customer Workspace Modular Add-on Selection & Quo
   // --------------------------------------------------------------------------
   // QAD-TC84.14: Planar fit camera framing invariance when toggling add-on
   // --------------------------------------------------------------------------
+  it("uses the installation frame rather than protruding hardware for fitted bounds", () => {
+    const product = new THREE.Group();
+    const frame = new THREE.Group();
+    frame.name = "Frame";
+    const frameMesh = new THREE.Mesh(new THREE.BoxGeometry(2, 3, 0.1));
+    frame.add(frameMesh);
+    product.add(frame);
+    const handle = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.3, 0.2));
+    handle.position.z = 0.4;
+    product.add(handle);
+    product.updateMatrixWorld(true);
+
+    const frameBounds = computeFitFrameBounds(product);
+    assert.ok(frameBounds);
+    assert.ok(Math.abs(frameBounds.max.z - 0.05) < 1e-6);
+    assert.ok(computeHostProductBounds(product).max.z > frameBounds.max.z);
+  });
+
+  it("uses visible product pixels instead of transparent render margins for a fitted canvas", () => {
+    const width = 10;
+    const height = 8;
+    const data = new Uint8ClampedArray(width * height * 4);
+    for (let y = 2; y <= 6; y += 1) {
+      for (let x = 1; x <= 8; x += 1) data[(y * width + x) * 4 + 3] = 255;
+    }
+    assert.deepEqual(getVisibleAlphaBounds({ width, height, data } as ImageData), {
+      x: 1, y: 2, width: 8, height: 5,
+    });
+  });
+
   it("QAD-TC84.14: planar fit base bounds and camera projection remain unchanged when add-on is applied", () => {
     // 1. Build base window without add-on
     const baseBuilt = buildParametricProduct(mockStructuralDefinition, dummyResolved, dummyCache, {
