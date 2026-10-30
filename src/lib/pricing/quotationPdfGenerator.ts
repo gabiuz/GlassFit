@@ -478,5 +478,21 @@ export function formatBookingShareMessage(options: { customerName: string; quota
   const price = new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: 0 }).format(options.totalEstimatePhp);
   const messageText = `Hello R.R.D! I would like to inquire about a consultation for my customized glass and aluminum project:\n\nProduct: ${options.productDescription}\nQuotation No: ${options.quotationNumber}${addonLine}\nEstimated Amount: ${price}${waiver}\n\nHere is my saved reference link:\n${options.referenceLink}\n\nCan we schedule an ocular inspection and site measurement? Thank you! - ${options.customerName}`;
   const encoded = encodeURIComponent(messageText);
-  return { messageText, messengerUrl: `https://m.me/rrdaluminumglass?text=${encoded}`, viberUrl: `viber://forward?text=${encoded}` };
+  // Viber inserts only the first 200 characters of a forward URL's decoded text.
+  // Keep the signed reference intact and shorten only descriptive fields.
+  const viberCore = `Hi R.R.D! Consultation request.\nQuote: ${options.quotationNumber} | ${price}\nReference: ${options.referenceLink}`;
+  let viberText = viberCore;
+  const appendField = (label: string, value: string, reserved = 0) => {
+    const remaining = 200 - viberText.length - label.length - 1 - reserved;
+    if (remaining <= 0 || !value.trim()) return;
+    const shortened = value.length > remaining ? `${value.slice(0, Math.max(0, remaining - 1)).trimEnd()}…` : value;
+    viberText += `\n${label}${shortened}`;
+  };
+  if (viberCore.length <= 200) {
+    const customerReserve = options.customerName.trim() ? Math.min(30, options.customerName.length + 7) : 0;
+    appendField("Product: ", options.productDescription, customerReserve);
+    appendField("From: ", options.customerName);
+  }
+  const viberUrl = viberCore.length <= 200 ? `viber://forward?text=${encodeURIComponent(viberText)}` : "";
+  return { messageText, messengerUrl: `https://m.me/rrdaluminumglass?text=${encoded}`, viberUrl };
 }

@@ -31,7 +31,6 @@ export function Step3SendReference({
 }: Step3SendReferenceProps) {
   const [copied, setCopied] = useState(false);
   const [feedback, setFeedback] = useState("");
-  const [viberAttempted, setViberAttempted] = useState(false);
   const launchPending = useRef(false);
 
   const workableUrl =
@@ -72,14 +71,12 @@ export function Step3SendReference({
   };
 
   const handleViberShare = () => {
-    if (launchPending.current) return;
-    launchPending.current = true;
-    setTimeout(() => { launchPending.current = false; }, 1500);
-    setViberAttempted(true);
-    // Viber may trim long share text. Copy the exact message before launching so
-    // the customer can paste it if the draft is incomplete.
-    void handleCopyMessage();
+    if (!viberUrl) {
+      setFeedback("The reference is too long for Viber's pre-filled message. Copy the full message above instead.");
+      return;
+    }
     window.location.href = viberUrl;
+    onSend("Viber");
   };
 
   return (
@@ -106,7 +103,7 @@ export function Step3SendReference({
               Pre-Filled Message · Edit Before Sending
             </h3>
             <button
-              onClick={handleCopyMessage}
+              onClick={() => { void handleCopyMessage(); }}
               className="text-[#0f1422] hover:text-[#07b6d3] transition-colors focus:outline-none flex items-center shrink-0 cursor-pointer"
               title="Copy message"
             >
@@ -179,22 +176,13 @@ export function Step3SendReference({
                     Send via Viber
                   </p>
                   <p className="font-normal text-sm sm:text-[16px] tracking-[-0.304px] leading-[1.4] text-[#c3c3c3]">
-                    Opens Viber; paste the copied text if needed
+                    Opens a short quote with the full reference link
                   </p>
                 </div>
               </div>
               <ArrowRight className="w-[26px] h-[21px] text-[#0f1422] shrink-0" />
             </button>
           </div>
-          {viberAttempted && (
-            <div className="rounded-[20px] border border-[#c3c3c3] bg-[#f5f5f5] p-5 text-sm text-[#0f1422]" role="status">
-              <p>Viber can shorten long pre-filled messages. Check the draft before sending and paste the full copied message if anything is missing.</p>
-              <div className="mt-4 flex flex-wrap gap-3">
-                <button type="button" onClick={handleCopyMessage} className="rounded-[20px] bg-[#0f1422] px-4 py-2.5 font-medium text-white cursor-pointer">Copy full message</button>
-                <button type="button" onClick={() => onSend("Viber")} className="rounded-[20px] bg-[#07b6d3] px-4 py-2.5 font-medium text-white cursor-pointer">I sent it in Viber</button>
-              </div>
-            </div>
-          )}
         </div>
       </div>
 
