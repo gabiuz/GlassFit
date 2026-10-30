@@ -95,6 +95,23 @@ export function PriceCard({
 
   const hasSill = details.hasSill ?? true;
   const hasWaiver = details.structuralWaiver ?? false;
+  const summaryItems = [
+    ["Product Category", details.category],
+    ["Product Variant", details.variant],
+    ["Material", details.material],
+    ["Aluminum Finish", details.aluminumFinish],
+    ["Glass Finish", details.glassFinish],
+    ["Glass Type", details.glassType],
+    ["Glass Thickness", details.thickness],
+    ["Profile Grade", details.profileGrade],
+    ["Dimension", details.dimension],
+    [
+      "Add-on Attachment",
+      details.addonName && details.selectedAddon && details.selectedAddon !== "none"
+        ? `${details.addonName}${details.addonAluminumFinish ? ` (${details.addonAluminumFinish})` : ""}${typeof details.addonPrice === "number" && details.addonPrice > 0 ? ` (+₱${details.addonPrice.toLocaleString("en-PH", { minimumFractionDigits: 2 })})` : ""}`
+        : "None",
+    ],
+  ];
 
   return (
     <div className="bg-white drop-shadow-[0px_0px_2.5px_rgba(0,0,0,0.25)] flex flex-col gap-5 items-end justify-end px-6 md:px-12 py-7.5 relative rounded-[20px] w-full">
@@ -207,69 +224,13 @@ export function PriceCard({
                   </h4>
                 </div>
 
-                <div className="grid grid-cols-2 md:grid-cols-[repeat(6,fit-content(100%))] gap-x-16.75 gap-y-2.5 text-sm w-full text-left">
-                  <span className="text-[#c3c3c3] text-sm font-normal">
-                    Product Category
-                  </span>
-                  <span className="text-black text-sm font-normal">
-                    {details.category}
-                  </span>
-                  <span className="text-[#c3c3c3] text-sm font-normal">
-                    Product Variant
-                  </span>
-                  <span className="text-black text-sm font-normal">
-                    {details.variant}
-                  </span>
-                  <span className="text-[#c3c3c3] text-sm font-normal">
-                    Material
-                  </span>
-                  <span className="text-black text-sm font-normal">
-                    {details.material}
-                  </span>
-                  <span className="text-[#c3c3c3] text-sm font-normal">
-                    Aluminum Finish
-                  </span>
-                  <span className="text-black text-sm font-normal">
-                    {details.aluminumFinish}
-                  </span>
-                  <span className="text-[#c3c3c3] text-sm font-normal">
-                    Glass Finish
-                  </span>
-                  <span className="text-black text-sm font-normal">
-                    {details.glassFinish}
-                  </span>
-                  <span className="text-[#c3c3c3] text-sm font-normal">
-                    Glass Type
-                  </span>
-                  <span className="text-black text-sm font-normal">
-                    {details.glassType}
-                  </span>
-                  <span className="text-[#c3c3c3] text-sm font-normal">
-                    Glass Thickness
-                  </span>
-                  <span className="text-black text-sm font-normal">
-                    {details.thickness}
-                  </span>
-                  <span className="text-[#c3c3c3] text-sm font-normal">
-                    Profile Grade
-                  </span>
-                  <span className="text-black text-sm font-normal">
-                    {details.profileGrade}
-                  </span>
-                  <span className="text-[#c3c3c3] text-sm font-normal">
-                    Dimension
-                  </span>
-                  <span className="text-black text-sm font-normal">
-                    {details.dimension}
-                  </span>
-                  <span className="text-[#c3c3c3] text-sm font-normal">
-                    Add-on Attachment
-                  </span>
-                  <span className="text-black text-sm font-normal">
-                    {details.addonName && details.selectedAddon && details.selectedAddon !== "none"
-                      ? `${details.addonName}${details.addonAluminumFinish ? ` (${details.addonAluminumFinish})` : ""}${typeof details.addonPrice === "number" && details.addonPrice > 0 ? ` (+₱${details.addonPrice.toLocaleString("en-PH", { minimumFractionDigits: 2 })})` : ""}`
-                      : "None"}
-                  </span>
+                <div className="grid w-full grid-cols-[repeat(auto-fit,minmax(min(100%,15rem),1fr))] gap-x-6 gap-y-3 text-left">
+                  {summaryItems.map(([label, value]) => (
+                    <div key={label} className="flex min-w-0 flex-col gap-1">
+                      <span className="text-[#c3c3c3] text-sm font-normal">{label}</span>
+                      <span className="min-w-0 text-black text-sm font-normal [overflow-wrap:anywhere]">{value}</span>
+                    </div>
+                  ))}
                 </div>
 
                 {/* Grouped 4-Item BOM Breakdown */}
