@@ -78,14 +78,14 @@ export async function upsertProductComponent(input: UpsertComponentInput): Promi
         is_accessory_slot: Boolean(input.isAccessorySlot),
         accessory_category: input.isAccessorySlot ? (input.accessoryCategory || null) : null,
         allowed_accessory_ids: approvedAccessoryIds,
-        position_options: input.positionOptions || {
+        position_options: input.positionOptions || (input.isAccessorySlot ? {
             allowHorizontalToggle: true,
             defaultHorizontal: "right",
             horizontalOffsetMm: 45,
             allowVerticalToggle: false,
             defaultVertical: "up",
             verticalOffsetMm: 1000,
-        },
+        } : null),
         updated_by: adminCtx.profileId,
     };
 

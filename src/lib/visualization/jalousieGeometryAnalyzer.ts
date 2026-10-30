@@ -6,7 +6,7 @@
  */
 
 import * as THREE from "three";
-import type { DimensionBinding, PresentationCategory } from "@/lib/pricing/types";
+import type { DimensionBinding, PresentationCategory, BillingUnit } from "@/lib/pricing/types";
 
 export interface JalousieAnalysisResult {
   isLouverBlade: boolean;
@@ -20,7 +20,7 @@ export interface JalousieAnalysisResult {
   suggestedBinding: DimensionBinding;
   suggestedBaseQuantity: number;
   suggestedPresentationCategory: PresentationCategory;
-  suggestedBillingUnit: "pc" | "m";
+  suggestedBillingUnit: BillingUnit;
   bladeElevationsM: number[];
   operatorElevationsM: number[];
 }
@@ -142,8 +142,11 @@ export function analyzeJalousieGeometry(
   let hasHardwareMetal = false;
   let hasOperatorBlack = false;
 
+  object.updateMatrixWorld(true);
+
   object.traverse((child) => {
     if (child instanceof THREE.Mesh) {
+      child.updateMatrixWorld(true);
       const geom = child.geometry;
       if (!geom || !geom.attributes.position) return;
       const pos = geom.attributes.position;
@@ -167,11 +170,18 @@ export function analyzeJalousieGeometry(
       if (matNames.some((n) => n.includes("metal") || n.includes("hardware"))) hasHardwareMetal = true;
       if (isOpBlack) hasOperatorBlack = true;
 
+      const v0 = new THREE.Vector3();
+      const v1 = new THREE.Vector3();
+      const v2 = new THREE.Vector3();
+
       for (let i = 0; i < triCount; i++) {
         const i0 = index ? index.getX(i * 3) : i * 3;
         const i1 = index ? index.getX(i * 3 + 1) : i * 3 + 1;
         const i2 = index ? index.getX(i * 3 + 2) : i * 3 + 2;
-        const avgY = (pos.getY(i0) + pos.getY(i1) + pos.getY(i2)) / 3;
+        v0.fromBufferAttribute(pos, i0).applyMatrix4(child.matrixWorld);
+        v1.fromBufferAttribute(pos, i1).applyMatrix4(child.matrixWorld);
+        v2.fromBufferAttribute(pos, i2).applyMatrix4(child.matrixWorld);
+        const avgY = (v0.y + v1.y + v2.y) / 3;
         allYCenters.push(avgY);
         if (isGlass) {
           glassYCenters.push(avgY);
@@ -294,7 +304,33 @@ export function analyzeJalousieGeometry(
       if (Math.abs(pitchMm - 175) <= 5) pitchMm = 175;
     }
 
-    const isLouverBlade = isLouverKeyword || (hasGlassMesh && detectedCount >= 3);
+    const hasMultipleLouverBlades =
+      detectedCount >= 3 &&
+      pitchMm >= 100 &&
+      pitchMm <= 250 &&
+      size.y >= 0.35 &&
+      (size.y / detectedCount) <= 0.25;
+
+    const isLouverBlade = isLouverKeyword || (hasGlassMesh && hasMultipleLouverBlades);
+
+    if (!isLouverBlade) {
+      return {
+        isLouverBlade: false,
+        isLouverOperator: false,
+        louverCount: 0,
+        pitchMm: 175,
+        bladeHeightMm: 105.3,
+        bladeWidthMm: size.x > 0 ? Number((size.x * 1000).toFixed(1)) : 800,
+        operatorCount: 0,
+        bladesPerOperator: 4,
+        suggestedBinding: "AREA",
+        suggestedBaseQuantity: 1,
+        suggestedPresentationCategory: "Glazing",
+        suggestedBillingUnit: "sqm",
+        bladeElevationsM: [],
+        operatorElevationsM: [],
+      };
+    }
 
     return {
       isLouverBlade,
@@ -305,31 +341,50 @@ export function analyzeJalousieGeometry(
       bladeWidthMm: size.x > 0 ? Number((size.x * 1000).toFixed(1)) : 800,
       operatorCount: computeLouverOperatorCount(detectedCount, 4),
       bladesPerOperator: 4,
-      suggestedBinding: isLouverBlade ? "LOUVER_BLADE" : "FIXED",
-      suggestedBaseQuantity: isLouverBlade ? detectedCount : 1,
-      suggestedPresentationCategory: isLouverBlade ? "Glazing" : "Framing",
-      suggestedBillingUnit: isLouverBlade ? "pc" : "m",
+      suggestedBinding: "LOUVER_BLADE",
+      suggestedBaseQuantity: detectedCount,
+      suggestedPresentationCategory: "Glazing",
+      suggestedBillingUnit: "pc",
       bladeElevationsM: bladeCenters,
       operatorElevationsM: computeOperatorYCoordinates(detectedCount, computeLouverOperatorCount(detectedCount, 4), pitchMm),
     };
   }
 
   // Fallback defaults
+  if (isLouverKeyword) {
+    return {
+      isLouverBlade: true,
+      isLouverOperator: false,
+      louverCount: 7,
+      pitchMm: 175,
+      bladeHeightMm: 105.3,
+      bladeWidthMm: 800,
+      operatorCount: 2,
+      bladesPerOperator: 4,
+      suggestedBinding: "LOUVER_BLADE",
+      suggestedBaseQuantity: 7,
+      suggestedPresentationCategory: "Glazing",
+      suggestedBillingUnit: "pc",
+      bladeElevationsM: [-0.525, -0.35, -0.175, 0, 0.175, 0.35, 0.525],
+      operatorElevationsM: [-0.3063, 0.3063],
+    };
+  }
+
   return {
-    isLouverBlade: isLouverKeyword,
+    isLouverBlade: false,
     isLouverOperator: false,
-    louverCount: 7,
+    louverCount: 0,
     pitchMm: 175,
     bladeHeightMm: 105.3,
     bladeWidthMm: 800,
-    operatorCount: 2,
+    operatorCount: 0,
     bladesPerOperator: 4,
-    suggestedBinding: isLouverKeyword ? "LOUVER_BLADE" : "FIXED",
-    suggestedBaseQuantity: isLouverKeyword ? 7 : 1,
-    suggestedPresentationCategory: isLouverKeyword ? "Glazing" : "Framing",
-    suggestedBillingUnit: isLouverKeyword ? "pc" : "m",
-    bladeElevationsM: [-0.525, -0.35, -0.175, 0, 0.175, 0.35, 0.525],
-    operatorElevationsM: [-0.3063, 0.3063],
+    suggestedBinding: "AREA",
+    suggestedBaseQuantity: 1,
+    suggestedPresentationCategory: "Glazing",
+    suggestedBillingUnit: "sqm",
+    bladeElevationsM: [],
+    operatorElevationsM: [],
   };
 }
 

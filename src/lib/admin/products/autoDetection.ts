@@ -39,15 +39,21 @@ export interface AutoDetectAccessorySlotResult {
 export function autoDetectAccessorySlot(fileName: string): AutoDetectAccessorySlotResult | null {
   const lower = fileName.toLowerCase();
 
+  // Drainage and weep hole covers are fixed hardware fixtures, not swappable accessory slots
+  if (lower.includes("weep") || lower.includes("hole_cover") || lower.includes("drainage")) {
+    return null;
+  }
+
   // Handles & Knobs
   if (/handle|doorknob|knob|lever|pull_bar|pullhandle/.test(lower)) {
+    const isPluralHandles = lower.includes("handles");
     return {
       isAccessorySlot: true,
       accessoryCategory: "handle",
       presentationCategory: "Hardware",
       dimensionBinding: "FIXED",
       positionOptions: {
-        allowHorizontalToggle: true,
+        allowHorizontalToggle: !isPluralHandles,
         defaultHorizontal: "right",
         horizontalOffsetMm: 45,
         allowVerticalToggle: false,
@@ -245,6 +251,44 @@ function detectRawComponentSettings(fileName: string): AutoDetectionResult {
       suggestedMaterialCategory: "Hardware",
       isAccessorySlot: true,
       accessoryCategory: "handle",
+    };
+  }
+
+  // Weep hole covers, drainage caps, and moisture plugs (PRD-F14, SDD-C9)
+  if (
+    name.includes("weep") ||
+    name.includes("hole_cover") ||
+    name.includes("holecover") ||
+    name.includes("drainage")
+  ) {
+    return {
+      dimensionBinding: "FIXED",
+      spanRatio: 1.0,
+      isRemovable: false,
+      togglePropertyKey: null,
+      presentationCategory: "Hardware",
+      componentType: "Hardware",
+      suggestedMaterialCategory: "Hardware",
+    };
+  }
+
+  // Weather seals, pile weatherstrips, gaskets, and acoustic draft seals (PRD-F14, SDD-C9)
+  if (
+    name.includes("weather_seal") ||
+    name.includes("weatherseal") ||
+    name.includes("wool_pile") ||
+    name.includes("woolpile") ||
+    name.includes("seal") ||
+    name.includes("gasket")
+  ) {
+    return {
+      dimensionBinding: "PERIMETER",
+      spanRatio: 1.0,
+      isRemovable: false,
+      togglePropertyKey: null,
+      presentationCategory: "Consumable",
+      componentType: "Hardware",
+      suggestedMaterialCategory: "Hardware",
     };
   }
 
