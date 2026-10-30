@@ -26,8 +26,8 @@ export function Step4Success({
   }).format(totalEstimatePhp).replace("PHP", "Php");
 
   return (
-    <div className="fixed inset-0 bg-black/60 z-[9999] flex items-center justify-center p-4 overflow-y-auto backdrop-blur-sm transition-all duration-300">
-      <div className="bg-white w-full max-w-[550px] rounded-[24px] p-6 md:p-8 shadow-2xl relative flex flex-col gap-6 items-center justify-center select-none my-8 animate-in fade-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 h-dvh bg-black/60 z-[9999] flex flex-col overflow-y-auto overscroll-contain px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur-sm transition-all duration-300">
+      <div role="dialog" aria-modal="true" aria-labelledby="booking-success-heading" className="bg-white w-full max-w-[550px] rounded-[24px] p-6 md:p-8 shadow-2xl relative flex flex-col gap-6 items-center justify-center select-none mx-auto my-auto shrink-0 animate-in fade-in zoom-in-95 duration-200">
 
         {/* Success Icon Badge */}
         <div className="mt-2">
@@ -42,7 +42,7 @@ export function Step4Success({
 
         {/* Heading & Subtitle */}
         <div className="flex flex-col gap-3 items-center justify-center text-center w-full">
-          <h2 className="font-semibold text-[#0f1422] text-[28px] tracking-[-0.532px] leading-[1.2]">
+          <h2 id="booking-success-heading" className="font-semibold text-[#0f1422] text-[28px] tracking-[-0.532px] leading-[1.2]">
             Booking sent successfully
           </h2>
           <p className="font-normal text-black/70 text-[16px] tracking-[-0.304px] leading-[1.4] max-w-md">

@@ -357,8 +357,9 @@ export function ProductsContent({ initialProducts }: { initialProducts: AdminPro
         </div>
 
         <div className="w-full xl:w-auto flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-          <div className="flex-1 sm:w-auto">
+          <div className="min-w-0 flex-1 sm:w-auto">
             <SearchBar
+              compactMobile
               value={searchQuery}
               onChange={setSearchQuery}
               placeholder="Search for products"
