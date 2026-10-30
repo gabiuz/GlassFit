@@ -265,15 +265,15 @@ export function UploadImage({
                 <p className="text-red-500 text-lg font-normal">{error || errorMessage}</p>
             )}
 
-            <p className="text-xl text-black font-normal tracking-tight leading-normal">
+            <p className="w-full max-w-5xl text-xl text-black font-normal tracking-tight leading-normal">
                 {mode === "paper_fiducial" ? (
                     <>
-                        Upload a clear photo of the area where the glass or aluminum product will be installed, with your reference paper taped flat on the target wall. <br />
+                        Upload a clear photo of the area where the glass or aluminum product will be installed, with your reference paper taped flat on the target wall. {" "}
                         GlassFit will calibrate real-world dimensions from the paper corners before building your 3D overlay.
                     </>
                 ) : (
                     <>
-                        Upload a clear photo of the area where the glass or aluminum product may be installed. <br />
+                        Upload a clear photo of the area where the glass or aluminum product may be installed. {" "}
                         GlassFit will use this image as the background for your product overlay and visual output.
                     </>
                 )}

@@ -3610,6 +3610,7 @@ export function ProductModelWorkspace({
     ) => {
       event.preventDefault();
       event.stopPropagation();
+      event.currentTarget.setPointerCapture(event.pointerId);
 
       const resizeSession: ResizeSession = {
         pointerId: event.pointerId,
@@ -3787,6 +3788,7 @@ export function ProductModelWorkspace({
       event.preventDefault();
       event.stopPropagation();
       if (!perspectiveCorners) return;
+      event.currentTarget.setPointerCapture(event.pointerId);
 
       const session = {
         pointerId: event.pointerId,
@@ -4607,17 +4609,21 @@ export function ProductModelWorkspace({
 
                           {/* 4 Edge Midpoint Handles */}
                           {perspectiveHandlePoints.edges.map((e) => (
-                            <div
+                            <button
+                              type="button"
                               key={e.id}
                               onPointerDown={(evt) => startPerspectiveResize(evt, e.mode, e.signX, e.signY)}
-                              className={`absolute size-3 bg-[#07b6d3] rounded-full shadow-md z-20 ${e.cursor} pointer-events-auto`}
+                              className={`absolute flex size-11 items-center justify-center z-40 ${e.cursor} pointer-events-auto touch-none`}
                               style={{
                                 left: e.x,
                                 top: e.y,
                                 transform: "translate(-50%, -50%)",
                               }}
                               title={e.mode === "width" ? "Drag to resize width" : "Drag to resize length/height"}
-                            />
+                              aria-label={e.mode === "width" ? `Resize fitted product width from ${e.id}` : `Resize fitted product height from ${e.id}`}
+                            >
+                              <span className="size-3 rounded-full bg-[#07b6d3] shadow-md" />
+                            </button>
                           ))}
 
                           {/* 1 Center Move Handle */}
@@ -4671,10 +4677,10 @@ export function ProductModelWorkspace({
                             <button type="button" aria-label="Resize from bottom left" onPointerDown={(event) => startResize(event, "scale", -1, 1)} className="absolute bottom-0 left-0 -translate-x-1/2 translate-y-1/2 flex size-11 items-center justify-center z-40 cursor-nesw-resize pointer-events-auto touch-none"><span className="size-4 rounded-[2px] bg-white border border-[#06e5ff] shadow-md" /></button>
                             <button type="button" aria-label="Resize from bottom right" onPointerDown={(event) => startResize(event, "scale", 1, 1)} className="absolute bottom-0 right-0 translate-x-1/2 translate-y-1/2 flex size-11 items-center justify-center z-40 cursor-nwse-resize pointer-events-auto touch-none"><span className="size-4 rounded-[2px] bg-white border border-[#06e5ff] shadow-md" /></button>
 
-                            <div onPointerDown={(event) => startResize(event, "height", 0, -1)} className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 size-3 bg-[#07b6d3] rounded-full shadow-md z-20 cursor-ns-resize pointer-events-auto" />
-                            <div onPointerDown={(event) => startResize(event, "height", 0, 1)} className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 size-3 bg-[#07b6d3] rounded-full shadow-md z-20 cursor-ns-resize pointer-events-auto" />
-                            <div onPointerDown={(event) => startResize(event, "width", -1, 0)} className="absolute left-0 top-1/2 -translate-x-1/2 -translate-y-1/2 size-3 bg-[#07b6d3] rounded-full shadow-md z-20 cursor-ew-resize pointer-events-auto" />
-                            <div onPointerDown={(event) => startResize(event, "width", 1, 0)} className="absolute right-0 top-1/2 translate-x-1/2 -translate-y-1/2 size-3 bg-[#07b6d3] rounded-full shadow-md z-20 cursor-ew-resize pointer-events-auto" />
+                            <button type="button" aria-label="Resize product height from top" onPointerDown={(event) => startResize(event, "height", 0, -1)} className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 flex size-11 items-center justify-center z-40 cursor-ns-resize pointer-events-auto touch-none"><span className="size-3 rounded-full bg-[#07b6d3] shadow-md" /></button>
+                            <button type="button" aria-label="Resize product height from bottom" onPointerDown={(event) => startResize(event, "height", 0, 1)} className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 flex size-11 items-center justify-center z-40 cursor-ns-resize pointer-events-auto touch-none"><span className="size-3 rounded-full bg-[#07b6d3] shadow-md" /></button>
+                            <button type="button" aria-label="Resize product width from left" onPointerDown={(event) => startResize(event, "width", -1, 0)} className="absolute left-0 top-1/2 -translate-x-1/2 -translate-y-1/2 flex size-11 items-center justify-center z-40 cursor-ew-resize pointer-events-auto touch-none"><span className="size-3 rounded-full bg-[#07b6d3] shadow-md" /></button>
+                            <button type="button" aria-label="Resize product width from right" onPointerDown={(event) => startResize(event, "width", 1, 0)} className="absolute right-0 top-1/2 translate-x-1/2 -translate-y-1/2 flex size-11 items-center justify-center z-40 cursor-ew-resize pointer-events-auto touch-none"><span className="size-3 rounded-full bg-[#07b6d3] shadow-md" /></button>
 
                             <div onPointerDown={startOverlayDrag} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 size-6 rounded-full bg-[#07b6d3] flex items-center justify-center shadow-md cursor-grab active:cursor-grabbing z-20 pointer-events-auto">
                               <div className="size-2 bg-white rounded-full" />
