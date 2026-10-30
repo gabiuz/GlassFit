@@ -475,7 +475,7 @@ export function createQuotationPdfDocument(metadata: QuotationPdfMetadata): Gene
 export function formatBookingShareMessage(options: { customerName: string; quotationNumber: string; referenceLink: string; productDescription: string; totalEstimatePhp: number; hasStructuralWaiver?: boolean; addonSummary?: string | null }): { messageText: string; messengerUrl: string; viberUrl: string } {
   const waiver = options.hasStructuralWaiver ? "\n(Note: Structural waiver attached for aperture span >= 2400mm)" : "";
   const addonLine = options.addonSummary ? `\nAdd-on Attachment: ${options.addonSummary}` : "";
-  const price = new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: 0 }).format(options.totalEstimatePhp).replace("PHP", "Php");
+  const price = new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: 0 }).format(options.totalEstimatePhp);
   const messageText = `Hello R.R.D! I would like to inquire about a consultation for my customized glass and aluminum project:\n\nProduct: ${options.productDescription}\nQuotation No: ${options.quotationNumber}${addonLine}\nEstimated Amount: ${price}${waiver}\n\nHere is my saved reference link:\n${options.referenceLink}\n\nCan we schedule an ocular inspection and site measurement? Thank you! - ${options.customerName}`;
   const encoded = encodeURIComponent(messageText);
   return { messageText, messengerUrl: `https://m.me/rrdaluminumglass?text=${encoded}`, viberUrl: `viber://forward?text=${encoded}` };

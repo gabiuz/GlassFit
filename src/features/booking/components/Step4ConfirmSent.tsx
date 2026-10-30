@@ -49,10 +49,10 @@ export function Step4ConfirmSent({
               </div>
               <div className="flex flex-col gap-1 text-[#0f1422] text-left">
                 <p className="font-medium text-lg sm:text-[20px] tracking-[-0.38px] leading-[1.4]">
-                  Opened {channelName} chat
+                  Check {channelName} opened
                 </p>
                 <p className="font-normal text-sm sm:text-[16px] text-[#c3c3c3] tracking-[-0.304px] leading-[1.4]">
-                  Just now
+                  If it did not open, go back and copy the reference message.
                 </p>
               </div>
             </div>

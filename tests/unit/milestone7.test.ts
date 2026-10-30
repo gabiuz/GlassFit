@@ -219,6 +219,10 @@ describe("Milestone 7: Quotation Summary & Consultation PDF Handoff", () => {
       // Check deep link formats
       assert.ok(booking.messengerUrl.startsWith("https://m.me/rrdaluminumglass?text="));
       assert.ok(booking.viberUrl.startsWith("viber://forward?text="));
+      const viberText = decodeURIComponent(booking.viberUrl.split("text=")[1]);
+      assert.equal(viberText, booking.messageText);
+      assert.ok(viberText.includes("glassfit.ph/q/cf-2026-001"));
+      assert.ok(viberText.includes("Q-2026-0482"));
     });
 
     it("should append structural waiver notice to booking message when waiver is active", () => {
@@ -233,6 +237,19 @@ describe("Milestone 7: Quotation Summary & Consultation PDF Handoff", () => {
 
       assert.ok(booking.messageText.includes("Structural waiver attached for aperture span >= 2400mm"));
       assert.ok(booking.messengerUrl.includes(encodeURIComponent("Structural waiver attached")));
+    });
+
+    it("includes the full message in Viber's share URI even when Viber may trim its draft", () => {
+      const referenceLink = `https://glassfit.ph/q/${"a".repeat(210)}`;
+      const booking = formatBookingShareMessage({
+        customerName: "Customer",
+        quotationNumber: "Q-2026-0484",
+        referenceLink,
+        productDescription: "Sliding Window",
+        totalEstimatePhp: 5000,
+      });
+      assert.equal(decodeURIComponent(booking.viberUrl.split("text=")[1]), booking.messageText);
+      assert.ok(booking.messageText.includes(referenceLink));
     });
   });
 
