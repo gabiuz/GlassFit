@@ -374,99 +374,98 @@ export function ProductsContent({ initialProducts }: { initialProducts: AdminPro
           </p>
         </div>
 
-        <div className="w-full xl:w-auto flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-          <div className="min-w-0 flex-1 sm:w-auto">
-            <SearchBar
-              compactMobile
-              value={searchQuery}
-              onChange={setSearchQuery}
-              placeholder="Search for products"
-              inputClassName="w-full sm:w-[300px] md:w-[340px]"
-            />
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <Link
-              href="/admin/products/new"
-              className="bg-[#0f1422] text-white rounded-[25px] px-4 sm:px-5 py-2.5 sm:py-3 flex items-center justify-center gap-2 cursor-pointer hover:bg-black transition-colors shrink-0 shadow-xs"
-            >
-              <Plus className="size-4" />
-              <span className="text-sm sm:text-base font-medium whitespace-nowrap">
-                Add Product
-              </span>
-            </Link>
-            <Link
-              href="/admin/products/draft/setup?role=addon"
-              className="border border-[#0f1422] text-[#0f1422] bg-white rounded-[25px] px-3.5 sm:px-4 py-2.5 sm:py-3 flex items-center justify-center gap-1.5 cursor-pointer hover:bg-neutral-50 transition-colors shrink-0 shadow-xs"
-            >
-              <Plus className="size-3.5 text-[#07b6d3]" />
-              <span className="text-xs sm:text-sm font-medium whitespace-nowrap">
-                Add-on Accessory
-              </span>
-            </Link>
-            <Link
-              href="/admin/products/draft/setup?role=accessory"
-              className="border border-[#0f1422] text-[#0f1422] bg-white rounded-[25px] px-3.5 sm:px-4 py-2.5 sm:py-3 flex items-center justify-center gap-1.5 cursor-pointer hover:bg-neutral-50 transition-colors shrink-0 shadow-xs"
-            >
-              <Plus className="size-3.5 text-[#07b6d3]" />
-              <span className="text-xs sm:text-sm font-medium whitespace-nowrap">
-                Add Accessory
-              </span>
-            </Link>
-          </div>
+        <div className="flex w-full flex-wrap items-center gap-2 xl:w-auto xl:justify-end">
+          <Link
+            href="/admin/products/new"
+            className="bg-[#0f1422] text-white rounded-[25px] px-4 sm:px-5 py-2.5 sm:py-3 flex items-center justify-center gap-2 cursor-pointer hover:bg-black transition-colors shrink-0 shadow-xs"
+          >
+            <Plus className="size-4" />
+            <span className="text-sm sm:text-base font-medium whitespace-nowrap">
+              Add Product
+            </span>
+          </Link>
+          <Link
+            href="/admin/products/draft/setup?role=addon"
+            className="border border-[#0f1422] text-[#0f1422] bg-white rounded-[25px] px-3.5 sm:px-4 py-2.5 sm:py-3 flex items-center justify-center gap-1.5 cursor-pointer hover:bg-neutral-50 transition-colors shrink-0 shadow-xs"
+          >
+            <Plus className="size-3.5 text-[#07b6d3]" />
+            <span className="text-xs sm:text-sm font-medium whitespace-nowrap">
+              Add-on Accessory
+            </span>
+          </Link>
+          <Link
+            href="/admin/products/draft/setup?role=accessory"
+            className="border border-[#0f1422] text-[#0f1422] bg-white rounded-[25px] px-3.5 sm:px-4 py-2.5 sm:py-3 flex items-center justify-center gap-1.5 cursor-pointer hover:bg-neutral-50 transition-colors shrink-0 shadow-xs"
+          >
+            <Plus className="size-3.5 text-[#07b6d3]" />
+            <span className="text-xs sm:text-sm font-medium whitespace-nowrap">
+              Add Accessory
+            </span>
+          </Link>
         </div>
       </div>
 
-      {/* Scope Filter Tabs */}
-      <div className="flex max-w-full items-center gap-1.5 overflow-x-auto p-1 bg-neutral-100 rounded-[25px] border border-neutral-200">
-        <button
-          type="button"
-          onClick={() => setSelectedScope("all")}
-          className={cn(
-            "shrink-0 px-4 py-1.5 rounded-[20px] text-xs sm:text-sm font-medium transition-colors cursor-pointer",
-            selectedScope === "all"
-              ? "bg-[#0f1422] text-white shadow-xs"
-              : "text-neutral-600 hover:text-black"
-          )}
-        >
-          All Catalog Items
-        </button>
-        <button
-          type="button"
-          onClick={() => setSelectedScope("standard")}
-          className={cn(
-            "shrink-0 px-4 py-1.5 rounded-[20px] text-xs sm:text-sm font-medium transition-colors cursor-pointer",
-            selectedScope === "standard"
-              ? "bg-[#0f1422] text-white shadow-xs"
-              : "text-neutral-600 hover:text-black"
-          )}
-        >
-          Standard Products
-        </button>
-        <button
-          type="button"
-          onClick={() => setSelectedScope("addon")}
-          className={cn(
-            "shrink-0 px-4 py-1.5 rounded-[20px] text-xs sm:text-sm font-medium transition-colors cursor-pointer",
-            selectedScope === "addon"
-              ? "bg-[#0f1422] text-white shadow-xs"
-              : "text-neutral-600 hover:text-black"
-          )}
-        >
-          Add-on Accessories
-        </button>
-        <button
-          type="button"
-          onClick={() => setSelectedScope("accessory")}
-          className={cn(
-            "shrink-0 px-4 py-1.5 rounded-[20px] text-xs sm:text-sm font-medium transition-colors cursor-pointer",
-            selectedScope === "accessory"
-              ? "bg-[#0f1422] text-white shadow-xs"
-              : "text-neutral-600 hover:text-black"
-          )}
-        >
-          Hardware Accessories
-        </button>
+      <div className="flex w-full flex-wrap items-center gap-3">
+        <SearchBar
+          compact
+          value={searchQuery}
+          onChange={setSearchQuery}
+          placeholder="Search for products"
+          className="w-full sm:w-[280px] sm:shrink-0"
+          inputClassName="w-full"
+        />
+
+        {/* Scope Filter Tabs */}
+        <div className="flex max-w-full items-center gap-1.5 overflow-x-auto rounded-[25px] border border-neutral-200 bg-neutral-100 p-1">
+          <button
+            type="button"
+            onClick={() => setSelectedScope("all")}
+            className={cn(
+              "shrink-0 px-4 py-1.5 rounded-[20px] text-xs sm:text-sm font-medium transition-colors cursor-pointer",
+              selectedScope === "all"
+                ? "bg-[#0f1422] text-white shadow-xs"
+                : "text-neutral-600 hover:text-black"
+            )}
+          >
+            All Catalog Items
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedScope("standard")}
+            className={cn(
+              "shrink-0 px-4 py-1.5 rounded-[20px] text-xs sm:text-sm font-medium transition-colors cursor-pointer",
+              selectedScope === "standard"
+                ? "bg-[#0f1422] text-white shadow-xs"
+                : "text-neutral-600 hover:text-black"
+            )}
+          >
+            Standard Products
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedScope("addon")}
+            className={cn(
+              "shrink-0 px-4 py-1.5 rounded-[20px] text-xs sm:text-sm font-medium transition-colors cursor-pointer",
+              selectedScope === "addon"
+                ? "bg-[#0f1422] text-white shadow-xs"
+                : "text-neutral-600 hover:text-black"
+            )}
+          >
+            Add-on Accessories
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedScope("accessory")}
+            className={cn(
+              "shrink-0 px-4 py-1.5 rounded-[20px] text-xs sm:text-sm font-medium transition-colors cursor-pointer",
+              selectedScope === "accessory"
+                ? "bg-[#0f1422] text-white shadow-xs"
+                : "text-neutral-600 hover:text-black"
+            )}
+          >
+            Hardware Accessories
+          </button>
+        </div>
       </div>
 
       <div className="w-full flex flex-col sm:flex-row sm:items-center justify-between gap-3">
