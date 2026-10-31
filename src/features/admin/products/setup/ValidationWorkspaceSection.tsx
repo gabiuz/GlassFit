@@ -339,18 +339,6 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
             if (availableScreens.length > 0) {
               const primaryScreen = availableScreens[0];
               const screenDef = await fetchDraftStructuralDefinition(primaryScreen.productId);
-              const discoveredOperatorKeys = def.components
-                .filter((c) => {
-                  const k = (c.componentKey || "").toLowerCase();
-                  const n = (c.componentName || "").toLowerCase();
-                  const cat = (c.presentationCategory || c.componentType || "").toLowerCase();
-                  return (
-                    k.includes("operator") || k.includes("crank") || k.includes("cam") || k.includes("latch") || k.includes("handle") ||
-                    n.includes("operator") || n.includes("crank") || n.includes("cam") || n.includes("latch") || n.includes("handle") ||
-                    cat.includes("hardware")
-                  );
-                })
-                .map((c) => c.componentKey);
 
               const candidateScreenAddon: CompatibleAddon = {
                 id: `candidate-${primaryScreen.productId}`,
@@ -360,7 +348,7 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
                 isDefaultEnabled: false,
                 allowedSides: isOutward ? "back" : "both",
                 defaultSide: isOutward ? "back" : "front",
-                hatchTargetComponentKeys: discoveredOperatorKeys,
+                hatchTargetComponentKeys: [],
                 addonProduct: {
                   productId: primaryScreen.productId,
                   productName: primaryScreen.productName,
@@ -905,35 +893,11 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
     if (activeScreenAddon?.hatchTargetComponentKeys && activeScreenAddon.hatchTargetComponentKeys.length > 0) {
       return activeScreenAddon.hatchTargetComponentKeys;
     }
-    if (!definition?.components) return [];
-    return definition.components
-      .filter((comp) => {
-        const key = (comp.componentKey || "").toLowerCase();
-        const name = (comp.componentName || "").toLowerCase();
-        const cat = (comp.presentationCategory || comp.componentType || "").toLowerCase();
-        const binding = (comp.dimensionBinding || (comp as Record<string, unknown>).dimension_binding || "").toString().toUpperCase();
-        return (
-          binding === "LOUVER_OPERATOR" ||
-          key.includes("operator") ||
-          key.includes("crank") ||
-          key.includes("cam") ||
-          key.includes("latch") ||
-          key.includes("handle") ||
-          key.includes("rotator") ||
-          key.includes("rotopers") ||
-          name.includes("operator") ||
-          name.includes("crank") ||
-          name.includes("cam") ||
-          name.includes("latch") ||
-          name.includes("handle") ||
-          name.includes("rotator") ||
-          cat.includes("hardware")
-        );
-      })
-      .map((c) => c.componentKey);
-  }, [definition, activeScreenAddon]);
+    return [];
+  }, [activeScreenAddon]);
 
   const dynamicOperatorCount = useMemo(() => {
+    if (targetOperatorKeys.length === 0) return 0;
     const operatorComp = definition?.components?.find(
       (c) => c.dimensionBinding === "LOUVER_OPERATOR" || (c as Record<string, unknown>).dimension_binding === "LOUVER_OPERATOR"
     );
@@ -1027,8 +991,8 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
       hasSill,
       removableStates,
       addonMountingSide,
-      hatchCount: includeHatch ? dynamicOperatorCount : 0,
-      hatchTargetKeys: includeHatch ? targetOperatorKeys : [],
+      hatchCount: (includeHatch && targetOperatorKeys.length > 0) ? dynamicOperatorCount : 0,
+      hatchTargetKeys: (includeHatch && targetOperatorKeys.length > 0) ? targetOperatorKeys : [],
     });
   }, [definition, rawMaterials, parameters, hasSill, removableStates, materialOverrides, addonMountingSide, includeHatch, dynamicOperatorCount, targetOperatorKeys]);
 
@@ -1080,8 +1044,8 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
       hasSill,
       removableStates,
       addonMountingSide,
-      hatchCount: includeHatch ? dynamicOperatorCount : 0,
-      hatchTargetKeys: includeHatch ? targetOperatorKeys : [],
+      hatchCount: (includeHatch && targetOperatorKeys.length > 0) ? dynamicOperatorCount : 0,
+      hatchTargetKeys: (includeHatch && targetOperatorKeys.length > 0) ? targetOperatorKeys : [],
     });
   }, [definition, rawMaterials, parameters, hasSill, removableStates, addonMountingSide, includeHatch, dynamicOperatorCount, targetOperatorKeys]);
 
@@ -1270,12 +1234,13 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
     if (activeAddon === "screen") {
       const screenName = activeScreenAddon?.addonProduct?.productName || "Insect Screen";
       const sideLabel = addonMountingSide === "back" ? "Interior (Back)" : "Exterior (Front)";
-      const hatchText = includeHatch && targetOperatorKeys.length > 0
-        ? `With access hatch aligned to ${targetOperatorKeys.join(", ")}.`
-        : includeHatch
-          ? "With access hatch enabled."
-          : "Wicket access hatch disabled.";
-      return `Mounted ${screenName} on ${sideLabel} face (${currentWidthMm.toLocaleString()} mm × ${currentHeightMm.toLocaleString()} mm). ${hatchText}`;
+      const hatchText = targetOperatorKeys.length > 0
+        ? (includeHatch
+            ? `With access hatch aligned to ${targetOperatorKeys.join(", ")}.`
+            : "Wicket access hatch disabled.")
+        : "";
+      const separator = hatchText ? ` ${hatchText}` : "";
+      return `Mounted ${screenName} on ${sideLabel} face (${currentWidthMm.toLocaleString()} mm × ${currentHeightMm.toLocaleString()} mm).${separator}`;
     }
     if (activeAddon === "grill") {
       const grillName = activeGrillAddon?.addonProduct?.productName || "Security Grille";
@@ -1407,7 +1372,7 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
                     activeAddon={definition?.product?.isAccessory ? "none" : activeAddon}
                     addonProductId={activeAddon === "screen" ? activeScreenAddon?.addonProductId : activeAddon === "grill" ? activeGrillAddon?.addonProductId : undefined}
                     addonMountingSide={addonMountingSide}
-                    hatchTargetComponentKeys={includeHatch ? targetOperatorKeys : []}
+                    hatchTargetComponentKeys={(includeHatch && targetOperatorKeys.length > 0) ? targetOperatorKeys : []}
                     addonAluminumFinish={addonAlumFinish}
                     swappedAccessories={swappedAccessories}
                     accessoryModels={accessoryModels}
@@ -1687,36 +1652,32 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
                       </div>
 
                       {/* Operator Access Hatch Toggle Switch */}
-                      <div className="bg-neutral-50 border border-neutral-200/80 rounded-[10px] p-3 flex items-center justify-between gap-3">
-                        <div className="space-y-0.5">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-xs font-semibold text-[#0f1422]">
-                              Operator Access Hatch
-                            </span>
-                            {targetOperatorKeys.length > 0 ? (
+                      {targetOperatorKeys.length > 0 && (
+                        <div className="bg-neutral-50 border border-neutral-200/80 rounded-[10px] p-3 flex items-center justify-between gap-3">
+                          <div className="space-y-0.5">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs font-semibold text-[#0f1422]">
+                                Operator Access Hatch
+                              </span>
                               <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-cyan-100/70 text-[#088395] font-medium border border-cyan-200/80">
                                 {targetOperatorKeys.length}x Aligned ({targetOperatorKeys.join(", ")})
                               </span>
-                            ) : (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-neutral-200/70 text-neutral-600 font-medium">
-                                Standard Hatch
-                              </span>
-                            )}
+                            </div>
+                            <p className="text-[11px] text-neutral-500">
+                              Wicket door opening allows direct reach-through to operate window hardware without removing the insect screen frame.
+                            </p>
                           </div>
-                          <p className="text-[11px] text-neutral-500">
-                            Wicket door opening allows direct reach-through to operate window hardware without removing the insect screen frame.
-                          </p>
+                          <label className="relative inline-flex items-center cursor-pointer shrink-0 ml-2">
+                            <input
+                              type="checkbox"
+                              checked={includeHatch}
+                              onChange={(e) => handleHatchToggle(e.target.checked)}
+                              className="sr-only peer"
+                            />
+                            <div className="w-9 h-5 bg-neutral-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#07b6d3]"></div>
+                          </label>
                         </div>
-                        <label className="relative inline-flex items-center cursor-pointer shrink-0 ml-2">
-                          <input
-                            type="checkbox"
-                            checked={includeHatch}
-                            onChange={(e) => handleHatchToggle(e.target.checked)}
-                            className="sr-only peer"
-                          />
-                          <div className="w-9 h-5 bg-neutral-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#07b6d3]"></div>
-                        </label>
-                      </div>
+                      )}
                     </div>
                   )}
 
