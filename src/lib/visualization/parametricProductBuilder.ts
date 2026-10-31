@@ -101,16 +101,32 @@ export function buildParametricProduct(
     ]),
   );
 
-  const isWindowProductType = (definition.product?.productType || "").toLowerCase().includes("window");
-  const hasWindowKeys = [
-    "frame-left",
-    "frame-right",
-    "frame-top",
-    "frame-bottom",
-    "glass-panel",
-  ].every((key) => componentsByKey.has(key));
+  const findComp = (aliases: string[]) => {
+    for (const a of aliases) {
+      const c = componentsByKey.get(normalizeComponentKey(a));
+      if (c) return c;
+    }
+    return undefined;
+  };
 
-  if (isWindowProductType && hasWindowKeys) {
+  const leftComp = findComp(["frame-left", "left-frame", "jamb-left", "left-jamb", "outer-jamb-left", "frame_left"]);
+  const rightComp = findComp(["frame-right", "right-frame", "jamb-right", "right-jamb", "outer-jamb-right", "frame_right"]);
+  const topComp = findComp(["frame-top", "top-frame", "outer-head", "header", "head", "frame_top", "head-track"]);
+  const botComp = findComp(["frame-bottom", "bottom-frame", "outer-sill", "sill-rail", "bottom-rail", "frame_bottom"]);
+  const glassComp = findComp(["glass-panel", "glass", "glass-pane", "pane", "window-glass", "louver-blade", "bay-infill"]);
+  const centerComp = findComp(["frame-center", "center-frame", "mullion", "center-mullion", "bay-divider", "frame_center"]);
+
+  if (leftComp) componentsByKey.set("frame-left", leftComp);
+  if (rightComp) componentsByKey.set("frame-right", rightComp);
+  if (topComp) componentsByKey.set("frame-top", topComp);
+  if (botComp) componentsByKey.set("frame-bottom", botComp);
+  if (glassComp) componentsByKey.set("glass-panel", glassComp);
+  if (centerComp) componentsByKey.set("frame-center", centerComp);
+
+  const isWindowProductType = (definition.product?.productType || "").toLowerCase().includes("window");
+  const hasWindowKeys = Boolean(leftComp && rightComp && topComp && botComp && glassComp);
+
+  if ((isWindowProductType || hasWindowKeys) && hasWindowKeys) {
     return {
       group: buildWindowLikeProduct(definition, resolved, cache, componentsByKey, options),
       resolved,
@@ -408,6 +424,278 @@ export function mountAccessoryMesh(
   return clone;
 }
 
+export interface ComponentClusterInfo {
+  clusterIndex: number;
+  modeledCenter: THREE.Vector3;
+  size: THREE.Vector3;
+  createInstance: () => THREE.Object3D;
+}
+
+/**
+ * Decomposes a multi-fixture component (such as multi-handle assemblies or weep hole covers)
+ * into distinct physical clusters along the lateral axis (IMP-MS75, PRD-F14, SDD-C9).
+ * Each cluster preserves its original local geometry centered at (0, 0, 0) so it can scale
+ * parametrically along host profiles without stretching or squishing.
+ */
+/**
+ * Decomposes a multi-fixture component (such as multi-handle assemblies or weep hole covers)
+ * into distinct physical clusters along lateral (X) and vertical (Y) axes (IMP-MS75, PRD-F14, SDD-C9).
+ * Each cluster preserves its original local geometry centered at (0, 0, 0) so it can scale
+ * parametrically along host profiles without stretching or squishing.
+ */
+export function extractComponentClusters(
+  source: THREE.Object3D,
+  gapThreshold = 0.20,
+): ComponentClusterInfo[] {
+  source.updateMatrixWorld(true);
+  const meshes: THREE.Mesh[] = [];
+  source.traverse((child) => {
+    if (child instanceof THREE.Mesh && child.geometry && child.geometry.attributes.position) {
+      meshes.push(child);
+    }
+  });
+  if (meshes.length === 0) return [];
+
+  interface TriangleData {
+    meshIndex: number;
+    triIndex: number;
+    i0: number;
+    i1: number;
+    i2: number;
+    v0: THREE.Vector3;
+    v1: THREE.Vector3;
+    v2: THREE.Vector3;
+    minX: number;
+    maxX: number;
+    minY: number;
+    maxY: number;
+    centerX: number;
+    centerY: number;
+  }
+
+  const allTriangles: TriangleData[] = [];
+  meshes.forEach((m, meshIndex) => {
+    const geom = m.geometry;
+    const pos = geom.attributes.position;
+    const index = geom.index;
+    const triCount = index ? index.count / 3 : pos.count / 3;
+    const mat = m.matrixWorld;
+
+    for (let i = 0; i < triCount; i++) {
+      const i0 = index ? index.getX(i * 3) : i * 3;
+      const i1 = index ? index.getX(i * 3 + 1) : i * 3 + 1;
+      const i2 = index ? index.getX(i * 3 + 2) : i * 3 + 2;
+
+      const v0 = new THREE.Vector3(pos.getX(i0), pos.getY(i0), pos.getZ(i0)).applyMatrix4(mat);
+      const v1 = new THREE.Vector3(pos.getX(i1), pos.getY(i1), pos.getZ(i1)).applyMatrix4(mat);
+      const v2 = new THREE.Vector3(pos.getX(i2), pos.getY(i2), pos.getZ(i2)).applyMatrix4(mat);
+
+      allTriangles.push({
+        meshIndex,
+        triIndex: i,
+        i0,
+        i1,
+        i2,
+        v0,
+        v1,
+        v2,
+        minX: Math.min(v0.x, v1.x, v2.x),
+        maxX: Math.max(v0.x, v1.x, v2.x),
+        minY: Math.min(v0.y, v1.y, v2.y),
+        maxY: Math.max(v0.y, v1.y, v2.y),
+        centerX: (v0.x + v1.x + v2.x) / 3,
+        centerY: (v0.y + v1.y + v2.y) / 3,
+      });
+    }
+  });
+
+  if (allTriangles.length === 0) return [];
+
+  // Find disjoint spatial intervals by projecting triangle intervals onto X and Y axes
+  function getIntervals(axis: "x" | "y") {
+    const intervals = allTriangles.map((t) => ({
+      min: axis === "x" ? t.minX : t.minY,
+      max: axis === "x" ? t.maxX : t.maxY,
+    }));
+    intervals.sort((a, b) => a.min - b.min);
+    const merged: Array<{ min: number; max: number }> = [];
+    let cur = { min: intervals[0].min, max: intervals[0].max };
+    for (let i = 1; i < intervals.length; i++) {
+      if (intervals[i].min <= cur.max + gapThreshold) {
+        cur.max = Math.max(cur.max, intervals[i].max);
+      } else {
+        merged.push(cur);
+        cur = { min: intervals[i].min, max: intervals[i].max };
+      }
+    }
+    if (cur) merged.push(cur);
+    return merged;
+  }
+
+  const xInt = getIntervals("x");
+  const yInt = getIntervals("y");
+
+  // If there are no substantial spatial gaps along either X or Y, this is a single unified part
+  if (xInt.length <= 1 && yInt.length <= 1) {
+    const box = new THREE.Box3().setFromObject(source);
+    const center = new THREE.Vector3();
+    const size = new THREE.Vector3();
+    box.getCenter(center);
+    box.getSize(size);
+    return [
+      {
+        clusterIndex: 0,
+        modeledCenter: center,
+        size,
+        createInstance: () => {
+          const clone = source.clone(true);
+          clone.position.sub(center);
+          return clone;
+        },
+      },
+    ];
+  }
+
+  interface ClusterDef {
+    axis: "X" | "Y" | "XY";
+    minX: number;
+    maxX: number;
+    minY: number;
+    maxY: number;
+  }
+
+  const clusterDefs: ClusterDef[] = [];
+  if (xInt.length > 1 && yInt.length <= 1) {
+    // Multi-fixture array distributed along lateral X axis (such as horizontal sliding window handles or weep hole covers)
+    xInt.forEach((xi) => {
+      clusterDefs.push({ axis: "X", minX: xi.min, maxX: xi.max, minY: -Infinity, maxY: Infinity });
+    });
+  } else if (yInt.length > 1 && xInt.length <= 1) {
+    // Multi-fixture array distributed along vertical Y axis (such as vertical sliding window bottom lift handles and meeting rail locks)
+    yInt.forEach((yi) => {
+      clusterDefs.push({ axis: "Y", minX: -Infinity, maxX: Infinity, minY: yi.min, maxY: yi.max });
+    });
+  } else {
+    // 2D multi-fixture grid distributed across both X and Y
+    const pad = 0.05;
+    xInt.forEach((xi) => {
+      yInt.forEach((yi) => {
+        const hasTri = allTriangles.some(
+          (t) =>
+            t.centerX >= xi.min - pad &&
+            t.centerX <= xi.max + pad &&
+            t.centerY >= yi.min - pad &&
+            t.centerY <= yi.max + pad,
+        );
+        if (hasTri) {
+          clusterDefs.push({ axis: "XY", minX: xi.min, maxX: xi.max, minY: yi.min, maxY: yi.max });
+        }
+      });
+    });
+  }
+
+  const pad = 0.05; // 50mm tolerance around cluster boundaries
+  return clusterDefs.map((def, clusterIdx) => {
+    // Identify triangles belonging to this cluster
+    const clusterTris = allTriangles.filter((t) => {
+      if (def.axis === "X") return t.centerX >= def.minX - pad && t.centerX <= def.maxX + pad;
+      if (def.axis === "Y") return t.centerY >= def.minY - pad && t.centerY <= def.maxY + pad;
+      return (
+        t.centerX >= def.minX - pad &&
+        t.centerX <= def.maxX + pad &&
+        t.centerY >= def.minY - pad &&
+        t.centerY <= def.maxY + pad
+      );
+    });
+
+    const box = new THREE.Box3();
+    for (const t of clusterTris) {
+      box.expandByPoint(t.v0);
+      box.expandByPoint(t.v1);
+      box.expandByPoint(t.v2);
+    }
+    const center = new THREE.Vector3();
+    const size = new THREE.Vector3();
+    box.getCenter(center);
+    box.getSize(size);
+
+    return {
+      clusterIndex: clusterIdx,
+      modeledCenter: center,
+      size,
+      createInstance: () => {
+        const group = new THREE.Group();
+        group.name = `Cluster_${clusterIdx}`;
+
+        meshes.forEach((m, meshIndex) => {
+          const trisForMesh = clusterTris.filter((t) => t.meshIndex === meshIndex);
+          if (trisForMesh.length === 0) return;
+
+          const geom = m.geometry;
+          const norm = geom.attributes.normal;
+          const uv = geom.attributes.uv;
+
+          const newPositions: number[] = [];
+          const newNormals: number[] = [];
+          const newUvs: number[] = [];
+          const newIndices: number[] = [];
+
+          for (const t of trisForMesh) {
+            const baseIdx = newPositions.length / 3;
+            [
+              { v: t.v0, idx: t.i0 },
+              { v: t.v1, idx: t.i1 },
+              { v: t.v2, idx: t.i2 },
+            ].forEach((item, offset) => {
+              newPositions.push(item.v.x - center.x, item.v.y - center.y, item.v.z - center.z);
+              if (norm) {
+                newNormals.push(norm.getX(item.idx), norm.getY(item.idx), norm.getZ(item.idx));
+              }
+              if (uv) {
+                newUvs.push(uv.getX(item.idx), uv.getY(item.idx));
+              }
+              newIndices.push(baseIdx + offset);
+            });
+          }
+
+          if (newIndices.length > 0) {
+            const newGeom = new THREE.BufferGeometry();
+            newGeom.setAttribute("position", new THREE.Float32BufferAttribute(newPositions, 3));
+            if (newNormals.length > 0) {
+              newGeom.setAttribute("normal", new THREE.Float32BufferAttribute(newNormals, 3));
+            }
+            if (newUvs.length > 0) {
+              newGeom.setAttribute("uv", new THREE.Float32BufferAttribute(newUvs, 2));
+            }
+            newGeom.setIndex(newIndices);
+
+            let subMaterial: THREE.Material | THREE.Material[];
+            if (Array.isArray(m.material)) {
+              subMaterial = m.material.map((mat) => mat.clone());
+            } else if (m.material) {
+              subMaterial = m.material.clone();
+            } else {
+              subMaterial = new THREE.MeshStandardMaterial();
+            }
+
+            const subMesh = new THREE.Mesh(newGeom, subMaterial);
+            subMesh.name = `${m.name || "part"}_sub_${clusterIdx}`;
+            subMesh.castShadow = m.castShadow;
+            subMesh.receiveShadow = m.receiveShadow;
+            subMesh.userData = {
+              ...m.userData,
+              preserveMaterial: true,
+            };
+            group.add(subMesh);
+          }
+        });
+
+        return group;
+      },
+    };
+  });
+}
+
 /**
  * Prepares a swapped or handed modular hardware accessory mesh for louver tracks or operator banks.
  * Resolves mesh across catalog models, cache, procedural fallback, applies bilateral mirroring,
@@ -544,12 +832,13 @@ function buildWindowLikeProduct(
     mullionCount * profile.mullionWidthMm;
   const innerHeightMm =
     heightMm - profile.topFrameHeightMm - profile.bottomFrameHeightMm;
-  const paneWidthMm = Math.max(80, innerWidthMm / paneCount);
+  const bayCount = mullionCount + 1;
+  const mullionBayWidthMm = Math.max(80, innerWidthMm / bayCount);
   const horizontalFrameWidthMm =
     widthMm - profile.leftFrameWidthMm - profile.rightFrameWidthMm;
   const glassTargetWidthMm = Math.max(
     80,
-    paneWidthMm - profile.horizontalClearanceMm * 2,
+    mullionBayWidthMm - profile.horizontalClearanceMm * 2,
   );
   const glassTargetHeightMm = Math.max(
     80,
@@ -584,12 +873,12 @@ function buildWindowLikeProduct(
   );
 
   const frameCenter = componentsByKey.get("frame-center");
-  if (frameCenter) {
+  if (frameCenter && mullionCount > 0) {
     for (let index = 0; index < mullionCount; index += 1) {
       const xMm =
         -widthMm / 2 +
         profile.leftFrameWidthMm +
-        paneWidthMm * (index + 1) +
+        mullionBayWidthMm * (index + 1) +
         profile.mullionWidthMm * index +
         profile.mullionWidthMm / 2;
 
@@ -605,13 +894,13 @@ function buildWindowLikeProduct(
   }
 
   const glassPanel = required(componentsByKey, "glass-panel");
-  for (let index = 0; index < paneCount; index += 1) {
+  for (let index = 0; index < bayCount; index += 1) {
     const xMm =
       -widthMm / 2 +
       profile.leftFrameWidthMm +
-      paneWidthMm * index +
+      mullionBayWidthMm * index +
       profile.mullionWidthMm * index +
-      paneWidthMm / 2;
+      mullionBayWidthMm / 2;
 
     glass.add(
       createPart(`Glass_${index + 1}`, glassPanel, cache, {
@@ -1393,67 +1682,111 @@ function buildAssembledProduct(
       }
 
       if (isBayInfill) {
+        const jalousieCfg = component.jalousieConfig ?? (component.componentData as Record<string, unknown>)?.jalousie_config as import("../pricing/types").JalousieConfig | undefined;
+        const isLouverBladeInfill = Boolean(
+          component.dimensionBinding === "LOUVER_BLADE" ||
+          (component as Record<string, unknown>).dimension_binding === "LOUVER_BLADE" ||
+          compKeyLower.includes("louver") ||
+          compKeyLower.includes("clips_and_glass") ||
+          (jalousieCfg && (jalousieCfg.pitch_mm || jalousieCfg.pitchMm))
+        );
+
+        if (isLouverBladeInfill) {
+          const bayPrototype = extractBayInfillPrototype(clone);
+          bayPrototype.updateMatrixWorld(true);
+          const bayBox = new THREE.Box3().setFromObject(bayPrototype);
+          const protoBayWidthM = Math.max(0.1, bayBox.max.x - bayBox.min.x);
+          const bayScaleX = (clearBayWidthMm / 1000) / protoBayWidthM;
+
+          const pitchMm = jalousieCfg?.pitch_mm ?? jalousieCfg?.pitchMm ?? 175;
+          let louverCount = computeLouverBladeCount(currentApertureHeightMm, pitchMm);
+          const bladeHeightMm = jalousieCfg?.blade_height_mm ?? jalousieCfg?.bladeHeightMm ?? 105.3;
+          const bladeHeightM = bladeHeightMm / 1000;
+          const pitchM = pitchMm / 1000;
+          const effectiveApertureHeightM = currentApertureHeightMm / 1000;
+          while (louverCount > 1 && ((louverCount - 1) * pitchM + bladeHeightM) > (effectiveApertureHeightM - 0.01)) {
+            louverCount--;
+          }
+
+          const bladeElevations = computeLouverBladeYCoordinates(louverCount, pitchMm);
+          const prototypeBlade = extractLouverBladePrototype(bayPrototype);
+          prototypeBlade.updateMatrixWorld(true);
+          const bladeBox = new THREE.Box3().setFromObject(prototypeBlade);
+          const bladeCenter = new THREE.Vector3();
+          bladeBox.getCenter(bladeCenter);
+          if (Math.abs(bladeCenter.x) > 0.0001 || Math.abs(bladeCenter.y) > 0.0001) {
+            prototypeBlade.position.x -= bladeCenter.x;
+            prototypeBlade.position.y -= bladeCenter.y;
+            prototypeBlade.updateMatrixWorld(true);
+          }
+
+          for (let b = 0; b < bayCount; b++) {
+            const bayContainer = new THREE.Group();
+            bayContainer.name = `${component.componentName || "bay_infill"}_bay_${b}`;
+            bayContainer.userData = {
+              ...clone.userData,
+              componentKey: component.componentKey,
+              componentId: component.componentId,
+              isDynamicBay: true,
+              bayIndex: b,
+              totalBays: bayCount,
+              isLouverAssembly: true,
+              louverCount,
+              dimensionBinding: "LOUVER_BLADE",
+            };
+
+            for (let i = 0; i < louverCount; i++) {
+              const bladeInstance = prototypeBlade.clone(true);
+              bladeInstance.name = `${component.componentName || "louver_blade"}_bay_${b}_blade_${i}`;
+              bladeInstance.userData = {
+                ...clone.userData,
+                isLouverBladeInstance: true,
+                bayIndex: b,
+                bladeIndex: i,
+                dimensionBinding: "LOUVER_BLADE",
+              };
+              bladeInstance.scale.set(bayScaleX, 1, 1);
+              bladeInstance.position.set(0, naturalApertureCenterY + bladeElevations[i], 0);
+              bayContainer.add(bladeInstance);
+            }
+
+            bayContainer.position.set(bayCenters[b], 0, 0);
+            group.add(bayContainer);
+          }
+          continue;
+        }
+
+        // Standard Window Glazing Infill (Non-Jalousie Fixed/Casement/Awning Bays)
         const bayPrototype = extractBayInfillPrototype(clone);
         bayPrototype.updateMatrixWorld(true);
         const bayBox = new THREE.Box3().setFromObject(bayPrototype);
-        const protoBayWidthM = Math.max(0.1, bayBox.max.x - bayBox.min.x);
+        const protoBayWidthM = Math.max(0.01, bayBox.max.x - bayBox.min.x);
+        const protoBayHeightM = Math.max(0.01, bayBox.max.y - bayBox.min.y);
         const bayScaleX = (clearBayWidthMm / 1000) / protoBayWidthM;
-
-        const jalousieCfg = component.jalousieConfig ?? (component.componentData as Record<string, unknown>)?.jalousie_config as import("../pricing/types").JalousieConfig | undefined;
-        const pitchMm = jalousieCfg?.pitch_mm ?? jalousieCfg?.pitchMm ?? 175;
-        let louverCount = computeLouverBladeCount(currentApertureHeightMm, pitchMm);
-        const bladeHeightMm = jalousieCfg?.blade_height_mm ?? jalousieCfg?.bladeHeightMm ?? 105.3;
-        const bladeHeightM = bladeHeightMm / 1000;
-        const pitchM = pitchMm / 1000;
-        const effectiveApertureHeightM = currentApertureHeightMm / 1000;
-        while (louverCount > 1 && ((louverCount - 1) * pitchM + bladeHeightM) > (effectiveApertureHeightM - 0.01)) {
-          louverCount--;
-        }
-
-        const bladeElevations = computeLouverBladeYCoordinates(louverCount, pitchMm);
-        const prototypeBlade = extractLouverBladePrototype(bayPrototype);
-        prototypeBlade.updateMatrixWorld(true);
-        const bladeBox = new THREE.Box3().setFromObject(prototypeBlade);
-        const bladeCenter = new THREE.Vector3();
-        bladeBox.getCenter(bladeCenter);
-        if (Math.abs(bladeCenter.x) > 0.0001 || Math.abs(bladeCenter.y) > 0.0001) {
-          prototypeBlade.position.x -= bladeCenter.x;
-          prototypeBlade.position.y -= bladeCenter.y;
-          prototypeBlade.updateMatrixWorld(true);
-        }
+        const bayScaleY = targetApertureHeightM / protoBayHeightM;
 
         for (let b = 0; b < bayCount; b++) {
-          const bayContainer = new THREE.Group();
-          bayContainer.name = `${component.componentName || "bay_infill"}_bay_${b}`;
-          bayContainer.userData = {
+          const bayPaneInstance = bayPrototype.clone(true);
+          bayPaneInstance.name = `${component.componentName || "bay_glass"}_bay_${b}`;
+          bayPaneInstance.userData = {
             ...clone.userData,
             componentKey: component.componentKey,
             componentId: component.componentId,
             isDynamicBay: true,
             bayIndex: b,
             totalBays: bayCount,
-            isLouverAssembly: true,
-            louverCount,
-            dimensionBinding: "LOUVER_BLADE",
           };
-
-          for (let i = 0; i < louverCount; i++) {
-            const bladeInstance = prototypeBlade.clone(true);
-            bladeInstance.name = `${component.componentName || "louver_blade"}_bay_${b}_blade_${i}`;
-            bladeInstance.userData = {
-              ...clone.userData,
-              isLouverBladeInstance: true,
-              bayIndex: b,
-              bladeIndex: i,
-              dimensionBinding: "LOUVER_BLADE",
-            };
-            bladeInstance.scale.set(bayScaleX, 1, 1);
-            bladeInstance.position.set(0, naturalApertureCenterY + bladeElevations[i], 0);
-            bayContainer.add(bladeInstance);
-          }
-
-          bayContainer.position.set(bayCenters[b], 0, 0);
-          group.add(bayContainer);
+          const mounted = mountCenteredPart(
+            bayPaneInstance,
+            { x: bayCenters[b], y: naturalApertureCenterY, z: 0 },
+            { x: bayScaleX, y: bayScaleY, z: 1 },
+          );
+          mounted.traverse((child) => {
+            if (child instanceof THREE.Mesh) {
+              child.renderOrder = 1;
+            }
+          });
+          group.add(mounted);
         }
         continue;
       }
@@ -1728,6 +2061,49 @@ function buildAssembledProduct(
       swapped.accessoryId !== component.componentId
     );
 
+    const isFixedDimension = Boolean(
+      component.dimensionBinding === "FIXED" ||
+      (component as Record<string, unknown>).dimension_binding === "FIXED" ||
+      isAccessorySlot
+    );
+
+    if (isFixedDimension) {
+      const clusters = extractComponentClusters(clone);
+
+      if (clusters.length > 1) {
+        // Multi-cluster hardware or fixed assembly (such as multi-handle sets or weep hole covers)
+        // Each cluster tracks parametric width and height scaling while maintaining exact 1:1 metric size
+        for (const cl of clusters) {
+          const inst = cl.createInstance();
+          if (isAlternativeAccessory && swapped?.finish) {
+            const hwMat = createHardwareFinishMaterial(swapped.finish);
+            inst.traverse((c) => {
+              if (c instanceof THREE.Mesh) {
+                c.material = hwMat;
+                c.userData.preserveMaterial = true;
+                c.castShadow = true;
+                c.receiveShadow = true;
+              }
+            });
+          }
+          const clusterContainer = new THREE.Group();
+          clusterContainer.name = `${component.componentName || "fixed_part"}_cluster_${cl.clusterIndex}`;
+          clusterContainer.userData = {
+            ...clone.userData,
+            dimensionBinding: "FIXED",
+            isFixedDimension: true,
+            clusterIndex: cl.clusterIndex,
+            preserveMaterial: true,
+          };
+          clusterContainer.add(inst);
+          clusterContainer.position.set(cl.modeledCenter.x, cl.modeledCenter.y, cl.modeledCenter.z);
+          clusterContainer.rotation.set(0, 0, 0);
+          group.add(clusterContainer);
+        }
+        continue;
+      }
+    }
+
     if (hasHanding) {
       // Measure original handle in its natural modeled position
       clone.updateMatrixWorld(true);
@@ -1767,17 +2143,16 @@ function buildAssembledProduct(
 
       if (!isAlternativeAccessory) {
         if (activeHanding === modeledHanding && (!component.positionOptions?.allowVerticalToggle || swapped?.verticalPosition !== "bottom")) {
-          if (swapped?.finish) {
-            const hwMat = createHardwareFinishMaterial(swapped.finish);
-            clone.traverse((c) => {
-              if (c instanceof THREE.Mesh) c.material = hwMat;
-            });
-          }
-          clone.userData = { ...clone.userData, isMirroredHanding: false };
+          clone.userData = { ...clone.userData, isMirroredHanding: false, preserveMaterial: true };
+          clone.traverse((c) => {
+            if (c instanceof THREE.Mesh) {
+              c.userData.preserveMaterial = true;
+            }
+          });
 
           const container = new THREE.Group();
           container.name = `${component.componentName || "part"}_${activeHanding}`;
-          container.userData = { ...clone.userData, isMirroredHanding: false };
+          container.userData = { ...clone.userData, isMirroredHanding: false, preserveMaterial: true };
           clone.position.sub(origHandleCenter);
           container.add(clone);
           container.position.set(targetX, targetY, targetZ);
@@ -1793,13 +2168,12 @@ function buildAssembledProduct(
             targetX
           );
 
-          if (swapped?.finish) {
-            const hwMat = createHardwareFinishMaterial(swapped.finish);
-            mountedHandle.traverse((c) => {
-              if (c instanceof THREE.Mesh) c.material = hwMat;
-            });
-          }
-          mountedHandle.userData = { ...clone.userData, isMirroredHanding: activeHanding !== modeledHanding };
+          mountedHandle.userData = { ...clone.userData, isMirroredHanding: activeHanding !== modeledHanding, preserveMaterial: true };
+          mountedHandle.traverse((c) => {
+            if (c instanceof THREE.Mesh) {
+              c.userData.preserveMaterial = true;
+            }
+          });
           group.add(mountedHandle);
         }
       } else if (swapped) {
@@ -2139,33 +2513,19 @@ function buildAssembledProduct(
       continue;
     }
 
-    const isFixedDimension = Boolean(
-      component.dimensionBinding === "FIXED" ||
-      (component as Record<string, unknown>).dimension_binding === "FIXED" ||
-      isAccessorySlot
-    );
-
     if (isFixedDimension) {
       clone.updateMatrixWorld(true);
       const partBounds = new THREE.Box3().setFromObject(clone);
       const partCenter = new THREE.Vector3();
-      const partSize = new THREE.Vector3();
       partBounds.getCenter(partCenter);
-      partBounds.getSize(partSize);
 
-      const baseCenterX = hasHostComponents ? hostCenterVec.x : 0;
-      const deltaX = partCenter.x - baseCenterX;
-      const halfPartW = partSize.x / 2;
-
-      let targetX = partCenter.x;
-      if (hasHostComponents && scaleX > 0 && Math.abs(scaleX - 1) > 0.0001) {
-        if (deltaX > 0.02) {
-          const modeledOuterEdgeDist = partBounds.max.x - baseCenterX;
-          targetX = baseCenterX + modeledOuterEdgeDist - (halfPartW / scaleX);
-        } else if (deltaX < -0.02) {
-          const modeledOuterEdgeDist = baseCenterX - partBounds.min.x;
-          targetX = baseCenterX - modeledOuterEdgeDist + (halfPartW / scaleX);
-        }
+      if (component.presentationCategory === "Hardware" || component.componentType === "Hardware") {
+        clone.userData.preserveMaterial = true;
+        clone.traverse((c) => {
+          if (c instanceof THREE.Mesh) {
+            c.userData.preserveMaterial = true;
+          }
+        });
       }
 
       const fixedContainer = new THREE.Group();
@@ -2174,10 +2534,11 @@ function buildAssembledProduct(
         ...clone.userData,
         dimensionBinding: "FIXED",
         isFixedDimension: true,
+        preserveMaterial: Boolean(clone.userData.preserveMaterial),
       };
       clone.position.sub(partCenter);
       fixedContainer.add(clone);
-      fixedContainer.position.set(targetX, partCenter.y, partCenter.z);
+      fixedContainer.position.set(partCenter.x, partCenter.y, partCenter.z);
       fixedContainer.rotation.set(0, 0, 0);
       group.add(fixedContainer);
       continue;
@@ -3806,12 +4167,13 @@ function resolveWindowProfile(
   componentsByKey: Map<string, ProductComponentDefinition>,
   cache: ComponentModelCache,
 ) {
-  const profile = readRecord(definition.template.baseConfiguration.profile);
-  const clearance = readRecord(definition.template.baseConfiguration.clearance);
+  const baseConfig = readRecord(definition.template?.baseConfiguration);
+  const profile = readRecord(baseConfig?.profile);
+  const clearance = readRecord(baseConfig?.clearance);
 
   return {
-    defaultWidthMm: toNumber(definition.template.baseConfiguration.width, 2100),
-    defaultHeightMm: toNumber(definition.template.baseConfiguration.height, 1500),
+    defaultWidthMm: toNumber(baseConfig?.width, 2100),
+    defaultHeightMm: toNumber(baseConfig?.height, 1500),
     leftFrameWidthMm: readProfileNumber(profile, "leftFrameWidthMm", componentWidthMm("frame-left")),
     rightFrameWidthMm: readProfileNumber(profile, "rightFrameWidthMm", componentWidthMm("frame-right")),
     topFrameHeightMm: readProfileNumber(profile, "topFrameHeightMm", componentHeightMm("frame-top")),

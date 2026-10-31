@@ -272,16 +272,20 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
       if (binding === "LOUVER_OPERATOR" && !isSlot) {
         return false;
       }
-      const isFramingOrMesh =
+      const isFramingOrMeshOrGlass =
         c.presentationCategory === "Framing" ||
+        c.presentationCategory === "Glazing" ||
         c.componentType === "Frame" ||
+        c.componentType === "Glass" ||
         c.componentType === "Mesh" ||
         c.componentType === "Screen" ||
         c.componentKey.includes("frame") ||
+        c.componentKey.includes("glass") ||
+        c.componentKey.includes("pane") ||
         c.componentKey.includes("mesh") ||
         c.componentKey.includes("sill") ||
         c.componentKey.includes("bar");
-      if (isFramingOrMesh && !isSlot) return false;
+      if (isFramingOrMeshOrGlass && !isSlot) return false;
 
       return (
         isSlot ||
@@ -489,16 +493,20 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
 
           const isAccessoryProduct = Boolean(def.product?.isAccessory);
           if (!isAccessoryProduct) {
-            const isFramingOrMesh =
+            const isFramingOrMeshOrGlass =
               comp.presentationCategory === "Framing" ||
+              comp.presentationCategory === "Glazing" ||
               comp.componentType === "Frame" ||
+              comp.componentType === "Glass" ||
               comp.componentType === "Mesh" ||
               comp.componentType === "Screen" ||
               comp.componentKey.includes("frame") ||
+              comp.componentKey.includes("glass") ||
+              comp.componentKey.includes("pane") ||
               comp.componentKey.includes("mesh") ||
               comp.componentKey.includes("sill") ||
               comp.componentKey.includes("bar");
-            if (isFramingOrMesh && !isSlot) return;
+            if (isFramingOrMeshOrGlass && !isSlot) return;
           }
 
           const hasHanding = Boolean(

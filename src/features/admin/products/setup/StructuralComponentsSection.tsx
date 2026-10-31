@@ -798,7 +798,20 @@ export function StructuralComponentsSection({
                 parseError = err instanceof Error ? err.message : "Could not parse GLB geometry.";
             }
 
-            const jalousieAnalysis = previewMesh ? analyzeJalousieGeometry(previewMesh, f.name) : null;
+            const isJalousieEligibleProduct =
+                productType.toLowerCase().includes("jalousie") ||
+                productType.toLowerCase().includes("louver") ||
+                f.name.toLowerCase().includes("jalousie") ||
+                f.name.toLowerCase().includes("louver") ||
+                f.name.toLowerCase().includes("blade") ||
+                f.name.toLowerCase().includes("operator") ||
+                f.name.toLowerCase().includes("crank") ||
+                f.name.toLowerCase().includes("rotopers") ||
+                f.name.toLowerCase().includes("clips_and_glass");
+
+            const jalousieAnalysis = (previewMesh && isJalousieEligibleProduct)
+                ? analyzeJalousieGeometry(previewMesh, f.name)
+                : null;
             const isJalousie = Boolean(jalousieAnalysis && (jalousieAnalysis.isLouverBlade || jalousieAnalysis.isLouverOperator));
             const resolvedBinding = (isAccessory
                 ? "FIXED"

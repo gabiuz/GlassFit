@@ -1051,8 +1051,12 @@ export function PartInspectorDrawer({
           {/* Positional Placement & Handing Controls */}
           {(!(
             primary.presentationCategory === "Framing" ||
+            primary.presentationCategory === "Glazing" ||
             primary.componentType === "Model" ||
+            primary.componentType === "Glass" ||
             primary.componentKey.includes("frame") ||
+            primary.componentKey.includes("glass") ||
+            primary.componentKey.includes("pane") ||
             primary.componentKey.includes("mesh") ||
             primary.componentKey.includes("sill") ||
             primary.componentKey.includes("bar")
