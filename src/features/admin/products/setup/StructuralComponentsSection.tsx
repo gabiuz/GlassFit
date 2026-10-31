@@ -1729,10 +1729,6 @@ export function StructuralComponentsSection({
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 border border-neutral-200 rounded-[16px] overflow-hidden bg-white shadow-sm lg:h-[min(760px,calc(100vh-150px))]">
                     {/* Left Side: 3D Viewport (60% / 7 cols) */}
                     <div className="lg:col-span-7 bg-[#f2f4f7] relative h-[480px] lg:h-full min-h-0 flex flex-col justify-between border-b lg:border-b-0 lg:border-r border-neutral-200">
-                        <div className="absolute top-3 left-3 z-10 bg-white/90 backdrop-blur-md px-3 py-1 rounded-full text-[11px] font-medium text-neutral-700 shadow-xs border border-neutral-200 flex items-center gap-1.5">
-                            <Eye className="size-3.5 text-[#07b6d3]" /> Click part to inspect (Shift+Click for multi-select)
-                        </div>
-
                         <div className="absolute top-3 right-3 z-10 bg-white/90 backdrop-blur-md p-1 rounded-[10px] inline-flex border border-neutral-200 shadow-xs">
                             <button
                                 type="button"
@@ -1756,7 +1752,7 @@ export function StructuralComponentsSection({
                             </button>
                         </div>
 
-                        <div className="w-full min-h-0 flex-1">
+                        <div className="relative w-full min-h-0 flex-1">
                             <Canvas shadows camera={{ position: [0, 1.5, 3], fov: 45 }}>
                                 <ambientLight intensity={0.7} />
                                 <directionalLight position={[5, 8, 5]} intensity={1.2} />
@@ -1775,6 +1771,10 @@ export function StructuralComponentsSection({
                                 <OrbitControls makeDefault />
                                 <ViewerCameraControls action={cameraAction} />
                             </Canvas>
+                            <div className="pointer-events-none absolute bottom-3 left-3 z-10 flex max-w-[calc(100%-1.5rem)] items-center gap-1.5 rounded-full border border-neutral-200 bg-white/90 px-3 py-1 text-[11px] font-medium text-neutral-700 shadow-xs backdrop-blur-md">
+                                <Eye aria-hidden="true" className="size-3.5 shrink-0 text-[#07b6d3]" />
+                                <span>Click part to inspect (Shift+Click for multi-select)</span>
+                            </div>
                         </div>
 
                         <div className="flex gap-2 border-t border-neutral-200 bg-white px-3 py-2 text-xs">
