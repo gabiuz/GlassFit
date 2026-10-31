@@ -54,6 +54,7 @@ def assess_photo_suitability(
         (opening >= 0.04 and not surface_too_close)
         or (wall >= 0.20 and floor >= 0.05)
         or (building >= 0.20 and exterior_context >= 0.08)
+        or (building >= 0.30 and wall >= 0.15 and floor >= 0.025)
     )
 
     # FIX14: A very dark illustration can be split into invented wall and

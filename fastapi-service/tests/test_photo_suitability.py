@@ -30,6 +30,24 @@ def test_close_opening_needs_no_floor():
                                     scene(opening_coverage=0.08), 1000, 1000)["status"] == "accepted"
 
 
+def test_occupied_window_wall_with_small_floor_is_accepted():
+    # FIX14 / QAD-TC4: the real window scene has building and wall labels,
+    # while the narrow bottom strip of floor falls below the generic cutoff.
+    evidence = scene(building_coverage=0.502, wall_coverage=0.291,
+                     floor_coverage=0.043, opening_coverage=0.0)
+    assert assess_photo_suitability([], {"mode": "yolo"}, evidence,
+                                    2048, 1536)["status"] == "accepted"
+
+
+def test_building_label_alone_does_not_accept_a_graphic():
+    # The ViTk window requires three corroborating scene labels. A single
+    # building prediction on artwork remains insufficient.
+    evidence = scene(building_coverage=0.50, wall_coverage=0.29,
+                     floor_coverage=0.0, opening_coverage=0.0)
+    assert assess_photo_suitability([], {"mode": "yolo"}, evidence,
+                                    2048, 1536)["status"] == "unverifiable"
+
+
 def test_mock_or_depth_fallback_cannot_admit():
     assert assess_photo_suitability([], {"mode": "mock"},
                                     scene(structural_coverage=0.5), 1000, 1000)["status"] == "unverifiable"
