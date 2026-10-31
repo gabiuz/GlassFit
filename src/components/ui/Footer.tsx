@@ -6,41 +6,6 @@ type FooterProps = {
   className?: string;
 };
 
-const socialMediaIcons = [
-  {
-    key: "facebook",
-    src: "/social_media_icons/Facebook.svg",
-    width: 14.62,
-    height: 25,
-    alt: "Facebook",
-    href: "#",
-  },
-  {
-    key: "twitter",
-    src: "/social_media_icons/Twitter.svg",
-    width: 24.35,
-    height: 25,
-    alt: "Twitter",
-    href: "#",
-  },
-  {
-    key: "linkedin",
-    src: "/social_media_icons/LinkedIn.svg",
-    width: 25,
-    height: 20.87,
-    alt: "LinkedIn",
-    href: "#",
-  },
-  {
-    key: "youtube",
-    src: "/social_media_icons/YouTube.svg",
-    width: 25,
-    height: 18.06,
-    alt: "YouTube",
-    href: "#",
-  },
-];
-
 export default function Footer({ className = "" }: FooterProps) {
   return (
     <footer
@@ -66,23 +31,20 @@ export default function Footer({ className = "" }: FooterProps) {
               </div>
             </div>
             <div className="flex items-end gap-6 md:gap-10.5 justify-center md:justify-start">
-              {socialMediaIcons.map((icon) => (
-                <a
-                  key={icon.key}
-                  href={icon.href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label={icon.alt}
-                  className="inline-block mr-0 md:mr-4"
-                >
-                  <Image
-                    src={icon.src}
-                    alt={icon.alt}
-                    width={icon.width}
-                    height={icon.height}
-                  />
-                </a>
-              ))}
+              <a
+                href="https://www.facebook.com/p/Team-RRD-Glass-and-Aluminum-100064060594735/"
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Facebook"
+                className="inline-block mr-0 md:mr-4"
+              >
+                <Image
+                  src="/social_media_icons/Facebook.svg"
+                  alt="Facebook"
+                  width={15}
+                  height={25}
+                />
+              </a>
             </div>
           </div>
           <div>
