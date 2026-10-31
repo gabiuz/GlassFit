@@ -296,9 +296,6 @@ export function AddonInheritanceSection({
                   if (checked && selectedScreenProductIds.length === 0 && screens.length > 0) {
                     setSelectedScreenProductIds([screens[0].productId]);
                   }
-                  if (checked && screenHatchTargets.length === 0 && candidateOperatorComponents.length > 0) {
-                    setScreenHatchTargets(candidateOperatorComponents.map((c) => String(c.component_key || c.componentKey || "")));
-                  }
                 }}
                 className="size-4 rounded text-[#07b6d3] focus:ring-[#07b6d3]"
               />
@@ -502,7 +499,7 @@ export function AddonInheritanceSection({
                         Operator Hatch Alignment Targets
                       </span>
                       <span className="text-[11px] text-neutral-500">
-                        Bind screen access hatches directly to host window operating mechanisms
+                        Bind screen access hatches directly to host window operating mechanisms. Unselected means no hatch is available.
                       </span>
                     </div>
                     <div className="flex items-center gap-2">
@@ -518,7 +515,7 @@ export function AddonInheritanceSection({
                       </button>
                       <span className="text-[11px] text-teal-800 bg-teal-100 font-semibold px-2 py-0.5 rounded-md">
                         {screenHatchTargets.length === 0
-                          ? "1 default hatch"
+                          ? "No hatch (unavailable)"
                           : `${screenHatchTargets.length} target ${screenHatchTargets.length === 1 ? "operator" : "operators"} (${screenHatchTargets.length} ${screenHatchTargets.length === 1 ? "hatch" : "hatches"})`}
                       </span>
                     </div>

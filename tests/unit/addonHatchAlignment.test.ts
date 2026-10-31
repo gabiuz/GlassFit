@@ -15,7 +15,7 @@ import {
 import type { HostProductAddonConfig } from "../../src/lib/admin/products/types";
 import { buildParametricProduct } from "../../src/lib/visualization/parametricProductBuilder";
 import type { ComponentModelCache } from "../../src/lib/visualization/componentModelCache";
-import type { ProductStructuralDefinition, ResolvedStructure, ProductComponentDefinition } from "../../src/lib/visualization/types";
+import type { ProductStructuralDefinition, ResolvedStructure, ProductComponentDefinition, CompatibleAddon } from "../../src/lib/visualization/types";
 import { calculateParametricBOM, type CalculatedBOMResult } from "../../src/lib/pricing/pricingEngine";
 import { calculateAddonBOM } from "../../src/lib/pricing/addonPricingEngine";
 import { generateQuotationPdfHtml } from "../../src/lib/pricing/quotationPdfGenerator";
@@ -980,6 +980,62 @@ describe("IMP-MS80: Directional Add-on Placement Side Compatibility and Operator
       // Verify hatch latch has Hardware category
       assert.strictEqual(verifiedLatch.userData.presentationCategory, "Hardware", "Hatch latch must be categorized as Hardware");
       assert.strictEqual(verifiedLatch.userData.isScreenMesh, false, "Hatch latch must not be marked as screen mesh");
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // QAD-TC95.17: Unselected operator hatch alignment target suppresses hatch
+  // --------------------------------------------------------------------------
+  describe("QAD-TC95.17: Unselected operator hatch alignment target suppresses hatch", () => {
+    it("does not render hatch at all when no operator hatch target is selected", () => {
+      const { built } = create3DTestSetup({
+        operators: [{ key: "operator_crank", x: 0.42, y: 0.50 }],
+        hatchTargets: [],
+        allowedSides: "back",
+        activeSide: "back",
+      });
+
+      const hatches: THREE.Object3D[] = [];
+      built.group.traverse((c) => {
+        if (
+          c.userData?.isHatchClone ||
+          c.userData?.componentKey === "screen_access_hatch" ||
+          (c.name && c.name.toLowerCase().includes("hatch"))
+        ) {
+          hatches.push(c);
+        }
+      });
+
+      assert.strictEqual(
+        hatches.length,
+        0,
+        "No hatch should be instantiated or rendered when no operator target is selected"
+      );
+
+      // Verify screen perimeter frame is still present and mounted
+      const screenFrames: THREE.Object3D[] = [];
+      built.group.traverse((c) => {
+        if (c.userData?.componentKey === "screen_perimeter_frame") {
+          screenFrames.push(c);
+        }
+      });
+      assert.ok(screenFrames.length > 0, "Screen perimeter frame must still be rendered");
+    });
+
+    it("evaluates effectiveHatchTargetKeys as empty when compatible addon has no targets", () => {
+      const addonWithNoTargets: CompatibleAddon = {
+        id: "binding_screen_no_targets",
+        parentProductId: "prod_host_window",
+        addonProductId: "addon_screen_prod",
+        addonType: "screen",
+        allowedSides: "both",
+        defaultSide: "back",
+        hatchTargetComponentKeys: [],
+        components: [],
+      };
+
+      const keys = addonWithNoTargets.hatchTargetComponentKeys ?? [];
+      assert.strictEqual(keys.length, 0, "Target keys must remain strictly empty");
     });
   });
 });

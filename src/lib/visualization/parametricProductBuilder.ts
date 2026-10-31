@@ -428,6 +428,12 @@ export interface ComponentClusterInfo {
   clusterIndex: number;
   modeledCenter: THREE.Vector3;
   size: THREE.Vector3;
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+  minZ: number;
+  maxZ: number;
   createInstance: () => THREE.Object3D;
 }
 
@@ -535,8 +541,15 @@ export function extractComponentClusters(
   const xInt = getIntervals("x");
   const yInt = getIntervals("y");
 
-  // If there are no substantial spatial gaps along either X or Y, this is a single unified part
-  if (xInt.length <= 1 && yInt.length <= 1) {
+  // Check for bilateral separation across the centerline (X = 0)
+  // Paired fixtures (such as bilateral casement handles or bilateral friction stays)
+  // have distinct geometry on the left (X <= -0.001) and right (X >= 0.001) with no triangles crossing X = 0.
+  const hasCrossingCenter = allTriangles.some((t) => t.minX < -0.001 && t.maxX > 0.001);
+  const hasLeft = allTriangles.some((t) => t.maxX <= 0);
+  const hasRight = allTriangles.some((t) => t.minX >= 0);
+
+  // If there are no substantial spatial gaps along either X or Y and not bilateral, this is a single unified part
+  if (xInt.length <= 1 && yInt.length <= 1 && (hasCrossingCenter || !hasLeft || !hasRight)) {
     const box = new THREE.Box3().setFromObject(source);
     const center = new THREE.Vector3();
     const size = new THREE.Vector3();
@@ -547,6 +560,12 @@ export function extractComponentClusters(
         clusterIndex: 0,
         modeledCenter: center,
         size,
+        minX: box.min.x,
+        maxX: box.max.x,
+        minY: box.min.y,
+        maxY: box.max.y,
+        minZ: box.min.z,
+        maxZ: box.max.z,
         createInstance: () => {
           const clone = source.clone(true);
           clone.position.sub(center);
@@ -562,33 +581,74 @@ export function extractComponentClusters(
     maxX: number;
     minY: number;
     maxY: number;
+    tris?: TriangleData[];
   }
 
   const clusterDefs: ClusterDef[] = [];
-  if (xInt.length > 1 && yInt.length <= 1) {
+
+  if (!hasCrossingCenter && hasLeft && hasRight) {
+    // Bilaterally partitioned fixtures: decompose into left and right lateral groups
+    const lateralGroups = [
+      { name: "left", tris: allTriangles.filter((t) => t.maxX <= 0) },
+      { name: "right", tris: allTriangles.filter((t) => t.minX >= 0) },
+    ];
+
+    lateralGroups.forEach((lg) => {
+      const sortedY = [...lg.tris].sort((a, b) => a.minY - b.minY);
+      const yIntervals: Array<{ min: number; max: number }> = [];
+      let curY = { min: sortedY[0].minY, max: sortedY[0].maxY };
+      for (let i = 1; i < sortedY.length; i++) {
+        if (sortedY[i].minY <= curY.max + 0.05) {
+          curY.max = Math.max(curY.max, sortedY[i].maxY);
+        } else {
+          yIntervals.push(curY);
+          curY = { min: sortedY[i].minY, max: sortedY[i].maxY };
+        }
+      }
+      if (curY) yIntervals.push(curY);
+
+      yIntervals.forEach((yi) => {
+        const subTris = lg.tris.filter((t) => t.centerY >= yi.min - 0.02 && t.centerY <= yi.max + 0.02);
+        if (subTris.length > 0) {
+          const bMinX = Math.min(...subTris.map((t) => t.minX));
+          const bMaxX = Math.max(...subTris.map((t) => t.maxX));
+          clusterDefs.push({
+            axis: "XY",
+            minX: bMinX,
+            maxX: bMaxX,
+            minY: yi.min,
+            maxY: yi.max,
+            tris: subTris,
+          });
+        }
+      });
+    });
+  } else if (xInt.length > 1 && yInt.length <= 1) {
     // Multi-fixture array distributed along lateral X axis (such as horizontal sliding window handles or weep hole covers)
     xInt.forEach((xi) => {
-      clusterDefs.push({ axis: "X", minX: xi.min, maxX: xi.max, minY: -Infinity, maxY: Infinity });
+      const subTris = allTriangles.filter((t) => t.centerX >= xi.min - 0.001 && t.centerX <= xi.max + 0.001);
+      clusterDefs.push({ axis: "X", minX: xi.min, maxX: xi.max, minY: -Infinity, maxY: Infinity, tris: subTris });
     });
   } else if (yInt.length > 1 && xInt.length <= 1) {
     // Multi-fixture array distributed along vertical Y axis (such as vertical sliding window bottom lift handles and meeting rail locks)
     yInt.forEach((yi) => {
-      clusterDefs.push({ axis: "Y", minX: -Infinity, maxX: Infinity, minY: yi.min, maxY: yi.max });
+      const subTris = allTriangles.filter((t) => t.centerY >= yi.min - 0.001 && t.centerY <= yi.max + 0.001);
+      clusterDefs.push({ axis: "Y", minX: -Infinity, maxX: Infinity, minY: yi.min, maxY: yi.max, tris: subTris });
     });
   } else {
     // 2D multi-fixture grid distributed across both X and Y
     const pad = 0.05;
     xInt.forEach((xi) => {
       yInt.forEach((yi) => {
-        const hasTri = allTriangles.some(
+        const subTris = allTriangles.filter(
           (t) =>
             t.centerX >= xi.min - pad &&
             t.centerX <= xi.max + pad &&
             t.centerY >= yi.min - pad &&
             t.centerY <= yi.max + pad,
         );
-        if (hasTri) {
-          clusterDefs.push({ axis: "XY", minX: xi.min, maxX: xi.max, minY: yi.min, maxY: yi.max });
+        if (subTris.length > 0) {
+          clusterDefs.push({ axis: "XY", minX: xi.min, maxX: xi.max, minY: yi.min, maxY: yi.max, tris: subTris });
         }
       });
     });
@@ -597,7 +657,7 @@ export function extractComponentClusters(
   const pad = 0.05; // 50mm tolerance around cluster boundaries
   return clusterDefs.map((def, clusterIdx) => {
     // Identify triangles belonging to this cluster
-    const clusterTris = allTriangles.filter((t) => {
+    const clusterTris = def.tris ?? allTriangles.filter((t) => {
       if (def.axis === "X") return t.centerX >= def.minX - pad && t.centerX <= def.maxX + pad;
       if (def.axis === "Y") return t.centerY >= def.minY - pad && t.centerY <= def.maxY + pad;
       return (
@@ -623,6 +683,12 @@ export function extractComponentClusters(
       clusterIndex: clusterIdx,
       modeledCenter: center,
       size,
+      minX: box.min.x,
+      maxX: box.max.x,
+      minY: box.min.y,
+      maxY: box.max.y,
+      minZ: box.min.z,
+      maxZ: box.max.z,
       createInstance: () => {
         const group = new THREE.Group();
         group.name = `Cluster_${clusterIdx}`;
@@ -2071,7 +2137,7 @@ function buildAssembledProduct(
       const clusters = extractComponentClusters(clone);
 
       if (clusters.length > 1) {
-        // Multi-cluster hardware or fixed assembly (such as multi-handle sets or weep hole covers)
+        // Multi-cluster hardware or fixed assembly (such as multi-handle sets, friction stays, or weep hole covers)
         // Each cluster tracks parametric width and height scaling while maintaining exact 1:1 metric size
         for (const cl of clusters) {
           const inst = cl.createInstance();
@@ -2086,6 +2152,77 @@ function buildAssembledProduct(
               }
             });
           }
+
+          const hostHalfW = hasHostComponents ? (hostComponentsBox.max.x - hostComponentsBox.min.x) / 2 : (naturalWidthM > 0 ? naturalWidthM / 2 : 0.6);
+          const hostHalfH = hasHostComponents ? (hostComponentsBox.max.y - hostComponentsBox.min.y) / 2 : (naturalHeightM > 0 ? naturalHeightM / 2 : 0.6);
+          const hostMinX = hasHostComponents ? hostComponentsBox.min.x : -hostHalfW;
+          const hostMaxX = hasHostComponents ? hostComponentsBox.max.x : hostHalfW;
+          const hostMinY = hasHostComponents ? hostComponentsBox.min.y : -hostHalfH;
+          const hostMaxY = hasHostComponents ? hostComponentsBox.max.y : hostHalfH;
+          const baseCenterX = hasHostComponents ? hostCenterVec.x : 0;
+          const baseCenterY = hasHostComponents ? hostCenterVec.y : 0;
+
+          // 1. Horizontal Anchoring (X axis)
+          const distToLeft = cl.minX - hostMinX;
+          const distToRight = hostMaxX - cl.maxX;
+          const distToCenter = Math.abs(cl.modeledCenter.x - baseCenterX);
+
+          let targetWorldCenterX: number;
+          const curHostMinX = baseCenterX + (hostMinX - baseCenterX) * scaleX;
+          const curHostMaxX = baseCenterX + (hostMaxX - baseCenterX) * scaleX;
+
+          if (distToLeft < 0.20 * hostHalfW && distToLeft <= distToRight) {
+            // Outer Left perimeter (e.g. Left Friction Stays, Left hinges)
+            const worldMinX = curHostMinX + distToLeft;
+            targetWorldCenterX = worldMinX + (cl.size.x / 2);
+          } else if (distToRight < 0.20 * hostHalfW && distToRight < distToLeft) {
+            // Outer Right perimeter (e.g. Right Friction Stays, Right hinges)
+            const worldMaxX = curHostMaxX - distToRight;
+            targetWorldCenterX = worldMaxX - (cl.size.x / 2);
+          } else if (distToCenter < 0.25 * hostHalfW) {
+            // Centerline meeting stile (e.g. Casement handles, French door meeting rail locks)
+            if (cl.maxX <= baseCenterX + 0.01) {
+              const baseOffset = baseCenterX - cl.maxX;
+              const worldBaseX = baseCenterX - baseOffset;
+              targetWorldCenterX = worldBaseX - (cl.size.x / 2);
+            } else {
+              const baseOffset = cl.minX - baseCenterX;
+              const worldBaseX = baseCenterX + baseOffset;
+              targetWorldCenterX = worldBaseX + (cl.size.x / 2);
+            }
+          } else {
+            // Bay-distributed (e.g. Weep hole covers, bay operators)
+            targetWorldCenterX = baseCenterX + (cl.modeledCenter.x - baseCenterX) * scaleX;
+          }
+
+          // 2. Vertical Anchoring (Y axis)
+          const distToBottom = cl.minY - hostMinY;
+          const distToTop = hostMaxY - cl.maxY;
+          let targetWorldCenterY: number;
+          const curHostMinY = baseCenterY + (hostMinY - baseCenterY) * scaleY;
+          const curHostMaxY = baseCenterY + (hostMaxY - baseCenterY) * scaleY;
+
+          if (distToTop < 0.15 * hostHalfH && distToTop <= distToBottom) {
+            // Top perimeter (e.g. Top Friction Stays, top guides)
+            const worldMaxY = curHostMaxY - distToTop;
+            targetWorldCenterY = worldMaxY - (cl.size.y / 2);
+          } else if (distToBottom < 0.15 * hostHalfH && distToBottom < distToTop) {
+            // Bottom perimeter (e.g. Bottom Friction Stays, weep covers)
+            const worldMinY = curHostMinY + distToBottom;
+            targetWorldCenterY = worldMinY + (cl.size.y / 2);
+          } else {
+            targetWorldCenterY = baseCenterY + (cl.modeledCenter.y - baseCenterY) * scaleY;
+          }
+
+          const targetXInGroup = scaleX > 0 ? (targetWorldCenterX / scaleX) : cl.modeledCenter.x;
+          const targetYInGroup = scaleY > 0 ? (targetWorldCenterY / scaleY) : cl.modeledCenter.y;
+
+          // Clamp fixture size if sash bay is narrower than fixture length
+          const sashBayHalfW = curHostMaxX - baseCenterX;
+          if (cl.size.x > sashBayHalfW * 0.95 && sashBayHalfW > 0.05) {
+            inst.scale.set((sashBayHalfW * 0.95) / cl.size.x, 1, 1);
+          }
+
           const clusterContainer = new THREE.Group();
           clusterContainer.name = `${component.componentName || "fixed_part"}_cluster_${cl.clusterIndex}`;
           clusterContainer.userData = {
@@ -2096,7 +2233,7 @@ function buildAssembledProduct(
             preserveMaterial: true,
           };
           clusterContainer.add(inst);
-          clusterContainer.position.set(cl.modeledCenter.x, cl.modeledCenter.y, cl.modeledCenter.z);
+          clusterContainer.position.set(targetXInGroup, targetYInGroup, cl.modeledCenter.z);
           clusterContainer.rotation.set(0, 0, 0);
           group.add(clusterContainer);
         }
@@ -2517,7 +2654,9 @@ function buildAssembledProduct(
       clone.updateMatrixWorld(true);
       const partBounds = new THREE.Box3().setFromObject(clone);
       const partCenter = new THREE.Vector3();
+      const partSize = new THREE.Vector3();
       partBounds.getCenter(partCenter);
+      partBounds.getSize(partSize);
 
       if (component.presentationCategory === "Hardware" || component.componentType === "Hardware") {
         clone.userData.preserveMaterial = true;
@@ -2527,6 +2666,54 @@ function buildAssembledProduct(
           }
         });
       }
+
+      const hostHalfW = hasHostComponents ? (hostComponentsBox.max.x - hostComponentsBox.min.x) / 2 : (naturalWidthM > 0 ? naturalWidthM / 2 : 0.6);
+      const hostHalfH = hasHostComponents ? (hostComponentsBox.max.y - hostComponentsBox.min.y) / 2 : (naturalHeightM > 0 ? naturalHeightM / 2 : 0.6);
+      const hostMinX = hasHostComponents ? hostComponentsBox.min.x : -hostHalfW;
+      const hostMaxX = hasHostComponents ? hostComponentsBox.max.x : hostHalfW;
+      const hostMinY = hasHostComponents ? hostComponentsBox.min.y : -hostHalfH;
+      const hostMaxY = hasHostComponents ? hostComponentsBox.max.y : hostHalfH;
+      const baseCenterX = hasHostComponents ? hostCenterVec.x : 0;
+      const baseCenterY = hasHostComponents ? hostCenterVec.y : 0;
+
+      const distToLeft = partBounds.min.x - hostMinX;
+      const distToRight = hostMaxX - partBounds.max.x;
+      const distToCenter = Math.abs(partCenter.x - baseCenterX);
+
+      let targetWorldCenterX: number;
+      const curHostMinX = baseCenterX + (hostMinX - baseCenterX) * scaleX;
+      const curHostMaxX = baseCenterX + (hostMaxX - baseCenterX) * scaleX;
+
+      if (distToLeft < 0.20 * hostHalfW && distToLeft <= distToRight) {
+        const worldMinX = curHostMinX + distToLeft;
+        targetWorldCenterX = worldMinX + (partSize.x / 2);
+      } else if (distToRight < 0.20 * hostHalfW && distToRight < distToLeft) {
+        const worldMaxX = curHostMaxX - distToRight;
+        targetWorldCenterX = worldMaxX - (partSize.x / 2);
+      } else if (distToCenter < 0.25 * hostHalfW) {
+        targetWorldCenterX = baseCenterX + (partCenter.x - baseCenterX);
+      } else {
+        targetWorldCenterX = baseCenterX + (partCenter.x - baseCenterX) * scaleX;
+      }
+
+      const distToBottom = partBounds.min.y - hostMinY;
+      const distToTop = hostMaxY - partBounds.max.y;
+      let targetWorldCenterY: number;
+      const curHostMinY = baseCenterY + (hostMinY - baseCenterY) * scaleY;
+      const curHostMaxY = baseCenterY + (hostMaxY - baseCenterY) * scaleY;
+
+      if (distToTop < 0.15 * hostHalfH && distToTop <= distToBottom) {
+        const worldMaxY = curHostMaxY - distToTop;
+        targetWorldCenterY = worldMaxY - (partSize.y / 2);
+      } else if (distToBottom < 0.15 * hostHalfH && distToBottom < distToTop) {
+        const worldMinY = curHostMinY + distToBottom;
+        targetWorldCenterY = worldMinY + (partSize.y / 2);
+      } else {
+        targetWorldCenterY = baseCenterY + (partCenter.y - baseCenterY) * scaleY;
+      }
+
+      const targetXInGroup = scaleX > 0 ? (targetWorldCenterX / scaleX) : partCenter.x;
+      const targetYInGroup = scaleY > 0 ? (targetWorldCenterY / scaleY) : partCenter.y;
 
       const fixedContainer = new THREE.Group();
       fixedContainer.name = `${component.componentName || "fixed_part"}_container`;
@@ -2538,7 +2725,7 @@ function buildAssembledProduct(
       };
       clone.position.sub(partCenter);
       fixedContainer.add(clone);
-      fixedContainer.position.set(partCenter.x, partCenter.y, partCenter.z);
+      fixedContainer.position.set(targetXInGroup, targetYInGroup, partCenter.z);
       fixedContainer.rotation.set(0, 0, 0);
       group.add(fixedContainer);
       continue;
@@ -3160,40 +3347,19 @@ function buildAddonAttachment(
             continue;
           }
 
-          let targetOperatorKeys = options.hatchTargetComponentKeys ?? matchingAddon.hatchTargetComponentKeys ?? [];
-          if (targetOperatorKeys.length === 0 && definition?.components) {
-            targetOperatorKeys = definition.components
-              .filter((c) => {
-                const key = (c.componentKey || "").toLowerCase();
-                const name = (c.componentName || "").toLowerCase();
-                const cat = (c.presentationCategory || c.componentType || "").toLowerCase();
-                const binding = (c.dimensionBinding || (c as Record<string, unknown>).dimension_binding || "").toString().toUpperCase();
-                return (
-                  binding === "LOUVER_OPERATOR" ||
-                  key.includes("operator") ||
-                  key.includes("crank") ||
-                  key.includes("cam") ||
-                  key.includes("latch") ||
-                  key.includes("handle") ||
-                  key.includes("rotator") ||
-                  key.includes("rotopers") ||
-                  name.includes("operator") ||
-                  name.includes("crank") ||
-                  name.includes("cam") ||
-                  name.includes("latch") ||
-                  name.includes("handle") ||
-                  name.includes("rotator") ||
-                  cat.includes("hardware")
-                );
-              })
-              .map((c) => c.componentKey);
-          }
+          if (isHatch) {
+            const targetOperatorKeys = options.hatchTargetComponentKeys ?? matchingAddon.hatchTargetComponentKeys ?? [];
+            if (targetOperatorKeys.length === 0) {
+              // No operator hatch alignment target selected: hatch is not available for this product and will not show
+              continue;
+            }
 
-          const resolvedTargets = (isHatch && (targetOperatorKeys.length > 0 || Boolean(hostGroup)))
-            ? resolveAllHostTargetCoordinates(targetOperatorKeys, hostGroup, definition, cache)
-            : [];
+            const resolvedTargets = resolveAllHostTargetCoordinates(targetOperatorKeys, hostGroup, definition, cache);
+            if (resolvedTargets.length === 0) {
+              // Targets could not be resolved in 3D scene: do not render hatch
+              continue;
+            }
 
-          if (isHatch && resolvedTargets.length > 0) {
             clone.updateMatrixWorld(true);
             const partBox = new THREE.Box3().setFromObject(clone);
             const partCenter = new THREE.Vector3();
@@ -3569,9 +3735,9 @@ function buildAddonAttachment(
     )
   );
   const targetOperatorKeys = options.hatchTargetComponentKeys ?? matchingAddon?.hatchTargetComponentKeys ?? [];
-  const proceduralHasHatch = options.addonConfig?.hasHatch !== undefined
-    ? options.addonConfig.hasHatch
-    : (!isHatchDisabled && targetOperatorKeys.length > 0);
+  const proceduralHasHatch = (targetOperatorKeys.length > 0 && !isHatchDisabled)
+    ? (options.addonConfig?.hasHatch !== undefined ? options.addonConfig.hasHatch : true)
+    : false;
 
   const proceduralHatchPositions: { x: number; y: number }[] = [];
   let isAnyTargetHorizontal = false;

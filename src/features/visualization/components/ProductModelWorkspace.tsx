@@ -1033,33 +1033,8 @@ export function ProductModelWorkspace({
     if (activeCompatibleAddon?.hatchTargetComponentKeys && activeCompatibleAddon.hatchTargetComponentKeys.length > 0) {
       return activeCompatibleAddon.hatchTargetComponentKeys;
     }
-    if (!structuralDefinition?.components) return [];
-    return structuralDefinition.components
-      .filter((comp) => {
-        const key = (comp.componentKey || "").toLowerCase();
-        const name = (comp.componentName || "").toLowerCase();
-        const cat = (comp.presentationCategory || comp.componentType || "").toLowerCase();
-        const binding = (comp.dimensionBinding || (comp as Record<string, unknown>).dimension_binding || "").toString().toUpperCase();
-        return (
-          binding === "LOUVER_OPERATOR" ||
-          key.includes("operator") ||
-          key.includes("crank") ||
-          key.includes("cam") ||
-          key.includes("latch") ||
-          key.includes("handle") ||
-          key.includes("rotator") ||
-          key.includes("rotopers") ||
-          name.includes("operator") ||
-          name.includes("crank") ||
-          name.includes("cam") ||
-          name.includes("latch") ||
-          name.includes("handle") ||
-          name.includes("rotator") ||
-          cat.includes("hardware")
-        );
-      })
-      .map((c) => c.componentKey);
-  }, [structuralDefinition, activeCompatibleAddon]);
+    return [];
+  }, [activeCompatibleAddon]);
 
   const dynamicOperatorCount = useMemo(() => {
     if (effectiveHatchTargetKeys.length === 0) return 0;
@@ -1078,22 +1053,11 @@ export function ProductModelWorkspace({
 
   // Evaluates dynamic operator-aligned hatch count for host products (IMP-MS80, IMP-MS81)
   const effectiveHatchCount = useMemo(() => {
-    if (effectiveSelectedAddon === "none" || !includeHatch) {
+    if (effectiveSelectedAddon === "none" || !includeHatch || effectiveHatchTargetKeys.length === 0) {
       return 0;
     }
     return dynamicOperatorCount;
-  }, [effectiveSelectedAddon, includeHatch, dynamicOperatorCount]);
-
-  const hasScreenHatchPart = useMemo(() => {
-    if (effectiveSelectedAddon !== "screen") return false;
-    return Boolean(
-      activeCompatibleAddon?.components?.some((c) => {
-        const key = (c.componentKey || "").toLowerCase();
-        const name = (c.componentName || "").toLowerCase();
-        return key.includes("hatch") || name.includes("hatch");
-      })
-    );
-  }, [effectiveSelectedAddon, activeCompatibleAddon]);
+  }, [effectiveSelectedAddon, includeHatch, effectiveHatchTargetKeys, dynamicOperatorCount]);
 
   const otherRemovableAddonParts = useMemo(() => {
     if (effectiveSelectedAddon === "none" || !activeCompatibleAddon?.components) return [];
@@ -1156,7 +1120,7 @@ export function ProductModelWorkspace({
           comp.componentKey.toLowerCase().includes("hatch") ||
           (comp.componentName || "").toLowerCase().includes("hatch") ||
           Boolean(comp.togglePropertyKey && comp.togglePropertyKey.toLowerCase().includes("hatch"));
-        if (isHatch && !includeHatch) continue;
+        if (isHatch && (!includeHatch || effectiveHatchTargetKeys.length === 0)) continue;
         const isExcluded =
           removableStates[comp.componentId] === false ||
           removableStates[comp.componentKey] === false ||
@@ -1166,7 +1130,7 @@ export function ProductModelWorkspace({
       }
     }
     return list;
-  }, [structuralDefinition, effectiveSelectedAddon, activeCompatibleAddon, includeHatch, removableStates]);
+  }, [structuralDefinition, effectiveSelectedAddon, activeCompatibleAddon, includeHatch, effectiveHatchTargetKeys, removableStates]);
 
   // Real-time Dedicated Add-on Parametric BOM Calculation (Sub-50ms sync)
   const addonBOM = useMemo<AddonBOMResult | null>(() => {
@@ -1255,7 +1219,7 @@ export function ProductModelWorkspace({
       addonAluminumFinish: overrides?.addonAluminumFinish ?? addonAlumFinish,
       addonMountingSide: overrides?.addonMountingSide ?? addonMountingSide,
       screenMeshDensity: overrides?.screenMeshDensity ?? screenMeshDensity,
-      hatchTargetComponentKeys: overrides?.hatchTargetComponentKeys ?? (includeHatch ? effectiveHatchTargetKeys : []),
+      hatchTargetComponentKeys: overrides?.hatchTargetComponentKeys ?? (includeHatch && effectiveHatchTargetKeys.length > 0 ? effectiveHatchTargetKeys : []),
       removableStates: overrides?.removableStates ?? removableStates,
       addonConfig: {
         finishColor: getFinishHexColor(overrides?.addonAluminumFinish ?? addonAlumFinish),
@@ -1975,7 +1939,7 @@ export function ProductModelWorkspace({
         addonProductId: selectedAddonProductId,
         addonMountingSide,
         screenMeshDensity,
-        hatchTargetComponentKeys: includeHatch ? effectiveHatchTargetKeys : [],
+        hatchTargetComponentKeys: includeHatch && effectiveHatchTargetKeys.length > 0 ? effectiveHatchTargetKeys : [],
         removableStates,
         swappedAccessories: selectedAccessories,
       },
@@ -2212,7 +2176,7 @@ export function ProductModelWorkspace({
       includeHatch,
       removableStates,
       hatchCount: effectiveSelectedAddon !== "none" ? effectiveHatchCount : 0,
-      hatchTargetKeys: (effectiveSelectedAddon !== "none" && includeHatch) ? effectiveHatchTargetKeys : [],
+      hatchTargetKeys: (effectiveSelectedAddon !== "none" && includeHatch && effectiveHatchTargetKeys.length > 0) ? effectiveHatchTargetKeys : [],
       grilleBOM: activeGrilleBOM ?? null,
       baseUnitPrice: realtimePricing.baseUnitPrice,
       swappedAccessories: selectedAccessories,
@@ -2233,10 +2197,10 @@ export function ProductModelWorkspace({
           mounting_side: addonMountingSide,
           allowed_sides: activeCompatibleAddon?.allowedSides ?? "both",
           screen_mesh_density: screenMeshDensity,
-          include_hatch: includeHatch,
+          include_hatch: effectiveHatchTargetKeys.length > 0 ? includeHatch : false,
           removable_states: removableStates,
           hatch_count: effectiveHatchCount,
-          hatch_target_keys: includeHatch ? effectiveHatchTargetKeys : [],
+          hatch_target_keys: (includeHatch && effectiveHatchTargetKeys.length > 0) ? effectiveHatchTargetKeys : [],
           price: addonPrice,
           grille_bom: activeGrilleBOM ?? null,
         } : null,
@@ -5591,38 +5555,25 @@ export function ProductModelWorkspace({
                             )}
 
                             {/* Operator Access Hatch Toggle Switch (IMP-MS80) */}
-                            {effectiveSelectedAddon === "screen" && (dynamicOperatorCount > 0 || hasScreenHatchPart) && (
+                            {effectiveSelectedAddon === "screen" && effectiveHatchTargetKeys.length > 0 && (
                               <div className="flex flex-col gap-2 pt-3 border-t border-neutral-200/60">
                                 <div className="flex items-center justify-between">
                                   <div className="flex items-center gap-1.5">
                                     <span className="text-xs font-semibold text-[#0f1422]">
                                       Operator Access Hatch
                                     </span>
-                                    {dynamicOperatorCount > 0 ? (
-                                      <span
-                                        className={cn(
-                                          "text-[10px] px-1.5 py-0.5 rounded-full font-semibold border",
-                                          includeHatch
-                                            ? "bg-cyan-100/70 text-[#088395] border-cyan-200/80"
-                                            : "bg-neutral-100 text-neutral-500 border-neutral-200"
-                                        )}
-                                      >
-                                        {includeHatch
-                                          ? `${dynamicOperatorCount}x Aligned ${dynamicOperatorCount === 1 ? "Hatch" : "Hatches"}`
-                                          : "Disabled"}
-                                      </span>
-                                    ) : (
-                                      <span
-                                        className={cn(
-                                          "text-[10px] px-1.5 py-0.5 rounded-full font-semibold border",
-                                          includeHatch
-                                            ? "bg-cyan-100/70 text-[#088395] border-cyan-200/80"
-                                            : "bg-neutral-100 text-neutral-500 border-neutral-200"
-                                        )}
-                                      >
-                                        {includeHatch ? "Standard Hatch" : "Disabled"}
-                                      </span>
-                                    )}
+                                    <span
+                                      className={cn(
+                                        "text-[10px] px-1.5 py-0.5 rounded-full font-semibold border",
+                                        includeHatch
+                                          ? "bg-cyan-100/70 text-[#088395] border-cyan-200/80"
+                                          : "bg-neutral-100 text-neutral-500 border-neutral-200"
+                                      )}
+                                    >
+                                      {includeHatch
+                                        ? `${dynamicOperatorCount}x Aligned ${dynamicOperatorCount === 1 ? "Hatch" : "Hatches"}`
+                                        : "Disabled"}
+                                    </span>
                                   </div>
                                   <label className="relative inline-flex items-center cursor-pointer shrink-0 ml-2">
                                     <input

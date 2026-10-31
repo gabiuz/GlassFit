@@ -47,13 +47,17 @@ export function autoDetectAccessorySlot(fileName: string): AutoDetectAccessorySl
   // Handles & Knobs
   if (/handle|doorknob|knob|lever|pull_bar|pullhandle/.test(lower)) {
     const isPluralHandles = lower.includes("handles");
+    if (isPluralHandles) {
+      // Plural handle sets (such as CW_Handles on double casement windows) are pre-modeled hardware assemblies, not single swappable accessory slots
+      return null;
+    }
     return {
       isAccessorySlot: true,
       accessoryCategory: "handle",
       presentationCategory: "Hardware",
       dimensionBinding: "FIXED",
       positionOptions: {
-        allowHorizontalToggle: !isPluralHandles,
+        allowHorizontalToggle: true,
         defaultHorizontal: "right",
         horizontalOffsetMm: 45,
         allowVerticalToggle: false,
@@ -492,7 +496,21 @@ function detectRawComponentSettings(fileName: string): AutoDetectionResult {
     };
   }
 
-  // 8. Mechanical hardware & wheels
+  // 8. Sash framing and perimeter leaves
+  if (name.includes("sash") && (name.includes("frame") || name.includes("leaf") || name.includes("profile"))) {
+    const isDouble = name.includes("left") || name.includes("right") || name.includes("2p") || name.includes("double");
+    return {
+      dimensionBinding: "AREA",
+      spanRatio: isDouble ? 0.5 : 1.0,
+      isRemovable: false,
+      togglePropertyKey: null,
+      presentationCategory: "Framing",
+      componentType: "Frame",
+      suggestedMaterialCategory: "Aluminum",
+    };
+  }
+
+  // 9. Mechanical hardware, friction stays & hinges
   if (
     name.includes("roller") ||
     name.includes("wheel") ||
@@ -502,7 +520,14 @@ function detectRawComponentSettings(fileName: string): AutoDetectionResult {
     name.includes("guide") ||
     name.includes("cap") ||
     name.includes("screw") ||
-    name.includes("fastener")
+    name.includes("fastener") ||
+    name.includes("stay") ||
+    name.includes("friction") ||
+    name.includes("hinge") ||
+    name.includes("pivot") ||
+    name.includes("handle") ||
+    name.includes("lever") ||
+    name.includes("knob")
   ) {
     return {
       dimensionBinding: "FIXED",
