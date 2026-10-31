@@ -416,7 +416,7 @@ export function ProductsContent({ initialProducts }: { initialProducts: AdminPro
         />
 
         {/* Scope Filter Tabs */}
-        <div className="flex max-w-full items-center gap-1.5 overflow-x-auto rounded-[25px] border border-neutral-200 bg-neutral-100 p-1">
+        <div className="flex max-w-full items-center gap-2 overflow-x-auto rounded-[25px] border border-neutral-200 bg-neutral-100 p-1 sm:ml-auto">
           <button
             type="button"
             onClick={() => setSelectedScope("all")}
