@@ -187,3 +187,5 @@ MS63 traceability: BRD-M1, BRD-M4, BRD-M6 -> PRD-F3, PRD-F4, PRD-F10 -> SDD-C2, 
 
 MS71 traceability: IMP-MS71 / BRD-M2, BRD-M3, BRD-M5 -> PRD-F2, PRD-F5, PRD-F6, PRD-F10, PRD-F11, PRD-F14 -> SDD-C4, SDD-C7, SDD-C9 -> DSD-UI4, DSD-UI7, DSD-UI10 -> ERD-E6, ERD-E13, ERD-E14, ERD-E17 -> QAD-TC86.1 through QAD-TC86.10. Implemented on October 26, 2026. Parametric linear-meter security grille pricing engine, automated 3D sub-bar geometry analyzer, and dynamic pattern repetition metric engine. See [MS71](implementation/ms71.md).
 
+
+fix-14 traceability: PRD-F3, PRD-F4, PRD-F6 -> SDD-C2, SDD-C3, SDD-C5 -> DSD-UI3, DSD-UI4 -> QAD-TC3, QAD-TC4, QAD-TC50, QAD-TC77, QAD-TC78. The service now gates visualization sessions on space-photo suitability and the upload screens show recoverable rejection or verification errors. The supplied portrait was validated locally in both modes and both upload routes. Broader consented-scene accuracy, format parity, and performance release evidence remains pending.

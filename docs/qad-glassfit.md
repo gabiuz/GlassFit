@@ -522,3 +522,11 @@ QAD-TC94.1 through QAD-TC94.18 are defined in [MS79](implementation/ms79.md). Co
 
 
 
+
+## fix-14: Space Photo Suitability Acceptance (QAD-TC3, QAD-TC4, QAD-TC50, QAD-TC77, QAD-TC78)
+
+The existing upload and CV cases also require a suitable installation space before a session is usable. For both upload routes and both calibration modes, reject clear portraits, selfies, ID photos, documents, catalog images, and unrelated screenshots with a specific Choose Another Photo path. If semantic evidence is missing or contradictory, show a separate retry path. Neither outcome may expose a workspace URL or retain generated workspace artifacts. Accept representative empty and occupied rooms, building facades, installation walls, and close opening views; a person, absent floor, or portrait orientation alone is not a rejection rule. Exercise supported JPG, PNG, WebP, HEIC, and HEIF samples, stale-request cancellation, keyboard focus, and direct API calls. Record false acceptance, false rejection, latency, and memory separately using consented images. The supplied portrait in fix-14 is local defect evidence and must not become a repository fixture.
+
+fix-14 local regression (October 31, 2026): A consented batch of 12 user-supplied images was uploaded to the local `/analyze-image` service in both `auto_detect` and `paper_fiducial` modes. Seven architectural photos, including two HEIC files and occupied/opening views, returned accepted sessions. Five graphics or artwork images returned `SPACE_PHOTO_UNVERIFIABLE` without a session URL. No source image was copied into repository fixtures. The batch exposed that wall and ceiling labels alone admitted two graphics; the suitability gate now requires an opening, wall with floor, or building with exterior context. This sample does not establish population-level false-acceptance or false-rejection rates.
+
+fix-14 follow-up acceptance: Repeat both calibration modes with real architectural photos, the supplied graphics, a dominant portrait, and a private close-surface crop. Expected results are accepted, non-space or unverifiable without a session, semantic rejection, and too-close guidance respectively. Record false acceptance and false rejection separately; keep all identifiable images out of repository fixtures.

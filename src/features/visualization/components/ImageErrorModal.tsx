@@ -8,6 +8,8 @@ interface ImageErrorModalProps {
   onCancel: () => void;
   onTryAgain: () => void;
   errorMessage?: string;
+  actionLabel?: string;
+  guidance?: string;
 }
 
 export function ImageErrorModal({
@@ -15,11 +17,13 @@ export function ImageErrorModal({
   onCancel,
   onTryAgain,
   errorMessage = "Unable to analyze the image.",
+  actionLabel = "Try Again",
+  guidance = "Please upload a clearer photo and try again.",
 }: ImageErrorModalProps) {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+    <div role="alertdialog" aria-modal="true" aria-labelledby="image-error-title" aria-describedby="image-error-guidance" className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
       <div className="bg-white border border-white rounded-[20px] shadow-[0px_0px_25px_0px_rgba(0,0,0,0.25)] flex flex-col items-center justify-center p-8 sm:p-12 gap-8 max-w-[520px] w-full text-center select-none">
         {/* Red Error Circle Exclamation Icon */}
         <div className="relative size-24 sm:size-28 flex items-center justify-center">
@@ -34,11 +38,11 @@ export function ImageErrorModal({
 
         {/* Text Labels */}
         <div className="flex flex-col gap-1.5 items-center justify-center">
-          <h2 className="text-[#0f1422] text-xl sm:text-2xl font-medium tracking-[-0.38px]">
+          <h2 id="image-error-title" className="text-[#0f1422] text-xl sm:text-2xl font-medium tracking-[-0.38px]">
             {errorMessage}
           </h2>
-          <p className="text-[#0f1422] text-base sm:text-xl font-normal tracking-[-0.38px]">
-            Please upload a clearer photo and try again.
+          <p id="image-error-guidance" className="text-[#0f1422] text-base sm:text-xl font-normal tracking-[-0.38px]">
+            {guidance}
           </p>
         </div>
 
@@ -59,7 +63,7 @@ export function ImageErrorModal({
             onClick={onTryAgain}
             className="bg-[#0f1422] hover:bg-black text-white font-normal text-base sm:text-xl px-6 py-3.5 rounded-[25px] transition-colors cursor-pointer shadow-sm"
           >
-            Try Again
+            {actionLabel}
           </button>
         </div>
       </div>
