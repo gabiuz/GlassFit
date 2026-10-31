@@ -18,6 +18,7 @@ from image_preparation import ImagePreparationError, prepare_workspace_image, sa
 from scale_estimation import estimate_scale_from_objects
 from scene_detection import detect_scene_regions, get_scene_model
 from segmentation import SegmentationError, analyze_objects
+from photo_suitability import assess_photo_suitability
 
 BASE_DIR = Path(__file__).resolve().parent
 GENERATED_DIR = (
@@ -141,6 +142,12 @@ async def warmup_models():
     because they will be freed after each request anyway.
     """
     cleanup_expired_sessions()
+    # FIX14: process replacement can interrupt a request before finally runs.
+    for marker in SESSION_DIR.glob("*/.incomplete"):
+        upload_prefix = marker.parent.name.replace("-", "")[:12]
+        for upload_file in UPLOAD_DIR.glob(f"{upload_prefix}*"):
+            upload_file.unlink(missing_ok=True)
+        shutil.rmtree(marker.parent, ignore_errors=True)
 
     try:
         from segmentation import _get_yolo_model
@@ -194,12 +201,14 @@ async def analyze_image(
     upload_id = session_id.replace("-", "")[:12]
     session_dir = SESSION_DIR / session_id
     session_mask_dir = session_dir / "masks"
+    incomplete_marker = session_dir / ".incomplete"
     session_mask_url_prefix = f"/generated/sessions/{session_id}/masks"
     raw_upload_path = UPLOAD_DIR / f"{upload_id}_raw{suffix}"
     intermediate_suffix = ".jpg" if is_heif else suffix
     upload_path = UPLOAD_DIR / f"{upload_id}{intermediate_suffix}"
     workspace_path = session_dir / "workspace.webp"
 
+    accepted_session = False
     try:
         contents = await image.read()
         if not contents:
@@ -209,6 +218,7 @@ async def analyze_image(
             raise HTTPException(status_code=400, detail="Upload an image smaller than 12 MB.")
 
         session_mask_dir.mkdir(parents=True, exist_ok=True)
+        incomplete_marker.touch()
         raw_upload_path.write_bytes(contents)
         exif_info = extract_exif_camera_info(raw_upload_path)
 
@@ -314,6 +324,33 @@ async def analyze_image(
             scene_module._scene_model = None
             gc.collect()
 
+        suitability = assess_photo_suitability(
+            objects, segmentation, scene_result,
+            original_metadata["width"], original_metadata["height"],
+            brightness.get("mean_pixel_intensity"),
+        )
+        if suitability["status"] != "accepted":
+            rejected = suitability["status"] == "rejected"
+            too_close = suitability["status"] == "too_close"
+            raise HTTPException(
+                status_code=422 if rejected or too_close else 503,
+                detail={
+                    "code": (
+                        "SPACE_PHOTO_REJECTED" if rejected else
+                        "SPACE_PHOTO_TOO_CLOSE" if too_close else
+                        "SPACE_PHOTO_UNVERIFIABLE"
+                    ),
+                    "message": (
+                        "This does not appear to be a space photo. Upload the room or opening where the product will be installed."
+                        if rejected else
+                        "Move farther back and include more of the room or opening where the product will be installed."
+                        if too_close else
+                        "We could not verify this space photo. Retake the photo or try again."
+                    ),
+                    "reason": suitability["reason"],
+                },
+            )
+
         _map_artifacts_to_workspace(
             session_mask_dir=session_mask_dir,
             objects=objects,
@@ -413,6 +450,8 @@ async def analyze_image(
             scene_result.get("error") if not scene_result.get("available") else None,
         )
 
+        incomplete_marker.unlink(missing_ok=True)
+        accepted_session = True
         return {
             "session_id": session_id,
             "workspace_image": {
@@ -433,6 +472,8 @@ async def analyze_image(
             "warnings": warnings,
         }
     finally:
+        if not accepted_session:
+            shutil.rmtree(session_dir, ignore_errors=True)
         if raw_upload_path.exists():
             raw_upload_path.unlink()
         if upload_path.exists():

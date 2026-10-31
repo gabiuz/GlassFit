@@ -88,6 +88,7 @@ GlassFit bridges this gap through an accessible, asynchronous **"Photo-Based Sim
 - Given the upload screen (`/visualize/[productId]/upload`) or direct visualization screen (`/visualization`), when a user selects or captures a static photo, then the client accepts JPG, JPEG, PNG, WebP, HEIC, and HEIF files up to 12 MB.
 - Given a valid JPG, PNG, or WebP file, when uploaded, then the client validates browser decode integrity, displays a local object URL preview, and transmits the payload asynchronously to the FastAPI backend service.
 - Given a valid HEIC or HEIF file that the browser cannot decode, when uploaded, then the client displays an accessible file preview card and delegates authoritative decode validation to the FastAPI backend service.
+- Given a decodable image with no verifiable room, building surface, or installation opening, when analysis finishes, then neither upload entry path creates a usable visualization session. A clear non-space subject receives specific space-photo guidance; unavailable or conflicting scene evidence receives a distinct retry message. An occupied room, close opening view, missing floor, or portrait orientation alone does not justify rejection. This semantic decision applies to Automatic Detection and Paper Reference Calibration.
 
 ### US-04: Automated Lighting & Scene Analysis (traces to PRD-F4)
 > As a customer configuring a fixture in my room photo, I want the system to automatically analyze the image lighting so that the 3D model looks naturally integrated rather than pasted on.
@@ -95,6 +96,7 @@ GlassFit bridges this gap through an accessible, asynchronous **"Photo-Based Sim
 **Acceptance Criteria:**
 - Given an uploaded space image received by the FastAPI backend, when analyzed by the CV engine, then the service computes mean luminance, ambient color tint, contrast, sharpness, and estimated primary light direction in under 1,800ms.
 - Given the analysis response, when the visualization workspace initializes, then Three.js directional and ambient lights are automatically calibrated to match the detected room luminance and color temperature.
+- Given a valid uploaded image, when scene analysis completes, then the service combines available foreground and architectural semantic evidence into an accepted, rejected, or unverifiable suitability decision. Only accepted scenes return a workspace URL. A model outage or depth-only fallback cannot establish acceptance.
 
 ### US-05: Parametric Product Assembly (traces to PRD-F5)
 > As a customer customizing a window, I want the window's physical structure (number of panes and vertical mullions) to automatically adjust as I widen it so that it reflects real-world fabrication rules.
@@ -576,3 +578,5 @@ PRD-F3, PRD-F4, PRD-F5, PRD-F6, PRD-F10 (IMP-MS57 / QAD-TC72): physical accuracy
 PRD-F3, PRD-F4, PRD-F5, PRD-F6, and PRD-F10 (IMP-MS62 / QAD-TC77): retain two visible modes, Automatic Detection and Paper Reference Calibration. Automatic Detection uploads and analyzes the image, opens the existing success modal, and enters the existing workspace with approximate sizing and no paper detection, review, pinning, or marker controls. Preserve non-paper analysis, manual tape measurements, and quotation confirmation. Paper Reference Calibration retains paper detection, review, correction, placement declarations, geometry eligibility, and skip recovery.
 
 This requirement supersedes earlier default paper-localization intake expectations in MS48/MS51/MS53. The request mode controls new sessions even when response metadata disagrees. Restore unreviewed automatic sessions without paper evidence; preserve explicitly reviewed legacy automatic sessions under paper mode, subject to existing eligibility checks. Saved historical quotations remain unchanged. The legacy API value `standard` remains paper-free and is not a third visible mode.
+
+PRD-F3 and PRD-F4 (fix-14 follow-up): A photo dominated by a known non-space subject receives explicit non-space guidance. A close view consisting almost entirely of a detected surface, without enough room or opening context for placement, receives separate move-back guidance. Ambiguous or unavailable evidence remains unverifiable. These outcomes do not create a workspace session; accepted architectural photos continue normally.

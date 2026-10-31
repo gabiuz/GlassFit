@@ -140,6 +140,20 @@ def detect_scene_segformer(
 
         floor_coverage = float((seg_map == ADE20K_FLOOR).mean())
         wall_coverage  = float((seg_map == ADE20K_WALL).mean())
+        # FIX14: Keep independent structural classes for upload suitability.
+        # A plain portrait backdrop can look like a wall to SegFormer.
+        structural_ids = {ADE20K_FLOOR, ADE20K_CEILING, ADE20K_DOOR, ADE20K_WINDOW, 1, 6, 10, 11, 25}
+        structural_coverage = float(np.isin(seg_map, list(structural_ids)).mean())
+        opening_coverage = float(np.isin(seg_map, [ADE20K_DOOR, ADE20K_WINDOW]).mean())
+        opening_mask = np.isin(seg_map, [ADE20K_DOOR, ADE20K_WINDOW])
+        opening_rows = np.where(opening_mask.mean(axis=1) >= 0.03)[0]
+        opening_vertical_span = (
+            float((opening_rows.max() - opening_rows.min() + 1) / h)
+            if opening_rows.size else 0.0
+        )
+        ceiling_coverage = float((seg_map == ADE20K_CEILING).mean())
+        building_coverage = float((seg_map == 1).mean())
+        context_coverage = float(np.isin(seg_map, [2, 6, 11]).mean())
 
         floor_top_y = _floor_boundary_from_mask(floor_mask)
         wall_bounds = _wall_bounds_from_mask(wall_mask)
@@ -148,6 +162,12 @@ def detect_scene_segformer(
             "floor_top_y_normalized":  floor_top_y,
             "floor_coverage":          round(floor_coverage, 3),
             "wall_coverage":           round(wall_coverage,  3),
+            "structural_coverage":     round(structural_coverage, 3),
+            "opening_coverage":        round(opening_coverage, 3),
+            "opening_vertical_span":   round(opening_vertical_span, 3),
+            "ceiling_coverage":        round(ceiling_coverage, 3),
+            "building_coverage":       round(building_coverage, 3),
+            "exterior_context_coverage": round(context_coverage, 3),
             "wall_left_x_normalized":  wall_bounds["left_x"],
             "wall_right_x_normalized": wall_bounds["right_x"],
             "wall_top_y_normalized":   wall_bounds["top_y"],
