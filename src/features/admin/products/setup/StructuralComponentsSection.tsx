@@ -7,7 +7,7 @@ import type { ComponentType, AccessoryCategory, AccessoryPositionOptions } from 
 import { generatePresignedUrl, confirmAssetUpload, hasQualifyingProductModelAsset, deleteProductAssets } from "@/lib/admin/products/assetUpload";
 import { getComponentIssues, getProductComponentIssue } from "@/lib/admin/products/componentEligibility";
 import type { UpsertComponentInput } from "@/lib/admin/products/types";
-import { autoDetectComponentSettings, suggestCandidateMaterials } from "@/lib/admin/products/autoDetection";
+import { autoDetectComponentSettings, suggestCandidateMaterials, isContinuousPerimeterRole } from "@/lib/admin/products/autoDetection";
 import { decomposeWholeModel, type ExtractedComponentPart } from "@/lib/admin/products/modelDecomposer";
 import { DecompositionPreviewModal } from "./DecompositionPreviewModal";
 import { PartInspectorDrawer, type PartInspectorConfig } from "./PartInspectorDrawer";
@@ -34,6 +34,7 @@ export type StructuralComponentsSectionProps = {
     templateId: string;
     modelStrategy: string | null;
     productType?: string;
+    productName?: string;
     initialData?: unknown;
     wholeModelAsset?: {
         asset_id?: string;
@@ -543,6 +544,7 @@ export function StructuralComponentsSection({
     templateId,
     modelStrategy,
     productType = "Window",
+    productName,
     initialData,
     wholeModelAsset,
     isAccessory = false,
@@ -822,7 +824,7 @@ export function StructuralComponentsSection({
                         : autoDetected.dimensionBinding))) as DimensionBinding;
             const resolvedBaseQty = isJalousie ? jalousieAnalysis!.suggestedBaseQuantity : 1;
             const resolvedPresentation = isJalousie ? jalousieAnalysis!.suggestedPresentationCategory : autoDetected.presentationCategory;
-            const suggested = suggestCandidateMaterials(resolvedPresentation, rawMaterials, undefined, resolvedBinding);
+            const suggested = suggestCandidateMaterials(resolvedPresentation, rawMaterials, undefined, resolvedBinding, { productType, productName, modelStrategy });
             const jalousieConfig = isJalousie ? {
                 pitch_mm: jalousieAnalysis!.pitchMm,
                 blade_height_mm: jalousieAnalysis!.bladeHeightMm,
@@ -835,7 +837,7 @@ export function StructuralComponentsSection({
                 id: crypto.randomUUID(),
                 file: f,
                 componentKey: formatKeyFromName(f.name),
-                componentName: formatLabelFromName(f.name),
+                componentName: autoDetected.componentLabel || formatLabelFromName(f.name),
                 componentType: isJalousie ? (jalousieAnalysis!.isLouverBlade ? "Glass" : "Hardware") : autoDetected.componentType,
                 assemblyGroup: resolvedPresentation.toLowerCase(),
                 baseQuantity: resolvedBaseQty,
@@ -939,12 +941,12 @@ export function StructuralComponentsSection({
 
     const handleApplyExtractedParts = (selectedParts: ExtractedComponentPart[]) => {
         const newMapped: MappedFile[] = selectedParts.map((part) => {
-            const suggested = suggestCandidateMaterials(part.presentationCategory, rawMaterials);
+            const suggested = suggestCandidateMaterials(part.presentationCategory, rawMaterials, undefined, part.dimensionBinding, { productType, productName, modelStrategy });
             return {
                 id: part.id || crypto.randomUUID(),
                 file: part.file,
                 componentKey: part.componentKey,
-                componentName: part.componentName,
+                componentName: autoDetectComponentSettings(part.componentKey).componentLabel || part.componentName,
                 componentType: part.componentType,
                 assemblyGroup: part.presentationCategory.toLowerCase(),
                 baseQuantity: part.baseQuantity || 1,
@@ -1026,7 +1028,7 @@ export function StructuralComponentsSection({
                         ...(updates.isRemovable !== undefined && { isRemovable: updates.isRemovable }),
                         ...(updates.togglePropertyKey !== undefined && { togglePropertyKey: updates.togglePropertyKey }),
                         ...(updates.presentationCategory !== undefined && { presentationCategory: updates.presentationCategory }),
-                        ...(updates.baseQuantity !== undefined && { baseQuantity: updates.baseQuantity }),
+                        ...(updates.baseQuantity !== undefined && { baseQuantity: isContinuousPerimeterRole(updates.bayRole ?? item.bayRole) ? Math.min(2, Math.max(1, updates.baseQuantity)) : updates.baseQuantity }),
                         ...(updates.assemblyGroup !== undefined && { assemblyGroup: updates.assemblyGroup }),
                         ...(updates.isAccessorySlot !== undefined && { isAccessorySlot: updates.isAccessorySlot }),
                         ...("accessoryCategory" in updates ? { accessoryCategory: updates.accessoryCategory } : {}),
@@ -1818,6 +1820,7 @@ export function StructuralComponentsSection({
                             rawMaterials={rawMaterials}
                             analyzedGrilleData={analyzedGrilleData}
                             modelStrategy={modelStrategy}
+                            productType={`${productType} ${productName || ""}`}
                             isAccessory={isAccessory}
                             productBasePrice={productBasePrice}
                             onUpdateParts={handleBatchUpdateSelected}

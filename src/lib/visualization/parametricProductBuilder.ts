@@ -3230,6 +3230,13 @@ function buildAddonAttachment(
           clone = cache.getClone(comp.componentKey);
         }
         if (clone) {
+          clone.traverse((meshChild) => {
+            meshChild.userData.isAddon = true;
+            meshChild.userData.addonType = addonType;
+            if (comp.presentationCategory) {
+              meshChild.userData.presentationCategory = comp.presentationCategory;
+            }
+          });
           clone.name = comp.componentKey || comp.componentName;
           clone.userData.componentKey = comp.componentKey;
           clone.userData.componentName = comp.componentName;
@@ -3418,6 +3425,8 @@ function buildAddonAttachment(
                     child.userData.isScreenMesh = true;
                     child.userData.preserveMaterial = true;
                     child.userData.presentationCategory = "Mesh";
+                    child.userData.isAddon = true;
+                    child.userData.addonType = "screen";
                     child.material = createInsectScreenMaterial(origSize.x * 1000, origSize.y * 1000, {
                       wirePitchMm: hatchPitchMm,
                       wireThicknessRatio: 0.25,
@@ -3429,6 +3438,8 @@ function buildAddonAttachment(
                     child.userData.isScreenMesh = false;
                     child.userData.preserveMaterial = true;
                     child.userData.presentationCategory = "Framing";
+                    child.userData.isAddon = true;
+                    child.userData.addonType = "screen";
                     child.material = frameMat.clone();
                     child.renderOrder = 0;
                     child.castShadow = true;
@@ -3437,6 +3448,8 @@ function buildAddonAttachment(
                     child.userData.isScreenMesh = false;
                     child.userData.preserveMaterial = true;
                     child.userData.presentationCategory = "Hardware";
+                    child.userData.isAddon = true;
+                    child.userData.addonType = "screen";
                     child.material = createHardwareFinishMaterial("black");
                     child.renderOrder = 0;
                     child.castShadow = true;
@@ -3668,6 +3681,8 @@ function buildAddonAttachment(
             child.material = frameMat.clone();
             child.userData.preserveMaterial = true;
             child.userData.presentationCategory = "Framing";
+            child.userData.isAddon = true;
+            child.userData.addonType = addonType;
             child.renderOrder = 0;
             child.castShadow = true;
             child.receiveShadow = true;
@@ -4070,6 +4085,8 @@ export function buildGrillAssembly(
                 }
                 child.userData.preserveMaterial = true;
                 child.userData.presentationCategory = "Framing";
+                child.userData.isAddon = true;
+                child.userData.addonType = "grill";
                 child.renderOrder = 0;
                 child.castShadow = true;
                 child.receiveShadow = true;

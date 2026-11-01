@@ -220,6 +220,7 @@ export function ProductSetupWizard({ productId, initialData, initialStep }: Prod
                         templateId={(Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.template_id : productData?.product_templates?.template_id) || ""}
                         modelStrategy={isAccessory ? "Fixed" : ((Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.model_strategy : productData?.product_templates?.model_strategy) || (isAddon ? "Parametric" : null))}
                         productType={productData?.product_type || "Window"}
+                        productName={productData?.product_name}
                         initialData={Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.product_components : productData?.product_templates?.product_components}
                         wholeModelAsset={productData?.product_assets?.find?.((a: ProductAssetSummary) => (a.asset_type === "Whole Model" || a.asset_type === "Catalog 3D Preview") && a.status === "Active" && Boolean(a.file_url)) || null}
                         isAccessory={isAccessory}

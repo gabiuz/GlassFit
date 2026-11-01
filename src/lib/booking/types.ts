@@ -194,6 +194,8 @@ export const PublicQuotationSummarySchema = z.object({
   groups: z.array(
     z.object({
       item_group_name: z.string(),
+      component_summary: z.string().optional(),
+      finish_type: z.string().optional(),
       quantity: z.number(),
       unit_label: z.string(),
       unit_price: z.number(),

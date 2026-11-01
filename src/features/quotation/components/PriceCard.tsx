@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
+import { SILL_OMISSION_NOTICE, type QuotationDocumentDraftV1 } from "@/lib/pricing/quotationDocument";
 import type { SelectedAccessoryState } from "@/lib/visualization/types";
 
 export type ProductDetailsData = {
@@ -28,6 +29,7 @@ export type ProductDetailsData = {
   baseUnitPrice?: number | null;
   swappedAccessories?: SelectedAccessoryState[];
   accessoryPriceDelta?: number;
+  materialItems?: QuotationDocumentDraftV1["items"][number]["groups"];
   bomGroups?: {
     framingAmount: number;
     glazingAmount: number;
@@ -82,7 +84,8 @@ export function PriceCard({
   const formattedUnitPrice = new Intl.NumberFormat("en-PH", {
     style: "currency",
     currency: "PHP",
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   })
     .format(unitPrice)
     .replace("PHP", "Php");
@@ -91,7 +94,8 @@ export function PriceCard({
   const formattedSubtotal = new Intl.NumberFormat("en-PH", {
     style: "currency",
     currency: "PHP",
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   })
     .format(subtotal)
     .replace("PHP", "Php");
@@ -244,6 +248,22 @@ export function PriceCard({
                   ))}
                 </div>
 
+                {details.hasSill === false && <p className="mt-4 text-sm text-green">✓ {SILL_OMISSION_NOTICE}</p>}
+                {details.materialItems && details.materialItems.length > 0 && (
+                  <div className="mt-4 overflow-x-auto" role="region" aria-label="Itemized cost breakdown" tabIndex={0}>
+                    <table className="w-full min-w-[640px] table-fixed text-left text-sm">
+                      <caption className="text-left text-xs uppercase font-semibold text-neutral-500 mb-3">Itemized Cost Breakdown (per unit)</caption>
+                      <colgroup><col className="w-1/2" /><col className="w-1/6" /><col className="w-1/6" /><col className="w-1/6" /></colgroup>
+                      <thead><tr><th className="py-2 pr-3">Material</th><th className="px-2 py-2 text-right">Quantity</th><th className="px-2 py-2 text-right">Unit Price</th><th className="px-2 py-2 text-right">Subtotal</th></tr></thead>
+                      <tbody>{details.materialItems.map((row, index) => <tr key={index} className="border-t border-neutral-100">
+                        <td className="py-3 pr-3 [overflow-wrap:anywhere]">{row.description}{row.finishType && <span className="block text-xs text-neutral-500">{row.finishType}</span>}{row.componentSummary && <span className="block text-xs text-neutral-500">Contributing Parts: {row.componentSummary}</span>}</td>
+                        <td className="px-2 py-3 text-right whitespace-nowrap">{row.quantity} {row.unit}</td>
+                        <td className="px-2 py-3 text-right whitespace-nowrap">₱{row.unitPrice.toFixed(2)}</td>
+                        <td className="px-2 py-3 text-right whitespace-nowrap">₱{row.subtotal.toFixed(2)}</td>
+                      </tr>)}</tbody>
+                    </table>
+                  </div>
+                )}
                 {/* Grouped 4-Item BOM Breakdown */}
                 {details.bomGroups && (
                   <div className="mt-4 pt-4 border-t border-dashed border-neutral-200">

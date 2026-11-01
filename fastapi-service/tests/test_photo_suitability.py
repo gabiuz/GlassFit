@@ -101,3 +101,54 @@ def test_graphics_with_wall_and_ceiling_labels_are_not_accepted():
                                           scene(wall_coverage=wall, ceiling_coverage=ceiling),
                                           640, 640, mean_pixel_intensity=45)
         assert result["status"] == "unverifiable"
+
+
+def test_cluttered_room_with_partial_wall_and_floor_is_accepted():
+    # FIX14-V3 / QAD-TC4: derived features from the consented upload regression.
+    # Clothing occludes the opening; the small laptop is foreground context.
+    evidence = scene(wall_coverage=0.119, floor_coverage=0.097)
+    laptop = {"label": "laptop", "confidence": 0.938,
+              "bbox": [1169, 1497, 1534, 2047]}
+    assert assess_photo_suitability([laptop], {"mode": "yolo"}, evidence,
+                                    1536, 2048, 67.02) == {
+        "status": "accepted", "reason": "partial_room_context"}
+
+
+def test_partial_room_evidence_does_not_admit_dominant_portraits_or_screens():
+    evidence = scene(wall_coverage=0.119, floor_coverage=0.097)
+    for label, reason in (("person", "dominant_person_no_space"),
+                          ("laptop", "dominant_non_space_object"),
+                          ("book", "dominant_non_space_object")):
+        subject = {"label": label, "confidence": 0.95,
+                   "bbox": [0, 0, 900, 900]}
+        assert assess_photo_suitability([subject], {"mode": "yolo"}, evidence,
+                                        1000, 1000, 67.02) == {
+            "status": "rejected", "reason": reason}
+
+
+def test_partial_room_requires_both_surfaces_and_minimum_combined_coverage():
+    for wall, floor in ((0.099, 0.2), (0.119, 0.079), (0.11, 0.08), (0, 0.9)):
+        assert assess_photo_suitability([], {"mode": "yolo"},
+                                        scene(wall_coverage=wall, floor_coverage=floor),
+                                        1000, 1000, 67.02)["status"] == "unverifiable"
+    for wall, floor in ((0.10, 0.10), (0.12, 0.08)):
+        assert assess_photo_suitability([], {"mode": "yolo"},
+                                        scene(wall_coverage=wall, floor_coverage=floor),
+                                        1000, 1000, 67.02)["status"] == "accepted"
+
+
+def test_partial_room_evidence_cannot_replace_unavailable_models():
+    evidence = scene(wall_coverage=0.119, floor_coverage=0.097)
+    assert assess_photo_suitability([], {"mode": "mock"}, evidence,
+                                    1000, 1000, 67.02) == {
+        "status": "unverifiable", "reason": "classifier_unavailable"}
+
+
+def test_partial_room_rejects_subjects_at_exact_dominance_limits():
+    evidence = scene(wall_coverage=0.119, floor_coverage=0.097)
+    for label, box in (("person", [0, 0, 400, 700]),
+                       ("laptop", [0, 0, 500, 700]),
+                       ("book", [0, 0, 500, 700])):
+        subject = {"label": label, "confidence": 0.95, "bbox": box}
+        assert assess_photo_suitability([subject], {"mode": "yolo"}, evidence,
+                                        1000, 1000, 67.02)["status"] == "rejected"

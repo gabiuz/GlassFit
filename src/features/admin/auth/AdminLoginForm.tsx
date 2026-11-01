@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -8,7 +8,7 @@ import { Eye, EyeOff } from "lucide-react";
 import { validateEmail } from "@/features/auth/utils/auth-utils";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
-/** Safe error messages — do not expose database details. */
+/** PRD-F14 / SDD-C9 / QAD-TC14: safe errors without database details. */
 const ADMIN_ERRORS: Record<string, string> = {
     unauthorized: "This account does not have access to the Admin portal.",
     suspended: "Your Admin account is currently unavailable. Contact the system Owner.",
@@ -25,15 +25,14 @@ export function AdminLoginForm() {
     const [showPassword, setShowPassword] = useState(false);
 
     const [emailError, setEmailError] = useState("");
-    const [generalError, setGeneralError] = useState("");
+    // URL authorization errors are derived; form interactions dismiss them for this URL.
+    const errorQuery = searchParams.toString();
+    const [errorState, setErrorState] = useState<{ query: string; message: string } | null>(null);
+    const generalError = errorState?.query === errorQuery
+        ? errorState.message
+        : ADMIN_ERRORS[searchParams.get("error") || ""] || "";
+    const setGeneralError = (message: string) => setErrorState({ query: errorQuery, message });
     const [isSubmitting, setIsSubmitting] = useState(false);
-
-    useEffect(() => {
-        const errorCode = searchParams.get("error");
-        if (errorCode && ADMIN_ERRORS[errorCode]) {
-            setGeneralError(ADMIN_ERRORS[errorCode]);
-        }
-    }, [searchParams]);
 
     const isEmailValid = email !== "" && validateEmail(email);
     const isFormValid = isEmailValid && password !== "";

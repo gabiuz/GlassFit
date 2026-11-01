@@ -20,6 +20,7 @@ export interface AutoDetectionResult {
   accessoryCategory?: AccessoryCategory | null;
   positionOptions?: AccessoryPositionOptions;
   bayRole?: DynamicBayRole;
+  componentLabel?: string;
 }
 
 export interface AutoDetectAccessorySlotResult {
@@ -562,6 +563,13 @@ export function autoDetectComponentSettings(fileName: string): AutoDetectionResu
   const bayRole = autoDetectBayRole(fileName);
   if (bayRole) {
     result.bayRole = bayRole;
+    if (bayRole === "OUTER_SILL") {
+      result.componentLabel = "Bottom Frame Rail";
+      result.isRemovable = false;
+      result.togglePropertyKey = null;
+    } else if (bayRole === "REMOVABLE_SILL") {
+      result.componentLabel = "Projecting Exterior Sill";
+    }
   }
   return result;
 }
@@ -577,6 +585,36 @@ export interface SuggestedMaterialConfig {
   defaultRawMaterialId: string | null;
 }
 
+/** IMP-MS85 / PRD-F14 / QAD-TC100.6-7: descriptive taxonomy, never price-only classification. */
+export function isHeavyCommercialProfile(material: RawMaterial): boolean {
+  return material.category === "Aluminum" && material.billing_unit === "m" &&
+    /storefront|curtain.?wall|commercial|1[ -]?3\/4["”]?\s*[x×]\s*[34]/i.test(`${material.material_code} ${material.description}`);
+}
+
+export function isContinuousPerimeterRole(role?: DynamicBayRole | null): boolean {
+  return role === "OUTER_HEAD" || role === "OUTER_SILL" || role === "OUTER_JAMB_LEFT" || role === "OUTER_JAMB_RIGHT" || role === "REMOVABLE_SILL";
+}
+
+export interface MaterialSuggestionContext {
+  productName?: string | null;
+  productType?: string | null;
+  modelStrategy?: string | null;
+}
+
+function suitableProfiles(materials: RawMaterial[], context?: MaterialSuggestionContext): RawMaterial[] {
+  const family = `${context?.productType || ""} ${context?.productName || ""} ${context?.modelStrategy || ""}`;
+  let pattern: RegExp | null = null;
+  if (/storefront|curtain.?wall|transom|commercial/i.test(family)) {
+    return materials.filter(isHeavyCommercialProfile);
+  }
+  if (/jalousie|louver|screen/i.test(family)) pattern = /jalousie|louver|screen|1["”]?\s*[x×]\s*[12]["”]?/i;
+  else if (/sliding|798/i.test(family)) pattern = /798/;
+  else if (/casement|awning/i.test(family)) pattern = /(?:series[ -]?)?38\b|casement|awning/i;
+  else if (/cabinet|showcase|grille/i.test(family)) pattern = /cabinet|plinth|shelf|1["”]?\s*[x×]\s*[12]["”]?/i;
+  if (!pattern) return materials;
+  return materials.filter(material => !isHeavyCommercialProfile(material) && pattern.test(`${material.material_code} ${material.description}`));
+}
+
 /**
  * Suggest standard multi-material candidate sets based on component classification
  * and presentation category per IMP-MS64.
@@ -586,6 +624,7 @@ export function suggestCandidateMaterials(
   rawMaterials: RawMaterial[],
   preferredFinish?: string,
   dimensionBinding?: DimensionBinding,
+  context?: MaterialSuggestionContext,
 ): SuggestedMaterialConfig {
   if (!rawMaterials || rawMaterials.length === 0) {
     return { materialBindings: [], defaultRawMaterialId: null };
@@ -615,6 +654,11 @@ export function suggestCandidateMaterials(
 
   if (matches.length === 0) {
     return { materialBindings: [], defaultRawMaterialId: null };
+  }
+
+  if (presentationCategory === "Framing") {
+    matches = suitableProfiles(matches, context);
+    if (matches.length === 0) return { materialBindings: [], defaultRawMaterialId: null };
   }
 
   // Filter or prioritize per-piece ('pc') billing for louver blades and operators (IMP-MS81 Section 5.1)

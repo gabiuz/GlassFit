@@ -135,3 +135,11 @@ Implementation is ready to begin after the acceptance corpus and API decision co
 - [x] Traces planned work to PRD, SDD, DSD, and QAD identifiers.
 - [x] Names implementation agents and file ownership before any source change.
 - [x] Adds no application implementation, dependency, migration, or identifiable fixture.
+
+## Occupied Room Upload Regression (November 2, 2026)
+
+FIX14-V3 / PRD-F3, PRD-F4 / SDD-C2, SDD-C3 / QAD-TC3, QAD-TC4: preserve upload acceptance for a real room whose window is occluded by hanging clothes. The user-authorized local JPEG reproduced HTTP 503 with `insufficient_architectural_evidence`. Installed models were available and reported wall coverage 0.119, floor coverage 0.097, no opening label, and a small laptop occupying approximately 6.4% of the photo. This is a false rejection of a visible room, not a transport failure or an MS85 pricing change.
+
+The focused correction adds a partial-room evidence branch: at least 10% wall, at least 8% floor and at least 20% combined wall/floor coverage. This branch runs after existing dominant-person, dominant-screen/book and too-close checks, with a separate `partial_room_context` acceptance reason. Existing stronger architectural evidence, underexposure checks and mandatory real-model readiness remain in effect. Do not accept a photo based on clothing, a laptop, brightness or filename alone. Tests store derived numbers only; the original photo remains outside the repository. This local calibration does not establish population classification accuracy.
+
+Verification: the same JPEG returned HTTP 200 with a valid session in both calibration modes after the correction. The direct browser upload displayed analysis success and entered the workspace. All 17 pure decision tests passed via a standard-library runner (`runpy`, calling every `test_` function) because pytest is not installed in the existing CV virtual environment. The 24 upload-client regression tests, `npx tsc --noEmit`, `npm run lint` (zero errors, 19 existing warnings), and `npm run build` passed.

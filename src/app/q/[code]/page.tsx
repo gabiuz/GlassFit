@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { BackgroundNavbar } from "@/components/shared/BackgroundNavbar";
 import { getPublicBookingReference } from "@/lib/booking/bookingActions";
+import { SILL_OMISSION_NOTICE } from "@/lib/pricing/quotationDocument";
 import type { SwappedAccessoryDocument } from "@/lib/pricing/quotationDocument";
 import { SnapshotViewer } from "./SnapshotViewer";
 import { CheckCircle2, ShieldAlert, ArrowLeft, AlertTriangle } from "lucide-react";
@@ -216,7 +217,7 @@ export default async function PublicQuotationPage({ params }: PublicQuotationPag
 
                       <span className="text-neutral-500">Sill:</span>
                       <span className="text-[#0f1422] font-medium text-right">
-                        {item.hasSill ? "Standard" : "Flush (No Sill)"}
+                        {item.hasSill ? "Standard" : `✓ ${SILL_OMISSION_NOTICE}`}
                       </span>
 
                       <span className="text-neutral-500">Add-on:</span>
@@ -329,7 +330,7 @@ export default async function PublicQuotationPage({ params }: PublicQuotationPag
 
                   <span className="text-neutral-500">Bottom Sill:</span>
                   <span className="text-[#0f1422] font-medium text-right">
-                    {data.hasSill ? "Standard Sill Track" : "Flush Base (No Sill)"}
+                    {data.hasSill ? "Standard Sill Track" : `✓ ${SILL_OMISSION_NOTICE}`}
                   </span>
 
                   <span className="text-neutral-500">Add-on Attachment:</span>
@@ -416,6 +417,8 @@ export default async function PublicQuotationPage({ params }: PublicQuotationPag
                   <tr key={idx} className="hover:bg-neutral-50/50">
                     <td className="max-w-[240px] py-3.5 px-4 font-medium text-[#0f1422] [overflow-wrap:anywhere]">
                       {group.item_group_name}
+                      {group.finish_type && <span className="block text-xs font-normal text-neutral-500">{group.finish_type}</span>}
+                      {group.component_summary && <span className="block text-xs font-normal text-neutral-500">Contributing Parts: {group.component_summary}</span>}
                     </td>
                     <td className="py-3.5 px-4 text-neutral-600 text-right whitespace-nowrap">
                       {group.quantity} {group.unit_label}

@@ -16,6 +16,7 @@ import {
 import { computeLouverBladeCount, computeLouverOperatorCount } from "@/lib/visualization/jalousieGeometryAnalyzer";
 import { computeDynamicBayCount, computeMullionCount } from "@/lib/visualization/bayReplicationEngine";
 import type { ItemizedProductQuotation, DynamicBayConfig } from "@/lib/pricing/types";
+import { groupsFromBom } from "@/lib/pricing/quotationDocument";
 import { PriceCard, ProductDetailsData } from "./PriceCard";
 
 interface ProductItem {
@@ -297,6 +298,7 @@ function createProductSummaryItemFromOverlay(
       baseUnitPrice,
       swappedAccessories,
       accessoryPriceDelta,
+      materialItems: groupsFromBom(bomCalc),
       bomGroups: {
         framingAmount: bomCalc.effectiveFramingCost,
         glazingAmount: bomCalc.effectiveGlazingCost,
@@ -491,6 +493,7 @@ function createProductSummaryItem(
       baseUnitPrice,
       swappedAccessories,
       accessoryPriceDelta,
+      materialItems: groupsFromBom(bomCalc),
       bomGroups: {
         framingAmount: bomCalc.effectiveFramingCost,
         glazingAmount: bomCalc.effectiveGlazingCost,

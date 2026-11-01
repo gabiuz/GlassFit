@@ -8,6 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "test:window-validation": "npx tsx --test tests/unit/windowComponentValidation.test.ts",
+    "test:ms85": "npx tsx --test tests/unit/universalBOMConsolidation.test.ts tests/unit/profileSuitability.test.ts tests/unit/universalBOMPresentation.test.ts",
+    "test:ms84": "npx tsx --test tests/unit/colorSelectionReliability.test.ts",
     "test:ms82": "npx tsx --test tests/unit/bayReplication.test.ts",
     "test:ms81": "npx tsx --test tests/unit/jalousiePricing.test.ts",
     "test:ms80": "npx tsx --test tests/unit/addonHatchAlignment.test.ts",

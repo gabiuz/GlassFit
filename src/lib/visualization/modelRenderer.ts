@@ -15,10 +15,13 @@ import {
   applyPBRToMesh,
   applyPresentationMaterials,
   detectProductMaterialCapabilities,
+  isAddonObject,
+  isAddonFrameMesh,
   type ProductMaterialCapabilities,
 } from "@/lib/visualization/materialClassifier";
+import { findFinishOption } from "@/lib/products/materialMapping";
 import type { RawMaterial } from "@/lib/pricing/types";
-import type { RrdAluminumFinishKey } from "@/lib/visualization/colorVariations";
+import { normalizeAluminumFinish, type RrdAluminumFinishKey } from "@/lib/visualization/colorVariations";
 import type { AddonGeometryConfig } from "@/lib/visualization/addonGeometryBuilder";
 
 export type ModelPresentationOptions = {
@@ -324,25 +327,56 @@ export class ProductModelRenderer {
     });
 
     if (presentation.addonConfig?.finishColor || presentation.addonAluminumFinish) {
+      const finishKey = presentation.addonAluminumFinish ? normalizeAluminumFinish(presentation.addonAluminumFinish) : null;
+      const finishOpt = finishKey ? findFinishOption(finishKey) : null;
+
       const finishColor = presentation.addonConfig?.finishColor ?? (
-        presentation.addonAluminumFinish === "white"
-          ? "#f5f6f8"
-          : presentation.addonAluminumFinish === "black"
-            ? "#1a1a1a"
-            : presentation.addonAluminumFinish === "mill" || presentation.addonAluminumFinish === "al_1001"
-              ? "#d4d8dc"
-              : "#221d1a"
+        finishOpt ? finishOpt.previewHex : (
+          presentation.addonAluminumFinish === "white"
+            ? "#f5f6f8"
+            : presentation.addonAluminumFinish === "black"
+              ? "#1a1a1a"
+              : presentation.addonAluminumFinish === "mill" || presentation.addonAluminumFinish === "al_1001"
+                ? "#d4d8dc"
+                : "#221d1a"
+        )
       );
+
       this.modelGroup.traverse((child) => {
         if (child instanceof THREE.Mesh) {
-          const isAddonFrame =
-            child.name.startsWith("Screen_Frame_") ||
-            child.name.startsWith("Grill_Frame_") ||
-            child.name.startsWith("Grill_Bar_") ||
-            (child.userData.isAddon && child.userData.presentationCategory === "Framing");
-          if (isAddonFrame && child.material instanceof THREE.MeshStandardMaterial) {
-            child.material.color.set(finishColor);
-            child.material.needsUpdate = true;
+          if (isAddonFrameMesh(child)) {
+            if (child.material instanceof THREE.MeshPhysicalMaterial) {
+              child.material.color.set(finishColor);
+              if (finishOpt) {
+                child.material.metalness = finishOpt.metalness;
+                child.material.roughness = finishOpt.roughness;
+                child.material.clearcoat = finishOpt.clearcoat;
+                child.material.clearcoatRoughness = finishOpt.clearcoatRoughness;
+              }
+              child.material.needsUpdate = true;
+            } else if (child.material instanceof THREE.MeshStandardMaterial) {
+              if (finishOpt && finishOpt.clearcoat !== undefined) {
+                const oldMat = child.material;
+                child.material = new THREE.MeshPhysicalMaterial({
+                  color: finishColor,
+                  metalness: finishOpt.metalness,
+                  roughness: finishOpt.roughness,
+                  clearcoat: finishOpt.clearcoat,
+                  clearcoatRoughness: finishOpt.clearcoatRoughness,
+                  side: oldMat.side,
+                  depthWrite: oldMat.depthWrite,
+                  depthTest: oldMat.depthTest,
+                });
+                oldMat.dispose();
+              } else {
+                child.material.color.set(finishColor);
+                if (finishOpt) {
+                  child.material.metalness = finishOpt.metalness;
+                  child.material.roughness = finishOpt.roughness;
+                }
+                child.material.needsUpdate = true;
+              }
+            }
           }
         }
       });
@@ -720,31 +754,13 @@ function releaseModelGroup(root: THREE.Object3D, sharedGeometry: boolean) {
 function disposeOwnedModelMaterials(root: THREE.Object3D) {
   root.traverse((object) => {
     if (!(object instanceof THREE.Mesh)) return;
-    if (object.userData?.preserveMaterial || object.userData?.isScreenMesh) return;
+    if (object.userData?.preserveMaterial || object.userData?.isScreenMesh || isAddonObject(object)) return;
     const materials = Array.isArray(object.material) ? object.material : [object.material];
     for (const material of materials) material.dispose();
   });
 }
 
-export function isAddonObject(object: THREE.Object3D): boolean {
-  let curr: THREE.Object3D | null = object;
-  while (curr) {
-    if (
-      curr.userData?.isAddon === true ||
-      curr.userData?.isUploadedAddon === true ||
-      curr.userData?.addonType !== undefined ||
-      (typeof curr.name === "string" && (
-        curr.name.startsWith("Addon_") ||
-        curr.name.startsWith("Screen_") ||
-        curr.name.startsWith("Grill_")
-      ))
-    ) {
-      return true;
-    }
-    curr = curr.parent;
-  }
-  return false;
-}
+export { isAddonObject, isAddonFrameMesh };
 
 export function computeHostProductBounds(modelGroup: THREE.Group): THREE.Box3 {
   const hostBounds = new THREE.Box3();

@@ -49,6 +49,12 @@ import {
   ProductModelRenderer,
   type ModelPresentationOptions,
 } from "@/lib/visualization/modelRenderer";
+import {
+  computeWorkspaceBuildKey,
+  type WorkspaceBuildKeyParams,
+} from "@/lib/visualization/workspaceBuildKey";
+
+export { computeWorkspaceBuildKey, type WorkspaceBuildKeyParams };
 import { getWorkspaceDefinition } from "@/lib/visualization/workspaceDefinitionCache";
 import {
   GlassAppearanceMode,
@@ -1335,9 +1341,26 @@ export function ProductModelWorkspace({
     }
 
     // 3. Mark skipPreparedBuildRef to prevent redundant debounced loadModel() rebuilds
-    const nextRemovableKey = JSON.stringify(currentOptions.removableStates ?? {});
-    const nextBuildKey = `${structuralDefinition?.product.productId}:${widthCm}:${heightCm}:${panelCount}:${currentOptions.includeSill}:${currentOptions.activeAddon}:${addonMountingSide}:${currentOptions.addonAluminumFinish}:${currentOptions.aluminumFinish}:${currentOptions.glassAppearance}:${currentOptions.glassColor}:${currentOptions.glassThicknessMm}:${includeHatch}:${screenMeshDensity}:${nextRemovableKey}`;
-    skipPreparedBuildRef.current = nextBuildKey;
+    const canonicalKey = computeWorkspaceBuildKey({
+      productId: structuralDefinition?.product.productId ?? "",
+      widthCm,
+      heightCm,
+      panelCount,
+      includeSill: currentOptions.includeSill ?? includeSill,
+      selectedAddon: currentOptions.activeAddon ?? selectedAddon,
+      selectedAddonProductId: currentOptions.addonProductId ?? selectedAddonProductId,
+      addonMountingSide: (currentOptions.addonMountingSide as "front" | "back") ?? addonMountingSide,
+      addonAlumFinish: currentOptions.addonAluminumFinish ?? addonAlumFinish,
+      alumFinish: currentOptions.aluminumFinish ?? alumFinish,
+      glassAppearance: currentOptions.glassAppearance ?? glassAppearance,
+      glassColor: currentOptions.glassColor ?? glassColor,
+      glassThicknessMm: currentOptions.glassThicknessMm ?? glassThicknessMm,
+      includeHatch,
+      screenMeshDensity: currentOptions.screenMeshDensity ?? screenMeshDensity,
+      accessoriesKey: JSON.stringify(selectedAccessories),
+      removableStatesKey: JSON.stringify(currentOptions.removableStates ?? removableStates),
+    });
+    skipPreparedBuildRef.current = canonicalKey;
 
     // 4. Invalidate model revision for outline measurement and UI updates
     setModelRevision((prev) => prev + 1);
@@ -1355,6 +1378,7 @@ export function ProductModelWorkspace({
     screenMeshDensity,
     effectiveHatchTargetKeys,
     removableStates,
+    selectedAccessories,
     getFinishHexColor,
     perspectiveCorners,
     yaw,
@@ -1695,6 +1719,7 @@ export function ProductModelWorkspace({
         }
       }
     }
+    setHasExplicitOverrides(false);
   }, [applyWorkspacePresentation, structuralDefinition, materialCustomizationGroups, selectedMaterials]);
 
   const handleAdvancedGlassAppearanceChange = useCallback(
@@ -1702,6 +1727,7 @@ export function ProductModelWorkspace({
       setGlassType(undefined);
       setGlassAppearance(appearance);
       applyWorkspacePresentation({ glassAppearance: appearance });
+      setHasExplicitOverrides(false);
     },
     [applyWorkspacePresentation],
   );
@@ -1711,6 +1737,7 @@ export function ProductModelWorkspace({
       setGlassAppearance(mode);
       setGlassType(deriveGlassTypeFromAppearance(mode));
       applyWorkspacePresentation({ glassAppearance: mode });
+      setHasExplicitOverrides(false);
     },
     [applyWorkspacePresentation],
   );
@@ -1719,8 +1746,36 @@ export function ProductModelWorkspace({
     (colorKey: GlassColorKey) => {
       setGlassColor(colorKey);
       applyWorkspacePresentation({ glassColor: colorKey });
+
+      let nextSelections = { ...selectedMaterials };
+      if (structuralDefinition && materialCustomizationGroups.length > 0) {
+        const glassGroup = materialCustomizationGroups.find((g) => g.presentationCategory === "Glazing");
+        if (glassGroup) {
+          const targetColor = colorKey.toLowerCase();
+          const matchedOption = glassGroup.options.find((opt) => {
+            const optColor = (opt.finishType || opt.description || "").toLowerCase();
+            return optColor.includes(targetColor);
+          });
+          if (matchedOption) {
+            nextSelections = applyGroupSelection(
+              glassGroup,
+              matchedOption,
+              selectedMaterials,
+              structuralDefinition,
+            );
+          } else {
+            for (const comp of structuralDefinition.components) {
+              if (comp.presentationCategory === "Glazing") {
+                delete nextSelections[comp.componentKey];
+              }
+            }
+          }
+        }
+      }
+      setSelectedMaterials(nextSelections);
+      setHasExplicitOverrides(false);
     },
-    [applyWorkspacePresentation],
+    [applyWorkspacePresentation, structuralDefinition, materialCustomizationGroups, selectedMaterials],
   );
 
   const handleGlassThicknessChange = useCallback(
@@ -2006,9 +2061,25 @@ export function ProductModelWorkspace({
 
   useEffect(() => {
     if (!mvpRendererRef.current || !structuralDefinition) return;
-    const accessoriesKey = JSON.stringify(selectedAccessories);
-    const removableStatesKey = JSON.stringify(removableStates);
-    const buildKey = `${structuralDefinition.product.productId}:${widthCm}:${heightCm}:${panelCount}:${includeSill}:${selectedAddon}:${addonMountingSide}:${selectedAddonProductId}:${addonAlumFinish}:${alumFinish}:${glassAppearance}:${glassColor}:${glassThicknessMm}:${includeHatch}:${accessoriesKey}:${removableStatesKey}`;
+    const buildKey = computeWorkspaceBuildKey({
+      productId: structuralDefinition.product.productId,
+      widthCm,
+      heightCm,
+      panelCount,
+      includeSill,
+      selectedAddon,
+      selectedAddonProductId,
+      addonMountingSide,
+      addonAlumFinish,
+      alumFinish,
+      glassAppearance,
+      glassColor,
+      glassThicknessMm,
+      includeHatch,
+      screenMeshDensity,
+      accessoriesKey: JSON.stringify(selectedAccessories),
+      removableStatesKey: JSON.stringify(removableStates),
+    });
     if (skipPreparedBuildRef.current === buildKey) {
       skipPreparedBuildRef.current = null;
       return;
@@ -2043,6 +2114,10 @@ export function ProductModelWorkspace({
         hatchTargetComponentKeys: includeHatch && effectiveHatchTargetKeys.length > 0 ? effectiveHatchTargetKeys : [],
         removableStates,
         swappedAccessories: selectedAccessories,
+        addonConfig: {
+          finishColor: getFinishHexColor(addonAlumFinish),
+          zOffsetMm: 18,
+        },
       },
       {
         selectedMaterials,
@@ -2080,7 +2155,7 @@ export function ProductModelWorkspace({
       }
     });
     return () => { cancelled = true; };
-  }, [structuralDefinition, widthCm, heightCm, panelCount, includeSill, selectedAddon, selectedAddonProductId, addonAlumFinish, addonMountingSide, activeCompatibleAddon, includeHatch, screenMeshDensity, effectiveHatchTargetKeys, removableStates, glassAppearance, glassColor, glassThicknessMm, alumFinish, hasExplicitOverrides, selectedMaterials, candidateMaterialsMap, selectedAccessories]);
+  }, [structuralDefinition, widthCm, heightCm, panelCount, includeSill, selectedAddon, selectedAddonProductId, addonAlumFinish, addonMountingSide, activeCompatibleAddon, includeHatch, screenMeshDensity, effectiveHatchTargetKeys, removableStates, glassAppearance, glassColor, glassThicknessMm, alumFinish, hasExplicitOverrides, selectedMaterials, candidateMaterialsMap, selectedAccessories, getFinishHexColor]);
 
   useEffect(() => {
     if (!mvpRendererRef.current) return;
@@ -3575,6 +3650,7 @@ export function ProductModelWorkspace({
     applyWorkspacePresentation({ aluminumFinish: normalizedFinish });
 
     // Synchronize framing in selectedMaterials if alternate raw materials exist
+    let nextSelections = { ...selectedMaterials };
     if (structuralDefinition && materialCustomizationGroups.length > 0) {
       const framingGroup = materialCustomizationGroups.find((g) => g.presentationCategory === "Framing");
       if (framingGroup) {
@@ -3586,16 +3662,25 @@ export function ProductModelWorkspace({
             (normalizedTarget === "analok" && optFinish.includes("analok"));
         });
         if (matchedOption) {
-          const nextSelections = applyGroupSelection(
+          nextSelections = applyGroupSelection(
             framingGroup,
             matchedOption,
             selectedMaterials,
             structuralDefinition,
           );
-          setSelectedMaterials(nextSelections);
+        } else {
+          // If no matching raw material exists in the catalog (e.g. specialized R.R.D. color finishes):
+          // purge framing component keys from selectedMaterials so they fall back to the global presentation finish
+          for (const comp of structuralDefinition.components) {
+            if (comp.presentationCategory === "Framing") {
+              delete nextSelections[comp.componentKey];
+            }
+          }
         }
       }
     }
+    setSelectedMaterials(nextSelections);
+    setHasExplicitOverrides(false);
   }, [applyWorkspacePresentation, structuralDefinition, materialCustomizationGroups, selectedMaterials]);
 
   const handleAddonFinishSelect = useCallback((finishId: string) => {

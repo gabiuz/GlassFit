@@ -15,13 +15,15 @@ describe("IMP-MS16 canonical quotation document", () => {
     assert.equal(deriveQuotationPricing(100.1, 100.1).negotiatedFinalPrice, null);
   });
 
-  it("renders simplified final item prices without internal cost disclosure", () => {
+  it("renders MS85 material details while keeping negotiation metadata private", () => {
     const view = createQuotationDocumentViewModel(snapshot, { brandLogoUrl: "https://glassfit.test/Logo.svg", shareableUrl: "https://glassfit.test/q/CF-2026-1000", snapshotImageUrl: null, allowedImageOrigins: ["https://glassfit.test"], negotiatedAmount: snapshot.pricing.calculatedFinalPrice - 100 });
     const html = generateQuotationPdfHtml(view);
     assert.match(html, /Final item price/);
     assert.match(html, /Grand total/);
     assert.doesNotMatch(html, /Original system-calculated estimate|Final price adjusted|Component group|Unit rate/);
-    assert.ok(!html.includes(bom.framingItems[0].description));
+    assert.ok(html.includes(bom.framingItems[0].description));
+    assert.match(html, /Itemized Cost Breakdown/);
+    assert.match(html, /Aluminum offcut allowance/);
   });
 
   it("renders canonical multi-fixture specifications only inside each compact fixture card", () => {

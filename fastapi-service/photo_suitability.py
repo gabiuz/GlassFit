@@ -74,6 +74,12 @@ def assess_photo_suitability(
         return {"status": "too_close", "reason": "surface_too_close"}
     if architectural_evidence:
         return {"status": "accepted", "reason": "architectural_evidence"}
+    # FIX14-V3 / QAD-TC4: foreground clutter can hide most of a room and
+    # prevent the opening label. Both visible surfaces still provide context.
+    # Keep this weaker evidence AFTER subject rejection and too-close checks;
+    # it must not exempt portraits or screen/catalog photos from those guards.
+    if wall >= 0.10 and floor >= 0.08 and wall + floor >= 0.20:
+        return {"status": "accepted", "reason": "partial_room_context"}
     # A wall filling almost the entire frame can be a real installation
     # surface, but it lacks the surrounding room/opening needed for placement.
     # Require a successful semantic scene model and exclude known foreground

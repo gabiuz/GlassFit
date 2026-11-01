@@ -793,10 +793,12 @@ export async function getPublicBookingReference(
       ? docSnapshot.items.flatMap((it) =>
           it.groups.map((g) => ({
             item_group_name: g.description || g.groupName,
-            quantity: g.quantity,
+            component_summary: g.componentSummary,
+            finish_type: g.finishType,
+            quantity: g.quantity * it.quantity,
             unit_label: g.unit,
             unit_price: g.unitPrice,
-            estimated_subtotal: g.subtotal,
+            estimated_subtotal: g.subtotal * it.quantity,
             product_name: it.productName,
           }))
         )
@@ -812,6 +814,8 @@ export async function getPublicBookingReference(
             const det = item.pricing_details as Record<string, unknown> | undefined;
             return {
               item_group_name: item.item_name,
+              component_summary: undefined as string | undefined,
+              finish_type: undefined as string | undefined,
               quantity: Number(item.quantity),
               unit_label: item.unit,
               unit_price: Number(item.unit_price),
