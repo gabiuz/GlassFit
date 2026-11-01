@@ -105,6 +105,9 @@ export class ProductModelRenderer {
   private orthoCamera: THREE.OrthographicCamera;
   private canvas: HTMLCanvasElement;
   private fittedCanvas: HTMLCanvasElement;
+  private baseWidth: number;
+  private baseHeight: number;
+  private planarFitRect: { x: number; y: number; width: number; height: number } | null = null;
   private modelGroup: THREE.Group;
   private modelLoadVersion = 0;
   private materialCapabilities: ProductMaterialCapabilities = {
@@ -119,6 +122,8 @@ export class ProductModelRenderer {
   private bevelLight: THREE.DirectionalLight;
 
   constructor(width: number, height: number) {
+    this.baseWidth = width;
+    this.baseHeight = height;
     this.canvas = document.createElement("canvas");
     this.canvas.width = width;
     this.canvas.height = height;
@@ -190,6 +195,9 @@ export class ProductModelRenderer {
   }
 
   setSize(width: number, height: number) {
+    this.baseWidth = width;
+    this.baseHeight = height;
+    this.planarFitRect = null;
     this.canvas.width = width;
     this.canvas.height = height;
     this.fittedCanvas.width = width;
@@ -210,6 +218,10 @@ export class ProductModelRenderer {
       aspect,
     );
     this.camera.updateProjectionMatrix();
+  }
+
+  getPlanarFitRect() {
+    return this.planarFitRect;
   }
 
   getCameraFraming() {
@@ -546,8 +558,14 @@ export class ProductModelRenderer {
       this.modelGroup.rotation.set(0, 0, 0);
       this.modelGroup.updateMatrixWorld(true);
 
-      const baseBounds = computeHostProductBounds(this.modelGroup);
-      const fitBounds = computeFitFrameBounds(this.modelGroup) ?? baseBounds;
+      const fitBounds = computeFitFrameBounds(this.modelGroup) ?? computeInstallationProductBounds(this.modelGroup);
+      if (!fitBounds) {
+        console.error("[MS83] Cannot fit product: no structural installation perimeter is available. Check component roles and frame metadata.");
+        return null;
+      }
+      const verticalBounds = computeLegacyFitFrameBounds(this.modelGroup) ?? computeHostProductBounds(this.modelGroup);
+      fitBounds.min.y = verticalBounds.min.y;
+      fitBounds.max.y = verticalBounds.max.y;
       const baseSize = new THREE.Vector3();
       const baseCenter = new THREE.Vector3();
       fitBounds.getSize(baseSize);
@@ -561,8 +579,8 @@ export class ProductModelRenderer {
         const distance = (baseSize.y / 2) / Math.tan(fovRad / 2);
 
         this.camera.fov = fovDegrees;
-        this.camera.aspect = this.canvas.width / this.canvas.height;
-        const cameraZ = baseBounds.max.z + distance;
+        this.camera.aspect = this.baseWidth / this.baseHeight;
+        const cameraZ = fitBounds.max.z + distance;
         this.camera.position.set(baseCenter.x, baseCenter.y, cameraZ);
         this.camera.lookAt(baseCenter.x, baseCenter.y, fitBounds.max.z);
 
@@ -574,11 +592,32 @@ export class ProductModelRenderer {
         const halfWidth = (baseSize.x / 2) * scale;
         const halfHeight = (baseSize.y / 2) * scale;
 
+        // Keep the installation perimeter fixed while giving projecting parts
+        // room to render outside it. The workspace maps planarFitRect to the
+        // selected opening, so an optional sill never changes host scale.
+        const visible = new THREE.Box3().setFromObject(this.modelGroup);
+        const padding = 0.04;
+        const left = Math.max(padding, (fitBounds.min.x - visible.min.x) / baseSize.x + padding);
+        const right = Math.max(padding, (visible.max.x - fitBounds.max.x) / baseSize.x + padding);
+        const top = Math.max(padding, (visible.max.y - fitBounds.max.y) / baseSize.y + padding);
+        const bottom = Math.max(padding, (fitBounds.min.y - visible.min.y) / baseSize.y + padding);
+        const spanX = 1 + left + right;
+        const spanY = 1 + top + bottom;
+        const renderWidth = Math.max(1, Math.ceil(this.baseWidth * spanX));
+        const renderHeight = Math.max(1, Math.ceil(this.baseHeight * spanY));
+        this.renderer.setSize(renderWidth, renderHeight, false);
+        this.planarFitRect = {
+          x: left / spanX,
+          y: top / spanY,
+          width: 1 / spanX,
+          height: 1 / spanY,
+        };
+
         this.camera.projectionMatrix.makePerspective(
-          -halfWidth,
-          halfWidth,
-          halfHeight,
-          -halfHeight,
+          -halfWidth * (1 + 2 * left),
+          halfWidth * (1 + 2 * right),
+          halfHeight * (1 + 2 * top),
+          -halfHeight * (1 + 2 * bottom),
           near,
           far,
         );
@@ -594,22 +633,24 @@ export class ProductModelRenderer {
         this.modelGroup.updateMatrixWorld(true);
 
         this.renderer.render(this.scene, this.camera);
-        // PRD-F6: the chosen quadrilateral must map to visible product pixels,
-        // not transparent space left around the WebGL render.
+        // Retain the pre-MS83 vertical visible-alpha normalization. Only the
+        // horizontal installation reference is exempt from the alpha crop.
         if (yaw === 0 && pitch === 0) {
-          const fittedContext = this.fittedCanvas.getContext("2d", { willReadFrequently: true });
-          if (fittedContext) {
+          const context = this.fittedCanvas.getContext("2d", { willReadFrequently: true });
+          if (context) {
             const { width, height } = this.canvas;
-            fittedContext.clearRect(0, 0, width, height);
-            fittedContext.drawImage(this.canvas, 0, 0);
-            const bounds = getVisibleAlphaBounds(fittedContext.getImageData(0, 0, width, height));
-            if (bounds && bounds.width > 0 && bounds.height > 0) {
-              fittedContext.clearRect(0, 0, width, height);
-              fittedContext.drawImage(
-                this.canvas,
-                bounds.x, bounds.y, bounds.width, bounds.height,
-                0, 0, width, height,
-              );
+            this.fittedCanvas.width = width;
+            this.fittedCanvas.height = height;
+            context.drawImage(this.canvas, 0, 0);
+            const bounds = getVisibleAlphaBounds(context.getImageData(0, 0, width, height));
+            if (bounds && bounds.height > 0) {
+              context.clearRect(0, 0, width, height);
+              context.drawImage(this.canvas, 0, bounds.y, width, bounds.height, 0, 0, width, height);
+              this.planarFitRect = {
+                ...this.planarFitRect!,
+                y: (this.planarFitRect!.y * height - bounds.y) / bounds.height,
+                height: this.planarFitRect!.height * height / bounds.height,
+              };
               return this.fittedCanvas;
             }
           }
@@ -619,6 +660,10 @@ export class ProductModelRenderer {
     }
 
     // Default free-placement rendering
+    this.planarFitRect = null;
+    if (this.canvas.width !== this.baseWidth || this.canvas.height !== this.baseHeight) {
+      this.renderer.setSize(this.baseWidth, this.baseHeight, false);
+    }
     this.camera.fov = CAMERA_BASE_VERTICAL_FOV_DEGREES;
     this.camera.aspect = this.canvas.width / this.canvas.height;
     this.camera.updateProjectionMatrix();
@@ -726,11 +771,20 @@ export function computeHostProductBounds(modelGroup: THREE.Group): THREE.Box3 {
 }
 
 export function computeFitFrameBounds(modelGroup: THREE.Group): THREE.Box3 | null {
+  return computeFrameBounds(modelGroup, true);
+}
+
+function computeLegacyFitFrameBounds(modelGroup: THREE.Group): THREE.Box3 | null {
+  return computeFrameBounds(modelGroup, false);
+}
+
+function computeFrameBounds(modelGroup: THREE.Group, horizontalReference: boolean): THREE.Box3 | null {
   const frameBounds = new THREE.Box3();
   let hasFrameMesh = false;
 
   modelGroup.traverse((child) => {
-    if (!(child instanceof THREE.Mesh) || isAddonObject(child)) return;
+    if (!(child instanceof THREE.Mesh) || isAddonObject(child) ||
+      (horizontalReference && (isOptionalProjection(child) || isHardware(child)))) return;
     let ancestor: THREE.Object3D | null = child;
     let isFrame = false;
     while (ancestor && ancestor !== modelGroup) {
@@ -750,6 +804,46 @@ export function computeFitFrameBounds(modelGroup: THREE.Group): THREE.Box3 | nul
   });
 
   return hasFrameMesh && !frameBounds.isEmpty() ? frameBounds : null;
+}
+
+function isOptionalProjection(object: THREE.Object3D): boolean {
+  let ancestor: THREE.Object3D | null = object;
+  while (ancestor) {
+    const role = String(ancestor.userData.bayRole ?? "").toUpperCase();
+    const key = String(ancestor.userData.componentKey ?? "").toLowerCase().replaceAll("_", "-");
+    const toggle = String(ancestor.userData.togglePropertyKey ?? "").toLowerCase();
+    if (role === "OUTER_SILL") return false;
+    const isStructuralRail = key.includes("bottom") || key.includes("rail") || key.includes("outer-sill");
+    if (role === "REMOVABLE_SILL" ||
+        (key.includes("sill") && !isStructuralRail) ||
+        toggle.includes("sill") || ancestor.name === "Window_Sill") return true;
+    ancestor = ancestor.parent;
+  }
+  return false;
+}
+
+function isHardware(object: THREE.Object3D): boolean {
+  let ancestor: THREE.Object3D | null = object;
+  while (ancestor) {
+    const type = String(ancestor.userData.componentType ?? "").toLowerCase();
+    const category = String(ancestor.userData.presentationCategory ?? "").toLowerCase();
+    if (type === "hardware" || category === "hardware" || category === "accessories") return true;
+    ancestor = ancestor.parent;
+  }
+  return false;
+}
+
+function computeInstallationProductBounds(modelGroup: THREE.Group): THREE.Box3 | null {
+  const bounds = new THREE.Box3();
+  modelGroup.traverse((child) => {
+    if (!(child instanceof THREE.Mesh) || isAddonObject(child) || isOptionalProjection(child) || isHardware(child)) return;
+    child.updateMatrixWorld(true);
+    bounds.expandByObject(child);
+  });
+  if (bounds.isEmpty()) {
+    return null;
+  }
+  return bounds;
 }
 
 function normalizeModelForViewer(container: THREE.Group, source: THREE.Object3D) {

@@ -82,7 +82,11 @@ export class VariationLayerRenderer {
         sourceContext.scale(-1, 1);
       }
       sourceContext.drawImage(rendered, 0, 0);
-      drawPerspectiveWarpedImage(context, source, corners);
+      const fitRect = this.renderer.getPlanarFitRect();
+      drawPerspectiveWarpedImage(
+        context, source, corners, 16,
+        fitRect ? { left: fitRect.x, top: fitRect.y, width: fitRect.width, height: fitRect.height } : null,
+      );
     } else {
       const centerX = this.recipe.sourceCanvasWidth / 2 + (configuration.positionX ?? 0);
       const centerY = this.recipe.sourceCanvasHeight / 2 + (configuration.positionY ?? 0);

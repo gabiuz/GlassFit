@@ -356,6 +356,7 @@ function drawPerspectiveWarpedImage2D(
   srcTop: number,
   srcWidth: number,
   srcHeight: number,
+  includeOverflow = false,
 ): void {
   const srcCorners: QuadrilateralCorners = [
     { x: srcLeft, y: srcTop },
@@ -374,10 +375,10 @@ function drawPerspectiveWarpedImage2D(
 
   for (let row = 0; row <= steps; row++) {
     const rowVertices: GridVertex[] = [];
-    const v = srcTop + (row / steps) * srcHeight;
+    const v = includeOverflow ? (row / steps) * (source instanceof HTMLCanvasElement ? source.height : source instanceof HTMLImageElement ? source.naturalHeight : srcHeight) : srcTop + (row / steps) * srcHeight;
 
     for (let col = 0; col <= steps; col++) {
-      const u = srcLeft + (col / steps) * srcWidth;
+      const u = includeOverflow ? (col / steps) * (source instanceof HTMLCanvasElement ? source.width : source instanceof HTMLImageElement ? source.naturalWidth : srcWidth) : srcLeft + (col / steps) * srcWidth;
 
       const w = H[6] * u + H[7] * v + H[8];
       const x = (H[0] * u + H[1] * v + H[2]) / w;
@@ -409,7 +410,6 @@ type CachedWebGLWarpState = {
   uInvH: WebGLUniformLocation;
   uResolution: WebGLUniformLocation;
   uTexSize: WebGLUniformLocation;
-  uSrcRect: WebGLUniformLocation;
   uTexture: WebGLUniformLocation;
   texture: WebGLTexture;
   isWebGL2: boolean;
@@ -466,7 +466,6 @@ function getOrCreateWebGLWarpState(): CachedWebGLWarpState | null {
     uniform mat3 u_invH;
     uniform vec2 u_resolution;
     uniform vec2 u_texSize;
-    uniform vec4 u_srcRect;
 
     vec4 samplePoint(vec2 fragCoord) {
       vec3 srcPt = u_invH * vec3(fragCoord, 1.0);
@@ -476,10 +475,10 @@ function getOrCreateWebGLWarpState(): CachedWebGLWarpState | null {
 
       vec2 srcPx = srcPt.xy / srcPt.z;
 
-      float left = u_srcRect.x;
-      float top = u_srcRect.y;
-      float right = left + u_srcRect.z;
-      float bottom = top + u_srcRect.w;
+      float left = 0.0;
+      float top = 0.0;
+      float right = u_texSize.x;
+      float bottom = u_texSize.y;
 
       float edgeDistX = min(srcPx.x - left, right - srcPx.x);
       float edgeDistY = min(srcPx.y - top, bottom - srcPx.y);
@@ -548,10 +547,9 @@ function getOrCreateWebGLWarpState(): CachedWebGLWarpState | null {
   const uInvH = gl.getUniformLocation(program, "u_invH");
   const uResolution = gl.getUniformLocation(program, "u_resolution");
   const uTexSize = gl.getUniformLocation(program, "u_texSize");
-  const uSrcRect = gl.getUniformLocation(program, "u_srcRect");
   const uTexture = gl.getUniformLocation(program, "u_image");
 
-  if (!uInvH || !uResolution || !uTexSize || !uSrcRect || !uTexture) {
+  if (!uInvH || !uResolution || !uTexSize || !uTexture) {
     gl.deleteProgram(program);
     return null;
   }
@@ -594,7 +592,6 @@ function getOrCreateWebGLWarpState(): CachedWebGLWarpState | null {
     uInvH,
     uResolution,
     uTexSize,
-    uSrcRect,
     uTexture,
     texture,
     isWebGL2,
@@ -646,10 +643,26 @@ export function drawPerspectiveWarpedImage(
   // Try WebGL per-pixel projective mapping first
   const webglState = getOrCreateWebGLWarpState();
   if (webglState) {
-    const { gl, canvas: glCanvas, program, texture, uInvH, uResolution, uTexSize, uSrcRect, uTexture } = webglState;
+    const { gl, canvas: glCanvas, program, texture, uInvH, uResolution, uTexSize, uTexture } = webglState;
 
-    const xs = targetCorners.map((p) => p.x);
-    const ys = targetCorners.map((p) => p.y);
+    const srcFrame: QuadrilateralCorners = [
+      { x: left, y: top },
+      { x: left + width, y: top },
+      { x: left + width, y: top + height },
+      { x: left, y: top + height },
+    ];
+    const forwardH = computeHomographyMatrix(srcFrame, targetCorners);
+    const sourceExtent: QuadrilateralCorners = [
+      { x: 0, y: 0 }, { x: sourceWidth, y: 0 },
+      { x: sourceWidth, y: sourceHeight }, { x: 0, y: sourceHeight },
+    ];
+    const projectedExtent = forwardH ? sourceExtent.map(({ x, y }) => {
+      const w = forwardH[6] * x + forwardH[7] * y + forwardH[8];
+      return { x: (forwardH[0] * x + forwardH[1] * y + forwardH[2]) / w,
+        y: (forwardH[3] * x + forwardH[4] * y + forwardH[5]) / w };
+    }) : targetCorners;
+    const xs = projectedExtent.map((p) => p.x);
+    const ys = projectedExtent.map((p) => p.y);
     const minX = Math.floor(Math.min(...xs));
     const minY = Math.floor(Math.min(...ys));
     const maxX = Math.ceil(Math.max(...xs));
@@ -760,7 +773,6 @@ export function drawPerspectiveWarpedImage(
       gl.uniformMatrix3fv(uInvH, false, colMajorInvH);
       gl.uniform2f(uResolution, targetWidth, targetHeight);
       gl.uniform2f(uTexSize, sourceWidth, sourceHeight);
-      gl.uniform4f(uSrcRect, left, top, width, height);
       gl.uniform1i(uTexture, 0);
 
       gl.drawArrays(gl.TRIANGLES, 0, 6);
@@ -772,6 +784,6 @@ export function drawPerspectiveWarpedImage(
   }
 
   // Fallback to Canvas 2D triangle mesh if WebGL is unavailable
-  drawPerspectiveWarpedImage2D(context, source, targetCorners, subdivisions, left, top, width, height);
+  drawPerspectiveWarpedImage2D(context, source, targetCorners, subdivisions, left, top, width, height, Boolean(srcBounds));
 }
 

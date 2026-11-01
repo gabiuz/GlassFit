@@ -78,6 +78,7 @@ import type { AccessoryPositionOptions, HorizontalPosition, VerticalPosition } f
 export type AddonSelectionType = "none" | "screen" | "grill";
 import {
   homographyToCssMatrix3d,
+  computeHomographyMatrix,
   denormalizeCorners,
   drawPerspectiveWarpedImage,
   estimateDimensionsFromCorners,
@@ -1059,6 +1060,7 @@ export function ProductModelWorkspace({
 
   const mvpCanvasRef = useRef<HTMLCanvasElement>(null);
   const mvpRendererRef = useRef<ProductModelRenderer | null>(null);
+  const [planarFitRect, setPlanarFitRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
   const [isUsingTransformHandle, setIsUsingTransformHandle] = useState(false);
   const [isOutlineMeasurementPaused, setIsOutlineMeasurementPaused] = useState(false);
   const [isSnapshotApplied, setIsSnapshotApplied] = useState(false);
@@ -1311,6 +1313,9 @@ export function ProductModelWorkspace({
       const isPlanar = Boolean(perspectiveCorners);
       const sourceCanvas = mvpRendererRef.current.render(yaw, pitch, isPlanar);
       if (sourceCanvas) {
+        const rect = mvpRendererRef.current.getPlanarFitRect();
+        setPlanarFitRect((current) => current?.x === rect?.x && current?.y === rect?.y &&
+          current?.width === rect?.width && current?.height === rect?.height ? current : rect);
         const ctx = mvpCanvasRef.current.getContext("2d");
         if (ctx) {
           ctx.clearRect(0, 0, mvpCanvasRef.current.width, mvpCanvasRef.current.height);
@@ -1487,7 +1492,27 @@ export function ProductModelWorkspace({
     if (currentW <= 0 || currentH <= 0) return null;
 
     const pxCorners = denormalizeCorners(perspectiveCorners, currentW, currentH);
-    const [p0, p1, p2, p3] = pxCorners;
+    let [p0, p1, p2, p3] = pxCorners;
+    if (structuralDefinition && planarFitRect) {
+      const sourceFrame: QuadrilateralCorners = [
+        { x: planarFitRect.x, y: planarFitRect.y },
+        { x: planarFitRect.x + planarFitRect.width, y: planarFitRect.y },
+        { x: planarFitRect.x + planarFitRect.width, y: planarFitRect.y + planarFitRect.height },
+        { x: planarFitRect.x, y: planarFitRect.y + planarFitRect.height },
+      ];
+      const matrix = computeHomographyMatrix(sourceFrame, pxCorners);
+      if (matrix) {
+        const outline: QuadrilateralCorners = [
+          { x: 0, y: 0 }, { x: 1, y: 0 },
+          { x: 1, y: 1 }, { x: 0, y: 1 },
+        ];
+        [p0, p1, p2, p3] = outline.map(({ x, y }) => {
+          const divisor = matrix[6] * x + matrix[7] * y + matrix[8];
+          return { x: (matrix[0] * x + matrix[1] * y + matrix[2]) / divisor,
+            y: (matrix[3] * x + matrix[4] * y + matrix[5]) / divisor };
+        }) as QuadrilateralCorners;
+      }
+    }
 
     return {
       corners: [
@@ -1507,7 +1532,7 @@ export function ProductModelWorkspace({
         y: (p0.y + p1.y + p2.y + p3.y) / 4,
       },
     };
-  }, [perspectiveCorners, canvasDisplaySize.width, canvasDisplaySize.height]);
+  }, [perspectiveCorners, canvasDisplaySize.width, canvasDisplaySize.height, structuralDefinition, planarFitRect]);
 
   const [dismissedObstructionKeys, setDismissedObstructionKeys] = useState<Set<string>>(new Set());
 
@@ -2116,6 +2141,12 @@ export function ProductModelWorkspace({
     const isPlanar = Boolean(perspectiveCorners);
     const sourceCanvas = mvpRendererRef.current.render(yaw, pitch, isPlanar);
     if (!sourceCanvas) return;
+    const nextFitRect = mvpRendererRef.current.getPlanarFitRect();
+    setPlanarFitRect((current) =>
+      current?.x === nextFitRect?.x && current?.y === nextFitRect?.y &&
+      current?.width === nextFitRect?.width && current?.height === nextFitRect?.height
+        ? current : nextFitRect,
+    );
 
     const targetCanvas = mvpCanvasRef.current;
     const ctx = targetCanvas.getContext("2d");
@@ -2779,6 +2810,7 @@ export function ProductModelWorkspace({
       activeOcclusionObjects,
       manualMaskDataUrl,
       perspectiveCorners,
+      planarFitRect: structuralDefinition ? mvpRendererRef.current?.getPlanarFitRect() : null,
       rotateAngle,
       isFlipped,
       // Use the export filter - stripped of selection-guide outlines.
@@ -2828,6 +2860,7 @@ export function ProductModelWorkspace({
       hasGeneratedProduct: Boolean(structuralDefinition),
       activeOcclusionObjects: [],
       perspectiveCorners,
+      planarFitRect: structuralDefinition ? mvpRendererRef.current?.getPlanarFitRect() : null,
       rotateAngle,
       isFlipped,
       modelFilter: exportModelFilter,
@@ -4480,6 +4513,9 @@ export function ProductModelWorkspace({
                             ),
                             overlaySize.width,
                             overlaySize.height,
+                            structuralDefinition && planarFitRect
+                              ? { left: planarFitRect.x, top: planarFitRect.y, width: planarFitRect.width, height: planarFitRect.height }
+                              : null,
                           ),
                           transformStyle: "preserve-3d",
                           WebkitTransformStyle: "preserve-3d",
@@ -6599,6 +6635,7 @@ type WorkspaceSnapshotOptions = {
   activeOcclusionObjects: SnapshotOcclusionObject[];
   manualMaskDataUrl?: string | null;
   perspectiveCorners?: QuadrilateralCorners | null;
+  planarFitRect?: { x: number; y: number; width: number; height: number } | null;
   rotateAngle: number;
   isFlipped: boolean;
   modelFilter: React.CSSProperties["filter"];
@@ -6630,6 +6667,7 @@ async function captureWorkspaceCanvas({
   activeOcclusionObjects,
   manualMaskDataUrl,
   perspectiveCorners,
+  planarFitRect,
   rotateAngle,
   isFlipped,
   modelFilter,
@@ -6713,6 +6751,7 @@ async function captureWorkspaceCanvas({
       fallbackProductImageUrl,
       hasGeneratedProduct,
       perspectiveCorners,
+      planarFitRect,
       canvasBounds,
       rotateAngle,
       isFlipped,
@@ -6759,6 +6798,7 @@ async function drawSnapshotOverlay({
   fallbackProductImageUrl,
   hasGeneratedProduct,
   perspectiveCorners,
+  planarFitRect,
   canvasBounds,
   rotateAngle,
   isFlipped,
@@ -6771,6 +6811,7 @@ async function drawSnapshotOverlay({
   fallbackProductImageUrl: string;
   hasGeneratedProduct: boolean;
   perspectiveCorners?: QuadrilateralCorners | null;
+  planarFitRect?: { x: number; y: number; width: number; height: number } | null;
   canvasBounds?: { width: number; height: number };
   rotateAngle: number;
   isFlipped: boolean;
@@ -6829,7 +6870,10 @@ async function drawSnapshotOverlay({
       offCtx.restore();
 
       context.save();
-      drawPerspectiveWarpedImage(context, offscreen, pixelCorners);
+      drawPerspectiveWarpedImage(
+        context, offscreen, pixelCorners, 16,
+        planarFitRect ? { left: planarFitRect.x, top: planarFitRect.y, width: planarFitRect.width, height: planarFitRect.height } : null,
+      );
       context.restore();
       return;
     }
