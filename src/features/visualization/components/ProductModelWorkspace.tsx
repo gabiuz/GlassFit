@@ -3975,6 +3975,28 @@ export function ProductModelWorkspace({
     [perspectiveCorners, isUsingTransformHandle, canvasDisplaySize.width, canvasDisplaySize.height, updateMetricPerspectiveCorners],
   );
 
+  // PRD-F6 / PRD-F10 / DSD-UI4: keep the live estimate beside the active configuration flow.
+  const priceCard = selectedProduct && (
+    <div className="bg-grad-light rounded-[20px] p-6 sm:p-7 flex flex-col gap-2.5 w-full text-white shadow-md">
+      <div className="flex items-center justify-between">
+        <span className="text-xl sm:text-2xl font-normal text-white/90 tracking-[-0.456px]">
+          {displayPriceData.title}
+        </span>
+        {displayPriceData.badgeText && (
+          <span className="text-xs font-medium bg-white/20 px-2.5 py-1 rounded-full text-white">
+            {displayPriceData.badgeText}
+          </span>
+        )}
+      </div>
+      <span className="text-3xl sm:text-4xl font-medium tracking-[-0.608px] text-white">
+        {displayPriceData.formattedPrice}
+      </span>
+      <div className="flex flex-col gap-0.5 text-xs font-normal text-white/80 tracking-[-0.228px]">
+        <span>{displayPriceData.subtext}</span>
+      </div>
+    </div>
+  );
+
   return (
     <div
       ref={mobileDialogRef}
@@ -4009,24 +4031,8 @@ export function ProductModelWorkspace({
 
       {/* ── Top Toolbar Controls ── */}
       <div className={shouldLockMobileEditor ? "hidden" : "w-full flex flex-col lg:flex-row items-center justify-between gap-6 mb-10"}>
-        {/* Left: Undo, Redo, Zoom */}
+        {/* Left: Zoom */}
         <div className="flex flex-wrap items-center gap-4 sm:gap-6 justify-center lg:justify-start">
-          {/* Undo / Redo */}
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              className="bg-[#0f1422] hover:bg-black text-white px-4 py-2 rounded-[10px] text-sm font-normal transition-colors cursor-pointer"
-            >
-              Undo
-            </button>
-            <button
-              type="button"
-              className="bg-white border border-[#c3c3c3] hover:bg-neutral-50 text-[#0f1422] px-4 py-2 rounded-[10px] text-sm font-normal transition-colors cursor-pointer"
-            >
-              Redo
-            </button>
-          </div>
-
           {/* Zoom Controls */}
           <div className="bg-white border border-[#c3c3c3] flex items-center justify-center gap-3 px-4 py-2 rounded-[10px] select-none">
             <button
@@ -4289,6 +4295,12 @@ export function ProductModelWorkspace({
                 draggable={false}
                 className="absolute inset-0 h-full w-full object-contain select-none"
               />
+
+              {!shouldLockMobileEditor && selectedProduct && (
+                <div className="pointer-events-none absolute bottom-3 left-3 z-40 max-w-[calc(100%-24px)] truncate rounded-[20px] border border-neutral-100 bg-white/95 px-4 py-2 text-sm font-normal tracking-[-0.266px] text-black shadow-xs">
+                  {structuralDefinition?.product.productName ?? "1 product on Canvas"}
+                </div>
+              )}
 
               {/* ── Calibration Scale HUD Indicator (IMP-MS47, IMP-MS52) ── */}
               <div className="absolute top-3 left-3 z-30 flex items-center gap-2 select-none pointer-events-auto">
@@ -4936,6 +4948,8 @@ export function ProductModelWorkspace({
 
           </div>
 
+          {!shouldLockMobileEditor && priceCard}
+
           {/* Action Instructions Bar */}
           <div className={shouldLockMobileEditor ? "hidden" : "bg-[#f5f5f5] rounded-[20px] px-5 py-3 flex flex-wrap justify-center items-center gap-2 sm:gap-3 text-sm sm:text-base md:text-lg text-[#0f1422] font-normal tracking-[-0.38px] text-center select-none"}>
             {selectedProduct ? (
@@ -4966,12 +4980,13 @@ export function ProductModelWorkspace({
             ? `${isMobileControlsOpen ? "flex" : "hidden"} absolute z-50 flex-col gap-4 overflow-x-hidden overflow-y-auto overscroll-contain bg-white p-4 shadow-2xl [touch-action:pan-y] ${compactOrientation === "portrait" ? "inset-x-0 bottom-0 max-h-[45dvh] rounded-t-[20px]" : "inset-y-0 right-0 w-[min(320px,88vw)] rounded-l-[20px]"}`
             : "w-full lg:w-[422px] shrink-0 flex flex-col gap-6 items-end"}
         >
-          {/* Status Badge */}
-          <div className="bg-white rounded-[20px] px-4 py-2 text-black text-sm font-normal tracking-[-0.266px] shadow-xs border border-neutral-100">
-            {selectedProduct
-              ? structuralDefinition?.product.productName ?? "1 product on Canvas"
-              : "No product selected"}
-          </div>
+          {(!selectedProduct || shouldLockMobileEditor) && (
+            <div className="bg-white rounded-[20px] px-4 py-2 text-black text-sm font-normal tracking-[-0.266px] shadow-xs border border-neutral-100">
+              {selectedProduct
+                ? structuralDefinition?.product.productName ?? "1 product on Canvas"
+                : "No product selected"}
+            </div>
+          )}
           {productBuildError && (
             <p className="w-full rounded-[10px] border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
               {productBuildError}
@@ -4980,25 +4995,7 @@ export function ProductModelWorkspace({
 
           {selectedProduct ? (
             <>
-              {/* Price Card */}
-              <div className="bg-grad-light rounded-[20px] p-6 sm:p-7 flex flex-col gap-2.5 w-full text-white shadow-md">
-                <div className="flex items-center justify-between">
-                  <span className="text-xl sm:text-2xl font-normal text-white/90 tracking-[-0.456px]">
-                    {displayPriceData.title}
-                  </span>
-                  {displayPriceData.badgeText && (
-                    <span className="text-xs font-medium bg-white/20 px-2.5 py-1 rounded-full text-white">
-                      {displayPriceData.badgeText}
-                    </span>
-                  )}
-                </div>
-                <span className="text-3xl sm:text-4xl font-medium tracking-[-0.608px] text-white">
-                  {displayPriceData.formattedPrice}
-                </span>
-                <div className="flex flex-col gap-0.5 text-xs font-normal text-white/80 tracking-[-0.228px]">
-                  <span>{displayPriceData.subtext}</span>
-                </div>
-              </div>
+              {shouldLockMobileEditor && priceCard}
 
               {/* Workspace Accordions with Motion Animation */}
               <div className="w-full flex flex-col gap-4">
