@@ -72,6 +72,7 @@ import type { GrilleLinearBOMResult } from "@/lib/pricing/types";
 import { getCompatibleAddonsForProduct } from "@/lib/admin/products/addonMutations";
 import { getActiveAccessories, type ActiveAccessoryProduct } from "@/lib/products/getActiveAccessories";
 import type { SelectedAccessoryState } from "@/lib/visualization/types";
+import { preloadAccessoryModel } from "@/lib/visualization/componentModelCache";
 import type { AccessoryPositionOptions, HorizontalPosition, VerticalPosition } from "@/lib/admin/products/types";
 
 export type AddonSelectionType = "none" | "screen" | "grill";
@@ -375,9 +376,17 @@ export function ProductModelWorkspace({
   });
 
   // Hardware Accessories Customization State (IMP-MS76)
-  const [selectedAccessories, setSelectedAccessories] = useState<Record<string, SelectedAccessoryState>>(() => {
-    return initialConfiguration?.swappedAccessories ?? {};
-  });
+  const [selectedAccessories, setSelectedAccessories] = useState<Record<string, SelectedAccessoryState>>({});
+  const [pendingAccessoryIds, setPendingAccessoryIds] = useState<Record<string, string>>({});
+  const [accessoryErrors, setAccessoryErrors] = useState<Record<string, string>>({});
+  const accessoryRequestSequence = useRef<Record<string, number>>({});
+  const accessoryMountedRef = useRef(true);
+  const accessoryRollbackRef = useRef<Record<string, SelectedAccessoryState | null>>({});
+  const restoredAccessories = useRef(initialConfiguration?.swappedAccessories ?? {});
+  useEffect(() => {
+    accessoryMountedRef.current = true;
+    return () => { accessoryMountedRef.current = false; };
+  }, []);
   const [availableAccessories, setAvailableAccessories] = useState<ActiveAccessoryProduct[]>([]);
   const [accessoriesLoaded, setAccessoriesLoaded] = useState(false);
 
@@ -531,6 +540,42 @@ export function ProductModelWorkspace({
 
   useEffect(() => {
     if (!accessoriesLoaded || !structuralDefinition) return;
+    const restored = restoredAccessories.current;
+    restoredAccessories.current = {};
+    for (const [slotId, selected] of Object.entries(restored)) {
+      const slot = accessorySlots.find((item) => item.componentId === slotId || item.componentKey === slotId);
+      const catalogItem = availableAccessories.find((item) => item.productId === selected.accessoryId && item.accessoryCategory === slot?.accessoryCategory);
+      if (selected.accessoryId === "default") {
+        setSelectedAccessories((current) => ({ ...current, [slotId]: selected }));
+      } else if (structuralDefinition.template.modelStrategy !== "Fixed" && slot?.allowedAccessoryIds?.includes(selected.accessoryId) && catalogItem?.previewGlbUrl) {
+        const sequence = (accessoryRequestSequence.current[slotId] ?? 0) + 1;
+        accessoryRequestSequence.current[slotId] = sequence;
+        setPendingAccessoryIds((current) => ({ ...current, [slotId]: selected.accessoryId }));
+        preloadAccessoryModel(selected.accessoryId, catalogItem.previewGlbUrl).then(() => {
+          if (!accessoryMountedRef.current || accessoryRequestSequence.current[slotId] !== sequence) return;
+          accessoryRollbackRef.current[slotId] = null;
+          setSelectedAccessories((current) => ({ ...current, [slotId]: {
+            ...selected,
+            accessoryName: catalogItem.productName,
+            price: catalogItem.basePrice,
+            priceDelta: catalogItem.basePrice,
+            glbUrl: catalogItem.previewGlbUrl,
+          } }));
+        }).catch(() => {
+          if (accessoryMountedRef.current && accessoryRequestSequence.current[slotId] === sequence) {
+            setAccessoryErrors((current) => ({ ...current, [slotId]: "This accessory model could not be loaded. Standard hardware is shown." }));
+          }
+        }).finally(() => {
+          if (accessoryMountedRef.current && accessoryRequestSequence.current[slotId] === sequence) {
+            setPendingAccessoryIds((current) => { const next = { ...current }; delete next[slotId]; return next; });
+          }
+        });
+      }
+    }
+  }, [accessoriesLoaded, accessorySlots, availableAccessories, structuralDefinition]);
+
+  useEffect(() => {
+    if (!accessoriesLoaded || !structuralDefinition) return;
     const timer = window.setTimeout(() => setSelectedAccessories((current) => {
       let changed = false;
       const next = { ...current };
@@ -539,7 +584,7 @@ export function ProductModelWorkspace({
         const slot = accessorySlots.find((item) => item.componentId === slotId || item.componentKey === slotId);
         const allowed = slot?.allowedAccessoryIds ?? [];
         const eligible = availableAccessories.some((item) => item.productId === selected.accessoryId && item.accessoryCategory === slot?.accessoryCategory && Boolean(item.previewGlbUrl));
-        if (!slot || !allowed.includes(selected.accessoryId) || !eligible) {
+        if (!slot || structuralDefinition.template.modelStrategy === "Fixed" || !allowed.includes(selected.accessoryId) || !eligible) {
           next[slotId] = {
             ...selected,
             accessoryId: "default",
@@ -564,11 +609,39 @@ export function ProductModelWorkspace({
   }, [selectedAccessories]);
 
   // Handler for selecting an accessory for a slot
-  const handleSelectAccessory = useCallback((
+  const handleSelectAccessory = useCallback(async (
     slotComponentId: string,
     slotCategory: string,
     accessory: { id: string; name: string; price: number; glbUrl?: string | null },
   ) => {
+    const slot = accessorySlots.find((item) => item.componentId === slotComponentId || item.componentKey === slotComponentId);
+    if (!slot) return;
+    if (accessory.id !== "default" && structuralDefinition?.template.modelStrategy === "Fixed") {
+      setAccessoryErrors((current) => ({ ...current, [slotComponentId]: "This product model does not support accessory replacement in the preview." }));
+      return;
+    }
+    const catalogItem = accessory.id === "default" ? null : availableAccessories.find((item) =>
+      item.productId === accessory.id && item.accessoryCategory === slotCategory && slot.allowedAccessoryIds?.includes(item.productId)
+    );
+    if (accessory.id !== "default" && !catalogItem?.previewGlbUrl) return;
+    const sequence = (accessoryRequestSequence.current[slotComponentId] ?? 0) + 1;
+    accessoryRequestSequence.current[slotComponentId] = sequence;
+    setAccessoryErrors((current) => { const next = { ...current }; delete next[slotComponentId]; return next; });
+    if (catalogItem?.previewGlbUrl) {
+      setPendingAccessoryIds((current) => ({ ...current, [slotComponentId]: accessory.id }));
+      try {
+        await preloadAccessoryModel(accessory.id, catalogItem.previewGlbUrl);
+      } catch {
+        if (accessoryRequestSequence.current[slotComponentId] === sequence) {
+          setAccessoryErrors((current) => ({ ...current, [slotComponentId]: "This accessory model could not be loaded. Your previous selection remains active." }));
+          setPendingAccessoryIds((current) => { const next = { ...current }; delete next[slotComponentId]; return next; });
+        }
+        return;
+      }
+    }
+    if (accessoryRequestSequence.current[slotComponentId] !== sequence) return;
+    accessoryRollbackRef.current[slotComponentId] = selectedAccessories[slotComponentId] ?? null;
+    setPendingAccessoryIds((current) => { const next = { ...current }; delete next[slotComponentId]; return next; });
     setSelectedAccessories((prev) => {
       const current = prev[slotComponentId];
       const slot = accessorySlots.find((s) => s.componentId === slotComponentId || s.componentKey === slotComponentId);
@@ -595,11 +668,11 @@ export function ProductModelWorkspace({
           finish: current?.finish ?? (alumFinish === "white" ? "Brushed Chrome" : "Matte Black"),
           horizontalPosition: current?.horizontalPosition ?? defaultHoriz,
           verticalPosition: current?.verticalPosition ?? defaultVert,
-          glbUrl: accessory.glbUrl ?? null,
+          glbUrl: catalogItem?.previewGlbUrl ?? null,
         },
       };
     });
-  }, [accessorySlots, alumFinish, availableAccessories]);
+  }, [accessorySlots, alumFinish, availableAccessories, selectedAccessories, structuralDefinition]);
 
   // Handler for toggling accessory handing (Left vs Right)
   const handleToggleAccessoryHanding = useCallback((slotComponentId: string, horizontalPosition: HorizontalPosition) => {
@@ -618,6 +691,7 @@ export function ProductModelWorkspace({
           category: current?.category ?? slot?.accessoryCategory ?? "handle",
           price: current?.price ?? 0,
           priceDelta: current?.priceDelta ?? 0,
+          glbUrl: current?.glbUrl ?? null,
           finish: current?.finish ?? (alumFinish === "white" ? "Brushed Chrome" : "Matte Black"),
           horizontalPosition,
           verticalPosition: current?.verticalPosition ?? posOptions?.defaultVertical ?? "up",
@@ -643,6 +717,7 @@ export function ProductModelWorkspace({
           category: current?.category ?? slot?.accessoryCategory ?? "handle",
           price: current?.price ?? 0,
           priceDelta: current?.priceDelta ?? 0,
+          glbUrl: current?.glbUrl ?? null,
           finish: current?.finish ?? (alumFinish === "white" ? "Brushed Chrome" : "Matte Black"),
           horizontalPosition: current?.horizontalPosition ?? posOptions?.defaultHorizontal ?? "right",
           verticalPosition,
@@ -668,6 +743,7 @@ export function ProductModelWorkspace({
           category: current?.category ?? slot?.accessoryCategory ?? "handle",
           price: current?.price ?? 0,
           priceDelta: current?.priceDelta ?? 0,
+          glbUrl: current?.glbUrl ?? null,
           finish,
           horizontalPosition: current?.horizontalPosition ?? posOptions?.defaultHorizontal ?? "right",
           verticalPosition: current?.verticalPosition ?? posOptions?.defaultVertical ?? "up",
@@ -1950,13 +2026,33 @@ export function ProductModelWorkspace({
       },
     ).then((result) => {
       if (!result || cancelled) return;
+      for (const slotId of Object.keys(selectedAccessories)) delete accessoryRollbackRef.current[slotId];
       setMaterialCapabilities(result.capabilities);
       // Preserve the last measured outline while resize interactions pause measurement.
       // The revision redraw measures the rebuilt model as soon as measurement resumes.
       setModelRevision((prev) => prev + 1);
       setProductBuildError(null);
     }).catch((error: unknown) => {
-      if (!cancelled) setProductBuildError(error instanceof Error ? error.message : "Could not build the product model.");
+      if (cancelled) return;
+      const rollbackEntries = Object.entries(accessoryRollbackRef.current);
+      if (rollbackEntries.length > 0) {
+        accessoryRollbackRef.current = {};
+        setSelectedAccessories((current) => {
+          const next = { ...current };
+          for (const [slotId, previous] of rollbackEntries) {
+            if (previous) next[slotId] = previous;
+            else delete next[slotId];
+          }
+          return next;
+        });
+        setAccessoryErrors((errors) => {
+          const next = { ...errors };
+          for (const [slotId] of rollbackEntries) next[slotId] = "The accessory could not be shown in the preview. Your previous selection was restored.";
+          return next;
+        });
+      } else {
+        setProductBuildError(error instanceof Error ? error.message : "Could not build the product model.");
+      }
     });
     return () => { cancelled = true; };
   }, [structuralDefinition, widthCm, heightCm, panelCount, includeSill, selectedAddon, selectedAddonProductId, addonAlumFinish, addonMountingSide, activeCompatibleAddon, includeHatch, screenMeshDensity, effectiveHatchTargetKeys, removableStates, glassAppearance, glassColor, glassThicknessMm, alumFinish, hasExplicitOverrides, selectedMaterials, candidateMaterialsMap, selectedAccessories]);
@@ -5811,7 +5907,7 @@ export function ProductModelWorkspace({
                               const slotAllowedIds = slot.allowedAccessoryIds ?? ((slot as Record<string, unknown>).allowed_accessory_ids as string[] | undefined);
                               const posOptions = slot.positionOptions ?? ((slot as Record<string, unknown>).position_options as AccessoryPositionOptions | undefined);
 
-                              const matchingAccessories = availableAccessories.filter((acc) =>
+                              const matchingAccessories = structuralDefinition?.template.modelStrategy === "Fixed" ? [] : availableAccessories.filter((acc) =>
                                 (slotAllowedIds ?? []).includes(acc.productId) && acc.accessoryCategory === slotCategory && Boolean(acc.previewGlbUrl)
                               );
 
@@ -5840,6 +5936,15 @@ export function ProductModelWorkspace({
 
                                   <div className="flex flex-col gap-2">
                                     <span className="text-xs font-medium text-neutral-700">Model Selection</span>
+                                    {structuralDefinition?.template.modelStrategy === "Fixed" && (
+                                      <p className="text-xs text-neutral-600">Accessory replacement is unavailable for this fixed model preview.</p>
+                                    )}
+                                    {pendingAccessoryIds[slotId] && (
+                                      <p role="status" className="text-xs text-neutral-600">Loading accessory model before applying selection...</p>
+                                    )}
+                                    {accessoryErrors[slotId] && (
+                                      <p role="alert" className="text-xs text-red-600">{accessoryErrors[slotId]}</p>
+                                    )}
                                     <div className="grid grid-cols-1 gap-2">
                                       <button
                                         type="button"

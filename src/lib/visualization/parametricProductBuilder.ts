@@ -1,6 +1,7 @@
 "use client";
 
 import * as THREE from "three";
+import { clone as cloneSkeleton } from "three/examples/jsm/utils/SkeletonUtils.js";
 import type { ComponentModelCache } from "./componentModelCache";
 import { normalizeComponentKey } from "./structuralResolver";
 import {
@@ -248,6 +249,39 @@ export function createHardwareFinishMaterial(finishKey: string): THREE.MeshStand
     metalness: 0.7,
     roughness: 0.35,
   });
+}
+
+function resolveSelectedAccessoryModel(
+  swapped: SelectedAccessoryState,
+  cache: ComponentModelCache,
+  options: ParametricProductBuilderOptions,
+  handing?: "left" | "right",
+): THREE.Object3D {
+  const model = (handing ? options.accessoryModels?.get(`${swapped.accessoryId}_${handing}`) : undefined) ??
+    options.accessoryModels?.get(swapped.accessoryId);
+  if (model) {
+    const clone = cloneSkeleton(model);
+    clone.traverse((object) => {
+      if (object instanceof THREE.Mesh) {
+        object.userData.sharedCachedGeometry = true;
+        object.material = Array.isArray(object.material)
+          ? object.material.map((material) => material.clone())
+          : object.material.clone();
+      }
+    });
+    return clone;
+  }
+  if (swapped.glbUrl) {
+    throw new Error(`Selected accessory ${swapped.accessoryName} has no loaded model.`);
+  }
+  try {
+    return cache.getClone(swapped.accessoryId);
+  } catch {
+    if (swapped.accessoryId.startsWith("canonical_") || swapped.accessoryId.startsWith("acc_")) {
+      return createAccessoryMeshById(swapped.accessoryId);
+    }
+    throw new Error(`Selected accessory ${swapped.accessoryName} has no active model.`);
+  }
 }
 
 /**
@@ -774,29 +808,7 @@ export function prepareAccessoryTrackMesh(
   options: ParametricProductBuilderOptions,
   fallbackSourceHanding: "left" | "right" = "right",
 ): THREE.Object3D {
-  let resolvedMesh: THREE.Object3D | null = null;
-  if (options.accessoryModels) {
-    resolvedMesh = options.accessoryModels.get(`${swapped.accessoryId}_${trackHanding}`) ??
-      options.accessoryModels.get(swapped.accessoryId) ??
-      null;
-  }
-  if (!resolvedMesh) {
-    try {
-      resolvedMesh = cache.getClone(swapped.accessoryId);
-    } catch {
-      // fallback
-    }
-  }
-  if (!resolvedMesh && (swapped.accessoryId.startsWith("canonical_") || swapped.accessoryId.startsWith("acc_"))) {
-    try {
-      resolvedMesh = createAccessoryMeshById(swapped.accessoryId);
-    } catch {
-      // fallback
-    }
-  }
-  if (!resolvedMesh) {
-    resolvedMesh = createProceduralAccessoryMesh(swapped.category, swapped.accessoryName, swapped.finish);
-  }
+  const resolvedMesh = resolveSelectedAccessoryModel(swapped, cache, options, trackHanding);
 
   const clonedAcc = resolvedMesh.clone(true);
   clonedAcc.updateMatrixWorld(true);
@@ -1091,24 +1103,7 @@ function buildWindowLikeProduct(
   if (options.swappedAccessories) {
     for (const [slotId, swapped] of Object.entries(options.swappedAccessories)) {
       if (!swapped || swapped.accessoryId === "default") continue;
-      let accMesh = options.accessoryModels?.get(swapped.accessoryId);
-      if (!accMesh) {
-        try {
-          accMesh = cache.getClone(swapped.accessoryId);
-        } catch {
-          // fallback
-        }
-      }
-      if (!accMesh && (swapped.accessoryId.startsWith("canonical_") || swapped.accessoryId.startsWith("acc_"))) {
-        try {
-          accMesh = createAccessoryMeshById(swapped.accessoryId);
-        } catch {
-          // fallback
-        }
-      }
-      if (!accMesh) {
-        accMesh = createProceduralAccessoryMesh(swapped.category, swapped.accessoryName, swapped.finish);
-      }
+      const accMesh = resolveSelectedAccessoryModel(swapped, cache, options);
       const matchingComp = definition.components.find((c) => c.componentId === slotId || c.componentKey === slotId);
       const posOptions: AccessoryPositionOptions = matchingComp?.positionOptions ??
         ((matchingComp as Record<string, unknown> | undefined)?.position_options as AccessoryPositionOptions | undefined) ?? {
@@ -2126,6 +2121,9 @@ function buildAssembledProduct(
       swapped.accessoryId !== "default" &&
       swapped.accessoryId !== component.componentId
     );
+    if (isAlternativeAccessory && !hasHanding) {
+      throw new Error(`Accessory slot ${component.componentName} cannot mount the selected model.`);
+    }
 
     const isFixedDimension = Boolean(
       component.dimensionBinding === "FIXED" ||
@@ -2136,7 +2134,7 @@ function buildAssembledProduct(
     if (isFixedDimension) {
       const clusters = extractComponentClusters(clone);
 
-      if (clusters.length > 1) {
+      if (clusters.length > 1 && !isAlternativeAccessory) {
         // Multi-cluster hardware or fixed assembly (such as multi-handle sets, friction stays, or weep hole covers)
         // Each cluster tracks parametric width and height scaling while maintaining exact 1:1 metric size
         for (const cl of clusters) {
@@ -2315,31 +2313,9 @@ function buildAssembledProduct(
         }
       } else if (swapped) {
         // An active hardware accessory was chosen: replace original cabinet handle
-        let accMesh: THREE.Object3D | null = null;
-        if (options.accessoryModels) {
-          accMesh = options.accessoryModels.get(`${swapped.accessoryId}_${activeHanding}`) ??
-            options.accessoryModels.get(swapped.accessoryId) ??
-            null;
-        }
-        if (!accMesh) {
-          try {
-            accMesh = cache.getClone(swapped.accessoryId);
-          } catch {
-            // fallback
-          }
-        }
-        if (!accMesh && (swapped.accessoryId.startsWith("canonical_") || swapped.accessoryId.startsWith("acc_"))) {
-          try {
-            accMesh = createAccessoryMeshById(swapped.accessoryId);
-          } catch {
-            // fallback
-          }
-        }
-        if (!accMesh) {
-          accMesh = createProceduralAccessoryMesh(swapped.category, swapped.accessoryName, swapped.finish);
-        }
+        const accMesh = resolveSelectedAccessoryModel(swapped, cache, options, activeHanding);
 
-        const mountedAcc = accMesh.clone(true);
+        const mountedAcc = accMesh;
 
         // 1. Recenter mountedAcc geometry at local (0, 0, 0)
         mountedAcc.updateMatrixWorld(true);
@@ -2358,6 +2334,9 @@ function buildAssembledProduct(
         let finalAccMesh: THREE.Object3D = mountedAcc;
         if (activeHanding !== sourceHanding && !options.accessoryModels?.has(`${swapped.accessoryId}_${activeHanding}`)) {
           finalAccMesh = mirrorObjectHierarchyAcrossX(mountedAcc);
+          finalAccMesh.traverse((object) => {
+            if (object instanceof THREE.Mesh) object.userData.sharedCachedGeometry = false;
+          });
           finalAccMesh.updateMatrixWorld(true);
           const postBox = new THREE.Box3().setFromObject(finalAccMesh);
           const postCenter = new THREE.Vector3();
@@ -2369,7 +2348,10 @@ function buildAssembledProduct(
         const hwMat = createHardwareFinishMaterial(swapped.finish || "satin");
         finalAccMesh.traverse((c) => {
           if (c instanceof THREE.Mesh) {
+            const originalMaterials = Array.isArray(c.material) ? c.material : [c.material];
+            originalMaterials.forEach((material) => material.dispose());
             c.material = hwMat;
+            c.userData.preserveMaterial = true;
             c.castShadow = true;
             c.receiveShadow = true;
           }
@@ -2876,24 +2858,7 @@ function buildAssembledProduct(
       const isDefault = swapped.accessoryId === "default";
 
       if (!isDefault) {
-        let accMesh = options.accessoryModels?.get(swapped.accessoryId);
-        if (!accMesh) {
-          try {
-            accMesh = cache.getClone(swapped.accessoryId);
-          } catch {
-            // fallback
-          }
-        }
-        if (!accMesh && (swapped.accessoryId.startsWith("canonical_") || swapped.accessoryId.startsWith("acc_"))) {
-          try {
-            accMesh = createAccessoryMeshById(swapped.accessoryId);
-          } catch {
-            // fallback
-          }
-        }
-        if (!accMesh) {
-          accMesh = createProceduralAccessoryMesh(swapped.category, swapped.accessoryName, swapped.finish);
-        }
+        const accMesh = resolveSelectedAccessoryModel(swapped, cache, options);
 
         const posOptions: AccessoryPositionOptions = {
           allowHorizontalToggle: true,

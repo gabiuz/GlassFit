@@ -10,7 +10,7 @@ import {
 
 import { buildParametricProduct } from "@/lib/visualization/parametricProductBuilder";
 import { resolveProductStructure } from "@/lib/visualization/structuralResolver";
-import { preloadComponentModels } from "@/lib/visualization/componentModelCache";
+import { getAccessoryModelSource, preloadComponentModels } from "@/lib/visualization/componentModelCache";
 import {
   applyPBRToMesh,
   applyPresentationMaterials,
@@ -254,6 +254,10 @@ export class ProductModelRenderer {
     values: Record<string, unknown>,
     presentation: ModelPresentationOptions,
   ): Promise<PreparedProductModel> {
+    if (definition.template.modelStrategy === "Fixed" &&
+        Object.values(presentation.swappedAccessories ?? {}).some((selected) => selected.accessoryId !== "default")) {
+      throw new Error("Accessory replacement is unavailable for this fixed model.");
+    }
     const group =
       definition.template.modelStrategy === "Fixed"
         ? await this.loadFixedModel(definition, presentation)
@@ -399,6 +403,12 @@ export class ProductModelRenderer {
       ...(definition.compatibleAddons?.flatMap((a) => a.components ?? []) ?? []),
     ];
     const cache = await preloadComponentModels(allComponents);
+    const accessoryModels = new Map<string, THREE.Object3D>();
+    await Promise.all(Object.values(presentation.swappedAccessories ?? {}).map(async (selected) => {
+      if (!selected || selected.accessoryId === "default") return;
+      if (!selected.glbUrl) throw new Error(`Selected accessory ${selected.accessoryName} has no active model.`);
+      accessoryModels.set(selected.accessoryId, await getAccessoryModelSource(selected.accessoryId, selected.glbUrl));
+    }));
     const { group } = buildParametricProduct(definition, resolved, cache, {
       glassAppearance: presentation.glassAppearance,
       glassColor: presentation.glassColor,
@@ -413,6 +423,7 @@ export class ProductModelRenderer {
       screenMeshDensity: presentation.screenMeshDensity,
       addonConfig: presentation.addonConfig,
       swappedAccessories: presentation.swappedAccessories,
+      accessoryModels,
       removableStates: presentation.removableStates,
     });
 
