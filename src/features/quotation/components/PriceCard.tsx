@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
+import type { SelectedAccessoryState } from "@/lib/visualization/types";
 
 export type ProductDetailsData = {
   category: string;
@@ -25,6 +26,8 @@ export type ProductDetailsData = {
   hatchCount?: number;
   hatchTargetKeys?: string[];
   baseUnitPrice?: number | null;
+  swappedAccessories?: SelectedAccessoryState[];
+  accessoryPriceDelta?: number;
   bomGroups?: {
     framingAmount: number;
     glazingAmount: number;
@@ -95,6 +98,8 @@ export function PriceCard({
 
   const hasSill = details.hasSill ?? true;
   const hasWaiver = details.structuralWaiver ?? false;
+  const activeAccessories = (details.swappedAccessories ?? []).filter((selection) => selection.accessoryId !== "default");
+  const accessoryPriceDelta = details.accessoryPriceDelta ?? 0;
   const summaryItems = [
     ["Product Category", details.category],
     ["Product Variant", details.variant],
@@ -111,6 +116,10 @@ export function PriceCard({
         ? `${details.addonName}${details.addonAluminumFinish ? ` (${details.addonAluminumFinish})` : ""}${typeof details.addonPrice === "number" && details.addonPrice > 0 ? ` (+₱${details.addonPrice.toLocaleString("en-PH", { minimumFractionDigits: 2 })})` : ""}`
         : "None",
     ],
+    ...activeAccessories.map((selection) => [
+      "Hardware & Accessories",
+      `${selection.accessoryName} | ${selection.horizontalPosition === "left" ? "Left Side" : "Right Side"} (${selection.verticalPosition === "bottom" ? "Bottom Rail" : "Mid-Height"}) | ${selection.finish}${(selection.priceDelta ?? 0) > 0 ? ` (+₱${(selection.priceDelta ?? 0).toLocaleString("en-PH", { minimumFractionDigits: 2 })})` : ""}`,
+    ]),
   ];
 
   return (
@@ -186,9 +195,11 @@ export function PriceCard({
             <span className="text-[#c3c3c3] text-[24px] font-medium tracking-[-0.456px] leading-[1.2]">
               {formattedUnitPrice}
             </span>
-            {details.selectedAddon && details.selectedAddon !== "none" && typeof details.addonPrice === "number" && details.addonPrice > 0 && (
+            {((details.selectedAddon && details.selectedAddon !== "none" && typeof details.addonPrice === "number" && details.addonPrice > 0) || accessoryPriceDelta > 0) && (
               <span className="text-[11px] text-neutral-400 text-left md:text-right">
-                Base: {new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: 0 }).format(details.baseUnitPrice ?? (unitPrice - details.addonPrice)).replace("PHP", "Php")} + Add-on: {new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: 0 }).format(details.addonPrice).replace("PHP", "Php")}
+                Base: {new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: 0 }).format(details.baseUnitPrice ?? (unitPrice - (details.addonPrice ?? 0) - accessoryPriceDelta)).replace("PHP", "Php")}
+                {typeof details.addonPrice === "number" && details.addonPrice > 0 ? ` + Add-on: ${new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: 0 }).format(details.addonPrice).replace("PHP", "Php")}` : ""}
+                {accessoryPriceDelta > 0 ? ` + Hardware: ${new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: 0 }).format(accessoryPriceDelta).replace("PHP", "Php")}` : ""}
               </span>
             )}
           </div>
@@ -225,8 +236,8 @@ export function PriceCard({
                 </div>
 
                 <div className="grid w-full grid-cols-[repeat(auto-fit,minmax(min(100%,15rem),1fr))] gap-x-6 gap-y-3 text-left">
-                  {summaryItems.map(([label, value]) => (
-                    <div key={label} className="flex min-w-0 flex-col gap-1">
+                  {summaryItems.map(([label, value], index) => (
+                    <div key={`${label}-${index}`} className="flex min-w-0 flex-col gap-1">
                       <span className="text-[#c3c3c3] text-sm font-normal">{label}</span>
                       <span className="min-w-0 text-black text-sm font-normal [overflow-wrap:anywhere]">{value}</span>
                     </div>

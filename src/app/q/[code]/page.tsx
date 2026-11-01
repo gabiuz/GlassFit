@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { BackgroundNavbar } from "@/components/shared/BackgroundNavbar";
 import { getPublicBookingReference } from "@/lib/booking/bookingActions";
+import type { SwappedAccessoryDocument } from "@/lib/pricing/quotationDocument";
 import { SnapshotViewer } from "./SnapshotViewer";
 import { CheckCircle2, ShieldAlert, ArrowLeft, AlertTriangle } from "lucide-react";
 
@@ -10,6 +11,15 @@ interface PublicQuotationPageProps {
   params: Promise<{
     code: string;
   }>;
+}
+
+function hardwareLabel(selection: SwappedAccessoryDocument): string {
+  const side = selection.horizontalPosition === "left" ? "Left Side" : selection.horizontalPosition === "right" ? "Right Side" : null;
+  const height = selection.verticalPosition === "bottom" ? "Bottom Rail" : selection.verticalPosition === "up" ? "Mid-Height" : null;
+  const price = (selection.priceDelta ?? 0) > 0
+    ? ` (+₱${(selection.priceDelta ?? 0).toLocaleString("en-PH", { minimumFractionDigits: 2 })})`
+    : "";
+  return [selection.accessoryName, side && height ? `${side} (${height})` : side ?? height, selection.finish ?? "Standard"].filter(Boolean).join(" | ") + price;
 }
 
 export const metadata = {
@@ -215,6 +225,13 @@ export default async function PublicQuotationPage({ params }: PublicQuotationPag
                           ? `${item.addonName || (item.selectedAddon === "screen" ? "Insect Screen" : "Security Grille")}${item.addonAluminumFinish ? ` (${item.addonAluminumFinish})` : ""}${typeof item.addonPrice === "number" && item.addonPrice > 0 ? ` (+₱${item.addonPrice.toLocaleString("en-PH", { minimumFractionDigits: 2 })})` : ""}`
                           : "None"}
                       </span>
+
+                      {(item.swappedAccessories ?? []).filter((selection) => selection.accessoryId !== "default").map((selection, selectionIndex) => (
+                        <React.Fragment key={`${selection.slotComponentId ?? selection.accessoryId}-${selectionIndex}`}>
+                          <span className="text-neutral-500">Hardware:</span>
+                          <span className="text-[#0f1422] font-medium text-right">{hardwareLabel(selection)}</span>
+                        </React.Fragment>
+                      ))}
                     </div>
 
                     {item.structuralWaiver && (
@@ -228,9 +245,11 @@ export default async function PublicQuotationPage({ params }: PublicQuotationPag
                   <div className="flex items-baseline justify-between border-t border-neutral-200/70 pt-3 mt-1 bg-white/70 -mx-5 -mb-5 p-4 rounded-b-[20px]">
                     <div className="flex flex-col">
                       <span className="text-xs text-neutral-500">Unit Price: ₱{item.unitPrice.toLocaleString("en-PH", { minimumFractionDigits: 2 })}</span>
-                      {item.selectedAddon && item.selectedAddon !== "none" && typeof item.addonPrice === "number" && item.addonPrice > 0 && (
+                      {((item.selectedAddon && item.selectedAddon !== "none" && typeof item.addonPrice === "number" && item.addonPrice > 0) || (item.accessoryPriceDelta ?? 0) > 0) && (
                         <span className="text-[11px] text-neutral-400">
-                          Base: ₱{(item.baseUnitPrice ?? (item.unitPrice - item.addonPrice)).toLocaleString("en-PH", { minimumFractionDigits: 2 })} + Add-on: ₱{item.addonPrice.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                          Base: ₱{(item.baseUnitPrice ?? (item.unitPrice - (item.addonPrice ?? 0) - (item.accessoryPriceDelta ?? 0))).toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                          {(item.addonPrice ?? 0) > 0 ? ` + Add-on: ₱${item.addonPrice!.toLocaleString("en-PH", { minimumFractionDigits: 2 })}` : ""}
+                          {(item.accessoryPriceDelta ?? 0) > 0 ? ` + Hardware: ₱${item.accessoryPriceDelta!.toLocaleString("en-PH", { minimumFractionDigits: 2 })}` : ""}
                         </span>
                       )}
                     </div>
@@ -319,6 +338,13 @@ export default async function PublicQuotationPage({ params }: PublicQuotationPag
                       ? `${data.addonName || (data.selectedAddon === "screen" ? "Insect Screen" : "Security Grille")}${data.addonAluminumFinish ? ` (${data.addonAluminumFinish})` : ""}${typeof data.addonPrice === "number" && data.addonPrice > 0 ? ` (+₱${data.addonPrice.toLocaleString("en-PH", { minimumFractionDigits: 2 })})` : ""}`
                       : "None"}
                   </span>
+
+                  {(data.swappedAccessories ?? []).filter((selection) => selection.accessoryId !== "default").map((selection, selectionIndex) => (
+                    <React.Fragment key={`${selection.slotComponentId ?? selection.accessoryId}-${selectionIndex}`}>
+                      <span className="text-neutral-500">Hardware:</span>
+                      <span className="text-[#0f1422] font-medium text-right">{hardwareLabel(selection)}</span>
+                    </React.Fragment>
+                  ))}
 
                   {data.selectedAddon && data.selectedAddon !== "none" && typeof data.addonPrice === "number" && data.addonPrice > 0 && (
                     <>

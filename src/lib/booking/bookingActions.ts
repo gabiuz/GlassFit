@@ -23,9 +23,11 @@ import {
   deriveQuotationPricing,
   deriveQuotationPricingFromItems,
   QuotationDocumentSnapshotV1Schema,
+  SwappedAccessoryDocumentSchema,
   QuotationItemPriceOverridesV1Schema,
   reconstructLegacyQuotationDocument,
   type QuotationItemPriceOverride,
+  type SwappedAccessoryDocument,
 } from "@/lib/pricing/quotationDocument";
 import { getServerBaseUrl, generateBookingUrls } from "./urlResolver";
 import { uploadSnapshotImage, resolveSnapshotUrl, deleteR2Asset } from "./snapshotStorage";
@@ -251,6 +253,8 @@ export async function generateSignedBookingLink(
               addon_name: addonTitle,
               price: item.addonPrice ?? 0,
             } : null,
+            swapped_accessories: item.swappedAccessories ?? [],
+            accessory_price_delta: item.accessoryPriceDelta ?? 0,
           },
           display_order: displayOrder++,
         });
@@ -541,6 +545,8 @@ export async function getPublicBookingReference(
     addonPrice?: number | null;
     baseUnitPrice?: number | null;
     addonAluminumFinish?: string | null;
+    swappedAccessories?: SwappedAccessoryDocument[];
+    accessoryPriceDelta?: number;
   }>();
 
   let totalFramingMeters = 0;
@@ -588,6 +594,13 @@ export async function getPublicBookingReference(
           const addonPrice = typeof details.addon_price === "number" ? details.addon_price : typeof rawAddon?.price === "number" ? (rawAddon.price as number) : undefined;
           const baseUnitPrice = typeof details.base_unit_price === "number" ? details.base_unit_price : undefined;
           const addonAluminumFinish = typeof details.addon_aluminum_finish === "string" ? details.addon_aluminum_finish : typeof rawAddon?.finish === "string" ? (rawAddon.finish as string) : undefined;
+          const parsedAccessories = Array.isArray(details.swapped_accessories)
+            ? details.swapped_accessories.flatMap((entry) => {
+                const parsed = SwappedAccessoryDocumentSchema.safeParse(entry);
+                return parsed.success ? [parsed.data] : [];
+              })
+            : [];
+          const accessoryPriceDelta = typeof details.accessory_price_delta === "number" ? details.accessory_price_delta : 0;
 
           if (waiver) hasAnyMultiWaiver = true;
           totalQuantity += qty;
@@ -617,6 +630,8 @@ export async function getPublicBookingReference(
             addonPrice,
             baseUnitPrice,
             addonAluminumFinish,
+            swappedAccessories: parsedAccessories,
+            accessoryPriceDelta,
           });
         }
       }
@@ -661,6 +676,8 @@ export async function getPublicBookingReference(
         addonPrice: item.addonPrice,
         baseUnitPrice: item.baseUnitPrice,
         addonAluminumFinish: item.addonAluminumFinish,
+        swappedAccessories: item.swappedAccessories,
+        accessoryPriceDelta: item.accessoryPriceDelta,
       }))
     : rawItemsList;
   const isMultiProduct = itemsList.length > 1;
@@ -725,6 +742,8 @@ export async function getPublicBookingReference(
   const addonPrice = primaryItem?.addonPrice ?? (typeof firstDetails?.selected_addon === "object" ? Number((firstDetails.selected_addon as Record<string, unknown>)?.price) : undefined);
   const baseUnitPrice = primaryItem?.baseUnitPrice ?? (typeof firstDetails?.base_unit_price === "number" ? firstDetails.base_unit_price : undefined);
   const addonAluminumFinish = primaryItem?.addonAluminumFinish ?? (typeof firstDetails?.selected_addon === "object" ? String((firstDetails.selected_addon as Record<string, unknown>)?.finish) : undefined);
+  const swappedAccessories = primaryItem?.swappedAccessories ?? [];
+  const accessoryPriceDelta = primaryItem?.accessoryPriceDelta ?? 0;
 
   return {
     referenceCode,
@@ -745,6 +764,8 @@ export async function getPublicBookingReference(
     addonPrice,
     baseUnitPrice,
     addonAluminumFinish,
+    swappedAccessories,
+    accessoryPriceDelta,
     totalEstimatedAmount: Number(quote.total_estimated_amount),
     ...(docSnapshot
       ? deriveQuotationPricingFromItems(

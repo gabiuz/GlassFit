@@ -474,6 +474,12 @@ export function reconstructLegacyQuotationDocument(input: {
     const calculatedSubtotal = Math.round(unitPrice * quantity * 100) / 100;
     const widthMm = Math.max(1, Number(details.width_mm) || (Number(details.width_m) ? Number(details.width_m) * 1000 : 1));
     const heightMm = Math.max(1, Number(details.height_mm) || (Number(details.height_m) ? Number(details.height_m) * 1000 : 1));
+    const swappedAccessories = Array.isArray(details.swapped_accessories)
+      ? details.swapped_accessories.flatMap((entry) => {
+          const parsed = SwappedAccessoryDocumentSchema.safeParse(entry);
+          return parsed.success ? [parsed.data] : [];
+        })
+      : [];
     return {
       itemId,
       productId: typeof details.product_id === "string" ? details.product_id : null,
@@ -496,6 +502,10 @@ export function reconstructLegacyQuotationDocument(input: {
       calculatedSubtotal,
       imageSource: typeof details.image_url === "string" ? details.image_url : null,
       selectedMaterials: (details.selected_materials && typeof details.selected_materials === "object") ? (details.selected_materials as Record<string, string>) : undefined,
+      swappedAccessories,
+      accessoryPriceDelta: typeof details.accessory_price_delta === "number" && details.accessory_price_delta >= 0
+        ? details.accessory_price_delta
+        : 0,
       groups: rows.map((row) => ({
         groupName: String(row.item_group_name || row.item_name || "Component Group"),
         description: String(row.item_name || "Component Description"),

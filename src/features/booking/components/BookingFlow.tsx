@@ -161,7 +161,8 @@ export function BookingFlow() {
         const addonProductId = selectedAddon !== "none" ? (config.addonProductId || null) : null;
         const rawAddonFinish = config.addonAluminumFinish ?? ((config.visualParameterValues?.selected_addon as Record<string, unknown> | undefined)?.finish as string | undefined);
         const addonAluminumFinish = selectedAddon !== "none" ? (rawAddonFinish || undefined) : undefined;
-        const baseUnitPrice = config.baseUnitPrice ?? (pricing.unitPrice - addonPrice);
+        const accessoryPriceDelta = config.accessoryPriceDelta ?? 0;
+        const baseUnitPrice = config.baseUnitPrice ?? (pricing.unitPrice - addonPrice - accessoryPriceDelta);
 
         quotations.push({
           itemId: overlay.overlayId,
@@ -189,6 +190,8 @@ export function BookingFlow() {
           addonPrice,
           baseUnitPrice,
           addonAluminumFinish,
+          swappedAccessories: config.swappedAccessories,
+          accessoryPriceDelta,
           grilleBOM: config.grilleBOM ?? overlay.grilleBOM ?? null,
           paperStandard:
             (config.visualParameterValues as Record<string, unknown> | undefined)?.paper_standard as string | undefined,
@@ -216,8 +219,9 @@ export function BookingFlow() {
       const addonProductId = selectedAddon !== "none" ? (productConfiguration?.addonProductId || null) : null;
       const rawAddonFinish = productConfiguration?.addonAluminumFinish ?? ((productConfiguration?.visualParameterValues?.selected_addon as Record<string, unknown> | undefined)?.finish as string | undefined);
       const addonAluminumFinish = selectedAddon !== "none" ? (rawAddonFinish || undefined) : undefined;
+      const accessoryPriceDelta = productConfiguration?.accessoryPriceDelta ?? 0;
       const baseUnitPrice = productConfiguration?.baseUnitPrice ?? bomCalc.finalQuotation;
-      const unitPrice = baseUnitPrice + addonPrice;
+      const unitPrice = baseUnitPrice + addonPrice + accessoryPriceDelta;
       const totalPrice = unitPrice * quantity;
 
       quotations.push({
@@ -246,6 +250,8 @@ export function BookingFlow() {
         addonPrice,
         baseUnitPrice,
         addonAluminumFinish,
+        swappedAccessories: productConfiguration?.swappedAccessories,
+        accessoryPriceDelta,
         grilleBOM: productConfiguration?.grilleBOM ?? null,
         paperStandard:
           (productConfiguration?.visualParameterValues as Record<string, unknown> | undefined)?.paper_standard as string | undefined,

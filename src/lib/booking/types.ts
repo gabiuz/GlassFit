@@ -8,7 +8,7 @@
 
 import { z } from "zod";
 import { MeasurementRecordSchema } from "@/lib/visualization/measurementRecord";
-import { QuotationDocumentDraftV1Schema, QuotationDocumentSnapshotV1Schema } from "@/lib/pricing/quotationDocument";
+import { QuotationDocumentDraftV1Schema, QuotationDocumentSnapshotV1Schema, SwappedAccessoryDocumentSchema } from "@/lib/pricing/quotationDocument";
 
 // ----------------------------------------------------------------------------
 // 1. Booking Request Platform & Status Enums
@@ -145,6 +145,8 @@ export const PublicQuotationItemSchema = z.object({
   addonPrice: z.number().nullable().optional(),
   baseUnitPrice: z.number().nullable().optional(),
   addonAluminumFinish: z.string().nullable().optional(),
+  swappedAccessories: z.array(SwappedAccessoryDocumentSchema).optional(),
+  accessoryPriceDelta: z.number().nonnegative().optional(),
 });
 export type PublicQuotationItem = z.infer<typeof PublicQuotationItemSchema>;
 
@@ -178,6 +180,8 @@ export const PublicQuotationSummarySchema = z.object({
   addonPrice: z.number().nullable().optional(),
   baseUnitPrice: z.number().nullable().optional(),
   addonAluminumFinish: z.string().nullable().optional(),
+  swappedAccessories: z.array(SwappedAccessoryDocumentSchema).optional(),
+  accessoryPriceDelta: z.number().nonnegative().optional(),
   items: z.array(PublicQuotationItemSchema).optional(),
   consolidatedMetrics: z
     .object({

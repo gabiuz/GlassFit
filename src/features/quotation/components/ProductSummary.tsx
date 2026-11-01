@@ -206,6 +206,8 @@ function createProductSummaryItemFromOverlay(
 
   const itemId = overlay.overlayId || `overlay-${index}`;
   const addonPrice = config.addonPrice ?? 0;
+  const accessoryPriceDelta = config.accessoryPriceDelta ?? 0;
+  const swappedAccessories = Object.values(config.swappedAccessories ?? {});
   const addonName = config.addonName ?? null;
   const selectedAddon = (config.selectedAddon as "none" | "screen" | "grill") ?? (config.addonProductId ? "screen" : undefined);
   const addonProductId = config.addonProductId ?? null;
@@ -234,7 +236,7 @@ function createProductSummaryItemFromOverlay(
         ? `Security Grille${sideHatchClause}`
         : null;
 
-  const baseUnitPrice = unitPrice - addonPrice;
+  const baseUnitPrice = config.baseUnitPrice ?? (unitPrice - addonPrice - accessoryPriceDelta);
 
   const isJalousieOverlay = (overlay.productName || "").toLowerCase().includes("jalousie");
   const isDynamicBayActiveOverlay = Boolean(overlay.configuration?.dynamicBayConfig?.enabled);
@@ -261,6 +263,7 @@ function createProductSummaryItemFromOverlay(
       panelCount > 2 ? `${panelCount}-Panel` : null,
       jalousieOverlaySpec,
       formattedAddonName && selectedAddon && selectedAddon !== "none" ? `Add-on: ${formattedAddonName}` : null,
+      ...swappedAccessories.filter((selection) => selection.accessoryId !== "default").map((selection) => `Hardware: ${selection.accessoryName}`),
     ]
       .filter(Boolean)
       .join(" | "),
@@ -292,6 +295,8 @@ function createProductSummaryItemFromOverlay(
       hatchCount: hatchCount > 0 ? hatchCount : undefined,
       hatchTargetKeys,
       baseUnitPrice,
+      swappedAccessories,
+      accessoryPriceDelta,
       bomGroups: {
         framingAmount: bomCalc.effectiveFramingCost,
         glazingAmount: bomCalc.effectiveGlazingCost,
@@ -329,6 +334,8 @@ function createProductSummaryItemFromOverlay(
     addonName,
     addonPrice: addonPrice > 0 ? addonPrice : undefined,
     baseUnitPrice,
+    swappedAccessories: config.swappedAccessories,
+    accessoryPriceDelta,
     addonAluminumFinish,
     grilleBOM: overlay.configuration?.grilleBOM ?? overlay.grilleBOM ?? null,
     ...quotationMeasurement(overlay.configuration),
@@ -378,6 +385,8 @@ function createProductSummaryItem(
   });
 
   const addonPrice = configuration?.addonPrice ?? 0;
+  const accessoryPriceDelta = configuration?.accessoryPriceDelta ?? 0;
+  const swappedAccessories = Object.values(configuration?.swappedAccessories ?? {});
   const addonName = configuration?.addonName ?? null;
   const selectedAddon = (configuration?.selectedAddon as "none" | "screen" | "grill") ?? (configuration?.addonProductId ? "screen" : undefined);
   const addonProductId = configuration?.addonProductId ?? null;
@@ -410,7 +419,7 @@ function createProductSummaryItem(
     bomCalc.finalQuotation > 0
       ? bomCalc.finalQuotation
       : definition.product.basePrice ?? 0;
-  const unitPrice = baseUnitPrice + addonPrice;
+  const unitPrice = baseUnitPrice + addonPrice + accessoryPriceDelta;
   const qty = configuration?.quantity ?? 1;
   const totalPrice = unitPrice * qty;
   const itemId = definition.product.productId;
@@ -449,6 +458,7 @@ function createProductSummaryItem(
       panelCount > 2 ? `${panelCount}-Panel` : null,
       jalousieSpec,
       formattedAddonName && selectedAddon && selectedAddon !== "none" ? `Add-on: ${formattedAddonName}` : null,
+      ...swappedAccessories.filter((selection) => selection.accessoryId !== "default").map((selection) => `Hardware: ${selection.accessoryName}`),
     ]
       .filter(Boolean)
       .join(" | "),
@@ -479,6 +489,8 @@ function createProductSummaryItem(
       hatchCount: hatchCount > 0 ? hatchCount : undefined,
       hatchTargetKeys,
       baseUnitPrice,
+      swappedAccessories,
+      accessoryPriceDelta,
       bomGroups: {
         framingAmount: bomCalc.effectiveFramingCost,
         glazingAmount: bomCalc.effectiveGlazingCost,
@@ -515,6 +527,8 @@ function createProductSummaryItem(
     addonName,
     addonPrice: addonPrice > 0 ? addonPrice : undefined,
     baseUnitPrice,
+    swappedAccessories: configuration?.swappedAccessories,
+    accessoryPriceDelta,
     addonAluminumFinish,
     addonMountingSide,
     hatchCount: hatchCount > 0 ? hatchCount : undefined,
