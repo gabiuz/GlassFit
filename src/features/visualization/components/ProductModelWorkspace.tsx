@@ -1954,7 +1954,8 @@ export function ProductModelWorkspace({
     return new Intl.NumberFormat("en-PH", {
       style: "currency",
       currency: "PHP",
-      maximumFractionDigits: 0,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     })
       .format(realtimePricing.totalPrice)
       .replace("PHP", "Php");
@@ -1964,7 +1965,8 @@ export function ProductModelWorkspace({
     return new Intl.NumberFormat("en-PH", {
       style: "currency",
       currency: "PHP",
-      maximumFractionDigits: 0,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     })
       .format(realtimePricing.unitPrice)
       .replace("PHP", "Php");
@@ -2057,7 +2059,8 @@ export function ProductModelWorkspace({
       const formattedTotal = new Intl.NumberFormat("en-PH", {
         style: "currency",
         currency: "PHP",
-        maximumFractionDigits: 0,
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
       })
         .format(totalScenePrice)
         .replace("PHP", "Php");

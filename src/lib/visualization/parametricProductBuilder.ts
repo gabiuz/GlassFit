@@ -1263,6 +1263,65 @@ function buildAssembledProduct(
         readBoolean(resolved.resolvedValues?.hasSill, true)
       );
 
+  // Check if structural framing/glazing components share pre-positioned assembly coordinates (as in CAD exports or multi-part assemblies)
+  let hasLeftStructural = false;
+  let hasRightStructural = false;
+  let hasTopStructural = false;
+  let hasBottomStructural = false;
+  let offsetStructuralCount = 0;
+
+  for (const component of definition.components) {
+    const compIdentity = (
+      component.componentKey +
+      " " +
+      component.componentName +
+      " " +
+      (component.componentType || "") +
+      " " +
+      (component.presentationCategory || "")
+    ).toLowerCase();
+
+    const isStructural =
+      component.presentationCategory === "Framing" ||
+      component.presentationCategory === "Glazing" ||
+      component.componentType === "Frame" ||
+      component.componentType === "Glass" ||
+      component.componentType === "Mesh" ||
+      component.componentType === "Screen" ||
+      compIdentity.includes("frame") ||
+      compIdentity.includes("sash") ||
+      compIdentity.includes("glass") ||
+      compIdentity.includes("panel") ||
+      compIdentity.includes("jamb") ||
+      compIdentity.includes("rail") ||
+      compIdentity.includes("stile");
+
+    if (isStructural) {
+      try {
+        const cModel = cache.getClone(component.componentId);
+        cModel.updateMatrixWorld(true);
+        const box = new THREE.Box3().setFromObject(cModel);
+        const center = new THREE.Vector3();
+        box.getCenter(center);
+
+        if (center.x < -0.05) hasLeftStructural = true;
+        if (center.x > 0.05) hasRightStructural = true;
+        if (center.y > 0.05) hasTopStructural = true;
+        if (center.y < -0.05) hasBottomStructural = true;
+        if (Math.abs(center.x) > 0.05 || Math.abs(center.y) > 0.05) {
+          offsetStructuralCount++;
+        }
+      } catch {
+        // ignore missing model in detection pass
+      }
+    }
+  }
+
+  const isAssemblyCoords =
+    (hasLeftStructural && hasRightStructural) ||
+    (hasTopStructural && hasBottomStructural) ||
+    offsetStructuralCount >= 2;
+
   // Natural Assembly: Identify accessory slots and measure host geometry
   const accessorySlotKeys = new Set<string>();
   const hostComponentsBox = new THREE.Box3();
@@ -1289,20 +1348,28 @@ function buildAssembledProduct(
       !isSillComp &&
       (
         component.presentationCategory === "Framing" ||
+        component.presentationCategory === "Glazing" ||
+        component.presentationCategory === "Consumable" ||
         component.componentType === "Frame" ||
         component.componentType === "Model" ||
         component.componentType === "Mesh" ||
         component.componentType === "Screen" ||
         component.componentType === "Glass" ||
+        component.componentType === "Consumable" ||
         compIdentity.includes("frame") ||
+        compIdentity.includes("sash") ||
         compIdentity.includes("mesh") ||
         compIdentity.includes("glass") ||
+        compIdentity.includes("panel") ||
         compIdentity.includes("jamb") ||
         compIdentity.includes("header") ||
         compIdentity.includes("rail") ||
         compIdentity.includes("stile") ||
         compIdentity.includes("mullion") ||
-        compIdentity.includes("bar")
+        compIdentity.includes("bar") ||
+        compIdentity.includes("seal") ||
+        compIdentity.includes("gasket") ||
+        compIdentity.includes("weather")
       );
 
     const isLouverBlade = Boolean(
@@ -1322,27 +1389,49 @@ function buildAssembledProduct(
       continue;
     }
 
-    const isFixedDimension = (
-      component.dimensionBinding === "FIXED" ||
-      (component as Record<string, unknown>).dimension_binding === "FIXED"
-    );
-
-    const isSlot = !isFrameOrMeshOrPanel && Boolean(
+    const isSlot = Boolean(
       component.isAccessorySlot ||
       (component as Record<string, unknown>).is_accessory_slot ||
-      compIdentity.includes("handle") ||
-      compIdentity.includes("knob") ||
-      compIdentity.includes("lever") ||
-      compIdentity.includes("smartlock") ||
-      compIdentity.includes("lock")
+      Boolean(component.accessoryCategory) ||
+      (!isFrameOrMeshOrPanel && (
+        compIdentity.includes("handle") ||
+        compIdentity.includes("knob") ||
+        compIdentity.includes("lever") ||
+        compIdentity.includes("smartlock") ||
+        compIdentity.includes("lock")
+      ) && !compIdentity.includes("handles"))
     );
 
-    if (isSlot || isSillComp || (isFixedDimension && !isFrameOrMeshOrPanel)) {
-      if (isSlot || (isFixedDimension && !isFrameOrMeshOrPanel)) {
-        accessorySlotKeys.add(component.componentId);
-        accessorySlotKeys.add(component.componentKey);
-      }
-    } else {
+    if (isSlot) {
+      accessorySlotKeys.add(component.componentId);
+      accessorySlotKeys.add(component.componentKey);
+    }
+
+    const isHostStructural =
+      !isSlot &&
+      !isSillComp &&
+      (
+        component.presentationCategory === "Framing" ||
+        component.presentationCategory === "Glazing" ||
+        component.componentType === "Frame" ||
+        component.componentType === "Model" ||
+        component.componentType === "Mesh" ||
+        component.componentType === "Screen" ||
+        component.componentType === "Glass" ||
+        compIdentity.includes("frame") ||
+        compIdentity.includes("mesh") ||
+        compIdentity.includes("glass") ||
+        compIdentity.includes("panel") ||
+        compIdentity.includes("sash") ||
+        compIdentity.includes("jamb") ||
+        compIdentity.includes("header") ||
+        compIdentity.includes("rail") ||
+        compIdentity.includes("stile") ||
+        compIdentity.includes("mullion") ||
+        compIdentity.includes("bar")
+      );
+
+    if (isHostStructural) {
       try {
         const cModel = cache.getClone(component.componentId);
         cModel.updateMatrixWorld(true);
@@ -2076,21 +2165,29 @@ function buildAssembledProduct(
 
     const isFrameOrMeshOrPanel =
       component.presentationCategory === "Framing" ||
+      component.presentationCategory === "Glazing" ||
+      component.presentationCategory === "Consumable" ||
       component.componentType === "Frame" ||
       component.componentType === "Model" ||
       component.componentType === "Mesh" ||
       component.componentType === "Screen" ||
       component.componentType === "Glass" ||
+      component.componentType === "Consumable" ||
       compIdentity.includes("frame") ||
+      compIdentity.includes("sash") ||
       compIdentity.includes("mesh") ||
       compIdentity.includes("glass") ||
+      compIdentity.includes("panel") ||
       compIdentity.includes("sill") ||
       compIdentity.includes("jamb") ||
       compIdentity.includes("header") ||
       compIdentity.includes("rail") ||
       compIdentity.includes("stile") ||
       compIdentity.includes("mullion") ||
-      compIdentity.includes("bar");
+      compIdentity.includes("bar") ||
+      compIdentity.includes("seal") ||
+      compIdentity.includes("gasket") ||
+      compIdentity.includes("weather");
 
     const isLouverBladeComp = Boolean(
       component.dimensionBinding === "LOUVER_BLADE" ||
@@ -2134,7 +2231,7 @@ function buildAssembledProduct(
       isAccessorySlot
     );
 
-    if (isFixedDimension) {
+    if (isFixedDimension && !isAssemblyCoords) {
       const clusters = extractComponentClusters(clone);
 
       if (clusters.length > 1 && !isAlternativeAccessory) {
@@ -2288,14 +2385,18 @@ function buildAssembledProduct(
             }
           });
 
-          const container = new THREE.Group();
-          container.name = `${component.componentName || "part"}_${activeHanding}`;
-          container.userData = { ...clone.userData, isMirroredHanding: false, preserveMaterial: true };
-          clone.position.sub(origHandleCenter);
-          container.add(clone);
-          container.position.set(targetX, targetY, targetZ);
-          container.rotation.set(0, 0, 0);
-          group.add(container);
+          if (isAssemblyCoords) {
+            group.add(clone);
+          } else {
+            const container = new THREE.Group();
+            container.name = `${component.componentName || "part"}_${activeHanding}`;
+            container.userData = { ...clone.userData, isMirroredHanding: false, preserveMaterial: true };
+            clone.position.sub(origHandleCenter);
+            container.add(clone);
+            container.position.set(targetX, targetY, targetZ);
+            container.rotation.set(0, 0, 0);
+            group.add(container);
+          }
         } else {
           const mountedHandle = mirrorPartAcrossCenterline(
             clone,
@@ -2303,7 +2404,7 @@ function buildAssembledProduct(
             activeHanding,
             component.positionOptions?.allowVerticalToggle && swapped?.verticalPosition === "bottom" ? targetY : undefined,
             targetZ,
-            targetX
+            isAssemblyCoords ? undefined : targetX
           );
 
           mountedHandle.userData = { ...clone.userData, isMirroredHanding: activeHanding !== modeledHanding, preserveMaterial: true };
@@ -2635,7 +2736,7 @@ function buildAssembledProduct(
       continue;
     }
 
-    if (isFixedDimension) {
+    if (isFixedDimension && !isAssemblyCoords) {
       clone.updateMatrixWorld(true);
       const partBounds = new THREE.Box3().setFromObject(clone);
       const partCenter = new THREE.Vector3();
@@ -2716,6 +2817,27 @@ function buildAssembledProduct(
       continue;
     }
 
+    clone.userData.componentKey = component.componentKey;
+    clone.userData.componentId = component.componentId;
+    clone.userData.componentName = component.componentName;
+    clone.userData.componentType = component.componentType;
+    clone.userData.presentationCategory = component.presentationCategory;
+    clone.userData.rawMaterialId = component.rawMaterialId ?? null;
+    clone.userData.rawMaterialCategory = component.rawMaterial?.category ?? null;
+    clone.userData.rawMaterial = component.rawMaterial ?? null;
+    clone.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        child.userData.componentKey = component.componentKey;
+        child.userData.componentId = component.componentId;
+        child.userData.componentName = component.componentName;
+        child.userData.componentType = component.componentType;
+        child.userData.presentationCategory = component.presentationCategory;
+        child.userData.rawMaterialId = component.rawMaterialId ?? null;
+        child.userData.rawMaterialCategory = component.rawMaterial?.category ?? null;
+        child.userData.rawMaterial = component.rawMaterial ?? null;
+      }
+    });
+
     group.add(clone);
   }
 
@@ -2733,7 +2855,7 @@ function buildAssembledProduct(
     group.scale.set(scaleX, scaleY, scaleZ);
 
     // Maintain 1:1 metric scale on hardware accessories and fixed parts
-    if (scaleX !== 1 || scaleY !== 1 || scaleZ !== 1) {
+    if (!isAssemblyCoords && (scaleX !== 1 || scaleY !== 1 || scaleZ !== 1)) {
       group.children.forEach((child) => {
         if (child.userData?.isLouverAssembly || child.userData?.isOperatorAssembly) {
           return;
