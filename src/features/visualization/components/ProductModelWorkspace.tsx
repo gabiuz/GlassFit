@@ -88,6 +88,7 @@ import {
   denormalizeCorners,
   drawPerspectiveWarpedImage,
   estimateDimensionsFromCorners,
+  rotatePerspectiveCorners,
   scaleCornersAlongAxis,
 } from "@/lib/visualization/perspectiveTransform";
 import {
@@ -1495,20 +1496,6 @@ export function ProductModelWorkspace({
     return () => observer.disconnect();
   }, [aspectWidth, aspectHeight, overlayX, overlayY, shouldLockMobileEditor, compactOrientation]);
 
-  const perspectiveToolbarPosition = useMemo(() => {
-    if (!perspectiveCorners) return null;
-    const currentWidth = canvasDisplaySize.width;
-    const currentHeight = canvasDisplaySize.height;
-    const pxCorners = denormalizeCorners(perspectiveCorners, currentWidth, currentHeight);
-    const minX = Math.min(...pxCorners.map((point) => point.x));
-    const maxX = Math.max(...pxCorners.map((point) => point.x));
-    const minY = Math.min(...pxCorners.map((point) => point.y));
-    return {
-      left: Math.max(160, Math.min(currentWidth - 160, (minX + maxX) / 2)),
-      top: Math.max(12, minY - 48),
-    };
-  }, [perspectiveCorners, canvasDisplaySize.width, canvasDisplaySize.height]);
-
   const perspectiveHandlePoints = useMemo(() => {
     if (!perspectiveCorners) return null;
     const currentW = canvasDisplaySize.width;
@@ -2283,10 +2270,6 @@ export function ProductModelWorkspace({
 
   const outlineControlsStyle = useMemo(
     () => getOutlineControlsStyle(structuralDefinition ? projectedModelBounds : null),
-    [projectedModelBounds, structuralDefinition],
-  );
-  const toolbarControlsStyle = useMemo(
-    () => getToolbarControlsStyle(structuralDefinition ? projectedModelBounds : null),
     [projectedModelBounds, structuralDefinition],
   );
   const isEditingProduct = !isSnapshotApplied;
@@ -4051,6 +4034,42 @@ export function ProductModelWorkspace({
     [perspectiveCorners, widthCm, heightCm, canvasDisplaySize.width, canvasDisplaySize.height, metricReference, updateMetricPerspectiveCorners],
   );
 
+  const startPerspectiveRotation = useCallback((event: React.PointerEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!perspectiveCorners || isUsingTransformHandle) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const bounds = canvas.getBoundingClientRect();
+    const width = bounds.width;
+    const height = bounds.height;
+    if (width <= 0 || height <= 0) return;
+    const centerX = bounds.left + perspectiveCorners.reduce((sum, point) => sum + point.x, 0) * width / 4;
+    const centerY = bounds.top + perspectiveCorners.reduce((sum, point) => sum + point.y, 0) * height / 4;
+    const pointerId = event.pointerId;
+    const startAngle = getPointerAngle(event.clientX, event.clientY, centerX, centerY);
+    const startCorners = perspectiveCorners;
+    setIsUsingTransformHandle(true);
+
+    const handleMove = (moveEvent: PointerEvent) => {
+      if (moveEvent.pointerId !== pointerId) return;
+      const angle = getPointerAngle(moveEvent.clientX, moveEvent.clientY, centerX, centerY) - startAngle;
+      updateMetricPerspectiveCorners(rotatePerspectiveCorners(startCorners, width, height, angle));
+    };
+    const handleEnd = (endEvent: PointerEvent) => {
+      if (endEvent.pointerId !== pointerId) return;
+      setIsUsingTransformHandle(false);
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleEnd);
+      window.removeEventListener("pointercancel", handleEnd);
+    };
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", handleEnd);
+    window.addEventListener("pointercancel", handleEnd);
+  }, [perspectiveCorners, isUsingTransformHandle, updateMetricPerspectiveCorners]);
+
   const startPerspectiveMove = useCallback(
     (event: React.PointerEvent) => {
       event.preventDefault();
@@ -4390,7 +4409,7 @@ export function ProductModelWorkspace({
         {/* Left Side: Space Canvas + Instructions */}
         <div className={shouldLockMobileEditor ? "flex h-full min-w-0 flex-1 items-center justify-center overflow-hidden" : "flex-1 min-w-0 flex flex-col gap-6 w-full lg:sticky lg:top-35 lg:self-start"}>
           {/* Main Space Canvas Card */}
-          <div className={shouldLockMobileEditor ? "relative flex h-full w-full items-center justify-center overflow-hidden bg-[#0f1422] touch-none [container-type:size]" : "bg-white/10 border border-[#f5f5f5] p-3 sm:p-5 rounded-[20px] shadow-[0px_0px_5px_0px_rgba(0,0,0,0.25)] relative w-full flex flex-col items-center justify-center gap-3 lg:flex-row lg:gap-0"}>
+          <div className={shouldLockMobileEditor ? "relative flex h-full w-full items-center justify-center overflow-hidden bg-[#0f1422] touch-none [container-type:size]" : "bg-white/10 border border-[#f5f5f5] p-3 sm:p-5 rounded-[20px] shadow-[0px_0px_5px_0px_rgba(0,0,0,0.25)] relative w-full flex flex-col items-center justify-center gap-3"}>
             <div
               ref={canvasRef}
               className="relative mx-auto rounded-[15px] overflow-hidden bg-neutral-100"
@@ -4781,6 +4800,24 @@ export function ProductModelWorkspace({
                       {/* 9 Perspective Quadrilateral Transform Handles (Picture 2 Parity) */}
                       {perspectiveHandlePoints && (
                         <>
+                          {perspectiveHandlePoints.corners.map((corner) => {
+                            const dx = corner.x - perspectiveHandlePoints.center.x;
+                            const dy = corner.y - perspectiveHandlePoints.center.y;
+                            const distance = Math.hypot(dx, dy) || 1;
+                            return (
+                              <button
+                                type="button"
+                                key={`rotate-${corner.id}`}
+                                aria-label={`Rotate fitted product from ${corner.id}`}
+                                title="Drag to rotate fitted product"
+                                onPointerDown={startPerspectiveRotation}
+                                className="absolute z-40 flex size-11 items-center justify-center pointer-events-auto touch-none cursor-grab active:cursor-grabbing"
+                                style={{ left: corner.x + 34 * dx / distance, top: corner.y + 34 * dy / distance, transform: "translate(-50%, -50%)" }}
+                              >
+                                <span className="flex size-7 items-center justify-center rounded-full border border-[#07b6d3] bg-white text-[#0f1422] shadow-md"><RotateCw className="size-4" /></span>
+                              </button>
+                            );
+                          })}
                           {/* 4 Corner Scale Handles */}
                           {perspectiveHandlePoints.corners.map((c) => (
                             <button
@@ -4920,79 +4957,7 @@ export function ProductModelWorkspace({
               )}
             </div>
             {!shouldLockMobileEditor && selectedProduct && isEditingProduct && !perspectiveCorners && (
-              <motion.div
-                className="pointer-events-none absolute z-50 hidden lg:block"
-                style={{
-                  left: `calc(50% - ${overlaySize.width / 2}px)`,
-                  top: `calc(50% - ${overlaySize.height / 2}px)`,
-                  width: overlaySize.width,
-                  height: overlaySize.height,
-                  x: overlayX,
-                  y: overlayY,
-                }}
-              >
-                <div
-                  className="absolute flex items-center gap-2.5 select-none animate-in fade-in slide-in-from-bottom-2 duration-200 pointer-events-auto"
-                  style={toolbarControlsStyle}
-                >
-                  {supportsPerspectivePlane && (
-                    <button type="button" onClick={() => setShowPerspectivePicker(true)} className="bg-[#0f1422] hover:bg-black text-white w-25 h-12 px-2 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md">
-                      <Maximize className="w-4 h-4 text-white" />
-                      <span className="text-[13px] font-normal tracking-[-0.266px]">Fit</span>
-                    </button>
-                  )}
-                  <button type="button" onClick={handleRotate} className="bg-[#0f1422] hover:bg-black text-white w-25 h-12 px-2 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md">
-                    <RotateCw className="w-4 h-4 text-white" />
-                    <span className="text-[13px] font-normal tracking-[-0.266px]">Rotate</span>
-                  </button>
-                  <button type="button" onClick={handleFlip} className="bg-[#0f1422] hover:bg-black text-white w-25 h-12 px-2 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md">
-                    <FlipHorizontal className="w-4 h-4 text-white" />
-                    <span className="text-[13px] font-normal tracking-[-0.266px]">Flip</span>
-                  </button>
-                  <button type="button" onClick={handleReset} className="bg-[#0f1422] hover:bg-black text-white w-25 h-12 px-2 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md">
-                    <RotateCcw className="w-4 h-4 text-white" />
-                    <span className="text-[13px] font-normal tracking-[-0.266px]">Reset</span>
-                  </button>
-                  <button type="button" onClick={handleRemove} className="bg-[#c50000] hover:bg-[#a30000] text-white w-25 h-12 px-2 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md">
-                    <Trash2 className="w-4 h-4 text-white" />
-                    <span className="text-[13px] font-normal tracking-[-0.266px]">Remove</span>
-                  </button>
-                </div>
-              </motion.div>
-            )}
-            {perspectiveToolbarPosition && !shouldLockMobileEditor && selectedProduct && isEditingProduct && perspectiveCorners && (
-              <div
-                className="absolute z-50 hidden lg:flex items-center gap-2.5 select-none animate-in fade-in slide-in-from-bottom-2 duration-200 pointer-events-auto"
-                style={{
-                  left: `calc(50% + ${perspectiveToolbarPosition.left - canvasDisplaySize.width / 2}px)`,
-                  top: `calc(50% + ${perspectiveToolbarPosition.top - canvasDisplaySize.height / 2}px)`,
-                  transform: "translateX(-50%)",
-                }}
-              >
-                <button type="button" onClick={() => setShowPerspectivePicker(true)} className="bg-[#0f1422] hover:bg-black text-white w-25 h-12 px-2 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md">
-                  <Maximize className="w-4 h-4 text-white" />
-                  <span className="text-[13px] font-normal tracking-[-0.266px]">Edit Corners</span>
-                </button>
-                <button type="button" onClick={() => { setPerspectiveCorners(null); setModelRevision((prev) => prev + 1); }} className="bg-[#0f1422] hover:bg-black text-white w-25 h-12 px-2 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md">
-                  <Move className="w-4 h-4 text-white" />
-                  <span className="text-[13px] font-normal tracking-[-0.266px]">Free Place</span>
-                </button>
-                <button type="button" onClick={handleFlip} className="bg-[#0f1422] hover:bg-black text-white w-25 h-12 px-2 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md">
-                  <FlipHorizontal className="w-4 h-4 text-white" />
-                  <span className="text-[13px] font-normal tracking-[-0.266px]">Flip</span>
-                </button>
-                <button type="button" onClick={handleReset} className="bg-[#0f1422] hover:bg-black text-white w-25 h-12 px-2 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md">
-                  <RotateCcw className="w-4 h-4 text-white" />
-                  <span className="text-[13px] font-normal tracking-[-0.266px]">Reset</span>
-                </button>
-                <button type="button" onClick={handleRemove} className="bg-[#c50000] hover:bg-[#a30000] text-white w-25 h-12 px-2 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md">
-                  <Trash2 className="w-4 h-4 text-white" />
-                  <span className="text-[13px] font-normal tracking-[-0.266px]">Remove</span>
-                </button>
-              </div>
-            )}
-            {!shouldLockMobileEditor && selectedProduct && isEditingProduct && !perspectiveCorners && (
-              <div className="grid w-full max-w-[600px] grid-cols-2 gap-2 select-none sm:grid-cols-5 lg:hidden">
+              <div className="grid w-full max-w-[600px] grid-cols-2 gap-2 select-none sm:grid-cols-5">
                 {supportsPerspectivePlane && (
                   <button type="button" onClick={() => setShowPerspectivePicker(true)} className="bg-[#0f1422] hover:bg-black text-white min-h-11 min-w-0 px-2 py-2 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]">
                     <Maximize className="w-4 h-4 text-white" />
@@ -5019,7 +4984,7 @@ export function ProductModelWorkspace({
             )}
             {!shouldLockMobileEditor && selectedProduct && isEditingProduct && perspectiveCorners && (
               <div
-                className="grid w-full max-w-[600px] grid-cols-2 gap-2 select-none sm:grid-cols-5 lg:hidden"
+                className="grid w-full max-w-[600px] grid-cols-2 gap-2 select-none sm:grid-cols-5"
               >
                 <button
                   type="button"
@@ -7373,23 +7338,6 @@ function getOutlineControlsStyle(
     top: `${resolvedBounds.top * 100}%`,
     width: `${resolvedBounds.width * 100}%`,
     height: `${resolvedBounds.height * 100}%`,
-  };
-}
-
-function getToolbarControlsStyle(
-  bounds: ProjectedModelBounds | null,
-): React.CSSProperties {
-  const resolvedBounds = bounds ?? {
-    left: 0.08,
-    top: 0.08,
-    width: 0.84,
-    height: 0.84,
-  };
-
-  return {
-    left: `${(resolvedBounds.left + resolvedBounds.width / 2) * 100}%`,
-    top: `${resolvedBounds.top * 100}%`,
-    transform: "translate(-50%, calc(-100% - 12px))",
   };
 }
 

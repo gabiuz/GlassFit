@@ -1,5 +1,28 @@
 import type { Point2D, QuadrilateralCorners } from "./types";
 
+/** Rotate fitted corners in display pixels so non-square canvases keep their shape. */
+export function rotatePerspectiveCorners(
+  corners: QuadrilateralCorners,
+  width: number,
+  height: number,
+  angleDegrees: number,
+): QuadrilateralCorners {
+  if (width <= 0 || height <= 0) return corners;
+  const centerX = corners.reduce((sum, corner) => sum + corner.x * width, 0) / 4;
+  const centerY = corners.reduce((sum, corner) => sum + corner.y * height, 0) / 4;
+  const radians = angleDegrees * Math.PI / 180;
+  const cosine = Math.cos(radians);
+  const sine = Math.sin(radians);
+  return corners.map((corner) => {
+    const x = corner.x * width - centerX;
+    const y = corner.y * height - centerY;
+    return {
+      x: (centerX + x * cosine - y * sine) / width,
+      y: (centerY + x * sine + y * cosine) / height,
+    };
+  }) as QuadrilateralCorners;
+}
+
 /**
  * Direct Linear Transform (DLT) homography solver.
  * Solves an 8x8 linear system using Gaussian elimination with partial pivoting

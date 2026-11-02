@@ -29,7 +29,9 @@ export function drawPerimeterAmbientOcclusion(
   const strokeW = Math.max(1, creviceWidth);
 
   ctx.save();
-  ctx.globalCompositeOperation = "source-over";
+  // Shade only existing model pixels. Painting into transparent render-frame
+  // margins makes the full canvas boundary visible after perspective warping.
+  ctx.globalCompositeOperation = "source-atop";
 
   // Outer perimeter inset gradient
   // Top edge crevice
@@ -81,7 +83,7 @@ export function drawApertureRevealShadow(
   const safeOpacity = Math.min(Math.max(shadowOpacity, 0), 0.50);
 
   ctx.save();
-  ctx.globalCompositeOperation = "source-over";
+  ctx.globalCompositeOperation = "source-atop";
 
   // If light has a downward component (y > 0), the top wall header casts a shadow down
   if (lightDirection.y > 0.05) {

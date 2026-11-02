@@ -115,9 +115,9 @@ After implementation, run `npm run lint`, `npx tsc --noEmit`, `npm run build`, a
 
 ## 8. Readiness Decision
 
-The assigned investigation reproduced toolbar clipping from the original non-wrapping row and a free-place placement jump during canvas resizing. Below 1024px, the toolbar now flows below the photo canvas in the existing card. At desktop widths of 1024px and above, the original floating toolbar and canvas card layout remain in place. Free-place position, size, and motion values scale with measured canvas width. Perspective corners remain normalized.
+The assigned investigation reproduced toolbar clipping from the original non-wrapping row and a free-place placement jump during canvas resizing. The toolbar now flows below the photo canvas in the existing card at all standard workspace widths, including desktop. Free-place position, size, and motion values scale with measured canvas width. Perspective corners remain normalized.
 
-The desktop floating toolbar is positioned relative to the surrounding photo card while the photo canvas keeps its own clipped, rounded image surface. This lets the controls extend past the image edge without cutting off their labels or hit areas. All five desktop actions use the same 100 by 48 pixel size.
+The former desktop floating toolbar has been removed. Both free-place and perspective-fit actions use the same responsive row below the clipped, rounded photo canvas, keeping labels and hit areas clear of the image and transform handles.
 
 In Chromium viewport emulation at 320 by 700 CSS pixels, the standard photo canvas measured 214 by 194.82 pixels and compact portrait measured 320 by 291.32 pixels. Perspective handle coordinates differed by less than 0.00003 in normalized photo space. Before the free-place correction, normalized top-left and bottom-right corners changed from (0.15975, 0.10306) and (0.87843, 1.03497) to (0.27246, 0.23455) and (0.75308, 0.85776) on compact entry. After correction, standard, compact portrait, compact landscape, and Done differed by at most 0.00002 after resize settled; repeated toggles showed no drift. Five toolbar actions fit in two columns below the 320-pixel photo canvas with 103 by 55.5 pixel buttons and no handle overlap. The 700 by 320 compact landscape HUD actions measured 44 pixels.
 
