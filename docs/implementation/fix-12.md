@@ -594,3 +594,11 @@ Add test suite in `tests/unit/customerMaterialWorkspaceIntegration.test.ts`:
 - [x] Hard bans enforced: Zero `any` in TypeScript specifications (BAN-TYPE-05)
 - [x] Hard bans enforced: Strict UI consistency with existing Tailwind tokens (BAN-UI-09)
 - [x] Implementation completed and verified with automated test catalog (QAD-TC82.1 through QAD-TC82.8)
+
+## fix-19 appearance clarification
+
+Per-part raw material selections control fabrication specification, BOM, pricing, and saved material IDs under PRD-F6, PRD-F10, and QAD-TC82. They do not apply raw material PBR properties to the 3D preview, including on model rebuild or configuration restore. The earlier explicit per-part PBR override guidance in this document is superseded by this rule. Dedicated appearance controls and grouped visual finish choices retain their visual effects.
+
+## fix-20 grouped finish boundary
+
+The dedicated Aluminum Finish control retains the Section 3 synchronization contract: when a matching framing raw material exists, the control updates framing entries in `selectedMaterials`, including an earlier per-part frame choice. Its material ID and price effects are part of that control's fabrication behavior. Grouped visual finishes use a separate renderer map containing only their affected component keys. Per-part selections outside that group remain fabrication inputs and never become PBR overrides. The scoped map is retained across model rebuilds and configuration restoration.

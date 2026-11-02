@@ -6,13 +6,17 @@ import {
   getDefaultMaterialSelections,
   getAllCandidateMaterialsMap,
   applyGroupSelection,
+  applyScopedGroupVisualOverride,
   formatGroupSummary,
 } from "../../src/lib/visualization/materialCustomization";
 import { calculateBOMFromStructuralDefinition } from "../../src/lib/pricing/pricingEngine";
 import { applyPBRToMesh } from "../../src/lib/visualization/materialClassifier";
+import { applyPresentationMaterials } from "../../src/lib/visualization/materialClassifier";
+import { ProductModelRenderer } from "../../src/lib/visualization/modelRenderer";
 import { generateQuotationPdfHtml } from "../../src/lib/pricing/quotationPdfGenerator";
 import type { ProductStructuralDefinition } from "../../src/lib/visualization/types";
 import type { QuotationDocumentViewModel } from "../../src/lib/pricing/quotationDocument";
+import type { ComponentMaterialBinding } from "../../src/lib/pricing/types";
 
 // Mock Structural Definition with Step 4 Multi-Material Bindings
 const mockDefinition: ProductStructuralDefinition = {
@@ -288,6 +292,111 @@ const mockDefinition: ProductStructuralDefinition = {
     },
   ],
 };
+
+describe("FIX20 grouped visual override ownership (QAD-TC81, QAD-TC82)", () => {
+  const glassAlternative: ComponentMaterialBinding = {
+    bindingId: "bind-glass-bronze",
+    componentKey: "glass_pane",
+    rawMaterialId: "mat-glass-bronze",
+    isDefault: false,
+    rawMaterial: {
+      id: "mat-glass-bronze",
+      material_code: "GL-BRZ-6MM",
+      description: "6mm Bronze Glass",
+      category: "Glass",
+      finish_type: "Bronze",
+      billing_unit: "sqm",
+      unit_price: 680,
+      waste_allowance: 0.15,
+      is_active: true,
+    },
+  };
+  const definition: ProductStructuralDefinition = {
+    ...mockDefinition,
+    componentMaterials: [...(mockDefinition.componentMaterials ?? []), glassAlternative],
+  };
+
+  function renderWithOverrides(overrides: Record<string, string>) {
+    const group = new THREE.Group();
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    frame.userData.componentKey = "head_profile";
+    frame.userData.presentationCategory = "Framing";
+    const glass = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    glass.userData.componentKey = "glass_pane";
+    glass.userData.presentationCategory = "Glazing";
+    group.add(frame, glass);
+    applyPresentationMaterials(group, {
+      aluminumFinish: "analok",
+      glassAppearance: "clear",
+      glassColor: "clear",
+      glassThicknessMm: 6,
+    });
+    const beforeFrame = frame.material as THREE.MeshPhysicalMaterial;
+    const beforeGlass = glass.material as THREE.MeshPhysicalMaterial;
+    const baseline = {
+      frameColor: beforeFrame.color.getHex(),
+      frameMetalness: beforeFrame.metalness,
+      glassColor: beforeGlass.color.getHex(),
+      glassTransmission: beforeGlass.transmission,
+      glassRoughness: beforeGlass.roughness,
+    };
+    ProductModelRenderer.prototype.updateCustomMaterials.call(
+      { modelGroup: group } as unknown as ProductModelRenderer,
+      overrides,
+      getAllCandidateMaterialsMap(definition),
+    );
+    return { frame: frame.material as THREE.MeshPhysicalMaterial, glass: glass.material as THREE.MeshPhysicalMaterial, baseline };
+  }
+
+  it("keeps a per-part glass choice out of a later framing finish renderer map on fresh meshes", () => {
+    const defaults = getDefaultMaterialSelections(definition);
+    const perPart = { ...defaults, glass_pane: glassAlternative.rawMaterialId };
+    const framing = buildMaterialCustomizationGroups(definition, perPart).find((group) => group.presentationCategory === "Framing");
+    assert.ok(framing);
+    const white = framing.options.find((option) => option.finishType === "PowderCoatedWhite");
+    assert.ok(white);
+    const fabrication = applyGroupSelection(framing, white, perPart, definition);
+    const overrides = applyScopedGroupVisualOverride(framing, white, {}, definition);
+    assert.strictEqual(fabrication.glass_pane, glassAlternative.rawMaterialId);
+    assert.ok(Object.keys(overrides).length > 0);
+    assert.ok(Object.keys(overrides).every((key) => framing.affectedComponentKeys.includes(key)));
+    for (const rendererInput of [overrides, { ...overrides }]) {
+      const { frame, glass, baseline } = renderWithOverrides(rendererInput);
+      assert.notStrictEqual(frame.color.getHex(), baseline.frameColor);
+      assert.strictEqual(glass.color.getHex(), baseline.glassColor);
+      assert.strictEqual(glass.transmission, baseline.glassTransmission);
+      assert.strictEqual(glass.roughness, baseline.glassRoughness);
+    }
+  });
+
+  it("keeps a per-part framing choice out of a later glazing finish renderer map in either action order", () => {
+    const defaults = getDefaultMaterialSelections(definition);
+    const perPart = { ...defaults, head_profile: "mat-head-pcw" };
+    const glazing = buildMaterialCustomizationGroups(definition, perPart).find((group) => group.presentationCategory === "Glazing");
+    assert.ok(glazing);
+    const bronze = glazing.options.find((option) => option.materialId === glassAlternative.rawMaterialId);
+    assert.ok(bronze);
+    const fabrication = applyGroupSelection(glazing, bronze, perPart, definition);
+    const overrides = applyScopedGroupVisualOverride(glazing, bronze, {}, definition);
+    assert.strictEqual(fabrication.head_profile, "mat-head-pcw");
+    assert.deepStrictEqual(Object.keys(overrides), ["glass_pane"]);
+    const { frame, glass, baseline } = renderWithOverrides(overrides);
+    assert.strictEqual(frame.color.getHex(), baseline.frameColor);
+    assert.strictEqual(frame.metalness, baseline.frameMetalness);
+    assert.notStrictEqual(glass.color.getHex(), baseline.glassColor);
+
+    const framing = buildMaterialCustomizationGroups(definition, fabrication).find((group) => group.presentationCategory === "Framing");
+    assert.ok(framing);
+    const white = framing.options.find((option) => option.finishType === "PowderCoatedWhite");
+    assert.ok(white);
+    const both = applyScopedGroupVisualOverride(framing, white, overrides, definition);
+    assert.strictEqual(both.glass_pane, glassAlternative.rawMaterialId);
+    assert.ok(both.head_profile);
+    const changed = applyScopedGroupVisualOverride(glazing, glazing.options[0], both, definition);
+    assert.ok(changed.head_profile);
+    assert.strictEqual(changed.glass_pane, glazing.options[0].materialId);
+  });
+});
 
 describe("Customer Material Customization Acceptance Tests (QAD-TC81)", () => {
   it("QAD-TC81.1: Multi-material options displayed when configured in Step 4", () => {

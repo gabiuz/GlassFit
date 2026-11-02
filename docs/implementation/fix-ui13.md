@@ -7,7 +7,7 @@
 **Owner:** Reynard John B. Rabanal (Lead Product / Systems Architect) & GlassFit Capstone Team (PUP CCIS)
 **Status:** Implementation in progress; reported snapshot acceptance pending
 **Upstream Specifications:** `docs/brd-glassfit.md` (BRD-M4), `docs/prd-glassfit.md` (PRD-F6, PRD-F7, PRD-F8, PRD-F9), `docs/sdd-glassfit.md` (SDD-C5, SDD-C6), `docs/dsd-glassfit.md` (DSD-UI4), `docs/qad-glassfit.md` (QAD-TC7, QAD-TC8, QAD-TC9)
-**Implementation State:** The `fix/product-outline` branch first changed canvas-edge gradients to `source-atop`, which removed transparent-edge painting but also suppressed the visible contact shadow for padded planar models. `fix-20` now places shading at the renderer's installation bounds. The reported saved JPEG and full browser acceptance matrix remain unverified.
+**Implementation State:** The `fix/product-outline` branch first changed canvas-edge gradients to `source-atop`, which removed transparent-edge painting but also suppressed the visible contact shadow for padded planar models. `fix-17` now places shading at the renderer's installation bounds. The reported saved JPEG and full browser acceptance matrix remain unverified.
 
 ---
 

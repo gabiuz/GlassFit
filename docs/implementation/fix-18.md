@@ -1,14 +1,14 @@
-# Implementation Specification: Preserve Calibrated Dimensions During Rotation and Close Snapshot Acceptance (fix-21)
+# Implementation Specification: Preserve Calibrated Dimensions During Rotation and Close Snapshot Acceptance (fix-18)
 
 **Project:** GlassFit (Web-Based Client-Space Visualization System for Customized Glass & Aluminum)
-**Document ID:** fix-21
+**Document ID:** fix-18
 **Document Function:** Merge-readiness plan for the fitted-product rotation regression and the unverified snapshot-outline correction
 **Version:** 1.0.0
 **Date:** November 2, 2026
 **Owner:** Reynard John B. Rabanal (Lead Product / Systems Architect) & GlassFit Capstone Team (PUP CCIS)
 **Status:** Ready for Implementation; plan only
 **Primary Traceability:** `BRD-M3`, `BRD-M4`, `BRD-M5`, `PRD-F6`, `PRD-F7`, `PRD-F8`, `PRD-F9`, `PRD-F10`, `SDD-C5`, `SDD-C6`, `SDD-C7`, `DSD-UI4`, `QAD-TC7`, `QAD-TC8`, `QAD-TC9`, `QAD-TC10`, `QAD-TC55`, `QAD-TC71`
-**Upstream Specifications:** `docs/brd-glassfit.md`, `docs/prd-glassfit.md`, `docs/sdd-glassfit.md`, `docs/dsd-glassfit.md`, `docs/qad-glassfit.md`, `docs/implementation/fix-20.md`, `docs/implementation/ms56.md`
+**Upstream Specifications:** `docs/brd-glassfit.md`, `docs/prd-glassfit.md`, `docs/sdd-glassfit.md`, `docs/dsd-glassfit.md`, `docs/qad-glassfit.md`, `docs/implementation/fix-17.md`, `docs/implementation/ms56.md`
 **Comparison Base:** `origin/dev` at `794bad7`; reviewed `fix/product-outline` at `5a2fda4`. Refresh both refs before implementation.
 
 ---
@@ -17,7 +17,7 @@
 
 A user can rotate a perspective-fitted product for visual placement without silently changing its accepted physical width, height, model structure, or calculated quotation. A genuine opening resize or deliberate measurement confirmation still updates those values through the existing metric evaluator. The saved image must show the product and its localized contact shadow without the reported faint source-canvas rectangle. The same visual result must reach Save Snapshot, Apply, comparison, and quotation preview.
 
-This document plans the remaining work before merging `fix/product-outline` into `dev`. `FIX21-V1` through `FIX21-V8` below are plan-local acceptance cases, not new QAD identifiers. No application code, tests, dependencies, schema, migration, or customer data are changed by this plan.
+This document plans the remaining work before merging `fix/product-outline` into `dev`. `FIX18-V1` through `FIX18-V8` below are plan-local acceptance cases, not new QAD identifiers. No application code, tests, dependencies, schema, migration, or customer data are changed by this plan.
 
 ---
 
@@ -27,8 +27,8 @@ This document plans the remaining work before merging `fix/product-outline` into
 |---|---|
 | `ProductModelWorkspace.tsx` calls `updateMetricPerspectiveCorners(rotatePerspectiveCorners(...))` from the new fitted-product rotation handler. The update helper evaluates the rotated corners against the paper reference and writes `widthCm`, `heightCm`, and `overlaySize` when a matching eligible metric reference is active. | A placement-only rotation can alter accepted dimensions, rebuild the parametric model, and change the live quotation. The existing rotation unit test checks corner geometry but not measurement or price stability. |
 | The workspace also uses perspective corners for fit and measurement, while MS56 requires accepted measurement provenance to match the opening evaluated for model and quotation inputs. | A fix that only freezes the displayed numbers could leave stored corners, provenance, model dimensions, and server validation inconsistent. Separate the measured opening from visual orientation, or use another explicit contract that preserves their parity. |
-| `fix-20.md` records a synthetic browser pixel check and passing focused tests, lint, typecheck, and build. Its reported customer image, complete browser matrix, and downloaded-image acceptance are still pending. | The current evidence shows a plausible localized-shadow correction but does not establish that the user-visible snapshot defect is closed. The manual HTML check is not part of the standard test command. |
-| The reviewed branch is two commits ahead of `origin/dev`, with `origin/dev` as an ancestor. The prior review found no merge conflict; three local untracked notes (`fix-17.md` through `fix-19.md`) are outside this branch. | Recheck ancestry and the final tracked diff immediately before merge. Do not treat local untracked plans as part of this fix. |
+| `fix-17.md` records a synthetic browser pixel check and passing focused tests, lint, typecheck, and build. Its reported customer image, complete browser matrix, and downloaded-image acceptance are still pending. | The current evidence shows a plausible localized-shadow correction but does not establish that the user-visible snapshot defect is closed. The manual HTML check is not part of the standard test command. |
+| The reviewed branch is two commits ahead of `origin/dev`, with `origin/dev` as an ancestor. The prior review found no merge conflict; three local untracked notes were outside the reviewed branch at that time. | Recheck ancestry and the final tracked diff immediately before merge. Do not treat those untracked plans as part of this fix. |
 
 The rotation call path is confirmed by code inspection. The exact price difference depends on the calibrated plane, product, and rotated corner geometry; demonstrate it with a representative eligible calibrated session before implementing the correction. The reported snapshot has not been reproduced or cleared by the synthetic test alone.
 
@@ -64,14 +64,14 @@ The prior merge review used one visualization-focused reviewer. The following as
 
 | Case | Required result |
 |---|---|
-| FIX21-V1: Calibrated visual rotation | On an eligible oblique paper-calibrated opening, rotating the fitted product changes its visible pose but leaves accepted unrounded width and height, measurement revision and provenance, structural parameters, and calculated quotation unchanged. |
-| FIX21-V2: Intentional measurement edit | Deliberately moving or resizing measured opening corners invokes the metric evaluator; valid dimensions, model, and quotation update together, while invalid geometry does not create accepted metric provenance. |
-| FIX21-V3: Other dimension modes | Manual dimensions remain authoritative during rotation, and approximate sessions do not gain a calibrated status or fabricated metric values. Restored and secondary product sessions preserve their own measurement identity. |
-| FIX21-V4: Reported snapshot | The reported cabinet scene, if available, has no faint source-canvas rectangle in the opened downloaded image at 100% and 400% zoom. The contact shadow, real frame edges, glass, handles, and sill remain visible. Record whether the original scene was available. |
-| FIX21-V5: Pixel and format parity | Unused source-canvas margins have alpha zero; localized contact or reveal pixels remain near the installation perimeter. The pre-encode composite and decoded download agree in placement and shadow. Test the actual format emitted by Save Snapshot. |
-| FIX21-V6: Placement and masks | Free placement, angled perspective fit, flip, scale, rotation, multiple products, projecting parts, detected and manual masks, and Auto Shadow on/off retain correct geometry and layering. Apply, comparison, quotation preview, and Save Snapshot agree; editor guides are absent from export. |
-| FIX21-V7: Browser coverage | Inspect desktop and phone-sized scenes in Chromium and WebKit; exercise the WebGL warp and Canvas 2D fallback where supported. Open the downloaded image in each supported path and record results or a specific environment limitation. |
-| FIX21-V8: Merge quality | Refresh `origin/dev`, review the combined tree, run focused rotation, metric, shadow, and snapshot tests, `npm run lint`, `npx tsc --noEmit`, `npm run build`, and relevant QAD-TC7 through QAD-TC10 and QAD-TC71 checks. Separate pre-existing warnings from failures. Reconcile the status of `fix-20.md` and `fix-ui13.md` with measured evidence. |
+| FIX18-V1: Calibrated visual rotation | On an eligible oblique paper-calibrated opening, rotating the fitted product changes its visible pose but leaves accepted unrounded width and height, measurement revision and provenance, structural parameters, and calculated quotation unchanged. |
+| FIX18-V2: Intentional measurement edit | Deliberately moving or resizing measured opening corners invokes the metric evaluator; valid dimensions, model, and quotation update together, while invalid geometry does not create accepted metric provenance. |
+| FIX18-V3: Other dimension modes | Manual dimensions remain authoritative during rotation, and approximate sessions do not gain a calibrated status or fabricated metric values. Restored and secondary product sessions preserve their own measurement identity. |
+| FIX18-V4: Reported snapshot | The reported cabinet scene, if available, has no faint source-canvas rectangle in the opened downloaded image at 100% and 400% zoom. The contact shadow, real frame edges, glass, handles, and sill remain visible. Record whether the original scene was available. |
+| FIX18-V5: Pixel and format parity | Unused source-canvas margins have alpha zero; localized contact or reveal pixels remain near the installation perimeter. The pre-encode composite and decoded download agree in placement and shadow. Test the actual format emitted by Save Snapshot. |
+| FIX18-V6: Placement and masks | Free placement, angled perspective fit, flip, scale, rotation, multiple products, projecting parts, detected and manual masks, and Auto Shadow on/off retain correct geometry and layering. Apply, comparison, quotation preview, and Save Snapshot agree; editor guides are absent from export. |
+| FIX18-V7: Browser coverage | Inspect desktop and phone-sized scenes in Chromium and WebKit; exercise the WebGL warp and Canvas 2D fallback where supported. Open the downloaded image in each supported path and record results or a specific environment limitation. |
+| FIX18-V8: Merge quality | Refresh `origin/dev`, review the combined tree, run focused rotation, metric, shadow, and snapshot tests, `npm run lint`, `npx tsc --noEmit`, `npm run build`, and relevant QAD-TC7 through QAD-TC10 and QAD-TC71 checks. Separate pre-existing warnings from failures. Reconcile the status of `fix-17.md` and `fix-ui13.md` with measured evidence. |
 
 Keep customer photos and diagnostic images private and temporary. Run the FastAPI health check only if the reproduction starts that service. Do not mark the snapshot defect complete from the synthetic browser check or build gates alone.
 

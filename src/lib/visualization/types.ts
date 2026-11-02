@@ -388,6 +388,8 @@ export type ProductConfigurationSnapshot = {
   positionX?: number;
   positionY?: number;
   selectedMaterials?: Record<string, string>;
+  /** Grouped appearance choices only; per-part fabrication selections are excluded. */
+  visualMaterialOverrides?: Record<string, string>;
   selectedAddon?: "none" | "screen" | "grill";
   addonProductId?: string | null;
   addonName?: string | null;
