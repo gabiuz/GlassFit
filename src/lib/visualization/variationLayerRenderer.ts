@@ -6,6 +6,7 @@ import {
   normalizeGlassThickness,
 } from "./configurationPropagation";
 import { ProductModelRenderer } from "./modelRenderer";
+import { getAllCandidateMaterialsMap } from "./materialCustomization";
 import { denormalizeCorners, drawPerspectiveWarpedImage } from "./perspectiveTransform";
 import type { VariationRenderRecipe } from "./types";
 
@@ -30,6 +31,15 @@ export class VariationLayerRenderer {
       glassThicknessMm: normalizeGlassThickness(configuration.glassThicknessMm),
       includeSill: configuration.includeSill,
     };
+    // The compared aluminum finish owns framing appearance; retain grouped
+    // visual choices on other components without importing fabrication picks.
+    const visualOverrides = Object.fromEntries(
+      Object.entries(configuration.visualMaterialOverrides ?? {}).filter(([componentKey]) =>
+        this.recipe.structuralDefinition.components.find((component) => component.componentKey === componentKey)
+          ?.presentationCategory !== "Framing",
+      ),
+    );
+    const candidateMaterials = getAllCandidateMaterialsMap(this.recipe.structuralDefinition);
     if (!this.loaded) {
       await this.renderer.loadModel(
         this.recipe.structuralDefinition,
@@ -44,10 +54,18 @@ export class VariationLayerRenderer {
             ?? deriveGlassTypeFromAppearance(configuration.glassAppearance),
         },
         presentation,
+        {
+          selectedMaterials: visualOverrides,
+          rawMaterialsMap: candidateMaterials,
+          hasExplicitOverrides: Object.keys(visualOverrides).length > 0,
+        },
       );
       this.loaded = true;
     } else {
       this.renderer.updatePresentation(presentation);
+      if (Object.keys(visualOverrides).length > 0) {
+        this.renderer.updateCustomMaterials(visualOverrides, candidateMaterials);
+      }
     }
     const rendered = this.renderer.render(
       configuration.yaw,

@@ -32,6 +32,7 @@ import {
   getDefaultMaterialSelections,
   getAllCandidateMaterialsMap,
   applyGroupSelection,
+  applyScopedGroupVisualOverride,
   resolveSwatchColor,
   type MaterialCustomizationGroup,
   type MaterialCustomizationOption,
@@ -427,8 +428,10 @@ export function ProductModelWorkspace({
     }
     return {};
   });
-  const [hasExplicitOverrides, setHasExplicitOverrides] = useState<boolean>(false);
-  const [visualMaterialOverrides, setVisualMaterialOverrides] = useState<Record<string, string>>({});
+  const [visualMaterialOverrides, setVisualMaterialOverrides] = useState<Record<string, string>>(
+    () => initialConfiguration?.visualMaterialOverrides ?? {},
+  );
+  const hasExplicitOverrides = Object.keys(visualMaterialOverrides).length > 0;
   const [isMobileFinishesSheetOpen, setIsMobileFinishesSheetOpen] = useState(false);
   const [isGuardrailModalOpen, setIsGuardrailModalOpen] = useState<boolean>(false);
   const [guardrailValidation, setGuardrailValidation] = useState<EngineeringValidationResult | null>(null);
@@ -1463,16 +1466,21 @@ export function ProductModelWorkspace({
         selectedMaterials,
         structuralDefinition,
       );
+      const nextVisualOverrides = applyScopedGroupVisualOverride(
+        group,
+        option,
+        visualMaterialOverrides,
+        structuralDefinition,
+      );
       setSelectedMaterials(nextSelections);
-      setHasExplicitOverrides(true);
-      setVisualMaterialOverrides(nextSelections);
+      setVisualMaterialOverrides(nextVisualOverrides);
 
       if (mvpRendererRef.current) {
-        mvpRendererRef.current.updateCustomMaterials(nextSelections, candidateMaterialsMap);
+        mvpRendererRef.current.updateCustomMaterials(nextVisualOverrides, candidateMaterialsMap);
         setModelRevision((prev) => prev + 1);
       }
     },
-    [structuralDefinition, selectedMaterials, candidateMaterialsMap],
+    [structuralDefinition, selectedMaterials, visualMaterialOverrides, candidateMaterialsMap],
   );
 
   const handleSelectPartMaterial = useCallback(
@@ -1493,7 +1501,6 @@ export function ProductModelWorkspace({
     if (!structuralDefinition) return;
     const defaultSelections = getDefaultMaterialSelections(structuralDefinition);
     setSelectedMaterials(defaultSelections);
-    setHasExplicitOverrides(false);
     setVisualMaterialOverrides({});
 
     applyWorkspacePresentation();
@@ -1759,7 +1766,6 @@ export function ProductModelWorkspace({
         }
       }
     }
-    setHasExplicitOverrides(false);
     setVisualMaterialOverrides({});
   }, [applyWorkspacePresentation, structuralDefinition, materialCustomizationGroups, selectedMaterials]);
 
@@ -1768,7 +1774,6 @@ export function ProductModelWorkspace({
       setGlassType(undefined);
       setGlassAppearance(appearance);
       applyWorkspacePresentation({ glassAppearance: appearance });
-      setHasExplicitOverrides(false);
       setVisualMaterialOverrides({});
     },
     [applyWorkspacePresentation],
@@ -1779,7 +1784,6 @@ export function ProductModelWorkspace({
       setGlassAppearance(mode);
       setGlassType(deriveGlassTypeFromAppearance(mode));
       applyWorkspacePresentation({ glassAppearance: mode });
-      setHasExplicitOverrides(false);
       setVisualMaterialOverrides({});
     },
     [applyWorkspacePresentation],
@@ -1816,7 +1820,6 @@ export function ProductModelWorkspace({
         }
       }
       setSelectedMaterials(nextSelections);
-      setHasExplicitOverrides(false);
       setVisualMaterialOverrides({});
     },
     [applyWorkspacePresentation, structuralDefinition, materialCustomizationGroups, selectedMaterials],
@@ -2400,6 +2403,7 @@ export function ProductModelWorkspace({
       ...(glassType ? { glassType } : {}),
       includeSill,
       selectedMaterials,
+      visualMaterialOverrides,
       yaw,
       pitch,
       rotateAngle,
@@ -2531,6 +2535,7 @@ export function ProductModelWorkspace({
     quantity,
     rotateAngle,
     selectedMaterials,
+    visualMaterialOverrides,
     structuralWaiver,
     thicknessMm,
     widthCm,
@@ -2591,7 +2596,7 @@ export function ProductModelWorkspace({
   }, [heightCm, overlayX, overlayY, widthCm, setManualDimensions, setSavedMeasurementEvidence]);
 
   const applyProductConfiguration = useCallback(
-    (configuration: ProductConfigurationSnapshot) => {
+    (configuration: ProductConfigurationSnapshot, configurationDefinition = structuralDefinition) => {
       const nextWidth = String(configuration.widthCm);
       const nextHeight = String(configuration.heightCm);
       const baseSize = getOverlaySizeFromDimensions(nextWidth, nextHeight);
@@ -2671,11 +2676,9 @@ export function ProductModelWorkspace({
       });
       if (configuration.selectedMaterials) {
         setSelectedMaterials(configuration.selectedMaterials);
-        setHasExplicitOverrides(false);
-        setVisualMaterialOverrides({});
-      } else if (structuralDefinition) {
-        setSelectedMaterials(getDefaultMaterialSelections(structuralDefinition));
-        setHasExplicitOverrides(false);
+        setVisualMaterialOverrides(configuration.visualMaterialOverrides ?? {});
+      } else if (configurationDefinition) {
+        setSelectedMaterials(getDefaultMaterialSelections(configurationDefinition));
         setVisualMaterialOverrides({});
       }
 
@@ -2694,6 +2697,12 @@ export function ProductModelWorkspace({
           },
         };
         mvpRendererRef.current.updatePresentation(nextPres);
+        if (configuration.visualMaterialOverrides && Object.keys(configuration.visualMaterialOverrides).length > 0 && configurationDefinition) {
+          mvpRendererRef.current.updateCustomMaterials(
+            configuration.visualMaterialOverrides,
+            getAllCandidateMaterialsMap(configurationDefinition),
+          );
+        }
         if (mvpCanvasRef.current) {
           const isPlanar = Boolean(configuration.perspectiveFitCorners);
           const sourceCanvas = mvpRendererRef.current.render(configuration.yaw ?? 0, configuration.pitch ?? 0, isPlanar);
@@ -2778,6 +2787,7 @@ export function ProductModelWorkspace({
           glassColor: "clear",
           glassThicknessMm: 6,
           glassType: "regular",
+          visualMaterialOverrides: {},
           quantity: 1,
           yaw: 0,
           pitch: 0,
@@ -2838,7 +2848,7 @@ export function ProductModelWorkspace({
       appliedTemplateDefaultsRef.current = intent.productId;
       renderer.commitPreparedModel(prepared);
       flushSync(() => {
-        applyProductConfiguration(targetConfiguration);
+        applyProductConfiguration(targetConfiguration, definition);
         setActiveOverlayId(intent.targetOverlayId);
         setActiveLayerNumber(intent.targetLayerNumber);
         setMaterialCapabilities(prepared.capabilities);
@@ -3740,7 +3750,6 @@ export function ProductModelWorkspace({
       }
     }
     setSelectedMaterials(nextSelections);
-    setHasExplicitOverrides(false);
     setVisualMaterialOverrides({});
   }, [applyWorkspacePresentation, structuralDefinition, materialCustomizationGroups, selectedMaterials]);
 
@@ -5462,6 +5471,17 @@ export function ProductModelWorkspace({
                                 />
                               </button>
                             </label>
+                          )}
+
+                          {materialCustomizationGroups.some((group) => group.options.length > 1) && (
+                            <div className="hidden lg:block">
+                              <MaterialCustomizerPanel
+                                groups={materialCustomizationGroups}
+                                selectedMaterials={selectedMaterials}
+                                onSelectOption={handleSelectMaterialOption}
+                                onResetDefaults={handleResetMaterialsToDefaults}
+                              />
+                            </div>
                           )}
 
                           {/* Choose Raw Materials for Each Part (IMP-MS70) */}

@@ -591,6 +591,24 @@ export function applyGroupSelection(
   return updated;
 }
 
+/** Keep fabrication selections out of the renderer's grouped appearance map. */
+export function applyScopedGroupVisualOverride(
+  group: MaterialCustomizationGroup,
+  option: MaterialCustomizationOption,
+  currentOverrides: CustomerMaterialSelections,
+  definition: ProductStructuralDefinition,
+): CustomerMaterialSelections {
+  const groupOverrides = applyGroupSelection(group, option, {}, definition);
+  const nextOverrides = { ...currentOverrides };
+  for (const componentKey of group.affectedComponentKeys) {
+    delete nextOverrides[componentKey];
+    if (groupOverrides[componentKey]) {
+      nextOverrides[componentKey] = groupOverrides[componentKey];
+    }
+  }
+  return nextOverrides;
+}
+
 /**
  * Returns a concise summary of the selected materials for status pills and cards.
  */

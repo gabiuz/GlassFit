@@ -6,7 +6,7 @@
 **Version:** 1.0.0
 **Date:** November 3, 2026
 **Owner:** Reynard John B. Rabanal (Lead Product / Systems Architect) & GlassFit Capstone Team (PUP CCIS)
-**Status:** Ready for Implementation; plan only
+**Status:** Implemented in `fix/mats-by-part`; browser acceptance pending
 **Primary Traceability:** `BRD-M4`, `PRD-F6`, `PRD-F7`, `SDD-C5`, `DSD-UI4`, `QAD-TC81`, `QAD-TC82`; regression guards for `PRD-F10`, `SDD-C7`, `ERD-E11`
 **Upstream Specifications:** `docs/brd-glassfit.md`, `docs/prd-glassfit.md`, `docs/sdd-glassfit.md`, `docs/dsd-glassfit.md`, `docs/erd-glassfit.md`, `docs/qad-glassfit.md`, `docs/build-glassfit.md`, `docs/implementation/ms66.md`, `docs/implementation/fix-12.md`
 
@@ -82,6 +82,10 @@ The initial investigation and delegation breakdown were read-only. The following
 4. Run the quality gates, compare the before-and-after browser image and material properties, and complete independent review.
 
 The fix is complete only when per-part choices no longer change the 3D product's material appearance, while their existing specification and price behavior and all intentional appearance controls still work.
+
+## Implementation status (November 3, 2026)
+
+The branch separates per-part fabrication selections from renderer material overrides. The remaining cross-group leak is addressed by `fix-20`. The automated `QAD-TC81` and `QAD-TC82` suites pass on the combined tree. The controlled browser comparison and saved-configuration appearance matrix remain unverified, so user-visible acceptance is pending.
 
 ## Self-Check
 
