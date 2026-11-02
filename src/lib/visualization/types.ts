@@ -380,6 +380,8 @@ export type ProductConfigurationSnapshot = {
   manualOcclusionMaskDataUrl?: string | null;
   manualOcclusionPolygons?: ManualOcclusionPolygon[];
   perspectiveFitCorners?: QuadrilateralCorners | null;
+  /** Placement pose; perspectiveFitCorners remains the measured opening. */
+  visualPoseCorners?: QuadrilateralCorners | null;
   ambientLight?: boolean;
   autoShadow?: boolean;
   autoRealism?: boolean;

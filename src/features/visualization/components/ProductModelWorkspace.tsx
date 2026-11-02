@@ -88,6 +88,7 @@ import {
   denormalizeCorners,
   drawPerspectiveWarpedImage,
   estimateDimensionsFromCorners,
+  rotatePerspectiveCorners,
   scaleCornersAlongAxis,
 } from "@/lib/visualization/perspectiveTransform";
 import {
@@ -897,6 +898,9 @@ export function ProductModelWorkspace({
   >(initialConfiguration?.manualOcclusionPolygons ?? []);
   const [showOcclusionPointPicker, setShowOcclusionPointPicker] = useState(false);
   const [perspectiveCorners, setPerspectiveCorners] = useState<QuadrilateralCorners | null>(
+    initialConfiguration?.visualPoseCorners ?? initialConfiguration?.perspectiveFitCorners ?? null,
+  );
+  const [measurementCorners, setMeasurementCorners] = useState<QuadrilateralCorners | null>(
     initialConfiguration?.perspectiveFitCorners ?? null,
   );
   const [targetPlaneId, setTargetPlaneId] = useState<string | null>(initialConfiguration?.targetPlaneId ?? null);
@@ -1554,20 +1558,6 @@ export function ProductModelWorkspace({
     observer.observe(el);
     return () => observer.disconnect();
   }, [aspectWidth, aspectHeight, overlayX, overlayY, shouldLockMobileEditor, compactOrientation]);
-
-  const perspectiveToolbarPosition = useMemo(() => {
-    if (!perspectiveCorners) return null;
-    const currentWidth = canvasDisplaySize.width;
-    const currentHeight = canvasDisplaySize.height;
-    const pxCorners = denormalizeCorners(perspectiveCorners, currentWidth, currentHeight);
-    const minX = Math.min(...pxCorners.map((point) => point.x));
-    const maxX = Math.max(...pxCorners.map((point) => point.x));
-    const minY = Math.min(...pxCorners.map((point) => point.y));
-    return {
-      left: Math.max(160, Math.min(currentWidth - 160, (minX + maxX) / 2)),
-      top: Math.max(12, minY - 48),
-    };
-  }, [perspectiveCorners, canvasDisplaySize.width, canvasDisplaySize.height]);
 
   const perspectiveHandlePoints = useMemo(() => {
     if (!perspectiveCorners) return null;
@@ -2263,6 +2253,7 @@ export function ProductModelWorkspace({
               applyContactOcclusionAndReveals(ctx, canvas.width, canvas.height, {
                 lightDirection: effectiveLighting.light_direction,
                 shadowOpacity: effectiveLighting.suggested?.shadow_opacity ?? 0.28,
+                installationBounds: mvpRendererRef.current.getPlanarFitRect(),
               });
             }
             if (autoRealism && effectiveLighting?.suggested?.grain) {
@@ -2319,6 +2310,7 @@ export function ProductModelWorkspace({
       applyContactOcclusionAndReveals(ctx, targetCanvas.width, targetCanvas.height, {
         lightDirection: effectiveLighting.light_direction,
         shadowOpacity: effectiveLighting.suggested?.shadow_opacity ?? 0.28,
+        installationBounds: nextFitRect,
       });
     }
 
@@ -2352,10 +2344,6 @@ export function ProductModelWorkspace({
     () => getOutlineControlsStyle(structuralDefinition ? projectedModelBounds : null),
     [projectedModelBounds, structuralDefinition],
   );
-  const toolbarControlsStyle = useMemo(
-    () => getToolbarControlsStyle(structuralDefinition ? projectedModelBounds : null),
-    [projectedModelBounds, structuralDefinition],
-  );
   const isEditingProduct = !isSnapshotApplied;
 
   useEffect(() => {
@@ -2386,16 +2374,16 @@ export function ProductModelWorkspace({
   const [manualDimensions, setManualDimensions] = useState(initialConfiguration?.visualParameterValues.dimension_source === "manual_tape");
   const [savedMeasurementEvidence, setSavedMeasurementEvidence] = useState<unknown>(initialConfiguration?.visualParameterValues.calibration_provenance);
   const activeMeasurementRecord = useMemo(() => {
-    if (manualDimensions || !perspectiveCorners) return null;
-    const current = createMeasurementRecord(activeCalibrationMeta, perspectiveCorners, metricFrame, targetPlaneId);
+    if (manualDimensions || !measurementCorners) return null;
+    const current = createMeasurementRecord(activeCalibrationMeta, measurementCorners, metricFrame, targetPlaneId);
     if (current) return current;
     const saved = readMeasurementRecord(savedMeasurementEvidence);
     return saved && metricReference && saved.plane_id !== metricReference.planeId && targetPlaneId === saved.plane_id && saved.image_identity === metricFrame.imageId && saved.image_width_px === metricFrame.width && saved.image_height_px === metricFrame.height
-      && JSON.stringify(saved.opening_corners) === JSON.stringify(perspectiveCorners) ? saved : null;
-  }, [manualDimensions, perspectiveCorners, activeCalibrationMeta, metricFrame, targetPlaneId, savedMeasurementEvidence, metricReference]);
-  const manualPhotoComparison = useMemo(() => manualDimensions && perspectiveCorners
-    ? createMeasurementRecord(activeCalibrationMeta, perspectiveCorners, metricFrame, targetPlaneId) : null,
-    [manualDimensions, perspectiveCorners, activeCalibrationMeta, metricFrame, targetPlaneId]);
+      && JSON.stringify(saved.opening_corners) === JSON.stringify(measurementCorners) ? saved : null;
+  }, [manualDimensions, measurementCorners, activeCalibrationMeta, metricFrame, targetPlaneId, savedMeasurementEvidence, metricReference]);
+  const manualPhotoComparison = useMemo(() => manualDimensions && measurementCorners
+    ? createMeasurementRecord(activeCalibrationMeta, measurementCorners, metricFrame, targetPlaneId) : null,
+    [manualDimensions, measurementCorners, activeCalibrationMeta, metricFrame, targetPlaneId]);
   const activeMetricMeasurement = activeMeasurementRecord;
   const isVerifiedCalibrated = Boolean(activeMeasurementRecord &&
     Math.abs(Number(widthCm) * 10 - activeMeasurementRecord.width_mm) < 1e-6 &&
@@ -2429,7 +2417,8 @@ export function ProductModelWorkspace({
       manualOcclusionMaskDataUrl: manualMaskDataUrl,
       manualOcclusionPolygons,
       targetPlaneId,
-      perspectiveFitCorners: perspectiveCorners,
+      perspectiveFitCorners: measurementCorners,
+      visualPoseCorners: perspectiveCorners,
       ambientLight,
       autoShadow,
       autoRealism,
@@ -2512,6 +2501,7 @@ export function ProductModelWorkspace({
     activeOcclusionIds,
     manualMaskDataUrl,
     manualOcclusionPolygons,
+    measurementCorners,
     perspectiveCorners,
     alumFinish,
     ambientLight,
@@ -2595,6 +2585,7 @@ export function ProductModelWorkspace({
     overlayX.set(0);
     overlayY.set(0);
     setTargetPlaneId(null);
+    setMeasurementCorners(null);
     setPerspectiveCorners(null);
     setManualDimensions(false);
     setSavedMeasurementEvidence(null);
@@ -2669,7 +2660,8 @@ export function ProductModelWorkspace({
       setManualMaskDataUrl(configuration.manualOcclusionMaskDataUrl ?? null);
       setManualOcclusionPolygons(configuration.manualOcclusionPolygons ?? []);
       setTargetPlaneId(configuration.targetPlaneId ?? null);
-      setPerspectiveCorners(configuration.perspectiveFitCorners ?? null);
+      setMeasurementCorners(configuration.perspectiveFitCorners ?? null);
+      setPerspectiveCorners(configuration.visualPoseCorners ?? configuration.perspectiveFitCorners ?? null);
       setManualDimensions(configuration.visualParameterValues.dimension_source === "manual_tape");
       setSavedMeasurementEvidence(configuration.visualParameterValues.calibration_provenance);
       setAmbientLight(configuration.ambientLight ?? true);
@@ -3526,9 +3518,9 @@ export function ProductModelWorkspace({
       const photoWidthPx = spaceImageSession?.workspaceImage?.width ?? 0;
       const photoHeightPx = spaceImageSession?.workspaceImage?.height ?? 0;
 
-      if (perspectiveCorners && !manualDimensions && targetPlaneId === geometry.reference.planeId) {
+      if (measurementCorners && !manualDimensions && targetPlaneId === geometry.reference.planeId) {
         const measurement = evaluateMetricOpening(geometry.reference,
-          denormalizeCorners(perspectiveCorners, photoWidthPx, photoHeightPx), metricFrame);
+          denormalizeCorners(measurementCorners, photoWidthPx, photoHeightPx), metricFrame);
         if (measurement.valid) {
           setWidthCm(String(measurement.widthMm / 10));
           setHeightCm(String(measurement.heightMm / 10));
@@ -3555,7 +3547,7 @@ export function ProductModelWorkspace({
       commitSessionCalibration,
       onCalibrationChange,
       onPlacedOverlaysChange,
-      perspectiveCorners,
+      measurementCorners,
       placedOverlays,
       setModelRevision,
       spaceImageSession?.paperCalibration?.suggested_paper_standard,
@@ -3657,6 +3649,9 @@ export function ProductModelWorkspace({
       setPerspectiveCorners((current) =>
         current ? scaleCornersAlongAxis(current, ratio, "width") : null
       );
+      setMeasurementCorners((current) =>
+        current ? scaleCornersAlongAxis(current, ratio, "width") : null
+      );
     }
   };
 
@@ -3675,6 +3670,9 @@ export function ProductModelWorkspace({
     if (perspectiveCorners && prevH > 0 && numericHeight > 0) {
       const ratio = numericHeight / prevH;
       setPerspectiveCorners((current) =>
+        current ? scaleCornersAlongAxis(current, ratio, "height") : null
+      );
+      setMeasurementCorners((current) =>
         current ? scaleCornersAlongAxis(current, ratio, "height") : null
       );
     }
@@ -4017,12 +4015,17 @@ export function ProductModelWorkspace({
     [rotateAngle],
   );
 
-  const updateMetricPerspectiveCorners = useCallback((corners: QuadrilateralCorners) => {
-    setPerspectiveCorners(corners);
-    if (!metricReference || manualDimensions || targetPlaneId !== metricReference.planeId) return;
+  const updateMetricPerspectiveCorners = useCallback((corners: QuadrilateralCorners, poseCorners: QuadrilateralCorners = corners) => {
+    if (!metricReference || manualDimensions || targetPlaneId !== metricReference.planeId) {
+      setMeasurementCorners(corners);
+      setPerspectiveCorners(poseCorners);
+      return;
+    }
     const measurement = evaluateMetricOpening(metricReference,
       denormalizeCorners(corners, metricFrame.width, metricFrame.height), metricFrame);
     if (!measurement.valid) return;
+    setMeasurementCorners(corners);
+    setPerspectiveCorners(poseCorners);
     setWidthCm(String(measurement.widthMm / 10));
     setHeightCm(String(measurement.heightMm / 10));
     setOverlaySize(getOverlaySizeFromDimensions(String(measurement.widthMm / 10), String(measurement.heightMm / 10)));
@@ -4045,7 +4048,8 @@ export function ProductModelWorkspace({
         mode,
         startX: event.clientX,
         startY: event.clientY,
-        startCorners: [...perspectiveCorners] as QuadrilateralCorners,
+        startCorners: [...(measurementCorners ?? perspectiveCorners)] as QuadrilateralCorners,
+        startPoseCorners: [...perspectiveCorners] as QuadrilateralCorners,
         startWidthCm: Number(widthCm) || 120,
         startHeightCm: Number(heightCm) || 120,
         signX,
@@ -4072,8 +4076,10 @@ export function ProductModelWorkspace({
           const initialSpan = currentW * 0.35;
           const scaleRatio = Math.max(0.15, 1 + dominantDelta / initialSpan);
           const nextCorners = scaleCornersAlongAxis(session.startCorners, scaleRatio, "scale");
-          if (metricReference) { updateMetricPerspectiveCorners(nextCorners); return; }
-          setPerspectiveCorners(nextCorners);
+          const nextPoseCorners = scaleCornersAlongAxis(session.startPoseCorners, scaleRatio, "scale");
+          if (metricReference) { updateMetricPerspectiveCorners(nextCorners, nextPoseCorners); return; }
+          setMeasurementCorners(nextCorners);
+          setPerspectiveCorners(nextPoseCorners);
           const nextW = Math.max(20, Math.round(session.startWidthCm * scaleRatio));
           const nextH = Math.max(20, Math.round(session.startHeightCm * scaleRatio));
           setWidthCm(String(nextW));
@@ -4086,8 +4092,10 @@ export function ProductModelWorkspace({
           const initialSpan = currentW * 0.30;
           const widthRatio = Math.max(0.15, 1 + dx / initialSpan);
           const nextCorners = scaleCornersAlongAxis(session.startCorners, widthRatio, "width");
-          if (metricReference) { updateMetricPerspectiveCorners(nextCorners); return; }
-          setPerspectiveCorners(nextCorners);
+          const nextPoseCorners = scaleCornersAlongAxis(session.startPoseCorners, widthRatio, "width");
+          if (metricReference) { updateMetricPerspectiveCorners(nextCorners, nextPoseCorners); return; }
+          setMeasurementCorners(nextCorners);
+          setPerspectiveCorners(nextPoseCorners);
           const nextW = Math.max(20, Math.round(session.startWidthCm * widthRatio));
           setWidthCm(String(nextW));
           setOverlaySize(getOverlaySizeFromDimensions(String(nextW), heightCm));
@@ -4098,8 +4106,10 @@ export function ProductModelWorkspace({
           const initialSpan = currentH * 0.30;
           const heightRatio = Math.max(0.15, 1 + dy / initialSpan);
           const nextCorners = scaleCornersAlongAxis(session.startCorners, heightRatio, "height");
-          if (metricReference) { updateMetricPerspectiveCorners(nextCorners); return; }
-          setPerspectiveCorners(nextCorners);
+          const nextPoseCorners = scaleCornersAlongAxis(session.startPoseCorners, heightRatio, "height");
+          if (metricReference) { updateMetricPerspectiveCorners(nextCorners, nextPoseCorners); return; }
+          setMeasurementCorners(nextCorners);
+          setPerspectiveCorners(nextPoseCorners);
           const nextH = Math.max(20, Math.round(session.startHeightCm * heightRatio));
           setHeightCm(String(nextH));
           setOverlaySize(getOverlaySizeFromDimensions(widthCm, String(nextH)));
@@ -4120,8 +4130,44 @@ export function ProductModelWorkspace({
       window.addEventListener("pointerup", handleEnd);
       window.addEventListener("pointercancel", handleEnd);
     },
-    [perspectiveCorners, widthCm, heightCm, canvasDisplaySize.width, canvasDisplaySize.height, metricReference, updateMetricPerspectiveCorners],
+    [perspectiveCorners, measurementCorners, widthCm, heightCm, canvasDisplaySize.width, canvasDisplaySize.height, metricReference, updateMetricPerspectiveCorners],
   );
+
+  const startPerspectiveRotation = useCallback((event: React.PointerEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!perspectiveCorners || isUsingTransformHandle) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const bounds = canvas.getBoundingClientRect();
+    const width = bounds.width;
+    const height = bounds.height;
+    if (width <= 0 || height <= 0) return;
+    const centerX = bounds.left + perspectiveCorners.reduce((sum, point) => sum + point.x, 0) * width / 4;
+    const centerY = bounds.top + perspectiveCorners.reduce((sum, point) => sum + point.y, 0) * height / 4;
+    const pointerId = event.pointerId;
+    const startAngle = getPointerAngle(event.clientX, event.clientY, centerX, centerY);
+    const startCorners = perspectiveCorners;
+    setIsUsingTransformHandle(true);
+
+    const handleMove = (moveEvent: PointerEvent) => {
+      if (moveEvent.pointerId !== pointerId) return;
+      const angle = getPointerAngle(moveEvent.clientX, moveEvent.clientY, centerX, centerY) - startAngle;
+      setPerspectiveCorners(rotatePerspectiveCorners(startCorners, width, height, angle));
+    };
+    const handleEnd = (endEvent: PointerEvent) => {
+      if (endEvent.pointerId !== pointerId) return;
+      setIsUsingTransformHandle(false);
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleEnd);
+      window.removeEventListener("pointercancel", handleEnd);
+    };
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", handleEnd);
+    window.addEventListener("pointercancel", handleEnd);
+  }, [perspectiveCorners, isUsingTransformHandle]);
 
   const startPerspectiveMove = useCallback(
     (event: React.PointerEvent) => {
@@ -4132,7 +4178,8 @@ export function ProductModelWorkspace({
       const session = {
         startX: event.clientX,
         startY: event.clientY,
-        startCorners: [...perspectiveCorners] as QuadrilateralCorners,
+        startCorners: [...(measurementCorners ?? perspectiveCorners)] as QuadrilateralCorners,
+        startPoseCorners: [...perspectiveCorners] as QuadrilateralCorners,
       };
       setIsUsingTransformHandle(true);
 
@@ -4147,8 +4194,12 @@ export function ProductModelWorkspace({
           x: clampNumber(p.x + normDx, -0.2, 1.2),
           y: clampNumber(p.y + normDy, -0.2, 1.2),
         })) as QuadrilateralCorners;
+        const nextPoseCorners = session.startPoseCorners.map((p) => ({
+          x: clampNumber(p.x + normDx, -0.2, 1.2),
+          y: clampNumber(p.y + normDy, -0.2, 1.2),
+        })) as QuadrilateralCorners;
 
-        updateMetricPerspectiveCorners(nextCorners);
+        updateMetricPerspectiveCorners(nextCorners, nextPoseCorners);
       };
 
       const handleEnd = () => {
@@ -4162,7 +4213,7 @@ export function ProductModelWorkspace({
       window.addEventListener("pointerup", handleEnd);
       window.addEventListener("pointercancel", handleEnd);
     },
-    [perspectiveCorners, isUsingTransformHandle, canvasDisplaySize.width, canvasDisplaySize.height, updateMetricPerspectiveCorners],
+    [perspectiveCorners, measurementCorners, isUsingTransformHandle, canvasDisplaySize.width, canvasDisplaySize.height, updateMetricPerspectiveCorners],
   );
 
   // PRD-F6 / PRD-F10 / DSD-UI4: keep the live estimate beside the active configuration flow.
@@ -4462,7 +4513,7 @@ export function ProductModelWorkspace({
         {/* Left Side: Space Canvas + Instructions */}
         <div className={shouldLockMobileEditor ? "flex h-full min-w-0 flex-1 items-center justify-center overflow-hidden" : "flex-1 min-w-0 flex flex-col gap-6 w-full lg:sticky lg:top-35 lg:self-start"}>
           {/* Main Space Canvas Card */}
-          <div className={shouldLockMobileEditor ? "relative flex h-full w-full items-center justify-center overflow-hidden bg-[#0f1422] touch-none [container-type:size]" : "bg-white/10 border border-[#f5f5f5] p-3 sm:p-5 rounded-[20px] shadow-[0px_0px_5px_0px_rgba(0,0,0,0.25)] relative w-full flex flex-col items-center justify-center gap-3 lg:flex-row lg:gap-0"}>
+          <div className={shouldLockMobileEditor ? "relative flex h-full w-full items-center justify-center overflow-hidden bg-[#0f1422] touch-none [container-type:size]" : "bg-white/10 border border-[#f5f5f5] p-3 sm:p-5 rounded-[20px] shadow-[0px_0px_5px_0px_rgba(0,0,0,0.25)] relative w-full flex flex-col items-center justify-center gap-3"}>
             <div
               ref={canvasRef}
               className="relative mx-auto rounded-[15px] overflow-hidden bg-neutral-100"
@@ -4568,7 +4619,7 @@ export function ProductModelWorkspace({
                           transformOrigin: "0 0",
                           transform: homographyToCssMatrix3d(
                             denormalizeCorners(
-                              overlay.configuration.perspectiveFitCorners,
+                              overlay.configuration.visualPoseCorners ?? overlay.configuration.perspectiveFitCorners,
                               canvasDisplaySize.width,
                               canvasDisplaySize.height,
                             ),
@@ -4853,6 +4904,24 @@ export function ProductModelWorkspace({
                       {/* 9 Perspective Quadrilateral Transform Handles (Picture 2 Parity) */}
                       {perspectiveHandlePoints && (
                         <>
+                          {perspectiveHandlePoints.corners.map((corner) => {
+                            const dx = corner.x - perspectiveHandlePoints.center.x;
+                            const dy = corner.y - perspectiveHandlePoints.center.y;
+                            const distance = Math.hypot(dx, dy) || 1;
+                            return (
+                              <button
+                                type="button"
+                                key={`rotate-${corner.id}`}
+                                aria-label={`Rotate fitted product from ${corner.id}`}
+                                title="Drag to rotate fitted product"
+                                onPointerDown={startPerspectiveRotation}
+                                className="absolute z-40 flex size-11 items-center justify-center pointer-events-auto touch-none cursor-grab active:cursor-grabbing"
+                                style={{ left: corner.x + 34 * dx / distance, top: corner.y + 34 * dy / distance, transform: "translate(-50%, -50%)" }}
+                              >
+                                <span className="flex size-7 items-center justify-center rounded-full border border-[#07b6d3] bg-white text-[#0f1422] shadow-md"><RotateCw className="size-4" /></span>
+                              </button>
+                            );
+                          })}
                           {/* 4 Corner Scale Handles */}
                           {perspectiveHandlePoints.corners.map((c) => (
                             <button
@@ -4992,79 +5061,7 @@ export function ProductModelWorkspace({
               )}
             </div>
             {!shouldLockMobileEditor && selectedProduct && isEditingProduct && !perspectiveCorners && (
-              <motion.div
-                className="pointer-events-none absolute z-50 hidden lg:block"
-                style={{
-                  left: `calc(50% - ${overlaySize.width / 2}px)`,
-                  top: `calc(50% - ${overlaySize.height / 2}px)`,
-                  width: overlaySize.width,
-                  height: overlaySize.height,
-                  x: overlayX,
-                  y: overlayY,
-                }}
-              >
-                <div
-                  className="absolute flex items-center gap-2.5 select-none animate-in fade-in slide-in-from-bottom-2 duration-200 pointer-events-auto"
-                  style={toolbarControlsStyle}
-                >
-                  {supportsPerspectivePlane && (
-                    <button type="button" onClick={() => setShowPerspectivePicker(true)} className="bg-[#0f1422] hover:bg-black text-white w-25 h-12 px-2 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md">
-                      <Maximize className="w-4 h-4 text-white" />
-                      <span className="text-[13px] font-normal tracking-[-0.266px]">Fit</span>
-                    </button>
-                  )}
-                  <button type="button" onClick={handleRotate} className="bg-[#0f1422] hover:bg-black text-white w-25 h-12 px-2 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md">
-                    <RotateCw className="w-4 h-4 text-white" />
-                    <span className="text-[13px] font-normal tracking-[-0.266px]">Rotate</span>
-                  </button>
-                  <button type="button" onClick={handleFlip} className="bg-[#0f1422] hover:bg-black text-white w-25 h-12 px-2 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md">
-                    <FlipHorizontal className="w-4 h-4 text-white" />
-                    <span className="text-[13px] font-normal tracking-[-0.266px]">Flip</span>
-                  </button>
-                  <button type="button" onClick={handleReset} className="bg-[#0f1422] hover:bg-black text-white w-25 h-12 px-2 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md">
-                    <RotateCcw className="w-4 h-4 text-white" />
-                    <span className="text-[13px] font-normal tracking-[-0.266px]">Reset</span>
-                  </button>
-                  <button type="button" onClick={handleRemove} className="bg-[#c50000] hover:bg-[#a30000] text-white w-25 h-12 px-2 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md">
-                    <Trash2 className="w-4 h-4 text-white" />
-                    <span className="text-[13px] font-normal tracking-[-0.266px]">Remove</span>
-                  </button>
-                </div>
-              </motion.div>
-            )}
-            {perspectiveToolbarPosition && !shouldLockMobileEditor && selectedProduct && isEditingProduct && perspectiveCorners && (
-              <div
-                className="absolute z-50 hidden lg:flex items-center gap-2.5 select-none animate-in fade-in slide-in-from-bottom-2 duration-200 pointer-events-auto"
-                style={{
-                  left: `calc(50% + ${perspectiveToolbarPosition.left - canvasDisplaySize.width / 2}px)`,
-                  top: `calc(50% + ${perspectiveToolbarPosition.top - canvasDisplaySize.height / 2}px)`,
-                  transform: "translateX(-50%)",
-                }}
-              >
-                <button type="button" onClick={() => setShowPerspectivePicker(true)} className="bg-[#0f1422] hover:bg-black text-white w-25 h-12 px-2 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md">
-                  <Maximize className="w-4 h-4 text-white" />
-                  <span className="text-[13px] font-normal tracking-[-0.266px]">Edit Corners</span>
-                </button>
-                <button type="button" onClick={() => { setPerspectiveCorners(null); setModelRevision((prev) => prev + 1); }} className="bg-[#0f1422] hover:bg-black text-white w-25 h-12 px-2 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md">
-                  <Move className="w-4 h-4 text-white" />
-                  <span className="text-[13px] font-normal tracking-[-0.266px]">Free Place</span>
-                </button>
-                <button type="button" onClick={handleFlip} className="bg-[#0f1422] hover:bg-black text-white w-25 h-12 px-2 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md">
-                  <FlipHorizontal className="w-4 h-4 text-white" />
-                  <span className="text-[13px] font-normal tracking-[-0.266px]">Flip</span>
-                </button>
-                <button type="button" onClick={handleReset} className="bg-[#0f1422] hover:bg-black text-white w-25 h-12 px-2 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md">
-                  <RotateCcw className="w-4 h-4 text-white" />
-                  <span className="text-[13px] font-normal tracking-[-0.266px]">Reset</span>
-                </button>
-                <button type="button" onClick={handleRemove} className="bg-[#c50000] hover:bg-[#a30000] text-white w-25 h-12 px-2 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md">
-                  <Trash2 className="w-4 h-4 text-white" />
-                  <span className="text-[13px] font-normal tracking-[-0.266px]">Remove</span>
-                </button>
-              </div>
-            )}
-            {!shouldLockMobileEditor && selectedProduct && isEditingProduct && !perspectiveCorners && (
-              <div className="grid w-full max-w-[600px] grid-cols-2 gap-2 select-none sm:grid-cols-5 lg:hidden">
+              <div className="grid w-full max-w-[600px] grid-cols-2 gap-2 select-none sm:grid-cols-5">
                 {supportsPerspectivePlane && (
                   <button type="button" onClick={() => setShowPerspectivePicker(true)} className="bg-[#0f1422] hover:bg-black text-white min-h-11 min-w-0 px-2 py-2 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]">
                     <Maximize className="w-4 h-4 text-white" />
@@ -5091,7 +5088,7 @@ export function ProductModelWorkspace({
             )}
             {!shouldLockMobileEditor && selectedProduct && isEditingProduct && perspectiveCorners && (
               <div
-                className="grid w-full max-w-[600px] grid-cols-2 gap-2 select-none sm:grid-cols-5 lg:hidden"
+                className="grid w-full max-w-[600px] grid-cols-2 gap-2 select-none sm:grid-cols-5"
               >
                 <button
                   type="button"
@@ -5104,6 +5101,7 @@ export function ProductModelWorkspace({
                 <button
                   type="button"
                   onClick={() => {
+                    setMeasurementCorners(null);
                     setPerspectiveCorners(null);
                     setModelRevision((prev) => prev + 1);
                   }}
@@ -6755,6 +6753,7 @@ export function ProductModelWorkspace({
               setOverlaySize(getOverlaySizeFromDimensions(String(estimate.widthCm), String(estimate.heightCm)));
             }
 
+            setMeasurementCorners(corners);
             setPerspectiveCorners(corners);
             setYaw(0);
             setPitch(0);
@@ -7464,23 +7463,6 @@ function getOutlineControlsStyle(
     top: `${resolvedBounds.top * 100}%`,
     width: `${resolvedBounds.width * 100}%`,
     height: `${resolvedBounds.height * 100}%`,
-  };
-}
-
-function getToolbarControlsStyle(
-  bounds: ProjectedModelBounds | null,
-): React.CSSProperties {
-  const resolvedBounds = bounds ?? {
-    left: 0.08,
-    top: 0.08,
-    width: 0.84,
-    height: 0.84,
-  };
-
-  return {
-    left: `${(resolvedBounds.left + resolvedBounds.width / 2) * 100}%`,
-    top: `${resolvedBounds.top * 100}%`,
-    transform: "translate(-50%, calc(-100% - 12px))",
   };
 }
 
