@@ -174,7 +174,7 @@ export function AddProductModal({
             const isCurrent = product.id === currentProductId;
             const isSelecting = selectingProductId === product.id;
             const price = product.basePrice > 0
-              ? `₱ ${product.basePrice.toLocaleString("en-PH")}`
+              ? `₱ ${product.basePrice.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
               : "Price after configuration";
 
             return (

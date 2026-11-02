@@ -19,7 +19,7 @@ function formatPrice(basePrice: number): { label: string; value: string } | { me
   if (basePrice > 0) {
     return {
       label: "Starting at",
-      value: `₱ ${basePrice.toLocaleString("en-PH")}`,
+      value: `₱ ${basePrice.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
     };
   }
   return { message: "Price available after configuration" };

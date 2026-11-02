@@ -58,6 +58,25 @@ export function ParametersAndRulesSection({ productId, isAddon = false, template
         if (Array.isArray(initialData?.parameters) && initialData.parameters.length > 0) {
             return initialData.parameters;
         }
+
+        let maxW = 0;
+        let maxH = 0;
+        if (Array.isArray(initialData?.components)) {
+            for (const c of initialData.components) {
+                const cRecord = c as Record<string, unknown>;
+                const compData = (cRecord.component_data || cRecord.componentData || {}) as Record<string, unknown>;
+                const srcDims = (compData.source_dimensions_mm || compData.sourceDimensionsMm || cRecord.source_dimensions_mm || cRecord.sourceDimensions) as { x?: number; y?: number; z?: number; width?: number; height?: number } | undefined;
+                if (srcDims) {
+                    const w = srcDims.width ?? (srcDims.x !== undefined ? Math.round(srcDims.x * 1000) : 0);
+                    const h = srcDims.height ?? (srcDims.y !== undefined ? Math.round(srcDims.y * 1000) : 0);
+                    if (w > maxW) maxW = w;
+                    if (h > maxH) maxH = h;
+                }
+            }
+        }
+        const defaultW = maxW > 400 ? maxW : 1200;
+        const defaultH = maxH > 400 ? maxH : 1200;
+
         // Default standard parameters for fenestration products
         return [
             {
@@ -65,7 +84,7 @@ export function ParametersAndRulesSection({ productId, isAddon = false, template
                 parameter_key: "width",
                 parameter_type: "Number",
                 minimum_value: 500,
-                default_value: 1200,
+                default_value: defaultW,
                 maximum_value: null,
                 step_value: 1,
                 unit: "mm",
@@ -77,7 +96,7 @@ export function ParametersAndRulesSection({ productId, isAddon = false, template
                 parameter_key: "height",
                 parameter_type: "Number",
                 minimum_value: 500,
-                default_value: 1200,
+                default_value: defaultH,
                 maximum_value: null,
                 step_value: 1,
                 unit: "mm",

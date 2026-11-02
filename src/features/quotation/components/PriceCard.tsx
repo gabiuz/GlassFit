@@ -201,9 +201,9 @@ export function PriceCard({
             </span>
             {((details.selectedAddon && details.selectedAddon !== "none" && typeof details.addonPrice === "number" && details.addonPrice > 0) || accessoryPriceDelta > 0) && (
               <span className="text-[11px] text-neutral-400 text-left md:text-right">
-                Base: {new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: 0 }).format(details.baseUnitPrice ?? (unitPrice - (details.addonPrice ?? 0) - accessoryPriceDelta)).replace("PHP", "Php")}
-                {typeof details.addonPrice === "number" && details.addonPrice > 0 ? ` + Add-on: ${new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: 0 }).format(details.addonPrice).replace("PHP", "Php")}` : ""}
-                {accessoryPriceDelta > 0 ? ` + Hardware: ${new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: 0 }).format(accessoryPriceDelta).replace("PHP", "Php")}` : ""}
+                Base: {new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(details.baseUnitPrice ?? (unitPrice - (details.addonPrice ?? 0) - accessoryPriceDelta)).replace("PHP", "Php")}
+                {typeof details.addonPrice === "number" && details.addonPrice > 0 ? ` + Add-on: ${new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(details.addonPrice).replace("PHP", "Php")}` : ""}
+                {accessoryPriceDelta > 0 ? ` + Hardware: ${new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(accessoryPriceDelta).replace("PHP", "Php")}` : ""}
               </span>
             )}
           </div>

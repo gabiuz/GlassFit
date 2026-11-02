@@ -929,7 +929,7 @@ export function MeasurementConfirmationModal({
             </span>
           </div>
           <div className="text-xl font-semibold text-[#07b6d3]">
-            ₱{Math.round(displayedPrice).toLocaleString()}
+            ₱{displayedPrice.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </div>
         </div>
 

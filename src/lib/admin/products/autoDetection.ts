@@ -48,8 +48,7 @@ export function autoDetectAccessorySlot(fileName: string): AutoDetectAccessorySl
   // Handles & Knobs
   if (/handle|doorknob|knob|lever|pull_bar|pullhandle/.test(lower)) {
     const isPluralHandles = lower.includes("handles");
-    if (isPluralHandles) {
-      // Plural handle sets (such as CW_Handles on double casement windows) are pre-modeled hardware assemblies, not single swappable accessory slots
+    if (isPluralHandles && (lower.includes("cw_") || lower.includes("casement") || lower.includes("double_handle"))) {
       return null;
     }
     return {
@@ -58,7 +57,7 @@ export function autoDetectAccessorySlot(fileName: string): AutoDetectAccessorySl
       presentationCategory: "Hardware",
       dimensionBinding: "FIXED",
       positionOptions: {
-        allowHorizontalToggle: true,
+        allowHorizontalToggle: !isPluralHandles,
         defaultHorizontal: "right",
         horizontalOffsetMm: 45,
         allowVerticalToggle: false,
@@ -88,6 +87,9 @@ export function autoDetectAccessorySlot(fileName: string): AutoDetectAccessorySl
 
   // Rollers & Guides
   if (/roller|wheel|guide_wheel|track_roller/.test(lower)) {
+    if (lower.includes("rollers") || lower.includes("wheels") || lower.includes("guides")) {
+      return null;
+    }
     return {
       isAccessorySlot: true,
       accessoryCategory: "roller",
@@ -106,6 +108,9 @@ export function autoDetectAccessorySlot(fileName: string): AutoDetectAccessorySl
 
   // Hinges & Pivots
   if (/hinge|pivot/.test(lower)) {
+    if (lower.includes("hinges") || lower.includes("pivots")) {
+      return null;
+    }
     return {
       isAccessorySlot: true,
       accessoryCategory: "hinge",
