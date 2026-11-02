@@ -1,7 +1,7 @@
-# Implementation Specification: Keep Per-Part Raw Material Choices from Changing 3D Appearance (fix-22)
+# Implementation Specification: Keep Per-Part Raw Material Choices from Changing 3D Appearance (fix-19)
 
 **Project:** GlassFit (Web-Based Client-Space Visualization System for Customized Glass & Aluminum)
-**Document ID:** fix-22
+**Document ID:** fix-19
 **Document Function:** Technical fix plan for separating per-part raw material specifications and pricing from 3D material appearance
 **Version:** 1.0.0
 **Date:** November 3, 2026
@@ -16,7 +16,7 @@
 
 In `/visualize/[productId]/workspace`, choosing a raw material for an individual part in **Customize Raw Materials by Part** must not change the 3D product's material appearance. This includes color and glass tint, metalness, roughness, transmission, opacity, texture, and other shader appearance properties. The dedicated Aluminum Finish, Glass Type, Advanced Glass Appearance, Glass Color, and Glass Thickness controls remain responsible for those visual choices. A per-part choice must continue to change the selected raw material, part specification, BOM, and price exactly as it does today.
 
-This is a 3D appearance fix for the per-part picker, including model rebuild and restoration. It does not change material eligibility, part names or dimensions, the selected material ID, price deltas, BOM formulas, quotation values, persistence, or current geometry behavior. The separate grouped `MaterialCustomizerPanel` and dedicated appearance controls retain their intentional visual behavior. `FIX22-V1` through `FIX22-V7` below are plan-local acceptance cases, not new QAD identifiers. This document changes no application code, tests, database schema, dependencies, or customer data.
+This is a 3D appearance fix for the per-part picker, including model rebuild and restoration. It does not change material eligibility, part names or dimensions, the selected material ID, price deltas, BOM formulas, quotation values, persistence, or current geometry behavior. The separate grouped `MaterialCustomizerPanel` and dedicated appearance controls retain their intentional visual behavior. `FIX19-V1` through `FIX19-V7` below are plan-local acceptance cases, not new QAD identifiers. This document changes no application code, tests, database schema, dependencies, or customer data.
 
 ---
 
@@ -64,13 +64,13 @@ The initial investigation and delegation breakdown were read-only. The following
 
 | Case | Required result |
 |---|---|
-| FIX22-V1: Frame appearance | In the user's Sliding Window case, change **SW Frame Left** from **Standard Base** to **Standard +₱357**. The frame's color, metalness, roughness, opacity, texture, and other applicable shader properties remain governed by the active appearance controls immediately and after redraw. |
-| FIX22-V2: Specification and price guard | The same choice retains its existing material ID, `1-3/4" x 4" Aluminum Tube` specification, option label, BOM calculation, and live price. Returning to **Standard Base** restores the prior material ID, `1-3/4" x 3" Aluminum Tube` specification, and prior price. No pricing or specification source file changes. |
-| FIX22-V3: Glass appearance | A per-part glass raw material choice leaves the active glass tint, transmission, opacity, roughness, texture, and other optical preview properties unchanged. Its existing specification and price effects remain intact. |
-| FIX22-V4: Rebuild and restore | A dimension-triggered rebuild and restored or edited placed product retain the chosen part material ID and price but do not restyle the model from that raw material. |
-| FIX22-V5: Intentional appearance controls | Aluminum Finish, Glass Type, Advanced Glass Appearance, Glass Color, Glass Thickness, and grouped visual-finish choices still change the intended model appearance. |
-| FIX22-V6: Visual parity | Live canvas, Apply Changes, Save Snapshot, and comparison show the same presentation materials. The appearance correction does not introduce any change to current geometry, placement, perspective fit, or occlusion behavior. |
-| FIX22-V7: Quality gates | Run focused `npm run test:ms66` and `npm run test:fix12`, relevant renderer and pricing regressions, `npm run lint`, `npx tsc --noEmit`, and `npm run build`. Verify `QAD-TC81` and `QAD-TC82` under the clarified appearance contract. |
+| FIX19-V1: Frame appearance | In the user's Sliding Window case, change **SW Frame Left** from **Standard Base** to **Standard +₱357**. The frame's color, metalness, roughness, opacity, texture, and other applicable shader properties remain governed by the active appearance controls immediately and after redraw. |
+| FIX19-V2: Specification and price guard | The same choice retains its existing material ID, `1-3/4" x 4" Aluminum Tube` specification, option label, BOM calculation, and live price. Returning to **Standard Base** restores the prior material ID, `1-3/4" x 3" Aluminum Tube` specification, and prior price. No pricing or specification source file changes. |
+| FIX19-V3: Glass appearance | A per-part glass raw material choice leaves the active glass tint, transmission, opacity, roughness, texture, and other optical preview properties unchanged. Its existing specification and price effects remain intact. |
+| FIX19-V4: Rebuild and restore | A dimension-triggered rebuild and restored or edited placed product retain the chosen part material ID and price but do not restyle the model from that raw material. |
+| FIX19-V5: Intentional appearance controls | Aluminum Finish, Glass Type, Advanced Glass Appearance, Glass Color, Glass Thickness, and grouped visual-finish choices still change the intended model appearance. |
+| FIX19-V6: Visual parity | Live canvas, Apply Changes, Save Snapshot, and comparison show the same presentation materials. The appearance correction does not introduce any change to current geometry, placement, perspective fit, or occlusion behavior. |
+| FIX19-V7: Quality gates | Run focused `npm run test:ms66` and `npm run test:fix12`, relevant renderer and pricing regressions, `npm run lint`, `npx tsc --noEmit`, and `npm run build`. Verify `QAD-TC81` and `QAD-TC82` under the clarified appearance contract. |
 
 ---
 

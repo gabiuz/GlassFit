@@ -595,6 +595,6 @@ Add test suite in `tests/unit/customerMaterialWorkspaceIntegration.test.ts`:
 - [x] Hard bans enforced: Strict UI consistency with existing Tailwind tokens (BAN-UI-09)
 - [x] Implementation completed and verified with automated test catalog (QAD-TC82.1 through QAD-TC82.8)
 
-## fix-22 appearance clarification
+## fix-19 appearance clarification
 
 Per-part raw material selections control fabrication specification, BOM, pricing, and saved material IDs under PRD-F6, PRD-F10, and QAD-TC82. They do not apply raw material PBR properties to the 3D preview, including on model rebuild or configuration restore. The earlier explicit per-part PBR override guidance in this document is superseded by this rule. Dedicated appearance controls and grouped visual finish choices retain their visual effects.

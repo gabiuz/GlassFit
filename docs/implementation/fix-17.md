@@ -1,7 +1,7 @@
-# Implementation Specification: Preserve Contact Shadow Without Snapshot Canvas Outline (fix-20)
+# Implementation Specification: Preserve Contact Shadow Without Snapshot Canvas Outline (fix-17)
 
 **Project:** GlassFit (Web-Based Client-Space Visualization System for Customized Glass & Aluminum)
-**Document ID:** fix-20
+**Document ID:** fix-17
 **Document Function:** Technical plan for correcting the snapshot-outline fix without losing product grounding and reveal shadows
 **Version:** 1.0.0
 **Date:** November 2, 2026
@@ -17,7 +17,7 @@
 
 Saved snapshots must show the fitted product with a localized contact and reveal shadow, without a straight-edged rectangle from the transparent model canvas. The live editor, applied preview, comparison image, and downloaded image must agree on product placement and shading. Preserve real product edges, protruding sills and hardware, perspective fit, glass transparency, and foreground occlusion.
 
-This document records the correction on the current `fix/product-outline` branch. `FIX20-V1` through `FIX20-V7` below are plan-local acceptance cases, not new QAD identifiers. The branch now positions contact and reveal shading from the normalized installation rectangle, with the same rendered canvas consumed by live display and shared snapshot capture. The reproducible browser pixel check in Brave passed for transparent margins, visible contact shading, transparent glass, projecting hardware, Auto Shadow off, an angled perspective warp, and JPEG encode/decode. Focused tests, lint, typecheck, and production build passed; lint reported 19 pre-existing warnings. The reported customer image and complete browser matrix have not been reproduced, so release acceptance remains pending.
+This document records the correction on the current `fix/product-outline` branch. `FIX17-V1` through `FIX17-V7` below are plan-local acceptance cases, not new QAD identifiers. The branch now positions contact and reveal shading from the normalized installation rectangle, with the same rendered canvas consumed by live display and shared snapshot capture. The reproducible browser pixel check in Brave passed for transparent margins, visible contact shading, transparent glass, projecting hardware, Auto Shadow off, an angled perspective warp, and JPEG encode/decode. Focused tests, lint, typecheck, and production build passed; lint reported 19 pre-existing warnings. The reported customer image and complete browser matrix have not been reproduced, so release acceptance remains pending.
 
 ---
 
@@ -63,13 +63,13 @@ The prior `agent-organizer` review recommended one visualization owner with inde
 
 | Case | Required result |
 |---|---|
-| FIX20-V1: Reported snapshot | The reported cabinet placement has no faint source-canvas rectangle in the downloaded image at 100% and 400% zoom. Actual cabinet edges, handles, glass, and contact shadow remain visible. |
-| FIX20-V2: Pixel boundary | Before warping, unused model-canvas edges retain alpha zero. A measurable localized contact or reveal effect exists at the installation perimeter. The pre-encode composite and downloaded image show the same intended edge and shadow positions. |
-| FIX20-V3: Placement variants | Free placement and perspective fit, including an angled quadrilateral, render without clipping, offset shadows, or a source-frame border. Flip, scale, rotation, a second product, and projecting parts retain their visible geometry. |
-| FIX20-V4: Realism controls | Auto Shadow off removes the intended shadow without changing product pixels or placement. Auto Shadow on restores localized grounding without shading the full transparent canvas. Glass appearance and lighting controls retain their existing behavior. |
-| FIX20-V5: Occlusion and handoff | Detected foreground masks and a manual mask each cover the correct product region. Save Snapshot, Apply, comparison, and any quotation preview using the shared capture remain visually aligned. Editor guides stay usable and are absent from export. |
-| FIX20-V6: Browser and fallback | Confirm desktop and phone-sized scenes in Chromium and WebKit. Exercise WebGL perspective warp and Canvas 2D fallback where available, opening the downloaded image in each supported path. |
-| FIX20-V7: Integration and quality | The latest `origin/dev` changes and this correction combine cleanly. Focused visualization tests, `npm run lint`, `npx tsc --noEmit`, and `npm run build` pass on the integrated tree. Record unrelated pre-existing warnings separately and reconcile `fix-ui13.md` status. |
+| FIX17-V1: Reported snapshot | The reported cabinet placement has no faint source-canvas rectangle in the downloaded image at 100% and 400% zoom. Actual cabinet edges, handles, glass, and contact shadow remain visible. |
+| FIX17-V2: Pixel boundary | Before warping, unused model-canvas edges retain alpha zero. A measurable localized contact or reveal effect exists at the installation perimeter. The pre-encode composite and downloaded image show the same intended edge and shadow positions. |
+| FIX17-V3: Placement variants | Free placement and perspective fit, including an angled quadrilateral, render without clipping, offset shadows, or a source-frame border. Flip, scale, rotation, a second product, and projecting parts retain their visible geometry. |
+| FIX17-V4: Realism controls | Auto Shadow off removes the intended shadow without changing product pixels or placement. Auto Shadow on restores localized grounding without shading the full transparent canvas. Glass appearance and lighting controls retain their existing behavior. |
+| FIX17-V5: Occlusion and handoff | Detected foreground masks and a manual mask each cover the correct product region. Save Snapshot, Apply, comparison, and any quotation preview using the shared capture remain visually aligned. Editor guides stay usable and are absent from export. |
+| FIX17-V6: Browser and fallback | Confirm desktop and phone-sized scenes in Chromium and WebKit. Exercise WebGL perspective warp and Canvas 2D fallback where available, opening the downloaded image in each supported path. |
+| FIX17-V7: Integration and quality | The latest `origin/dev` changes and this correction combine cleanly. Focused visualization tests, `npm run lint`, `npx tsc --noEmit`, and `npm run build` pass on the integrated tree. Record unrelated pre-existing warnings separately and reconcile `fix-ui13.md` status. |
 
 Use `QAD-TC7` through `QAD-TC9` as the existing release baseline. Keep diagnostic images local and temporary; remove customer photos and debug logging before completion. Run the FastAPI health check only if reproduction starts that service.
 
