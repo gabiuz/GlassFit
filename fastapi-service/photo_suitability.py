@@ -72,6 +72,7 @@ def assess_photo_suitability(
     evidence = independent_scene if dominant_subject else scene
     wall = evidence.get("wall_coverage") or 0.0
     opening = evidence.get("opening_coverage") or 0.0
+    structural = evidence.get("structural_coverage") or 0.0
     floor = evidence.get("floor_coverage") or 0.0
     ceiling = evidence.get("ceiling_coverage") or 0.0
     building = evidence.get("building_coverage") or 0.0
@@ -84,6 +85,8 @@ def assess_photo_suitability(
     )
     architectural_evidence = (
         (opening >= 0.04 and not surface_too_close)
+        or (not dominant_subject and wall >= 0.20 and structural >= 0.10
+            and opening >= 0.02 and opening_vertical_span < 0.95)
         or (wall >= 0.20 and floor >= 0.05)
         or (building >= 0.20 and exterior_context >= 0.08)
         or (building >= 0.30 and wall >= 0.15 and floor >= 0.025)

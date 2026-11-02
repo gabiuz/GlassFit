@@ -35,6 +35,16 @@ def test_close_opening_needs_no_floor():
                                     scene(opening_coverage=0.08), 1000, 1000)["status"] == "accepted"
 
 
+def test_framed_interior_opening_with_narrow_semantic_label_is_accepted():
+    # PRD-F3 / QAD-TC4: image (5) has a visible interior opening, but
+    # segmentation assigns only a narrow strip to the opening class.
+    evidence = scene(wall_coverage=0.682, structural_coverage=0.130,
+                     opening_coverage=0.035, opening_vertical_span=0.608,
+                     ceiling_coverage=0.089)
+    assert assess_photo_suitability([], {"mode": "yolo"}, evidence,
+                                    415, 739)["status"] == "accepted"
+
+
 def test_occupied_window_wall_with_small_floor_is_accepted():
     # FIX14 / QAD-TC4: the real window scene has building and wall labels,
     # while the narrow bottom strip of floor falls below the generic cutoff.
