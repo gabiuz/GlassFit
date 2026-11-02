@@ -559,6 +559,15 @@ export interface GrilleBarMetric {
   subtotalCost: number;
 }
 
+export interface GrilleOpeningBOMImpact {
+  openingCount: number;
+  collarLinearMeters: number; // 2 * (W + H) * N
+  collarPieceCount: number; // 4 * N pieces
+  interruptedPicketCount: number; // Number of pickets split by cutouts
+  netPicketLengthDeduction: number; // Total length of omitted bar sections
+  cornerCleatQuantity: number; // 4 * N corner connecting brackets
+}
+
 export interface GrilleLinearPricingInput {
   widthMm: number; // Aperture opening width
   heightMm: number; // Aperture opening height
@@ -569,6 +578,18 @@ export interface GrilleLinearPricingInput {
   verticalBarCount?: number; // Optional explicit or geometry-detected vertical bar count
   frameProfileWidthMm?: number; // Perimeter frame face width (default: 20mm)
   includePerimeterFrame?: boolean; // True if grille includes outer frame rails (default: true)
+  openingCount?: number;
+  openingWidthMm?: number;
+  openingHeightMm?: number;
+  openingTargetKeys?: string[];
+  openingConfig?: {
+    enabled?: boolean;
+    cutoutWidthMm?: number;
+    cutoutHeightMm?: number;
+    collarExtrusionCode?: string;
+    cornerCleatCountPerOpening?: number;
+    targetComponentKeys?: string[];
+  } | null;
   grilleRawMaterial: {
     id: string;
     material_code: string;
@@ -619,9 +640,18 @@ export interface GrilleLinearBOMResult {
     subtotalCost: number;
     details: GrilleBarMetric[];
   };
+  openings?: GrilleOpeningBOMImpact | null;
+  openingDetails?: {
+    count: number;
+    cutoutWidthMm: number;
+    cutoutHeightMm: number;
+    collarRailsMetric: GrilleBarMetric;
+    collarStilesMetric: GrilleBarMetric;
+    cornerCleatCount: number;
+  } | null;
   itemizedBreakdown: Array<{
     item: string;
-    orientation: GrilleBarOrientation | "PERIMETER";
+    orientation: GrilleBarOrientation | "PERIMETER" | "COLLAR" | "HARDWARE";
     pieces: number;
     lengthMm: number;
     totalMeters: number;

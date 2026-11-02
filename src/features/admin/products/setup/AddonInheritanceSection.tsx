@@ -41,6 +41,10 @@ export function AddonInheritanceSection({
 
   const [grillAllowedSides, setGrillAllowedSides] = useState<AddonAllowedSides>("both");
   const [grillDefaultSide, setGrillDefaultSide] = useState<AddonMountingSide>("front");
+  const [grillOpeningEnabled, setGrillOpeningEnabled] = useState(false);
+  const [grillOpeningTargets, setGrillOpeningTargets] = useState<string[]>([]);
+  const [grillCutoutWidthMm, setGrillCutoutWidthMm] = useState<number>(150);
+  const [grillCutoutHeightMm, setGrillCutoutHeightMm] = useState<number>(180);
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -128,11 +132,21 @@ export function AddonInheritanceSection({
         setSelectedGrillProductIds(grillBindings.map((b) => b.addonProductId));
         setGrillAllowedSides(grillBindings[0].allowedSides ?? "both");
         setGrillDefaultSide(grillBindings[0].defaultSide ?? "front");
+        const existingGrillTargets = grillBindings[0].grilleOpeningTargetComponentKeys ?? grillBindings[0].hatchTargetComponentKeys ?? [];
+        setGrillOpeningTargets(existingGrillTargets);
+        const existingGrillConfig = grillBindings[0].grilleOpeningConfig as Record<string, unknown> | null;
+        setGrillOpeningEnabled(existingGrillConfig?.enabled !== false && existingGrillTargets.length > 0);
+        setGrillCutoutWidthMm(Number(existingGrillConfig?.cutoutWidthMm) || 150);
+        setGrillCutoutHeightMm(Number(existingGrillConfig?.cutoutHeightMm) || 180);
       } else {
         setHasGrill(false);
         setSelectedGrillProductIds(availableGrills.length > 0 ? [availableGrills[0].productId] : []);
         setGrillAllowedSides("both");
         setGrillDefaultSide("front");
+        setGrillOpeningTargets([]);
+        setGrillOpeningEnabled(false);
+        setGrillCutoutWidthMm(150);
+        setGrillCutoutHeightMm(180);
       }
     } catch (err: unknown) {
       console.error("Failed to load add-on configuration:", err);
@@ -202,12 +216,20 @@ export function AddonInheritanceSection({
         screenAddonProductIds: hasScreen ? selectedScreenProductIds : [],
         screenAllowedSides,
         screenDefaultSide,
-        screenHatchTargetComponentKeys: screenHatchTargets,
+        screenHatchTargetComponentKeys: (hasScreen && screenAllowedSides !== "front") ? screenHatchTargets : [],
         hasGrill,
         grillAddonProductId: selectedGrillProductIds[0] ?? null,
         grillAddonProductIds: hasGrill ? selectedGrillProductIds : [],
         grillAllowedSides,
         grillDefaultSide,
+        grillOpeningTargetComponentKeys: (hasGrill && grillAllowedSides !== "front" && grillOpeningEnabled) ? grillOpeningTargets : [],
+        grillOpeningConfig: {
+          enabled: hasGrill && grillAllowedSides !== "front" && grillOpeningEnabled && grillOpeningTargets.length > 0,
+          cutoutWidthMm: Math.max(100, Math.min(250, grillCutoutWidthMm)),
+          cutoutHeightMm: Math.max(120, Math.min(300, grillCutoutHeightMm)),
+          cornerCleatCountPerOpening: 4,
+          targetComponentKeys: (hasGrill && grillAllowedSides !== "front" && grillOpeningEnabled) ? grillOpeningTargets : [],
+        },
       });
 
       setSaveStatus("saved");
@@ -489,74 +511,97 @@ export function AddonInheritanceSection({
                 )}
               </div>
 
-              {/* Operator-Targeted Screen Hatch Alignment (IMP-MS80) */}
+              {/* Operator-Targeted Screen Hatch Alignment (IMP-MS80, IMP-MS87) */}
               {candidateOperatorComponents.length > 0 && (
-                <div className="flex flex-col gap-2 pt-3 border-t border-teal-200/60">
-                  <div className="flex items-center justify-between">
-                    <div className="flex flex-col">
-                      <span className="text-xs font-semibold text-neutral-800 flex items-center gap-1.5">
-                        <Crosshair className="size-3.5 text-[#07b6d3]" />
-                        Operator Hatch Alignment Targets
-                      </span>
-                      <span className="text-[11px] text-neutral-500">
-                        Bind screen access hatches directly to host window operating mechanisms. Unselected means no hatch is available.
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const allKeys = candidateOperatorComponents.map((c) => String(c.component_key || c.componentKey || ""));
-                          setScreenHatchTargets(screenHatchTargets.length === allKeys.length ? [] : allKeys);
-                        }}
-                        className="text-[11px] font-medium text-teal-700 hover:text-teal-900 underline"
-                      >
-                        {screenHatchTargets.length === candidateOperatorComponents.length ? "Deselect All" : "Select All"}
-                      </button>
-                      <span className="text-[11px] text-teal-800 bg-teal-100 font-semibold px-2 py-0.5 rounded-md">
-                        {screenHatchTargets.length === 0
-                          ? "No hatch (unavailable)"
-                          : `${screenHatchTargets.length} target ${screenHatchTargets.length === 1 ? "operator" : "operators"} (${screenHatchTargets.length} ${screenHatchTargets.length === 1 ? "hatch" : "hatches"})`}
-                      </span>
+                screenAllowedSides === "front" ? (
+                  <div className="flex items-start gap-2.5 p-3 rounded-[10px] bg-teal-50/60 border border-teal-200 text-xs text-teal-900">
+                    <Info className="size-4 text-teal-600 shrink-0 mt-0.5" />
+                    <div className="flex flex-col gap-0.5">
+                      <span className="font-semibold text-teal-950">Alignment Targets Unavailable for Exterior Placement</span>
+                      <p className="text-[11px] text-teal-800 leading-relaxed">
+                        Window operating mechanisms (jalousie operators, cam handles) are located on the room interior. Because an exterior screen is mounted outside the glass plane, room occupants reach handles directly without obstruction. Operator access hatches are not applicable to exterior attachments.
+                      </p>
                     </div>
                   </div>
-
-                  <div className="flex flex-col gap-1.5 max-h-48 overflow-y-auto pr-1">
-                    {candidateOperatorComponents.map((comp) => {
-                      const compKey = String(comp.component_key || comp.componentKey || "");
-                      const compName = String(comp.component_name || comp.componentName || compKey);
-                      const isChecked = screenHatchTargets.includes(compKey);
-                      return (
-                        <label
-                          key={compKey}
-                          className={cn(
-                            "flex items-center justify-between p-2 rounded-[8px] border text-xs cursor-pointer transition-all",
-                            isChecked
-                              ? "bg-white border-teal-400 ring-1 ring-teal-300/40 text-neutral-900"
-                              : "bg-white/60 border-neutral-200 text-neutral-700 hover:border-neutral-300"
-                          )}
+                ) : (
+                  <div className="flex flex-col gap-2 pt-3 border-t border-teal-200/60">
+                    <div className="flex items-center justify-between">
+                      <div className="flex flex-col">
+                        <span className="text-xs font-semibold text-neutral-800 flex items-center gap-1.5">
+                          <Crosshair className="size-3.5 text-[#07b6d3]" />
+                          Operator Hatch Alignment Targets
+                        </span>
+                        <span className="text-[11px] text-neutral-500">
+                          Bind screen access hatches directly to host window operating mechanisms. Unselected means no hatch is available.
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {screenAllowedSides === "back" && (
+                          <span className="text-[11px] text-teal-800 bg-teal-100 font-semibold px-2 py-0.5 rounded-md">
+                            Active (Interior Attachment)
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const allKeys = candidateOperatorComponents.map((c) => String(c.component_key || c.componentKey || ""));
+                            setScreenHatchTargets(screenHatchTargets.length === allKeys.length ? [] : allKeys);
+                          }}
+                          className="text-[11px] font-medium text-teal-700 hover:text-teal-900 underline"
                         >
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="checkbox"
-                              checked={isChecked}
-                              onChange={() => {
-                                setScreenHatchTargets((prev) =>
-                                  prev.includes(compKey)
-                                    ? prev.filter((k) => k !== compKey)
-                                    : [...prev, compKey]
-                                );
-                              }}
-                              className="size-3.5 rounded text-[#07b6d3] focus:ring-[#07b6d3]"
-                            />
-                            <span className="font-medium">{compName}</span>
-                          </div>
-                          <span className="text-[11px] text-neutral-400 font-mono">{compKey}</span>
-                        </label>
-                      );
-                    })}
+                          {screenHatchTargets.length === candidateOperatorComponents.length ? "Deselect All" : "Select All"}
+                        </button>
+                        <span className="text-[11px] text-teal-800 bg-teal-100 font-semibold px-2 py-0.5 rounded-md">
+                          {screenHatchTargets.length === 0
+                            ? "No hatch (unavailable)"
+                            : `${screenHatchTargets.length} target ${screenHatchTargets.length === 1 ? "operator" : "operators"} (${screenHatchTargets.length} ${screenHatchTargets.length === 1 ? "hatch" : "hatches"})`}
+                        </span>
+                      </div>
+                    </div>
+
+                    {screenAllowedSides === "both" && (
+                      <p className="text-[11px] text-teal-700 bg-teal-50/80 p-2 rounded-[6px] border border-teal-200/60">
+                        Notice: These alignment targets will apply exclusively when this screen is mounted on the Interior (Back). If a customer selects Exterior (Front) mounting during quotation, access hatches will be automatically suppressed.
+                      </p>
+                    )}
+
+                    <div className="flex flex-col gap-1.5 max-h-48 overflow-y-auto pr-1">
+                      {candidateOperatorComponents.map((comp) => {
+                        const compKey = String(comp.component_key || comp.componentKey || "");
+                        const compName = String(comp.component_name || comp.componentName || compKey);
+                        const isChecked = screenHatchTargets.includes(compKey);
+                        return (
+                          <label
+                            key={compKey}
+                            className={cn(
+                              "flex items-center justify-between p-2 rounded-[8px] border text-xs cursor-pointer transition-all",
+                              isChecked
+                                ? "bg-white border-teal-400 ring-1 ring-teal-300/40 text-neutral-900"
+                                : "bg-white/60 border-neutral-200 text-neutral-700 hover:border-neutral-300"
+                            )}
+                          >
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => {
+                                  setScreenHatchTargets((prev) =>
+                                    prev.includes(compKey)
+                                      ? prev.filter((k) => k !== compKey)
+                                      : [...prev, compKey]
+                                  );
+                                }}
+                                className="size-3.5 rounded text-[#07b6d3] focus:ring-[#07b6d3]"
+                              />
+                              <span className="font-medium">{compName}</span>
+                            </div>
+                            <span className="text-[11px] text-neutral-400 font-mono">{compKey}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
+                )
               )}
             </div>
           )}
@@ -759,6 +804,149 @@ export function AddonInheritanceSection({
                   </div>
                 )}
               </div>
+
+              {/* Operator & Handle Clearances for Security Grille (IMP-MS86, QAD-TC101) */}
+              {candidateOperatorComponents.length > 0 && (
+                <div className="flex flex-col gap-3 pt-3 border-t border-amber-200/60">
+                  <div className="flex items-center justify-between">
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={grillOpeningEnabled}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setGrillOpeningEnabled(checked);
+                          if (checked && grillOpeningTargets.length === 0) {
+                            if (screenHatchTargets.length > 0) {
+                              setGrillOpeningTargets([...screenHatchTargets]);
+                            } else {
+                              setGrillOpeningTargets(candidateOperatorComponents.map((c) => String(c.component_key || c.componentKey || "")));
+                            }
+                          }
+                        }}
+                        className="size-3.5 rounded text-[#07b6d3] focus:ring-[#07b6d3]"
+                      />
+                      <span className="text-xs font-semibold text-neutral-800 flex items-center gap-1.5">
+                        <Crosshair className="size-3.5 text-[#07b6d3]" />
+                        Enable Handle Access Openings
+                      </span>
+                    </label>
+
+                    <div className="flex items-center gap-2">
+                      {(screenHatchTargets.length > 0 || candidateOperatorComponents.length > 0) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (screenHatchTargets.length > 0) {
+                              setGrillOpeningTargets([...screenHatchTargets]);
+                            } else {
+                              setGrillOpeningTargets(candidateOperatorComponents.map((c) => String(c.component_key || c.componentKey || "")));
+                            }
+                            setGrillOpeningEnabled(true);
+                          }}
+                          className="text-[11px] font-medium text-amber-800 hover:text-amber-950 underline cursor-pointer"
+                        >
+                          Inherit Host Operator Targets ({screenHatchTargets.length > 0 ? screenHatchTargets.length : candidateOperatorComponents.length} detected)
+                        </button>
+                      )}
+                      <span className="text-[11px] text-amber-900 bg-amber-100 font-semibold px-2 py-0.5 rounded-md">
+                        {!grillOpeningEnabled || grillOpeningTargets.length === 0
+                          ? "No openings (continuous bars)"
+                          : `${grillOpeningTargets.length} framed ${grillOpeningTargets.length === 1 ? "opening" : "openings"}`}
+                      </span>
+                    </div>
+                  </div>
+
+                  <p className="text-[11px] text-neutral-500">
+                    Constructs framed rectangular clearance openings with empty interiors at handle centroids to preserve operator reach-through while barring physical entry.
+                  </p>
+
+                  {grillOpeningEnabled && (
+                    <div className="flex flex-col gap-3 pl-2 border-l-2 border-amber-300">
+                      {/* Target selection checklist */}
+                      <div className="flex flex-col gap-1.5 max-h-40 overflow-y-auto pr-1">
+                        {candidateOperatorComponents.map((comp) => {
+                          const compKey = String(comp.component_key || comp.componentKey || "");
+                          const compName = String(comp.component_name || comp.componentName || compKey);
+                          const isChecked = grillOpeningTargets.includes(compKey);
+                          return (
+                            <label
+                              key={compKey}
+                              className={cn(
+                                "flex items-center justify-between p-2 rounded-[8px] border text-xs cursor-pointer transition-all",
+                                isChecked
+                                  ? "bg-white border-amber-400 ring-1 ring-amber-300/40 text-neutral-900"
+                                  : "bg-white/60 border-neutral-200 text-neutral-700 hover:border-neutral-300"
+                              )}
+                            >
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => {
+                                    setGrillOpeningTargets((prev) =>
+                                      prev.includes(compKey)
+                                        ? prev.filter((k) => k !== compKey)
+                                        : [...prev, compKey]
+                                    );
+                                  }}
+                                  className="size-3.5 rounded text-[#07b6d3] focus:ring-[#07b6d3]"
+                                />
+                                <span className="font-medium">{compName}</span>
+                              </div>
+                              <span className="text-[11px] text-neutral-400 font-mono">{compKey}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+
+                      {/* Cutout dimension inputs */}
+                      <div className="grid grid-cols-2 gap-3 pt-2 border-t border-amber-200/50">
+                        <div className="flex flex-col gap-1">
+                          <label className="text-[11px] font-semibold text-neutral-700">
+                            Clearance Width (mm)
+                          </label>
+                          <input
+                            type="number"
+                            min={100}
+                            max={250}
+                            value={grillCutoutWidthMm}
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              setGrillCutoutWidthMm(val);
+                            }}
+                            onBlur={() => {
+                              setGrillCutoutWidthMm((prev) => Math.max(100, Math.min(250, prev || 150)));
+                            }}
+                            className="p-1.5 text-xs rounded border border-neutral-300 bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 font-mono"
+                          />
+                          <span className="text-[10px] text-neutral-400">Permitted: 100 to 250mm</span>
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <label className="text-[11px] font-semibold text-neutral-700">
+                            Clearance Height (mm)
+                          </label>
+                          <input
+                            type="number"
+                            min={120}
+                            max={300}
+                            value={grillCutoutHeightMm}
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              setGrillCutoutHeightMm(val);
+                            }}
+                            onBlur={() => {
+                              setGrillCutoutHeightMm((prev) => Math.max(120, Math.min(300, prev || 180)));
+                            }}
+                            className="p-1.5 text-xs rounded border border-neutral-300 bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 font-mono"
+                          />
+                          <span className="text-[10px] text-neutral-400">Permitted: 120 to 300mm</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>
