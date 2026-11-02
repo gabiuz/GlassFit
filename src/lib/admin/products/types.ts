@@ -147,12 +147,36 @@ export interface CompatibleAddonBinding {
   defaultSide?: AddonMountingSide;
   hatchTargetComponentKeys?: string[] | null;
   hatchAlignmentConfig?: Record<string, unknown> | null;
+  grilleOpeningTargetComponentKeys?: string[] | null;
+  grilleOpeningConfig?: GrilleOpeningConfig | Record<string, unknown> | null;
   addonProduct?: {
     productId: string;
     productName: string;
     basePrice: number;
     status: string;
   };
+}
+
+export interface GrilleOpeningConfig {
+  enabled: boolean;
+  targetComponentKeys: string[];
+  cutoutWidthMm: number; // Default: 150mm (range: 100mm to 250mm)
+  cutoutHeightMm: number; // Default: 180mm (range: 120mm to 300mm)
+  collarExtrusionCode?: string; // Optional raw material code for border collar
+  cornerCleatCountPerOpening?: number; // Default: 4 pieces
+}
+
+export interface GrilleOpeningInstance {
+  index: number;
+  targetKey: string;
+  centerCoordinates: { x: number; y: number; z: number };
+  boundingBox: {
+    minX: number;
+    maxX: number;
+    minY: number;
+    maxY: number;
+  };
+  dimensionsMm: { width: number; height: number };
 }
 
 export interface HostProductAddonConfig {
@@ -170,4 +194,6 @@ export interface HostProductAddonConfig {
   grillDefaultSide?: AddonMountingSide;
   grillHatchTargetComponentKeys?: string[];
   grillHatchAlignmentConfig?: Record<string, unknown> | null;
+  grillOpeningTargetComponentKeys?: string[];
+  grillOpeningConfig?: GrilleOpeningConfig | Record<string, unknown> | null;
 }

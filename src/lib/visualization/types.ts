@@ -210,6 +210,8 @@ export type CompatibleAddon = {
   defaultSide?: "front" | "back";
   hatchTargetComponentKeys?: string[] | null;
   hatchAlignmentConfig?: Record<string, unknown> | null;
+  grilleOpeningTargetComponentKeys?: string[] | null;
+  grilleOpeningConfig?: import("@/lib/admin/products/types").GrilleOpeningConfig | Record<string, unknown> | null;
   addonProduct?: {
     productId: string;
     productName: string;
@@ -395,6 +397,9 @@ export type ProductConfigurationSnapshot = {
   removableStates?: Record<string, boolean>;
   hatchCount?: number;
   hatchTargetKeys?: string[];
+  grilleOpeningCount?: number;
+  grilleOpeningTargetKeys?: string[];
+  grilleOpeningConfig?: import("@/lib/admin/products/types").GrilleOpeningConfig | null;
   baseUnitPrice?: number;
   grilleBOM?: import("@/lib/pricing/types").GrilleLinearBOMResult | null;
   swappedAccessories?: Record<string, SelectedAccessoryState>;

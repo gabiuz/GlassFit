@@ -299,6 +299,8 @@ export function createQuotationDocumentSnapshotV1(input: {
           widthMm: item.widthMm,
           heightMm: item.heightMm,
           patternType: "staggered_brick",
+          openingCount: item.hatchCount,
+          openingTargetKeys: item.hatchTargetKeys,
           grilleRawMaterial: {
             id: "doc-grille-mat",
             material_code: "AL-GRILLE-TUBE-16MM",

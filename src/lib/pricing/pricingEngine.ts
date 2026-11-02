@@ -240,6 +240,15 @@ export function calculateParametricBOM(
       continue;
     }
 
+    const isInterior = options.addonMountingSide !== "front";
+    const isHatchPart = compKey.toLowerCase().includes("hatch") ||
+      Boolean(comp.componentName && comp.componentName.toLowerCase().includes("hatch"));
+
+    if (isHatchPart && !isInterior) {
+      // Access hatches are strictly suppressed when mounted on the exterior (IMP-MS87)
+      continue;
+    }
+
     const mat = comp.rawMaterial;
     const isFixedComponent = comp.pricingMethod === "Fixed" || (typeof comp.unitPrice === "number" && comp.unitPrice > 0);
 
@@ -331,9 +340,10 @@ export function calculateParametricBOM(
           default: {
             const isHatchPart = comp.componentKey.toLowerCase().includes("hatch") ||
               Boolean(comp.componentName && comp.componentName.toLowerCase().includes("hatch"));
-            const hatchMultiplier = (comp.dimensionBinding === "FIXED" && isHatchPart && options.hatchCount && options.hatchCount > 0)
-              ? options.hatchCount
-              : 1;
+            const effectiveHatchCount = isInterior ? (options.hatchCount ?? 0) : 0;
+            const hatchMultiplier = (comp.dimensionBinding === "FIXED" && isHatchPart && effectiveHatchCount > 0)
+              ? effectiveHatchCount
+              : (isHatchPart && !isInterior ? 0 : 1);
             computedQty = comp.baseQuantity * hatchMultiplier;
             unitLabel = mat.billing_unit || "pc";
             break;
@@ -343,9 +353,10 @@ export function calculateParametricBOM(
     } else if (isFixedComponent) {
       const isHatchPart = comp.componentKey.toLowerCase().includes("hatch") ||
         Boolean(comp.componentName && comp.componentName.toLowerCase().includes("hatch"));
-      const hatchMultiplier = (comp.dimensionBinding === "FIXED" && isHatchPart && options.hatchCount && options.hatchCount > 0)
-        ? options.hatchCount
-        : 1;
+      const effectiveHatchCount = isInterior ? (options.hatchCount ?? 0) : 0;
+      const hatchMultiplier = (comp.dimensionBinding === "FIXED" && isHatchPart && effectiveHatchCount > 0)
+        ? effectiveHatchCount
+        : (isHatchPart && !isInterior ? 0 : 1);
       computedQty = comp.baseQuantity * hatchMultiplier;
       unitLabel = "pc";
     }

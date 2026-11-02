@@ -984,6 +984,10 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
       synthesizeBenchmarkMaterials(pricingInputs);
     }
 
+    const isInterior = addonMountingSide === "back";
+    const effectiveHatchQty = (isInterior && includeHatch && targetOperatorKeys.length > 0) ? dynamicOperatorCount : 0;
+    const effectiveHatchKeys = (isInterior && includeHatch && targetOperatorKeys.length > 0) ? targetOperatorKeys : [];
+
     return calculateParametricBOM(pricingInputs, {
       widthMm: currentWidthMm,
       heightMm: currentHeightMm,
@@ -991,8 +995,8 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
       hasSill,
       removableStates,
       addonMountingSide,
-      hatchCount: (includeHatch && targetOperatorKeys.length > 0) ? dynamicOperatorCount : 0,
-      hatchTargetKeys: (includeHatch && targetOperatorKeys.length > 0) ? targetOperatorKeys : [],
+      hatchCount: effectiveHatchQty,
+      hatchTargetKeys: effectiveHatchKeys,
     });
   }, [definition, rawMaterials, parameters, hasSill, removableStates, materialOverrides, addonMountingSide, includeHatch, dynamicOperatorCount, targetOperatorKeys]);
 
@@ -1037,6 +1041,10 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
       synthesizeBenchmarkMaterials(pricingInputs);
     }
 
+    const isInterior = addonMountingSide === "back";
+    const effectiveHatchQty = (isInterior && includeHatch && targetOperatorKeys.length > 0) ? dynamicOperatorCount : 0;
+    const effectiveHatchKeys = (isInterior && includeHatch && targetOperatorKeys.length > 0) ? targetOperatorKeys : [];
+
     return calculateParametricBOM(pricingInputs, {
       widthMm: currentWidthMm,
       heightMm: currentHeightMm,
@@ -1044,8 +1052,8 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
       hasSill,
       removableStates,
       addonMountingSide,
-      hatchCount: (includeHatch && targetOperatorKeys.length > 0) ? dynamicOperatorCount : 0,
-      hatchTargetKeys: (includeHatch && targetOperatorKeys.length > 0) ? targetOperatorKeys : [],
+      hatchCount: effectiveHatchQty,
+      hatchTargetKeys: effectiveHatchKeys,
     });
   }, [definition, rawMaterials, parameters, hasSill, removableStates, addonMountingSide, includeHatch, dynamicOperatorCount, targetOperatorKeys]);
 
@@ -1234,11 +1242,14 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
     if (activeAddon === "screen") {
       const screenName = activeScreenAddon?.addonProduct?.productName || "Insect Screen";
       const sideLabel = addonMountingSide === "back" ? "Interior (Back)" : "Exterior (Front)";
-      const hatchText = targetOperatorKeys.length > 0
-        ? (includeHatch
-            ? `With access hatch aligned to ${targetOperatorKeys.join(", ")}.`
-            : "Wicket access hatch disabled.")
-        : "";
+      let hatchText = "";
+      if (addonMountingSide === "front") {
+        hatchText = "Access hatches are suppressed because operating hardware is unobstructed on the room interior.";
+      } else if (targetOperatorKeys.length > 0) {
+        hatchText = includeHatch
+          ? `With access hatch aligned to ${targetOperatorKeys.join(", ")}.`
+          : "Wicket access hatch disabled.";
+      }
       const separator = hatchText ? ` ${hatchText}` : "";
       return `Mounted ${screenName} on ${sideLabel} face (${currentWidthMm.toLocaleString()} mm × ${currentHeightMm.toLocaleString()} mm).${separator}`;
     }

@@ -554,5 +554,13 @@ fix-14 local suitability evaluation (November 1, 2026): `fastapi-service/evaluat
 
 Traceability: BRD-M2, BRD-M4, BRD-M5; PRD-F10, PRD-F14, PRD-F19; SDD-C7, SDD-C9; DSD-UI7, DSD-UI10; ERD-E6, ERD-E14, ERD-E17. Acceptance scenarios QAD-TC100.1 through QAD-TC100.14 are registered in [MS85](implementation/ms85.md#5-planned-acceptance-catalog-qad-tc100). Automated verification uses `npm run test:ms85` plus existing pricing, bay, jalousie, add-on and quotation regression suites. Local browser and A4 PDF visual acceptance completed on November 2, 2026 using synthetic fixtures and production components. See the MS85 verification record for evidence scope and local artifacts.
 
+## QAD-TC101: Operator-Targeted Security Grille Clearance Openings and Linear BOM (IMP-MS86)
+
+Traceability: BRD-M2, BRD-M4, BRD-M5; PRD-F5, PRD-F10, PRD-F14; SDD-C4, SDD-C5, SDD-C7, SDD-C9; DSD-UI4, DSD-UI7, DSD-UI10; ERD-E3, ERD-E6, ERD-E14, ERD-E17. Acceptance scenarios QAD-TC101.1 through QAD-TC101.12 are registered in [MS86](implementation/ms86.md). Automated verification uses `npm run test:ms86`.
+
+## QAD-TC102: Interior-Restricted Operator Alignment Targets and Exterior Cutout Suppression (IMP-MS87)
+
+Traceability: BRD-M2, BRD-M4, BRD-M5; PRD-F5, PRD-F10, PRD-F14; SDD-C4, SDD-C5, SDD-C7, SDD-C9; DSD-UI4, DSD-UI7, DSD-UI10; ERD-E3, ERD-E6, ERD-E14, ERD-E17. Acceptance scenarios QAD-TC102.1 through QAD-TC102.12 are registered in [MS87](implementation/ms87.md). Automated verification uses `npm run test:ms87`.
+
 
 fix-14 occupied-room regression (November 2, 2026): the user-reported JPEG was falsely rejected with `insufficient_architectural_evidence` despite 0.119 wall and 0.097 floor coverage. A guarded partial-room branch now accepts this evidence after existing dominant-subject and too-close checks; model readiness remains mandatory. Seventeen pure suitability tests cover the derived regression features, boundaries, dominant portraits/screens/books, graphics, outages and previous room cases. No private image is stored in test fixtures. The exact JPEG returned HTTP 200 in both `auto_detect` and `paper_fiducial`; the direct browser upload displayed successful analysis and reached the workspace. Paper mode retained `manual_pin_required` because no reference sheet was detected. This targeted local regression does not establish population-level accuracy.

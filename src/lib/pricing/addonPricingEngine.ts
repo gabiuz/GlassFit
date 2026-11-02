@@ -16,6 +16,10 @@ export interface AddonPricingInput {
   mountingSide?: "front" | "back";
   allowedSides?: "front" | "back" | "both";
   hatchTargetKeys?: string[];
+  openingCount?: number;
+  openingWidthMm?: number;
+  openingHeightMm?: number;
+  openingTargetKeys?: string[];
 }
 
 export interface AddonBOMResult {
@@ -88,7 +92,8 @@ export function calculateAddonBOM(input: AddonPricingInput): AddonBOMResult {
       subtotal: Math.round(hardwareSubtotal * 100) / 100,
     });
 
-    const hatchCount = input.hatchCount ?? 0;
+    const isInterior = (input.mountingSide ?? "back") === "back";
+    const hatchCount = isInterior ? (input.hatchCount ?? 0) : 0;
     if (hatchCount > 0) {
       const hatchHardwareUnitPrice = 180.0; // PHP per hatch wicket latch and pivot hinges set
       const hatchHardwareSubtotal = hatchCount * hatchHardwareUnitPrice;
@@ -125,9 +130,19 @@ export function calculateAddonBOM(input: AddonPricingInput): AddonBOMResult {
     };
   } else {
     // Security Grille Pricing
+    const isInterior = (input.mountingSide ?? "back") === "back";
+    const openingCount = isInterior
+      ? (input.openingCount !== undefined
+        ? input.openingCount
+        : (input.openingTargetKeys ? input.openingTargetKeys.length : (input.hatchCount ?? 0)))
+      : 0;
+
+    const cutoutWM = (Math.max(100, Math.min(250, input.openingWidthMm ?? 150))) / 1000;
+    const cutoutHM = (Math.max(120, Math.min(300, input.openingHeightMm ?? 180))) / 1000;
+
     // 1. Perimeter Frame
     const frameLinearM = 2 * (widthM + heightM);
-    const frameNetRate = 185.0; // PHP/m for tubular mounting frame
+    const frameNetRate = input.customProfileRate ?? 185.0; // PHP/m for tubular mounting frame
     const frameGrossCost = frameLinearM * (1 + SCRAP_ALUMINUM) * frameNetRate;
 
     breakdown.push({
@@ -140,19 +155,51 @@ export function calculateAddonBOM(input: AddonPricingInput): AddonBOMResult {
 
     // 2. Repeating Structural Bars (Vertical Pickets at 140mm pitch)
     const colCount = Math.max(1, Math.round(input.widthMm / 140));
-    const totalBarLinearM = colCount * heightM;
+    const splitPickets = openingCount > 0 ? Math.min(colCount, openingCount * Math.max(1, Math.round((cutoutWM * 1000) / 140))) : 0;
+    const picketDeductionM = splitPickets * cutoutHM;
+    const totalBarLinearM = Math.max(0, colCount * heightM - picketDeductionM);
     const barNetRate = 160.0; // PHP/m for square tube bars
     const barGrossCost = totalBarLinearM * (1 + SCRAP_ALUMINUM) * barNetRate;
 
     breakdown.push({
-      item: `Security Grille Bars (${colCount} pickets)`,
+      item: splitPickets > 0
+        ? `Security Grille Bars (${colCount - splitPickets} full pickets, ${splitPickets} interrupted pickets)`
+        : `Security Grille Bars (${colCount} pickets)`,
       quantity: Math.round(totalBarLinearM * (1 + SCRAP_ALUMINUM) * 100) / 100,
       unit: "m",
       unitPrice: barNetRate,
       subtotal: Math.round(barGrossCost * 100) / 100,
     });
 
-    // 3. Mounting Anchors & Fasteners
+    // 3. Opening Collar Extrusions & Cleats (IMP-MS86)
+    let collarGrossCost = 0;
+    let cleatsCost = 0;
+    let collarLinearM = 0;
+
+    if (openingCount > 0) {
+      collarLinearM = openingCount * (2 * cutoutWM + 2 * cutoutHM);
+      collarGrossCost = collarLinearM * (1 + SCRAP_ALUMINUM) * frameNetRate;
+
+      breakdown.push({
+        item: `Collar Border Framing (${openingCount}x handle ${openingCount === 1 ? "opening" : "openings"})`,
+        quantity: Math.round(collarLinearM * (1 + SCRAP_ALUMINUM) * 100) / 100,
+        unit: "m",
+        unitPrice: frameNetRate,
+        subtotal: Math.round(collarGrossCost * 100) / 100,
+      });
+
+      const cleatCount = 4 * openingCount;
+      cleatsCost = cleatCount * 25.0;
+      breakdown.push({
+        item: `Internal Corner Cleats (${cleatCount} pcs)`,
+        quantity: cleatCount,
+        unit: "pcs",
+        unitPrice: 25.0,
+        subtotal: cleatsCost,
+      });
+    }
+
+    // 4. Mounting Anchors & Fasteners
     const anchorCost = 150.0;
     breakdown.push({
       item: "Heavy-Duty Wall Mounting Anchors",
@@ -162,7 +209,7 @@ export function calculateAddonBOM(input: AddonPricingInput): AddonBOMResult {
       subtotal: anchorCost,
     });
 
-    const materialSubtotal = frameGrossCost + barGrossCost + anchorCost;
+    const materialSubtotal = frameGrossCost + barGrossCost + collarGrossCost + cleatsCost + anchorCost;
     const directMaterialCost = Math.round(materialSubtotal * 100) / 100;
     const laborCost = Math.max(600.0, materialSubtotal * 0.25);
     const laborCostRounded = Math.round(laborCost * 100) / 100;
@@ -176,7 +223,9 @@ export function calculateAddonBOM(input: AddonPricingInput): AddonBOMResult {
       directMaterialCost,
       wasteAllowanceCost:
         Math.round(
-          (frameGrossCost - frameLinearM * frameNetRate + (barGrossCost - totalBarLinearM * barNetRate)) * 100,
+          (frameGrossCost - frameLinearM * frameNetRate +
+            collarGrossCost - collarLinearM * frameNetRate +
+            (barGrossCost - totalBarLinearM * barNetRate)) * 100,
         ) / 100,
       laborCost: laborCostRounded,
       contractorMargin,

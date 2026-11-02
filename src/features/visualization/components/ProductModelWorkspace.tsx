@@ -562,13 +562,15 @@ export function ProductModelWorkspace({
         preloadAccessoryModel(selected.accessoryId, catalogItem.previewGlbUrl).then(() => {
           if (!accessoryMountedRef.current || accessoryRequestSequence.current[slotId] !== sequence) return;
           accessoryRollbackRef.current[slotId] = null;
-          setSelectedAccessories((current) => ({ ...current, [slotId]: {
-            ...selected,
-            accessoryName: catalogItem.productName,
-            price: catalogItem.basePrice,
-            priceDelta: catalogItem.basePrice,
-            glbUrl: catalogItem.previewGlbUrl,
-          } }));
+          setSelectedAccessories((current) => ({
+            ...current, [slotId]: {
+              ...selected,
+              accessoryName: catalogItem.productName,
+              price: catalogItem.basePrice,
+              priceDelta: catalogItem.basePrice,
+              glbUrl: catalogItem.previewGlbUrl,
+            }
+          }));
         }).catch(() => {
           if (accessoryMountedRef.current && accessoryRequestSequence.current[slotId] === sequence) {
             setAccessoryErrors((current) => ({ ...current, [slotId]: "This accessory model could not be loaded. Standard hardware is shown." }));
@@ -1113,13 +1115,28 @@ export function ProductModelWorkspace({
     return getAllCandidateMaterialsMap(structuralDefinition, allRawMaterials);
   }, [structuralDefinition, allRawMaterials]);
 
-  // Evaluates target component keys for hatch alignment on host products
+  // Evaluates target component keys for hatch alignment on host products (IMP-MS80, IMP-MS87: interior mounting only)
   const effectiveHatchTargetKeys = useMemo(() => {
+    if (addonMountingSide !== "back") {
+      return [];
+    }
     if (activeCompatibleAddon?.hatchTargetComponentKeys && activeCompatibleAddon.hatchTargetComponentKeys.length > 0) {
       return activeCompatibleAddon.hatchTargetComponentKeys;
     }
     return [];
-  }, [activeCompatibleAddon]);
+  }, [activeCompatibleAddon, addonMountingSide]);
+
+  // Evaluates target component keys for grille handle access openings (IMP-MS86, IMP-MS87: interior mounting only)
+  const effectiveGrilleOpeningTargets = useMemo(() => {
+    if (addonMountingSide !== "back" || effectiveSelectedAddon !== "grill" || !activeCompatibleAddon) return [];
+    if (activeCompatibleAddon.grilleOpeningTargetComponentKeys && activeCompatibleAddon.grilleOpeningTargetComponentKeys.length > 0) {
+      return activeCompatibleAddon.grilleOpeningTargetComponentKeys;
+    }
+    if (activeCompatibleAddon.hatchTargetComponentKeys && activeCompatibleAddon.hatchTargetComponentKeys.length > 0) {
+      return activeCompatibleAddon.hatchTargetComponentKeys;
+    }
+    return [];
+  }, [effectiveSelectedAddon, activeCompatibleAddon, addonMountingSide]);
 
   const dynamicOperatorCount = useMemo(() => {
     if (effectiveHatchTargetKeys.length === 0) return 0;
@@ -1136,13 +1153,30 @@ export function ProductModelWorkspace({
     return effectiveHatchTargetKeys.length;
   }, [structuralDefinition, effectiveHatchTargetKeys, heightCm]);
 
-  // Evaluates dynamic operator-aligned hatch count for host products (IMP-MS80, IMP-MS81)
+  // Evaluates dynamic operator-aligned hatch count for host products (IMP-MS80, IMP-MS81, IMP-MS87)
   const effectiveHatchCount = useMemo(() => {
-    if (effectiveSelectedAddon === "none" || !includeHatch || effectiveHatchTargetKeys.length === 0) {
+    if (effectiveSelectedAddon === "none" || addonMountingSide !== "back" || !includeHatch || effectiveHatchTargetKeys.length === 0) {
       return 0;
     }
     return dynamicOperatorCount;
-  }, [effectiveSelectedAddon, includeHatch, effectiveHatchTargetKeys, dynamicOperatorCount]);
+  }, [effectiveSelectedAddon, addonMountingSide, includeHatch, effectiveHatchTargetKeys, dynamicOperatorCount]);
+
+  const effectiveGrilleOpeningCount = useMemo(() => {
+    if (effectiveSelectedAddon !== "grill" || addonMountingSide !== "back" || effectiveGrilleOpeningTargets.length === 0) {
+      return 0;
+    }
+    const operatorComp = structuralDefinition?.components?.find(
+      (c) => c.dimensionBinding === "LOUVER_OPERATOR" || (c as Record<string, unknown>).dimension_binding === "LOUVER_OPERATOR"
+    );
+    if (operatorComp) {
+      const pitchMm = operatorComp.jalousieConfig?.pitch_mm ?? operatorComp.jalousieConfig?.pitchMm ?? 175;
+      const bladesPerOp = operatorComp.jalousieConfig?.blades_per_operator ?? operatorComp.jalousieConfig?.bladesPerOperator ?? 4;
+      const heightValMm = (Number(heightCm) || DEFAULT_PRODUCT_HEIGHT_CM) * 10;
+      const louverCount = computeLouverBladeCount(heightValMm, pitchMm);
+      return computeLouverOperatorCount(louverCount, bladesPerOp);
+    }
+    return effectiveGrilleOpeningTargets.length;
+  }, [effectiveSelectedAddon, addonMountingSide, structuralDefinition, effectiveGrilleOpeningTargets, heightCm]);
 
   const otherRemovableAddonParts = useMemo(() => {
     if (effectiveSelectedAddon === "none" || !activeCompatibleAddon?.components) return [];
@@ -1260,10 +1294,26 @@ export function ProductModelWorkspace({
     const unitPrice = matchedMaterial?.unit_price ?? defaultRate;
     const wasteAllowance = matchedMaterial?.waste_allowance ?? 0.12;
 
+    const rawCutoutW = (activeCompatibleAddon?.grilleOpeningConfig as Record<string, unknown> | undefined)?.cutoutWidthMm as number | undefined ?? 150;
+    const rawCutoutH = (activeCompatibleAddon?.grilleOpeningConfig as Record<string, unknown> | undefined)?.cutoutHeightMm as number | undefined ?? 180;
+    const cutoutWidthMm = Math.max(100, Math.min(250, rawCutoutW));
+    const cutoutHeightMm = Math.max(120, Math.min(300, rawCutoutH));
+
     return calculateGrilleLinearBOM({
       widthMm,
       heightMm,
       patternType: "staggered_brick",
+      openingCount: effectiveGrilleOpeningCount,
+      openingWidthMm: cutoutWidthMm,
+      openingHeightMm: cutoutHeightMm,
+      openingTargetKeys: effectiveGrilleOpeningTargets,
+      openingConfig: {
+        enabled: effectiveGrilleOpeningCount > 0,
+        cutoutWidthMm,
+        cutoutHeightMm,
+        cornerCleatCountPerOpening: 4,
+        targetComponentKeys: effectiveGrilleOpeningTargets,
+      },
       grilleRawMaterial: {
         id: matchedMaterial?.id ?? "default-grille-mat",
         material_code: matchedMaterial?.material_code ?? "AL-GRILLE-TUBE-16MM",
@@ -1273,7 +1323,17 @@ export function ProductModelWorkspace({
       },
       includePerimeterFrame: true,
     });
-  }, [effectiveSelectedAddon, widthCm, heightCm, addonAlumFinish, alumFinish, allRawMaterials]);
+  }, [
+    effectiveSelectedAddon,
+    widthCm,
+    heightCm,
+    addonAlumFinish,
+    alumFinish,
+    allRawMaterials,
+    effectiveGrilleOpeningCount,
+    effectiveGrilleOpeningTargets,
+    activeCompatibleAddon,
+  ]);
 
   const addonPrice = effectiveSelectedAddon === "grill"
     ? (activeGrilleBOM?.finalPrice ?? 0)
@@ -1519,8 +1579,10 @@ export function ProductModelWorkspace({
         ];
         [p0, p1, p2, p3] = outline.map(({ x, y }) => {
           const divisor = matrix[6] * x + matrix[7] * y + matrix[8];
-          return { x: (matrix[0] * x + matrix[1] * y + matrix[2]) / divisor,
-            y: (matrix[3] * x + matrix[4] * y + matrix[5]) / divisor };
+          return {
+            x: (matrix[0] * x + matrix[1] * y + matrix[2]) / divisor,
+            y: (matrix[3] * x + matrix[4] * y + matrix[5]) / divisor
+          };
         }) as QuadrilateralCorners;
       }
     }
@@ -2099,6 +2161,8 @@ export function ProductModelWorkspace({
         addonMountingSide,
         screenMeshDensity,
         hatchTargetComponentKeys: includeHatch && effectiveHatchTargetKeys.length > 0 ? effectiveHatchTargetKeys : [],
+        grilleOpeningTargetComponentKeys: effectiveGrilleOpeningTargets,
+        grilleOpeningConfig: (activeCompatibleAddon?.grilleOpeningConfig as Record<string, unknown> | null) ?? null,
         removableStates,
         swappedAccessories: selectedAccessories,
         addonConfig: {
@@ -2142,7 +2206,7 @@ export function ProductModelWorkspace({
       }
     });
     return () => { cancelled = true; };
-  }, [structuralDefinition, widthCm, heightCm, panelCount, includeSill, selectedAddon, selectedAddonProductId, addonAlumFinish, addonMountingSide, activeCompatibleAddon, includeHatch, screenMeshDensity, effectiveHatchTargetKeys, removableStates, glassAppearance, glassColor, glassThicknessMm, alumFinish, hasExplicitOverrides, selectedMaterials, candidateMaterialsMap, selectedAccessories, getFinishHexColor]);
+  }, [structuralDefinition, widthCm, heightCm, panelCount, includeSill, selectedAddon, selectedAddonProductId, addonAlumFinish, addonMountingSide, activeCompatibleAddon, includeHatch, screenMeshDensity, effectiveHatchTargetKeys, effectiveGrilleOpeningTargets, removableStates, glassAppearance, glassColor, glassThicknessMm, alumFinish, hasExplicitOverrides, selectedMaterials, candidateMaterialsMap, selectedAccessories, getFinishHexColor]);
 
   useEffect(() => {
     if (!mvpRendererRef.current) return;
@@ -2206,7 +2270,7 @@ export function ProductModelWorkspace({
     const nextFitRect = mvpRendererRef.current.getPlanarFitRect();
     setPlanarFitRect((current) =>
       current?.x === nextFitRect?.x && current?.y === nextFitRect?.y &&
-      current?.width === nextFitRect?.width && current?.height === nextFitRect?.height
+        current?.width === nextFitRect?.width && current?.height === nextFitRect?.height
         ? current : nextFitRect,
     );
 
@@ -2386,6 +2450,9 @@ export function ProductModelWorkspace({
           removable_states: removableStates,
           hatch_count: effectiveHatchCount,
           hatch_target_keys: (includeHatch && effectiveHatchTargetKeys.length > 0) ? effectiveHatchTargetKeys : [],
+          grille_opening_count: effectiveGrilleOpeningCount,
+          grille_opening_target_keys: effectiveGrilleOpeningTargets,
+          grille_opening_config: activeCompatibleAddon?.grilleOpeningConfig ?? null,
           price: addonPrice,
           grille_bom: activeGrilleBOM ?? null,
         } : null,
@@ -2446,6 +2513,8 @@ export function ProductModelWorkspace({
     effectiveHatchTargetKeys,
     removableStates,
     effectiveHatchCount,
+    effectiveGrilleOpeningCount,
+    effectiveGrilleOpeningTargets,
     addonPrice,
     addonBOM,
     activeGrilleBOM,
@@ -5684,11 +5753,15 @@ export function ProductModelWorkspace({
                               <div className="flex flex-col gap-2 pt-3 border-t border-neutral-200/60">
                                 <div className="flex items-center justify-between">
                                   <span className="text-[#0f1422] text-sm font-medium">Mounting Placement</span>
-                                  {effectiveHatchCount > 0 && (
+                                  {effectiveHatchCount > 0 ? (
                                     <span className="text-[11px] text-[#07b6d3] bg-[#07b6d3]/10 font-semibold px-2 py-0.5 rounded-md">
                                       {effectiveHatchCount}x Aligned {effectiveHatchCount === 1 ? "Hatch" : "Hatches"}
                                     </span>
-                                  )}
+                                  ) : addonMountingSide === "front" ? (
+                                    <span className="text-[11px] text-neutral-600 bg-neutral-100 font-semibold px-2 py-0.5 rounded-md">
+                                      Exterior Mounting
+                                    </span>
+                                  ) : null}
                                 </div>
                                 {activeCompatibleAddon?.allowedSides === "back" ? (
                                   <div className="flex items-center gap-2 p-2.5 rounded-[10px] bg-amber-50/80 border border-amber-200 text-xs text-amber-900">
@@ -5770,6 +5843,21 @@ export function ProductModelWorkspace({
                               </div>
                             )}
 
+                            {/* Security Grille Handle Access Disclosure Badge (IMP-MS86, QAD-TC101.11) */}
+                            {effectiveSelectedAddon === "grill" && effectiveGrilleOpeningCount > 0 && (
+                              <div className="flex flex-col gap-2 pt-3 border-t border-neutral-200/60">
+                                <div className="flex items-center gap-2 p-2.5 rounded-[10px] bg-teal-50/90 border border-teal-200 text-xs text-teal-900">
+                                  <ShieldCheck className="size-4 text-teal-600 shrink-0" />
+                                  <span className="font-medium">
+                                    Includes {effectiveGrilleOpeningCount}x Framed Handle Access {effectiveGrilleOpeningCount === 1 ? "Opening" : "Openings"} for Window Operation
+                                  </span>
+                                </div>
+                                <p className="text-[11px] text-neutral-500">
+                                  Clearance cutout allows direct hand reach through the security grille to operate window hardware.
+                                </p>
+                              </div>
+                            )}
+
                             {/* Screen Mesh Density & Aperture Selection */}
                             {effectiveSelectedAddon === "screen" && (
                               <div className="flex flex-col gap-2 pt-3 border-t border-neutral-200/60">
@@ -5781,8 +5869,8 @@ export function ProductModelWorkspace({
                                     {screenMeshDensity === "fine"
                                       ? "1.8mm Fine Weave"
                                       : screenMeshDensity === "micro"
-                                      ? "1.2mm Micro-Mesh"
-                                      : "12mm Heavy Mesh"}
+                                        ? "1.2mm Micro-Mesh"
+                                        : "12mm Heavy Mesh"}
                                   </span>
                                 </div>
                                 <div className="grid grid-cols-3 gap-1.5 p-1 bg-neutral-100 rounded-lg">
@@ -5827,8 +5915,8 @@ export function ProductModelWorkspace({
                                   {screenMeshDensity === "fine"
                                     ? "Standard architectural insect screen: delicate weave stops mosquitoes while maximizing outdoor view clarity."
                                     : screenMeshDensity === "micro"
-                                    ? "Ultra-fine anti-midge micro-mesh: enhanced insect barrier with subtle privacy screening."
-                                    : "Heavy-duty wire mesh with wide 12mm aperture for security barrier ventilation."}
+                                      ? "Ultra-fine anti-midge micro-mesh: enhanced insect barrier with subtle privacy screening."
+                                      : "Heavy-duty wire mesh with wide 12mm aperture for security barrier ventilation."}
                                 </p>
                               </div>
                             )}
