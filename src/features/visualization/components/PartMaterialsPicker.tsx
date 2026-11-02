@@ -7,7 +7,6 @@ import type { RawMaterial } from "@/lib/pricing/types";
 import {
   resolveSwatchColor,
   formatPriceDelta,
-  formatFinishTypeLabel,
 } from "@/lib/visualization/materialCustomization";
 
 export interface PartMaterialsPickerProps {
@@ -44,6 +43,7 @@ export function PartMaterialsPicker({
 }: PartMaterialsPickerProps) {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   const [activeCategoryFilter, setActiveCategoryFilter] = useState<string>("All");
+  const [expandedPartKey, setExpandedPartKey] = useState<string | null>(null);
 
   // Calculate dimensional multiplier for price delta estimation
   const getMultiplier = (comp: ProductComponentDefinition): number => {
@@ -202,38 +202,32 @@ export function PartMaterialsPicker({
   return (
     <div className={`rounded-[16px] border border-neutral-200/90 bg-white shadow-xs overflow-hidden transition-all ${className}`}>
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-neutral-100 bg-neutral-50/50">
-        <div className="flex items-center gap-2.5">
+      <div className="p-4 border-b border-neutral-100 bg-neutral-50/50">
+        <div className="flex items-start gap-2.5">
           <div className="flex size-7 items-center justify-center rounded-[8px] bg-[#07b6d3]/10 text-[#07b6d3]">
             <Layers className="size-4" />
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h4 className="text-sm font-semibold text-[#0f1422]">
-                Customize Raw Materials by Part
-              </h4>
-              {customOverrideCount > 0 && (
-                <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-[#07b6d3]/15 text-[#07b6d3]">
-                  {customOverrideCount} Custom
-                </span>
-              )}
-            </div>
+          <div className="min-w-0 flex-1">
+            <h4 className="text-sm font-semibold text-[#0f1422]">Customize Raw Materials by Part</h4>
             <p className="text-[11px] text-neutral-500">
-              Pick finishes and raw materials for each individual component part
+              Choose each part&apos;s fabrication specification and compare price changes
             </p>
           </div>
         </div>
-
-        <div className="flex items-center gap-2">
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+          <span className="text-[11px] font-medium text-neutral-600">
+            {customOverrideCount} of {components.length} parts customized
+          </span>
+          <div className="flex items-center gap-2">
           {customOverrideCount > 0 && (
             <button
               type="button"
               onClick={onResetToDefaults}
               title="Reset all component parts to factory standard specifications"
-              className="flex items-center gap-1 rounded-[8px] border border-neutral-200 bg-white px-2 py-1 text-[11px] font-medium text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 transition-colors cursor-pointer"
+              className="flex items-center gap-1 rounded-[8px] border border-neutral-200 bg-white px-2 py-1 text-[11px] font-medium text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3] transition-colors cursor-pointer"
             >
               <RotateCcw className="size-3 text-neutral-400" />
-              <span className="hidden sm:inline">Reset Defaults</span>
+              <span>Reset Defaults</span>
             </button>
           )}
 
@@ -243,7 +237,7 @@ export function PartMaterialsPicker({
               onClick={() => setIsExpanded((prev) => !prev)}
               aria-expanded={isExpanded}
               aria-label="Toggle part materials picker"
-              className="flex size-7 items-center justify-center rounded-[8px] border border-neutral-200 bg-white text-neutral-500 hover:bg-neutral-100 transition-colors cursor-pointer"
+              className="flex size-7 items-center justify-center rounded-[8px] border border-neutral-200 bg-white text-neutral-500 hover:bg-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3] transition-colors cursor-pointer"
             >
               <ChevronDown
                 className={`size-3.5 transition-transform duration-200 ${
@@ -252,6 +246,7 @@ export function PartMaterialsPicker({
               />
             </button>
           )}
+          </div>
         </div>
       </div>
 
@@ -270,7 +265,8 @@ export function PartMaterialsPicker({
                   key={cat}
                   type="button"
                   onClick={() => setActiveCategoryFilter(cat)}
-                  className={`flex items-center gap-1 px-2.5 py-1 rounded-[8px] text-xs font-medium transition-colors cursor-pointer ${
+                  aria-pressed={isActive}
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded-[8px] text-xs font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3] transition-colors cursor-pointer ${
                     isActive
                       ? "bg-[#0f1422] text-white shadow-xs"
                       : "bg-neutral-100/80 text-neutral-600 hover:bg-neutral-200/80"
@@ -286,7 +282,7 @@ export function PartMaterialsPicker({
           </div>
 
           {/* Component Parts List */}
-          <div className="space-y-3 max-h-[440px] overflow-y-auto pr-1">
+          <div className="space-y-2 max-h-[440px] overflow-y-auto pr-1">
             {filteredComponents.map((comp) => {
               const options = getComponentOptions(comp);
               const activeMatId =
@@ -298,53 +294,46 @@ export function PartMaterialsPicker({
 
               const selectedOption = options.find((o) => o.rawMaterial.id === activeMatId) || options[0];
               const category = comp.presentationCategory || "Framing";
+              const isPartExpanded = expandedPartKey === comp.componentKey;
 
               return (
                 <div
                   key={comp.componentKey}
-                  className="rounded-[12px] border border-neutral-200 bg-[#fbfbfb] p-3 hover:bg-white hover:border-[#07b6d3]/40 transition-all shadow-xs"
+                  className="rounded-[12px] border border-neutral-200 bg-[#fbfbfb]"
                 >
-                  {/* Part Header */}
-                  <div className="flex flex-wrap items-center justify-between gap-1.5 mb-2.5">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-xs font-semibold text-[#0f1422] truncate">
-                        {comp.componentName}
+                  <button
+                    type="button"
+                    onClick={() => setExpandedPartKey(isPartExpanded ? null : comp.componentKey)}
+                    aria-expanded={isPartExpanded}
+                    aria-label={`${comp.componentName}: ${selectedOption?.rawMaterial.description || "Standard factory specification"}. ${isPartExpanded ? "Hide" : "Show"} material choices`}
+                    className="flex w-full items-center justify-between gap-3 rounded-[12px] p-3 text-left hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#07b6d3] cursor-pointer"
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className="flex flex-wrap items-center gap-1.5">
+                        <span className="text-xs font-semibold text-[#0f1422]">{comp.componentName}</span>
+                        <span className="rounded bg-[#07b6d3]/10 px-1.5 py-0.5 text-[10px] font-medium text-[#087f93]">{category}</span>
+                        {comp.isFromAddon && <span className="rounded bg-cyan-50 px-1.5 py-0.5 text-[10px] font-medium text-[#087f93]">Add-on</span>}
                       </span>
-                      <span
-                        className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                          category === "Framing"
-                            ? "bg-[#07b6d3]/10 text-[#07b6d3]"
-                            : category === "Glazing"
-                              ? "bg-blue-50 text-blue-600"
-                              : "bg-purple-50 text-purple-600"
-                        }`}
-                      >
-                        {category}
+                      <span className="mt-1 block truncate text-[11px] text-neutral-600" title={selectedOption?.rawMaterial.description}>
+                        {selectedOption?.rawMaterial.description || "Standard factory specification"}
                       </span>
-                      {(comp as { isFromAddon?: boolean }).isFromAddon && (
-                        <span className="text-[9px] uppercase font-semibold px-1.5 py-0.5 rounded bg-cyan-50 text-[#07b6d3] border border-cyan-200/80">
-                          Add-on
-                        </span>
-                      )}
-                    </div>
-
-                    {selectedOption && (
-                      <span className="text-[11px] font-medium text-neutral-600 truncate max-w-[200px]" title={selectedOption.rawMaterial.description}>
-                        {selectedOption.rawMaterial.description}
-                      </span>
-                    )}
-                  </div>
+                    </span>
+                    <span className="flex shrink-0 items-center gap-2">
+                      {selectedOption && <span className="text-[11px] font-medium tabular-nums text-neutral-700">{formatPriceDelta(selectedOption.priceDelta)}</span>}
+                      <ChevronDown className={`size-4 text-neutral-500 transition-transform ${isPartExpanded ? "rotate-180" : ""}`} aria-hidden="true" />
+                    </span>
+                  </button>
 
                   {/* Material Choices */}
-                  {options.length === 0 ? (
-                    <div className="text-xs text-neutral-400 italic py-1">
+                  {isPartExpanded && (options.length === 0 ? (
+                    <div className="border-t border-neutral-200 px-3 py-2 text-xs text-neutral-500">
                       Standard factory specification
                     </div>
                   ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                    <div className="grid grid-cols-1 gap-1.5 border-t border-neutral-200 p-3 sm:grid-cols-2" role="group" aria-label={`Materials for ${comp.componentName}`}>
                       {options.map((opt) => {
                         const isSelected = opt.rawMaterial.id === activeMatId;
-                        const finishLabel = formatFinishTypeLabel(opt.rawMaterial.finish_type || opt.rawMaterial.description);
+                        const optionLabel = opt.rawMaterial.description?.trim() || opt.rawMaterial.material_code || "Unnamed material";
 
                         return (
                           <button
@@ -352,31 +341,26 @@ export function PartMaterialsPicker({
                             type="button"
                             onClick={() => onSelectPartMaterial(comp.componentKey, opt.rawMaterial.id)}
                             aria-pressed={isSelected}
-                            className={`flex items-center justify-between gap-2 p-2 rounded-[8px] border text-left transition-all cursor-pointer ${
+                            className={`flex items-center justify-between gap-2 p-2 rounded-[8px] border text-left transition-all focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3] cursor-pointer ${
                               isSelected
                                 ? "bg-white border-[#07b6d3] ring-1 ring-[#07b6d3] shadow-xs"
                                 : "bg-white/70 border-neutral-200 hover:bg-white hover:border-neutral-300"
                             }`}
                           >
                             <div className="flex items-center gap-2 min-w-0">
-                              <span
-                                className="size-4 shrink-0 rounded-full border border-black/20 flex items-center justify-center"
-                                style={{ backgroundColor: opt.swatchHex }}
-                                aria-hidden="true"
-                              >
-                                {isSelected && (
-                                  <Check className={`size-2.5 ${opt.swatchHex === "#f5f6f8" ? "text-neutral-900" : "text-white"}`} />
-                                )}
+                              <span className={`flex size-4 shrink-0 items-center justify-center rounded-full border ${isSelected ? "border-[#087f93] bg-[#087f93] text-white" : "border-neutral-400"}`} aria-hidden="true">
+                                {isSelected && <Check className="size-3" />}
                               </span>
-                              <div className="min-w-0 truncate">
-                                <span className="text-xs font-medium text-[#0f1422] truncate block">
-                                  {finishLabel}
+                              <div className="min-w-0">
+                                <span className="block text-xs font-medium text-[#0f1422]">
+                                  {optionLabel}
                                 </span>
+                                {opt.isDefault && <span className="text-[10px] text-neutral-500">Default</span>}
                               </div>
                             </div>
 
                             <span
-                              className={`text-[10px] font-medium px-1.5 py-0.5 rounded shrink-0 ${
+                              className={`text-[10px] font-medium tabular-nums px-1.5 py-0.5 rounded shrink-0 ${
                                 opt.priceDelta === 0
                                   ? "bg-neutral-100 text-neutral-600"
                                   : opt.priceDelta > 0
@@ -390,7 +374,7 @@ export function PartMaterialsPicker({
                         );
                       })}
                     </div>
-                  )}
+                  ))}
                 </div>
               );
             })}
