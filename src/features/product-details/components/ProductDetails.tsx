@@ -229,14 +229,14 @@ export function ProductDetails({ product }: { product: ProductDetail }) {
 
             {has3d && (
               <div className="absolute right-4 bottom-4 z-10">
-                <div className="flex select-none items-center gap-0.5 rounded-full border border-white/30 bg-white/20 px-1.5 py-1.5 shadow-[0_4px_24px_rgba(0,0,0,0.18)] backdrop-blur-md">
+                <div className="flex select-none items-center gap-0.5 rounded-full border border-white/20 bg-black/85 px-1.5 py-1.5 shadow-[0_4px_24px_rgba(0,0,0,0.18)] backdrop-blur-md">
                   {([false, true] as const).map((is3d) => (
                     <button
                       key={String(is3d)}
                       type="button"
                       onClick={() => setView3d(is3d)}
                       aria-pressed={view3d === is3d}
-                      className={`rounded-full px-3.5 py-1.5 text-sm font-medium transition-all duration-200 cursor-pointer ${view3d === is3d ? "bg-white text-black shadow-sm" : "text-white/80 hover:text-white"}`}
+                      className={`rounded-full px-3.5 py-1.5 text-sm font-medium transition-all duration-200 cursor-pointer ${view3d === is3d ? "bg-white text-black shadow-sm" : "text-white/80 hover:bg-white/15 hover:text-white"}`}
                     >
                       {is3d ? "3D" : "2D"}
                     </button>

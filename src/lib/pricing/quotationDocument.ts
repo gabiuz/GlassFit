@@ -2,6 +2,7 @@
 import { z } from "zod";
 import { MeasurementRecordSchema, StoredMeasurementRecordSchema } from "../visualization/measurementRecord";
 import type { CalculatedBOMResult, ItemizedProductQuotation, GrilleLinearBOMResult } from "./types";
+import { consolidateBOMItems } from "./pricingEngine";
 import { calculateAddonBOM } from "./addonPricingEngine";
 import { calculateGrilleLinearBOM } from "./grillePricingEngine";
 
@@ -28,6 +29,8 @@ export const QuotationDocumentGroupSchema = z.object({
   unit: required,
   unitPrice: money,
   subtotal: money,
+  componentSummary: z.string().optional(),
+  finishType: z.string().optional(),
 });
 
 export const SwappedAccessoryDocumentSchema = z.object({
@@ -191,21 +194,29 @@ export type QuotationPricingView = {
   adminLaborCharge: number | null;
 };
 
-function groupsFromBom(bom: CalculatedBOMResult | undefined | null) {
+export const SILL_OMISSION_NOTICE = "Bottom Sill Profile: Omitted for flush-floor threshold (Net Deduction Applied)";
+
+/** IMP-MS85 / SDD-C7: consolidate only within each material group. */
+export function groupsFromBom(bom: CalculatedBOMResult | undefined | null): z.infer<typeof QuotationDocumentGroupSchema>[] {
   if (!bom) return [];
-  const map = (groupName: string, rows: CalculatedBOMResult["framingItems"]) => (rows || []).map((row) => ({
+  const map = (groupName: string, category: "Framing" | "Glazing" | "Hardware" | "Consumable", rows: CalculatedBOMResult["framingItems"]) => consolidateBOMItems(rows || [], category).map((row) => ({
     groupName,
     description: row.description,
-    quantity: row.quantity,
+    quantity: row.totalQuantity,
     unit: row.unit,
-    unitPrice: row.unit_price,
+    unitPrice: row.unitPrice,
     subtotal: row.subtotal,
+    finishType: row.finishType,
+    componentSummary: row.contributingComponents.map((part) => `${part.componentName} (${Number(part.subtotalQuantity.toFixed(4))} ${row.unit})`).join(", "),
   }));
   return [
-    ...map("Aluminum Framing", bom.framingItems),
-    ...map("Glass Infill", bom.glazingItems),
-    ...map("Hardware & Accessories", bom.hardwareItems),
-    ...map("Miscellaneous", bom.consumableItems),
+    ...map("Aluminum Framing", "Framing", bom.framingItems),
+    ...map("Glass Infill", "Glazing", bom.glazingItems),
+    ...map("Hardware & Accessories", "Hardware", bom.hardwareItems),
+    ...map("Miscellaneous", "Consumable", bom.consumableItems),
+    { groupName: "Material Allowances", description: "Aluminum offcut allowance", quantity: 1, unit: "lot", unitPrice: bom.scrapFramingSubtotal, subtotal: bom.scrapFramingSubtotal },
+    { groupName: "Material Allowances", description: "Glass handling scrap allowance", quantity: 1, unit: "lot", unitPrice: bom.scrapGlazingSubtotal, subtotal: bom.scrapGlazingSubtotal },
+    { groupName: "Contractor Margin", description: "Contractor margin", quantity: 1, unit: "lot", unitPrice: bom.contractorMargin, subtotal: bom.contractorMargin },
     { groupName: "Labor & Installation", description: "Shop floor labor", quantity: 1, unit: "lot", unitPrice: bom.fabricationLaborCost ?? 0, subtotal: bom.fabricationLaborCost ?? 0 },
   ];
 }
@@ -234,10 +245,10 @@ export function createQuotationDocumentSnapshotV1(input: {
       itemGroups.push({
         groupName: "Hardware & Accessories",
         description: item.addonName ?? (item.selectedAddon === "screen" ? "Extruded Aluminum Insect Screen" : "Architectural Security Window Grille"),
-        quantity: item.quantity,
+        quantity: 1,
         unit: "set",
         unitPrice: item.addonPrice ?? 0,
-        subtotal: (item.addonPrice ?? 0) * item.quantity,
+        subtotal: item.addonPrice ?? 0,
       });
     }
 
@@ -474,6 +485,12 @@ export function reconstructLegacyQuotationDocument(input: {
     const calculatedSubtotal = Math.round(unitPrice * quantity * 100) / 100;
     const widthMm = Math.max(1, Number(details.width_mm) || (Number(details.width_m) ? Number(details.width_m) * 1000 : 1));
     const heightMm = Math.max(1, Number(details.height_mm) || (Number(details.height_m) ? Number(details.height_m) * 1000 : 1));
+    const swappedAccessories = Array.isArray(details.swapped_accessories)
+      ? details.swapped_accessories.flatMap((entry) => {
+          const parsed = SwappedAccessoryDocumentSchema.safeParse(entry);
+          return parsed.success ? [parsed.data] : [];
+        })
+      : [];
     return {
       itemId,
       productId: typeof details.product_id === "string" ? details.product_id : null,
@@ -496,6 +513,10 @@ export function reconstructLegacyQuotationDocument(input: {
       calculatedSubtotal,
       imageSource: typeof details.image_url === "string" ? details.image_url : null,
       selectedMaterials: (details.selected_materials && typeof details.selected_materials === "object") ? (details.selected_materials as Record<string, string>) : undefined,
+      swappedAccessories,
+      accessoryPriceDelta: typeof details.accessory_price_delta === "number" && details.accessory_price_delta >= 0
+        ? details.accessory_price_delta
+        : 0,
       groups: rows.map((row) => ({
         groupName: String(row.item_group_name || row.item_name || "Component Group"),
         description: String(row.item_name || "Component Description"),

@@ -501,6 +501,96 @@ export function createMaterialPalette(options: MaterialPaletteOptions | string):
   };
 }
 
+/**
+ * Add-on Object Hierarchy Identification (IMP-MS84)
+ * Returns true if the object or any ancestor belongs to an add-on assembly.
+ */
+export function isAddonObject(object: THREE.Object3D): boolean {
+  let curr: THREE.Object3D | null = object;
+  while (curr) {
+    if (
+      curr.userData?.isAddon === true ||
+      curr.userData?.isUploadedAddon === true ||
+      curr.userData?.addonType !== undefined ||
+      (typeof curr.name === "string" && (
+        curr.name.startsWith("Addon_") ||
+        curr.name.startsWith("Screen_") ||
+        curr.name.startsWith("Grill_")
+      ))
+    ) {
+      return true;
+    }
+    curr = curr.parent;
+  }
+  return false;
+}
+
+/**
+ * Add-on Frame Mesh Classifier (IMP-MS84)
+ * Returns true if a mesh is an add-on framing member that responds to add-on finish recoloring.
+ */
+export function isAddonFrameMesh(mesh: THREE.Mesh): boolean {
+  // 1. Direct name prefix check (procedural screens and grilles)
+  if (
+    mesh.name.startsWith("Screen_Frame_") ||
+    mesh.name.startsWith("Grill_Frame_") ||
+    mesh.name.startsWith("Grill_Bar_") ||
+    (mesh.name.startsWith("Screen_Access_Hatch_") &&
+     !mesh.name.toLowerCase().includes("latch") &&
+     !mesh.name.toLowerCase().includes("mesh"))
+  ) {
+    return true;
+  }
+
+  // 2. Mesh-level userData check
+  if (
+    mesh.userData?.isAddon === true &&
+    (mesh.userData?.presentationCategory === "Framing" ||
+     mesh.userData?.componentType === "Frame" ||
+     (mesh.userData?.addonType === "grill" && mesh.userData?.presentationCategory !== "Hardware"))
+  ) {
+    return true;
+  }
+
+  // 3. Hierarchy walk: check parent groups and wrappers
+  let curr: THREE.Object3D | null = mesh.parent;
+  while (curr && curr !== curr.parent) {
+    if (
+      curr.userData?.isAddon === true ||
+      curr.userData?.isUploadedAddon === true ||
+      curr.userData?.addonType !== undefined ||
+      (typeof curr.name === "string" && (
+        curr.name.startsWith("Addon_") ||
+        curr.name.startsWith("Screen_") ||
+        curr.name.startsWith("Grill_")
+      ))
+    ) {
+      // Must be framing, not wire mesh or hardware
+      const isWire = Boolean(
+        mesh.userData?.isScreenMesh ||
+        curr.userData?.isScreenMesh ||
+        mesh.userData?.presentationCategory === "Mesh" ||
+        curr.userData?.presentationCategory === "Mesh" ||
+        mesh.name.toLowerCase().includes("mesh") ||
+        mesh.name.toLowerCase().includes("wire")
+      );
+      const isHardware = Boolean(
+        mesh.userData?.presentationCategory === "Hardware" ||
+        curr.userData?.presentationCategory === "Hardware" ||
+        mesh.name.toLowerCase().includes("latch") ||
+        mesh.name.toLowerCase().includes("handle")
+      );
+      const category = mesh.userData?.presentationCategory ?? curr.userData?.presentationCategory;
+      if (!isWire && !isHardware && (category === "Framing" || category === undefined)) {
+        return true;
+      }
+    }
+    curr = curr.parent;
+  }
+
+  return false;
+}
+
 export function applyPresentationMaterials(
   group: THREE.Group,
   options: MaterialPaletteOptions,
@@ -512,7 +602,7 @@ export function applyPresentationMaterials(
       return;
     }
 
-    if (object.userData.preserveMaterial || object.userData.isScreenMesh) {
+    if (object.userData.preserveMaterial || object.userData.isScreenMesh || isAddonObject(object)) {
       return;
     }
 

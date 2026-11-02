@@ -78,6 +78,80 @@ export const DEFAULT_LABOR_FLOOR = 0.00;
 export const DEFAULT_LABOR_RATE = 0.00;
 export const DEFAULT_MARGIN_RATE = 0.00;
 
+/** IMP-MS85 / PRD-F10 / SDD-C7: preserve material and fabrication attribution. */
+export interface ConsolidatedBOMItemDetail {
+  materialCode: string;
+  description: string;
+  category: "Framing" | "Glazing" | "Hardware" | "Consumable";
+  finishType: string;
+  totalQuantity: number;
+  unit: string;
+  unitPrice: number;
+  wasteFactor?: number;
+  subtotal: number;
+  contributingComponents: NonNullable<BOMItemDetail["componentTrace"]>[];
+}
+
+export function consolidateBOMItems(
+  items: BOMItemDetail[],
+  category: ConsolidatedBOMItemDetail["category"],
+): ConsolidatedBOMItemDetail[] {
+  const grouped = new Map<string, ConsolidatedBOMItemDetail>();
+  for (const item of items) {
+    // Different finishes, rates and waste policies must never silently merge.
+    const key = JSON.stringify([item.code, item.finish_type ?? "Standard", item.unit, item.unit_price, item.waste_factor]);
+    const existing = grouped.get(key);
+    if (existing) {
+      existing.totalQuantity = round4(existing.totalQuantity + item.quantity);
+      existing.subtotal = round2(existing.subtotal + item.subtotal);
+      if (item.componentTrace) existing.contributingComponents.push(item.componentTrace);
+    } else {
+      grouped.set(key, {
+        materialCode: item.code,
+        description: item.description,
+        category,
+        finishType: item.finish_type ?? "Standard",
+        totalQuantity: item.quantity,
+        unit: item.unit,
+        unitPrice: item.unit_price,
+        wasteFactor: item.waste_factor,
+        subtotal: item.subtotal,
+        contributingComponents: item.componentTrace ? [item.componentTrace] : [],
+      });
+    }
+  }
+  return [...grouped.values()];
+}
+
+/** IMP-MS85 / QAD-TC100.1, .3, .8-.10: isolate physical cuts from discrete counts. */
+export function computeExtrusionLinearMeters(params: {
+  dimensionBinding: "WIDTH" | "HEIGHT" | "PERIMETER";
+  apertureWidthM: number;
+  apertureHeightM: number;
+  spanRatio: number;
+  baseQuantity: number;
+  bayRole?: DynamicBayRole | null;
+  effectiveBayCount?: number;
+  effectiveMullionCount?: number;
+}): { linearMeters: number; pieceCount: number } {
+  const span = Number.isFinite(params.spanRatio) && params.spanRatio > 0 ? params.spanRatio : 1;
+  const role = params.bayRole;
+  const continuous = role === "OUTER_HEAD" || role === "OUTER_SILL" || role === "REMOVABLE_SILL" ||
+    role === "OUTER_JAMB_LEFT" || role === "OUTER_JAMB_RIGHT";
+  // Only an explicit valid dual-profile count is accepted; contaminated counts reset to one.
+  const count = continuous ? (params.baseQuantity === 2 ? 2 : 1)
+    : role === "BAY_DIVIDER" ? (params.effectiveMullionCount ?? 1)
+    : Number.isFinite(params.baseQuantity) && params.baseQuantity > 0 ? params.baseQuantity : 1;
+  const length = role === "OUTER_HEAD" || role === "OUTER_SILL" || role === "REMOVABLE_SILL"
+    ? params.apertureWidthM
+    : role === "OUTER_JAMB_LEFT" || role === "OUTER_JAMB_RIGHT" || role === "BAY_DIVIDER"
+      ? params.apertureHeightM
+      : params.dimensionBinding === "WIDTH" ? params.apertureWidthM
+        : params.dimensionBinding === "HEIGHT" ? params.apertureHeightM
+          : 2 * (params.apertureWidthM + params.apertureHeightM);
+  return { linearMeters: round4(length * span * count), pieceCount: count };
+}
+
 /**
  * Pure parametric Bill-of-Materials calculation engine.
  * Computes 1D extrusions, 2D sheet or per-piece glass, O(1) hardware/consumables,
@@ -136,15 +210,26 @@ export function calculateParametricBOM(
       (typeof rawComp.component_id === "string" && rawComp.component_id) ||
       "";
     const toggleKey = comp.togglePropertyKey || `has_${compKey.replace(/-/g, "_")}`;
-    const isSillComponent =
+    const legacyLabel = `${compKey} ${comp.componentName}`.toLowerCase().replace(/[_-]+/g, " ");
+    const isSashPart = /sash|leaf|panel|interlock|lockstile|cabinet|plinth/.test(legacyLabel);
+    const legacyRole: DynamicBayRole | null = isSashPart ? null
+      : /window sill|projecting.*sill|removable.*sill/.test(legacyLabel) ? "REMOVABLE_SILL"
+        : /frame.*bottom|bottom.*frame/.test(legacyLabel) ? "OUTER_SILL"
+          : /head|frame.*top|top.*frame/.test(legacyLabel) ? "OUTER_HEAD"
+            : /left.*jamb|jamb.*left|frame.*left/.test(legacyLabel) ? "OUTER_JAMB_LEFT"
+              : /right.*jamb|jamb.*right|frame.*right/.test(legacyLabel) ? "OUTER_JAMB_RIGHT"
+                : /center.*mullion|frame.*center/.test(legacyLabel) ? "BAY_DIVIDER" : null;
+    const compRole = comp.bayRole || comp.bay_role || legacyRole;
+    const isSillComponent = compRole !== "OUTER_SILL" && (
+      compRole === "REMOVABLE_SILL" ||
       comp.togglePropertyKey === "has_sill" ||
       toggleKey.includes("sill") ||
       compKey.includes("sill") ||
-      String(comp.componentName || "").toLowerCase().includes("sill");
+      String(comp.componentName || "").toLowerCase().includes("sill"));
 
     const isExcluded =
       (isSillComponent && hasSill === false) ||
-      (comp.isRemovable && options.removableStates && (
+      (compRole !== "OUTER_SILL" && comp.isRemovable && options.removableStates && (
         options.removableStates[comp.componentKey] === false ||
         (comp.componentId && options.removableStates[comp.componentId] === false) ||
         (comp.togglePropertyKey && options.removableStates[comp.togglePropertyKey] === false)
@@ -166,8 +251,8 @@ export function calculateParametricBOM(
     const wasteFactor = isFixedComponent ? 0 : (mat ? mat.waste_allowance : 0);
     let computedQty = comp.baseQuantity;
     let unitLabel = "pc";
+    let pieceCount = comp.baseQuantity;
 
-    const compRole = comp.bayRole || comp.bay_role;
     const compKeyLower = compKey.toLowerCase();
     const spanRatio = typeof comp.spanRatio === "number" && comp.spanRatio > 0 ? comp.spanRatio : 1;
     const isMullion = isBayReplicationActive && (
@@ -178,7 +263,8 @@ export function calculateParametricBOM(
 
     if (isMullion) {
       if (comp.dimensionBinding === "HEIGHT" || comp.pricingMethod === "Per Length") {
-        computedQty = heightM * spanRatio * effectiveMullionCount * (comp.baseQuantity || 1);
+        computedQty = heightM * spanRatio * effectiveMullionCount;
+        pieceCount = effectiveMullionCount;
         unitLabel = "m";
       } else {
         computedQty = effectiveMullionCount * (comp.baseQuantity || 1);
@@ -204,17 +290,22 @@ export function calculateParametricBOM(
       } else {
         switch (comp.dimensionBinding) {
           case "WIDTH":
-            computedQty = widthM * comp.spanRatio * comp.baseQuantity;
-            unitLabel = "m";
-            break;
           case "HEIGHT":
-            computedQty = heightM * comp.spanRatio * comp.baseQuantity;
+          case "PERIMETER": {
+            const cut = computeExtrusionLinearMeters({
+              dimensionBinding: comp.dimensionBinding,
+              apertureWidthM: widthM,
+              apertureHeightM: heightM,
+              spanRatio,
+              baseQuantity: comp.baseQuantity,
+              bayRole: compRole,
+              effectiveMullionCount: isBayReplicationActive ? effectiveMullionCount : undefined,
+            });
+            computedQty = cut.linearMeters;
+            pieceCount = cut.pieceCount;
             unitLabel = "m";
             break;
-          case "PERIMETER":
-            computedQty = 2 * (widthM + heightM) * comp.spanRatio * comp.baseQuantity;
-            unitLabel = "m";
-            break;
+          }
           case "AREA":
             computedQty = widthM * heightM * comp.spanRatio * comp.baseQuantity;
             unitLabel = "sqm";
@@ -240,7 +331,7 @@ export function calculateParametricBOM(
           default: {
             const isHatchPart = comp.componentKey.toLowerCase().includes("hatch") ||
               Boolean(comp.componentName && comp.componentName.toLowerCase().includes("hatch"));
-            const hatchMultiplier = (isHatchPart && options.hatchCount && options.hatchCount > 0)
+            const hatchMultiplier = (comp.dimensionBinding === "FIXED" && isHatchPart && options.hatchCount && options.hatchCount > 0)
               ? options.hatchCount
               : 1;
             computedQty = comp.baseQuantity * hatchMultiplier;
@@ -252,7 +343,7 @@ export function calculateParametricBOM(
     } else if (isFixedComponent) {
       const isHatchPart = comp.componentKey.toLowerCase().includes("hatch") ||
         Boolean(comp.componentName && comp.componentName.toLowerCase().includes("hatch"));
-      const hatchMultiplier = (isHatchPart && options.hatchCount && options.hatchCount > 0)
+      const hatchMultiplier = (comp.dimensionBinding === "FIXED" && isHatchPart && options.hatchCount && options.hatchCount > 0)
         ? options.hatchCount
         : 1;
       computedQty = comp.baseQuantity * hatchMultiplier;
@@ -278,6 +369,15 @@ export function calculateParametricBOM(
       unit_price: unitPrice,
       waste_factor: wasteFactor,
       subtotal: itemSubtotal,
+      finish_type: mat?.finish_type,
+      componentTrace: {
+        componentKey: compKey,
+        componentName: compRole === "OUTER_SILL" ? "Bottom Frame Rail"
+          : compRole === "REMOVABLE_SILL" ? "Projecting Exterior Sill" : comp.componentName,
+        pieceCount: unitLabel === "m" ? pieceCount : computedQty,
+        ...(unitLabel === "m" && pieceCount > 0 ? { unitCutLength: round4(computedQty / pieceCount) } : {}),
+        subtotalQuantity: round4(computedQty),
+      },
     };
 
     // FIX-UI11-V4: A bound material is authoritative when an imported component's

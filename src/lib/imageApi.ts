@@ -185,6 +185,28 @@ export interface AnalyzeImageOptions extends CalibrationIntakeOptions {
   initialDelayMs?: number;
 }
 
+export type SpacePhotoErrorCode = "SPACE_PHOTO_REJECTED" | "SPACE_PHOTO_TOO_CLOSE" | "SPACE_PHOTO_UNVERIFIABLE";
+
+export class SpacePhotoError extends Error {
+  constructor(public readonly code: SpacePhotoErrorCode, message: string) {
+    super(message);
+    this.name = "SpacePhotoError";
+  }
+}
+
+function parseAnalysisError(body: unknown): Error | null {
+  if (typeof body !== "object" || body === null || !("detail" in body)) return null;
+  const detail = body.detail;
+  if (typeof detail === "string") return new Error(detail);
+  if (typeof detail !== "object" || detail === null || !("code" in detail) || !("message" in detail)) return null;
+  const { code, message } = detail;
+  if (typeof message !== "string") return null;
+  if (code === "SPACE_PHOTO_REJECTED" || code === "SPACE_PHOTO_TOO_CLOSE" || code === "SPACE_PHOTO_UNVERIFIABLE") {
+    return new SpacePhotoError(code, message);
+  }
+  return null;
+}
+
 export function getImageApiBaseUrl() {
   return (process.env.NEXT_PUBLIC_IMAGE_API_URL || FALLBACK_API_URL).replace(/\/$/, "");
 }
@@ -353,17 +375,18 @@ export async function analyzeImage(
         break;
       }
 
-      if (response.status >= 400 && response.status < 500) {
-        let message = "Image analysis failed.";
+      if (response.status >= 400 && response.status < 500 || response.status === 503) {
+        let error: Error = new Error("Image analysis failed.");
         try {
-          const errorBody = (await response.json()) as { detail?: string };
-          if (errorBody.detail) {
-            message = errorBody.detail;
-          }
+          error = parseAnalysisError(await response.json()) ?? error;
         } catch {
-          // Keep generic message
+          // Keep the generic message for an invalid error body.
         }
-        throw new Error(message);
+        if (response.status === 503 && !(error instanceof SpacePhotoError)) {
+          lastError = new Error(`Server temporarily unavailable (HTTP ${response.status}).`);
+        } else {
+          throw error;
+        }
       }
 
       lastError = new Error(`Server temporarily unavailable (HTTP ${response.status}).`);
@@ -372,7 +395,7 @@ export async function analyzeImage(
       if (signal?.aborted) {
         throw signal.reason || err;
       }
-      if (err instanceof Error && response && response.status >= 400 && response.status < 500) {
+      if (err instanceof SpacePhotoError || err instanceof Error && response && response.status >= 400 && response.status < 500) {
         throw err;
       }
       lastError = err;

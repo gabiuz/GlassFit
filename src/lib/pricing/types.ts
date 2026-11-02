@@ -371,6 +371,14 @@ export const BOMItemDetailSchema = z.object({
   unit_price: z.number(),
   waste_factor: z.number().optional(),
   subtotal: z.number(),
+  finish_type: z.string().optional(),
+  componentTrace: z.object({
+    componentKey: z.string(),
+    componentName: z.string(),
+    pieceCount: z.number(),
+    unitCutLength: z.number().optional(),
+    subtotalQuantity: z.number(),
+  }).optional(),
 });
 export type BOMItemDetail = z.infer<typeof BOMItemDetailSchema>;
 

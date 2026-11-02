@@ -25,6 +25,7 @@ import type {
   HorizontalPosition,
   VerticalPosition,
 } from '@/lib/admin/products/types';
+import { isHeavyCommercialProfile, isContinuousPerimeterRole } from '@/lib/admin/products/autoDetection';
 import { calculateGrilleLinearBOM } from '@/lib/pricing/grillePricingEngine';
 import type { GrilleGeometryAnalysis } from '@/lib/pricing/grilleGeometryAnalyzer';
 
@@ -58,6 +59,7 @@ interface PartInspectorDrawerProps {
   rawMaterials: RawMaterial[];
   analyzedGrilleData?: GrilleGeometryAnalysis | null;
   modelStrategy?: string | null;
+  productType?: string;
   isAccessory?: boolean;
   productBasePrice?: number;
   onUpdateParts: (updates: Partial<PartInspectorConfig>) => void;
@@ -71,6 +73,7 @@ export function PartInspectorDrawer({
   rawMaterials,
   analyzedGrilleData,
   modelStrategy,
+  productType,
   isAccessory = false,
   productBasePrice,
   onUpdateParts,
@@ -607,6 +610,11 @@ export function PartInspectorDrawer({
               <p className="mt-1 text-neutral-700">Default · {currentBindings.length} allowed · PHP {(currentDefaultMaterial.unit_price * (1 + currentDefaultMaterial.waste_allowance)).toFixed(2)} / {currentDefaultMaterial.billing_unit} effective</p>
             </> : <p className="text-amber-800">{modelStrategy === 'Fixed' ? 'No optional material assigned' : 'No default material assigned'}</p>}
           </div>
+          {currentDefaultMaterial && /jalousie|sliding|casement|awning/i.test(productType || '') && isHeavyCommercialProfile(currentDefaultMaterial) && (
+            <p role="status" className="rounded-[8px] border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+              Heavy Profile Warning: {currentDefaultMaterial.description} (PHP {currentDefaultMaterial.unit_price.toFixed(2)}/m) is typically reserved for commercial storefronts. Standard residential profiles range from PHP 70.00 to PHP 130.00/m.
+            </p>
+          )}
           {materialsOpen && <div id="material-chooser" className="space-y-3">
             <div className="flex flex-wrap gap-1" aria-label="Material categories">
               {['All', 'Aluminum', 'Glass', 'Hardware', 'Consumable'].map((cat) => <button key={cat} type="button" aria-pressed={categoryFilter === cat} onClick={() => setCategoryFilter(cat)} className={`rounded-full px-3 py-1.5 text-sm font-medium focus-visible:outline-2 focus-visible:outline-[#07b6d3] ${categoryFilter === cat ? 'bg-[#0f1422] text-white' : 'bg-white text-neutral-700 border border-neutral-200 hover:bg-neutral-100'}`}>{cat}</button>)}
@@ -948,8 +956,8 @@ export function PartInspectorDrawer({
               <option value="OUTER_JAMB_LEFT">Outer Left Jamb (OUTER_JAMB_LEFT)</option>
               <option value="OUTER_JAMB_RIGHT">Outer Right Jamb (OUTER_JAMB_RIGHT)</option>
               <option value="OUTER_HEAD">Outer Head Framing (OUTER_HEAD)</option>
-              <option value="OUTER_SILL">Outer Sill Framing (OUTER_SILL)</option>
-              <option value="REMOVABLE_SILL">Removable Window Sill (REMOVABLE_SILL)</option>
+              <option value="OUTER_SILL">Bottom Frame Rail (OUTER_SILL)</option>
+              <option value="REMOVABLE_SILL">Projecting Exterior Sill (REMOVABLE_SILL)</option>
               <option value="BAY_DIVIDER">Modular Bay Divider Mullion (BAY_DIVIDER)</option>
               <option value="BAY_INFILL">Modular Bay Infill (BAY_INFILL)</option>
               <option value="BAY_HARDWARE">Modular Bay Hardware (BAY_HARDWARE)</option>
@@ -1280,8 +1288,12 @@ export function PartInspectorDrawer({
             <input
               type="number"
               min="1"
+              max={selectedParts.some(part => isContinuousPerimeterRole(part.bayRole)) ? 2 : undefined}
               value={primary.baseQuantity}
-              onChange={(e) => onUpdateParts({ baseQuantity: intParse(e.target.value, 10) || 1 })}
+              onChange={(e) => {
+                const quantity = Math.max(1, intParse(e.target.value, 10) || 1);
+                onUpdateParts({ baseQuantity: selectedParts.some(part => isContinuousPerimeterRole(part.bayRole)) ? Math.min(2, quantity) : quantity });
+              }}
               className="w-full border border-neutral-200 rounded-[8px] px-3 py-1.5 text-xs focus:border-[#07b6d3] outline-none"
             />
           </div>
@@ -1298,6 +1310,8 @@ export function PartInspectorDrawer({
             />
           </div>
         </div>
+
+        {selectedParts.some(part => isContinuousPerimeterRole(part.bayRole)) && <p className="text-xs text-neutral-600">Continuous perimeter extrusions are restricted to 1 piece (or 2 for dual-track rails) to prevent aperture overbilling.</p>}
 
         {/* Section 6: Presentation Category */}
         <div className="space-y-1">

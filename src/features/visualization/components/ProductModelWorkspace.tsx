@@ -49,6 +49,12 @@ import {
   ProductModelRenderer,
   type ModelPresentationOptions,
 } from "@/lib/visualization/modelRenderer";
+import {
+  computeWorkspaceBuildKey,
+  type WorkspaceBuildKeyParams,
+} from "@/lib/visualization/workspaceBuildKey";
+
+export { computeWorkspaceBuildKey, type WorkspaceBuildKeyParams };
 import { getWorkspaceDefinition } from "@/lib/visualization/workspaceDefinitionCache";
 import {
   GlassAppearanceMode,
@@ -72,11 +78,13 @@ import type { GrilleLinearBOMResult } from "@/lib/pricing/types";
 import { getCompatibleAddonsForProduct } from "@/lib/admin/products/addonMutations";
 import { getActiveAccessories, type ActiveAccessoryProduct } from "@/lib/products/getActiveAccessories";
 import type { SelectedAccessoryState } from "@/lib/visualization/types";
+import { preloadAccessoryModel } from "@/lib/visualization/componentModelCache";
 import type { AccessoryPositionOptions, HorizontalPosition, VerticalPosition } from "@/lib/admin/products/types";
 
 export type AddonSelectionType = "none" | "screen" | "grill";
 import {
   homographyToCssMatrix3d,
+  computeHomographyMatrix,
   denormalizeCorners,
   drawPerspectiveWarpedImage,
   estimateDimensionsFromCorners,
@@ -375,9 +383,17 @@ export function ProductModelWorkspace({
   });
 
   // Hardware Accessories Customization State (IMP-MS76)
-  const [selectedAccessories, setSelectedAccessories] = useState<Record<string, SelectedAccessoryState>>(() => {
-    return initialConfiguration?.swappedAccessories ?? {};
-  });
+  const [selectedAccessories, setSelectedAccessories] = useState<Record<string, SelectedAccessoryState>>({});
+  const [pendingAccessoryIds, setPendingAccessoryIds] = useState<Record<string, string>>({});
+  const [accessoryErrors, setAccessoryErrors] = useState<Record<string, string>>({});
+  const accessoryRequestSequence = useRef<Record<string, number>>({});
+  const accessoryMountedRef = useRef(true);
+  const accessoryRollbackRef = useRef<Record<string, SelectedAccessoryState | null>>({});
+  const restoredAccessories = useRef(initialConfiguration?.swappedAccessories ?? {});
+  useEffect(() => {
+    accessoryMountedRef.current = true;
+    return () => { accessoryMountedRef.current = false; };
+  }, []);
   const [availableAccessories, setAvailableAccessories] = useState<ActiveAccessoryProduct[]>([]);
   const [accessoriesLoaded, setAccessoriesLoaded] = useState(false);
 
@@ -531,6 +547,42 @@ export function ProductModelWorkspace({
 
   useEffect(() => {
     if (!accessoriesLoaded || !structuralDefinition) return;
+    const restored = restoredAccessories.current;
+    restoredAccessories.current = {};
+    for (const [slotId, selected] of Object.entries(restored)) {
+      const slot = accessorySlots.find((item) => item.componentId === slotId || item.componentKey === slotId);
+      const catalogItem = availableAccessories.find((item) => item.productId === selected.accessoryId && item.accessoryCategory === slot?.accessoryCategory);
+      if (selected.accessoryId === "default") {
+        setSelectedAccessories((current) => ({ ...current, [slotId]: selected }));
+      } else if (structuralDefinition.template.modelStrategy !== "Fixed" && slot?.allowedAccessoryIds?.includes(selected.accessoryId) && catalogItem?.previewGlbUrl) {
+        const sequence = (accessoryRequestSequence.current[slotId] ?? 0) + 1;
+        accessoryRequestSequence.current[slotId] = sequence;
+        setPendingAccessoryIds((current) => ({ ...current, [slotId]: selected.accessoryId }));
+        preloadAccessoryModel(selected.accessoryId, catalogItem.previewGlbUrl).then(() => {
+          if (!accessoryMountedRef.current || accessoryRequestSequence.current[slotId] !== sequence) return;
+          accessoryRollbackRef.current[slotId] = null;
+          setSelectedAccessories((current) => ({ ...current, [slotId]: {
+            ...selected,
+            accessoryName: catalogItem.productName,
+            price: catalogItem.basePrice,
+            priceDelta: catalogItem.basePrice,
+            glbUrl: catalogItem.previewGlbUrl,
+          } }));
+        }).catch(() => {
+          if (accessoryMountedRef.current && accessoryRequestSequence.current[slotId] === sequence) {
+            setAccessoryErrors((current) => ({ ...current, [slotId]: "This accessory model could not be loaded. Standard hardware is shown." }));
+          }
+        }).finally(() => {
+          if (accessoryMountedRef.current && accessoryRequestSequence.current[slotId] === sequence) {
+            setPendingAccessoryIds((current) => { const next = { ...current }; delete next[slotId]; return next; });
+          }
+        });
+      }
+    }
+  }, [accessoriesLoaded, accessorySlots, availableAccessories, structuralDefinition]);
+
+  useEffect(() => {
+    if (!accessoriesLoaded || !structuralDefinition) return;
     const timer = window.setTimeout(() => setSelectedAccessories((current) => {
       let changed = false;
       const next = { ...current };
@@ -539,7 +591,7 @@ export function ProductModelWorkspace({
         const slot = accessorySlots.find((item) => item.componentId === slotId || item.componentKey === slotId);
         const allowed = slot?.allowedAccessoryIds ?? [];
         const eligible = availableAccessories.some((item) => item.productId === selected.accessoryId && item.accessoryCategory === slot?.accessoryCategory && Boolean(item.previewGlbUrl));
-        if (!slot || !allowed.includes(selected.accessoryId) || !eligible) {
+        if (!slot || structuralDefinition.template.modelStrategy === "Fixed" || !allowed.includes(selected.accessoryId) || !eligible) {
           next[slotId] = {
             ...selected,
             accessoryId: "default",
@@ -564,11 +616,39 @@ export function ProductModelWorkspace({
   }, [selectedAccessories]);
 
   // Handler for selecting an accessory for a slot
-  const handleSelectAccessory = useCallback((
+  const handleSelectAccessory = useCallback(async (
     slotComponentId: string,
     slotCategory: string,
     accessory: { id: string; name: string; price: number; glbUrl?: string | null },
   ) => {
+    const slot = accessorySlots.find((item) => item.componentId === slotComponentId || item.componentKey === slotComponentId);
+    if (!slot) return;
+    if (accessory.id !== "default" && structuralDefinition?.template.modelStrategy === "Fixed") {
+      setAccessoryErrors((current) => ({ ...current, [slotComponentId]: "This product model does not support accessory replacement in the preview." }));
+      return;
+    }
+    const catalogItem = accessory.id === "default" ? null : availableAccessories.find((item) =>
+      item.productId === accessory.id && item.accessoryCategory === slotCategory && slot.allowedAccessoryIds?.includes(item.productId)
+    );
+    if (accessory.id !== "default" && !catalogItem?.previewGlbUrl) return;
+    const sequence = (accessoryRequestSequence.current[slotComponentId] ?? 0) + 1;
+    accessoryRequestSequence.current[slotComponentId] = sequence;
+    setAccessoryErrors((current) => { const next = { ...current }; delete next[slotComponentId]; return next; });
+    if (catalogItem?.previewGlbUrl) {
+      setPendingAccessoryIds((current) => ({ ...current, [slotComponentId]: accessory.id }));
+      try {
+        await preloadAccessoryModel(accessory.id, catalogItem.previewGlbUrl);
+      } catch {
+        if (accessoryRequestSequence.current[slotComponentId] === sequence) {
+          setAccessoryErrors((current) => ({ ...current, [slotComponentId]: "This accessory model could not be loaded. Your previous selection remains active." }));
+          setPendingAccessoryIds((current) => { const next = { ...current }; delete next[slotComponentId]; return next; });
+        }
+        return;
+      }
+    }
+    if (accessoryRequestSequence.current[slotComponentId] !== sequence) return;
+    accessoryRollbackRef.current[slotComponentId] = selectedAccessories[slotComponentId] ?? null;
+    setPendingAccessoryIds((current) => { const next = { ...current }; delete next[slotComponentId]; return next; });
     setSelectedAccessories((prev) => {
       const current = prev[slotComponentId];
       const slot = accessorySlots.find((s) => s.componentId === slotComponentId || s.componentKey === slotComponentId);
@@ -595,11 +675,11 @@ export function ProductModelWorkspace({
           finish: current?.finish ?? (alumFinish === "white" ? "Brushed Chrome" : "Matte Black"),
           horizontalPosition: current?.horizontalPosition ?? defaultHoriz,
           verticalPosition: current?.verticalPosition ?? defaultVert,
-          glbUrl: accessory.glbUrl ?? null,
+          glbUrl: catalogItem?.previewGlbUrl ?? null,
         },
       };
     });
-  }, [accessorySlots, alumFinish, availableAccessories]);
+  }, [accessorySlots, alumFinish, availableAccessories, selectedAccessories, structuralDefinition]);
 
   // Handler for toggling accessory handing (Left vs Right)
   const handleToggleAccessoryHanding = useCallback((slotComponentId: string, horizontalPosition: HorizontalPosition) => {
@@ -618,6 +698,7 @@ export function ProductModelWorkspace({
           category: current?.category ?? slot?.accessoryCategory ?? "handle",
           price: current?.price ?? 0,
           priceDelta: current?.priceDelta ?? 0,
+          glbUrl: current?.glbUrl ?? null,
           finish: current?.finish ?? (alumFinish === "white" ? "Brushed Chrome" : "Matte Black"),
           horizontalPosition,
           verticalPosition: current?.verticalPosition ?? posOptions?.defaultVertical ?? "up",
@@ -643,6 +724,7 @@ export function ProductModelWorkspace({
           category: current?.category ?? slot?.accessoryCategory ?? "handle",
           price: current?.price ?? 0,
           priceDelta: current?.priceDelta ?? 0,
+          glbUrl: current?.glbUrl ?? null,
           finish: current?.finish ?? (alumFinish === "white" ? "Brushed Chrome" : "Matte Black"),
           horizontalPosition: current?.horizontalPosition ?? posOptions?.defaultHorizontal ?? "right",
           verticalPosition,
@@ -668,6 +750,7 @@ export function ProductModelWorkspace({
           category: current?.category ?? slot?.accessoryCategory ?? "handle",
           price: current?.price ?? 0,
           priceDelta: current?.priceDelta ?? 0,
+          glbUrl: current?.glbUrl ?? null,
           finish,
           horizontalPosition: current?.horizontalPosition ?? posOptions?.defaultHorizontal ?? "right",
           verticalPosition: current?.verticalPosition ?? posOptions?.defaultVertical ?? "up",
@@ -983,6 +1066,7 @@ export function ProductModelWorkspace({
 
   const mvpCanvasRef = useRef<HTMLCanvasElement>(null);
   const mvpRendererRef = useRef<ProductModelRenderer | null>(null);
+  const [planarFitRect, setPlanarFitRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
   const [isUsingTransformHandle, setIsUsingTransformHandle] = useState(false);
   const [isOutlineMeasurementPaused, setIsOutlineMeasurementPaused] = useState(false);
   const [isSnapshotApplied, setIsSnapshotApplied] = useState(false);
@@ -1235,6 +1319,9 @@ export function ProductModelWorkspace({
       const isPlanar = Boolean(perspectiveCorners);
       const sourceCanvas = mvpRendererRef.current.render(yaw, pitch, isPlanar);
       if (sourceCanvas) {
+        const rect = mvpRendererRef.current.getPlanarFitRect();
+        setPlanarFitRect((current) => current?.x === rect?.x && current?.y === rect?.y &&
+          current?.width === rect?.width && current?.height === rect?.height ? current : rect);
         const ctx = mvpCanvasRef.current.getContext("2d");
         if (ctx) {
           ctx.clearRect(0, 0, mvpCanvasRef.current.width, mvpCanvasRef.current.height);
@@ -1254,9 +1341,26 @@ export function ProductModelWorkspace({
     }
 
     // 3. Mark skipPreparedBuildRef to prevent redundant debounced loadModel() rebuilds
-    const nextRemovableKey = JSON.stringify(currentOptions.removableStates ?? {});
-    const nextBuildKey = `${structuralDefinition?.product.productId}:${widthCm}:${heightCm}:${panelCount}:${currentOptions.includeSill}:${currentOptions.activeAddon}:${addonMountingSide}:${currentOptions.addonAluminumFinish}:${currentOptions.aluminumFinish}:${currentOptions.glassAppearance}:${currentOptions.glassColor}:${currentOptions.glassThicknessMm}:${includeHatch}:${screenMeshDensity}:${nextRemovableKey}`;
-    skipPreparedBuildRef.current = nextBuildKey;
+    const canonicalKey = computeWorkspaceBuildKey({
+      productId: structuralDefinition?.product.productId ?? "",
+      widthCm,
+      heightCm,
+      panelCount,
+      includeSill: currentOptions.includeSill ?? includeSill,
+      selectedAddon: currentOptions.activeAddon ?? selectedAddon,
+      selectedAddonProductId: currentOptions.addonProductId ?? selectedAddonProductId,
+      addonMountingSide: (currentOptions.addonMountingSide as "front" | "back") ?? addonMountingSide,
+      addonAlumFinish: currentOptions.addonAluminumFinish ?? addonAlumFinish,
+      alumFinish: currentOptions.aluminumFinish ?? alumFinish,
+      glassAppearance: currentOptions.glassAppearance ?? glassAppearance,
+      glassColor: currentOptions.glassColor ?? glassColor,
+      glassThicknessMm: currentOptions.glassThicknessMm ?? glassThicknessMm,
+      includeHatch,
+      screenMeshDensity: currentOptions.screenMeshDensity ?? screenMeshDensity,
+      accessoriesKey: JSON.stringify(selectedAccessories),
+      removableStatesKey: JSON.stringify(currentOptions.removableStates ?? removableStates),
+    });
+    skipPreparedBuildRef.current = canonicalKey;
 
     // 4. Invalidate model revision for outline measurement and UI updates
     setModelRevision((prev) => prev + 1);
@@ -1274,6 +1378,7 @@ export function ProductModelWorkspace({
     screenMeshDensity,
     effectiveHatchTargetKeys,
     removableStates,
+    selectedAccessories,
     getFinishHexColor,
     perspectiveCorners,
     yaw,
@@ -1411,7 +1516,27 @@ export function ProductModelWorkspace({
     if (currentW <= 0 || currentH <= 0) return null;
 
     const pxCorners = denormalizeCorners(perspectiveCorners, currentW, currentH);
-    const [p0, p1, p2, p3] = pxCorners;
+    let [p0, p1, p2, p3] = pxCorners;
+    if (structuralDefinition && planarFitRect) {
+      const sourceFrame: QuadrilateralCorners = [
+        { x: planarFitRect.x, y: planarFitRect.y },
+        { x: planarFitRect.x + planarFitRect.width, y: planarFitRect.y },
+        { x: planarFitRect.x + planarFitRect.width, y: planarFitRect.y + planarFitRect.height },
+        { x: planarFitRect.x, y: planarFitRect.y + planarFitRect.height },
+      ];
+      const matrix = computeHomographyMatrix(sourceFrame, pxCorners);
+      if (matrix) {
+        const outline: QuadrilateralCorners = [
+          { x: 0, y: 0 }, { x: 1, y: 0 },
+          { x: 1, y: 1 }, { x: 0, y: 1 },
+        ];
+        [p0, p1, p2, p3] = outline.map(({ x, y }) => {
+          const divisor = matrix[6] * x + matrix[7] * y + matrix[8];
+          return { x: (matrix[0] * x + matrix[1] * y + matrix[2]) / divisor,
+            y: (matrix[3] * x + matrix[4] * y + matrix[5]) / divisor };
+        }) as QuadrilateralCorners;
+      }
+    }
 
     return {
       corners: [
@@ -1431,7 +1556,7 @@ export function ProductModelWorkspace({
         y: (p0.y + p1.y + p2.y + p3.y) / 4,
       },
     };
-  }, [perspectiveCorners, canvasDisplaySize.width, canvasDisplaySize.height]);
+  }, [perspectiveCorners, canvasDisplaySize.width, canvasDisplaySize.height, structuralDefinition, planarFitRect]);
 
   const [dismissedObstructionKeys, setDismissedObstructionKeys] = useState<Set<string>>(new Set());
 
@@ -1594,6 +1719,7 @@ export function ProductModelWorkspace({
         }
       }
     }
+    setHasExplicitOverrides(false);
   }, [applyWorkspacePresentation, structuralDefinition, materialCustomizationGroups, selectedMaterials]);
 
   const handleAdvancedGlassAppearanceChange = useCallback(
@@ -1601,6 +1727,7 @@ export function ProductModelWorkspace({
       setGlassType(undefined);
       setGlassAppearance(appearance);
       applyWorkspacePresentation({ glassAppearance: appearance });
+      setHasExplicitOverrides(false);
     },
     [applyWorkspacePresentation],
   );
@@ -1610,6 +1737,7 @@ export function ProductModelWorkspace({
       setGlassAppearance(mode);
       setGlassType(deriveGlassTypeFromAppearance(mode));
       applyWorkspacePresentation({ glassAppearance: mode });
+      setHasExplicitOverrides(false);
     },
     [applyWorkspacePresentation],
   );
@@ -1618,8 +1746,36 @@ export function ProductModelWorkspace({
     (colorKey: GlassColorKey) => {
       setGlassColor(colorKey);
       applyWorkspacePresentation({ glassColor: colorKey });
+
+      let nextSelections = { ...selectedMaterials };
+      if (structuralDefinition && materialCustomizationGroups.length > 0) {
+        const glassGroup = materialCustomizationGroups.find((g) => g.presentationCategory === "Glazing");
+        if (glassGroup) {
+          const targetColor = colorKey.toLowerCase();
+          const matchedOption = glassGroup.options.find((opt) => {
+            const optColor = (opt.finishType || opt.description || "").toLowerCase();
+            return optColor.includes(targetColor);
+          });
+          if (matchedOption) {
+            nextSelections = applyGroupSelection(
+              glassGroup,
+              matchedOption,
+              selectedMaterials,
+              structuralDefinition,
+            );
+          } else {
+            for (const comp of structuralDefinition.components) {
+              if (comp.presentationCategory === "Glazing") {
+                delete nextSelections[comp.componentKey];
+              }
+            }
+          }
+        }
+      }
+      setSelectedMaterials(nextSelections);
+      setHasExplicitOverrides(false);
     },
-    [applyWorkspacePresentation],
+    [applyWorkspacePresentation, structuralDefinition, materialCustomizationGroups, selectedMaterials],
   );
 
   const handleGlassThicknessChange = useCallback(
@@ -1905,9 +2061,25 @@ export function ProductModelWorkspace({
 
   useEffect(() => {
     if (!mvpRendererRef.current || !structuralDefinition) return;
-    const accessoriesKey = JSON.stringify(selectedAccessories);
-    const removableStatesKey = JSON.stringify(removableStates);
-    const buildKey = `${structuralDefinition.product.productId}:${widthCm}:${heightCm}:${panelCount}:${includeSill}:${selectedAddon}:${addonMountingSide}:${selectedAddonProductId}:${addonAlumFinish}:${alumFinish}:${glassAppearance}:${glassColor}:${glassThicknessMm}:${includeHatch}:${accessoriesKey}:${removableStatesKey}`;
+    const buildKey = computeWorkspaceBuildKey({
+      productId: structuralDefinition.product.productId,
+      widthCm,
+      heightCm,
+      panelCount,
+      includeSill,
+      selectedAddon,
+      selectedAddonProductId,
+      addonMountingSide,
+      addonAlumFinish,
+      alumFinish,
+      glassAppearance,
+      glassColor,
+      glassThicknessMm,
+      includeHatch,
+      screenMeshDensity,
+      accessoriesKey: JSON.stringify(selectedAccessories),
+      removableStatesKey: JSON.stringify(removableStates),
+    });
     if (skipPreparedBuildRef.current === buildKey) {
       skipPreparedBuildRef.current = null;
       return;
@@ -1942,6 +2114,10 @@ export function ProductModelWorkspace({
         hatchTargetComponentKeys: includeHatch && effectiveHatchTargetKeys.length > 0 ? effectiveHatchTargetKeys : [],
         removableStates,
         swappedAccessories: selectedAccessories,
+        addonConfig: {
+          finishColor: getFinishHexColor(addonAlumFinish),
+          zOffsetMm: 18,
+        },
       },
       {
         selectedMaterials,
@@ -1950,16 +2126,36 @@ export function ProductModelWorkspace({
       },
     ).then((result) => {
       if (!result || cancelled) return;
+      for (const slotId of Object.keys(selectedAccessories)) delete accessoryRollbackRef.current[slotId];
       setMaterialCapabilities(result.capabilities);
       // Preserve the last measured outline while resize interactions pause measurement.
       // The revision redraw measures the rebuilt model as soon as measurement resumes.
       setModelRevision((prev) => prev + 1);
       setProductBuildError(null);
     }).catch((error: unknown) => {
-      if (!cancelled) setProductBuildError(error instanceof Error ? error.message : "Could not build the product model.");
+      if (cancelled) return;
+      const rollbackEntries = Object.entries(accessoryRollbackRef.current);
+      if (rollbackEntries.length > 0) {
+        accessoryRollbackRef.current = {};
+        setSelectedAccessories((current) => {
+          const next = { ...current };
+          for (const [slotId, previous] of rollbackEntries) {
+            if (previous) next[slotId] = previous;
+            else delete next[slotId];
+          }
+          return next;
+        });
+        setAccessoryErrors((errors) => {
+          const next = { ...errors };
+          for (const [slotId] of rollbackEntries) next[slotId] = "The accessory could not be shown in the preview. Your previous selection was restored.";
+          return next;
+        });
+      } else {
+        setProductBuildError(error instanceof Error ? error.message : "Could not build the product model.");
+      }
     });
     return () => { cancelled = true; };
-  }, [structuralDefinition, widthCm, heightCm, panelCount, includeSill, selectedAddon, selectedAddonProductId, addonAlumFinish, addonMountingSide, activeCompatibleAddon, includeHatch, screenMeshDensity, effectiveHatchTargetKeys, removableStates, glassAppearance, glassColor, glassThicknessMm, alumFinish, hasExplicitOverrides, selectedMaterials, candidateMaterialsMap, selectedAccessories]);
+  }, [structuralDefinition, widthCm, heightCm, panelCount, includeSill, selectedAddon, selectedAddonProductId, addonAlumFinish, addonMountingSide, activeCompatibleAddon, includeHatch, screenMeshDensity, effectiveHatchTargetKeys, removableStates, glassAppearance, glassColor, glassThicknessMm, alumFinish, hasExplicitOverrides, selectedMaterials, candidateMaterialsMap, selectedAccessories, getFinishHexColor]);
 
   useEffect(() => {
     if (!mvpRendererRef.current) return;
@@ -2020,6 +2216,12 @@ export function ProductModelWorkspace({
     const isPlanar = Boolean(perspectiveCorners);
     const sourceCanvas = mvpRendererRef.current.render(yaw, pitch, isPlanar);
     if (!sourceCanvas) return;
+    const nextFitRect = mvpRendererRef.current.getPlanarFitRect();
+    setPlanarFitRect((current) =>
+      current?.x === nextFitRect?.x && current?.y === nextFitRect?.y &&
+      current?.width === nextFitRect?.width && current?.height === nextFitRect?.height
+        ? current : nextFitRect,
+    );
 
     const targetCanvas = mvpCanvasRef.current;
     const ctx = targetCanvas.getContext("2d");
@@ -2683,6 +2885,7 @@ export function ProductModelWorkspace({
       activeOcclusionObjects,
       manualMaskDataUrl,
       perspectiveCorners,
+      planarFitRect: structuralDefinition ? mvpRendererRef.current?.getPlanarFitRect() : null,
       rotateAngle,
       isFlipped,
       // Use the export filter - stripped of selection-guide outlines.
@@ -2732,6 +2935,7 @@ export function ProductModelWorkspace({
       hasGeneratedProduct: Boolean(structuralDefinition),
       activeOcclusionObjects: [],
       perspectiveCorners,
+      planarFitRect: structuralDefinition ? mvpRendererRef.current?.getPlanarFitRect() : null,
       rotateAngle,
       isFlipped,
       modelFilter: exportModelFilter,
@@ -3446,6 +3650,7 @@ export function ProductModelWorkspace({
     applyWorkspacePresentation({ aluminumFinish: normalizedFinish });
 
     // Synchronize framing in selectedMaterials if alternate raw materials exist
+    let nextSelections = { ...selectedMaterials };
     if (structuralDefinition && materialCustomizationGroups.length > 0) {
       const framingGroup = materialCustomizationGroups.find((g) => g.presentationCategory === "Framing");
       if (framingGroup) {
@@ -3457,16 +3662,25 @@ export function ProductModelWorkspace({
             (normalizedTarget === "analok" && optFinish.includes("analok"));
         });
         if (matchedOption) {
-          const nextSelections = applyGroupSelection(
+          nextSelections = applyGroupSelection(
             framingGroup,
             matchedOption,
             selectedMaterials,
             structuralDefinition,
           );
-          setSelectedMaterials(nextSelections);
+        } else {
+          // If no matching raw material exists in the catalog (e.g. specialized R.R.D. color finishes):
+          // purge framing component keys from selectedMaterials so they fall back to the global presentation finish
+          for (const comp of structuralDefinition.components) {
+            if (comp.presentationCategory === "Framing") {
+              delete nextSelections[comp.componentKey];
+            }
+          }
         }
       }
     }
+    setSelectedMaterials(nextSelections);
+    setHasExplicitOverrides(false);
   }, [applyWorkspacePresentation, structuralDefinition, materialCustomizationGroups, selectedMaterials]);
 
   const handleAddonFinishSelect = useCallback((finishId: string) => {
@@ -3879,6 +4093,28 @@ export function ProductModelWorkspace({
     [perspectiveCorners, isUsingTransformHandle, canvasDisplaySize.width, canvasDisplaySize.height, updateMetricPerspectiveCorners],
   );
 
+  // PRD-F6 / PRD-F10 / DSD-UI4: keep the live estimate beside the active configuration flow.
+  const priceCard = selectedProduct && (
+    <div className="bg-grad-light rounded-[20px] p-6 sm:p-7 flex flex-col gap-2.5 w-full text-white shadow-md">
+      <div className="flex items-center justify-between">
+        <span className="text-xl sm:text-2xl font-normal text-white/90 tracking-[-0.456px]">
+          {displayPriceData.title}
+        </span>
+        {displayPriceData.badgeText && (
+          <span className="text-xs font-medium bg-white/20 px-2.5 py-1 rounded-full text-white">
+            {displayPriceData.badgeText}
+          </span>
+        )}
+      </div>
+      <span className="text-3xl sm:text-4xl font-medium tracking-[-0.608px] text-white">
+        {displayPriceData.formattedPrice}
+      </span>
+      <div className="flex flex-col gap-0.5 text-xs font-normal text-white/80 tracking-[-0.228px]">
+        <span>{displayPriceData.subtext}</span>
+      </div>
+    </div>
+  );
+
   return (
     <div
       ref={mobileDialogRef}
@@ -3913,24 +4149,8 @@ export function ProductModelWorkspace({
 
       {/* ── Top Toolbar Controls ── */}
       <div className={shouldLockMobileEditor ? "hidden" : "w-full flex flex-col lg:flex-row items-center justify-between gap-6 mb-10"}>
-        {/* Left: Undo, Redo, Zoom */}
+        {/* Left: Zoom */}
         <div className="flex flex-wrap items-center gap-4 sm:gap-6 justify-center lg:justify-start">
-          {/* Undo / Redo */}
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              className="bg-[#0f1422] hover:bg-black text-white px-4 py-2 rounded-[10px] text-sm font-normal transition-colors cursor-pointer"
-            >
-              Undo
-            </button>
-            <button
-              type="button"
-              className="bg-white border border-[#c3c3c3] hover:bg-neutral-50 text-[#0f1422] px-4 py-2 rounded-[10px] text-sm font-normal transition-colors cursor-pointer"
-            >
-              Redo
-            </button>
-          </div>
-
           {/* Zoom Controls */}
           <div className="bg-white border border-[#c3c3c3] flex items-center justify-center gap-3 px-4 py-2 rounded-[10px] select-none">
             <button
@@ -4194,6 +4414,12 @@ export function ProductModelWorkspace({
                 className="absolute inset-0 h-full w-full object-contain select-none"
               />
 
+              {!shouldLockMobileEditor && selectedProduct && (
+                <div className="pointer-events-none absolute bottom-3 left-3 z-40 max-w-[calc(100%-24px)] truncate rounded-[20px] border border-neutral-100 bg-white/95 px-4 py-2 text-sm font-normal tracking-[-0.266px] text-black shadow-xs">
+                  {structuralDefinition?.product.productName ?? "1 product on Canvas"}
+                </div>
+              )}
+
               {/* ── Calibration Scale HUD Indicator (IMP-MS47, IMP-MS52) ── */}
               <div className="absolute top-3 left-3 z-30 flex items-center gap-2 select-none pointer-events-auto">
                 {isPaperCalibrated ? (
@@ -4372,6 +4598,9 @@ export function ProductModelWorkspace({
                             ),
                             overlaySize.width,
                             overlaySize.height,
+                            structuralDefinition && planarFitRect
+                              ? { left: planarFitRect.x, top: planarFitRect.y, width: planarFitRect.width, height: planarFitRect.height }
+                              : null,
                           ),
                           transformStyle: "preserve-3d",
                           WebkitTransformStyle: "preserve-3d",
@@ -4840,6 +5069,8 @@ export function ProductModelWorkspace({
 
           </div>
 
+          {!shouldLockMobileEditor && priceCard}
+
           {/* Action Instructions Bar */}
           <div className={shouldLockMobileEditor ? "hidden" : "bg-[#f5f5f5] rounded-[20px] px-5 py-3 flex flex-wrap justify-center items-center gap-2 sm:gap-3 text-sm sm:text-base md:text-lg text-[#0f1422] font-normal tracking-[-0.38px] text-center select-none"}>
             {selectedProduct ? (
@@ -4870,12 +5101,13 @@ export function ProductModelWorkspace({
             ? `${isMobileControlsOpen ? "flex" : "hidden"} absolute z-50 flex-col gap-4 overflow-x-hidden overflow-y-auto overscroll-contain bg-white p-4 shadow-2xl [touch-action:pan-y] ${compactOrientation === "portrait" ? "inset-x-0 bottom-0 max-h-[45dvh] rounded-t-[20px]" : "inset-y-0 right-0 w-[min(320px,88vw)] rounded-l-[20px]"}`
             : "w-full lg:w-[422px] shrink-0 flex flex-col gap-6 items-end"}
         >
-          {/* Status Badge */}
-          <div className="bg-white rounded-[20px] px-4 py-2 text-black text-sm font-normal tracking-[-0.266px] shadow-xs border border-neutral-100">
-            {selectedProduct
-              ? structuralDefinition?.product.productName ?? "1 product on Canvas"
-              : "No product selected"}
-          </div>
+          {(!selectedProduct || shouldLockMobileEditor) && (
+            <div className="bg-white rounded-[20px] px-4 py-2 text-black text-sm font-normal tracking-[-0.266px] shadow-xs border border-neutral-100">
+              {selectedProduct
+                ? structuralDefinition?.product.productName ?? "1 product on Canvas"
+                : "No product selected"}
+            </div>
+          )}
           {productBuildError && (
             <p className="w-full rounded-[10px] border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
               {productBuildError}
@@ -4884,25 +5116,7 @@ export function ProductModelWorkspace({
 
           {selectedProduct ? (
             <>
-              {/* Price Card */}
-              <div className="bg-grad-light rounded-[20px] p-6 sm:p-7 flex flex-col gap-2.5 w-full text-white shadow-md">
-                <div className="flex items-center justify-between">
-                  <span className="text-xl sm:text-2xl font-normal text-white/90 tracking-[-0.456px]">
-                    {displayPriceData.title}
-                  </span>
-                  {displayPriceData.badgeText && (
-                    <span className="text-xs font-medium bg-white/20 px-2.5 py-1 rounded-full text-white">
-                      {displayPriceData.badgeText}
-                    </span>
-                  )}
-                </div>
-                <span className="text-3xl sm:text-4xl font-medium tracking-[-0.608px] text-white">
-                  {displayPriceData.formattedPrice}
-                </span>
-                <div className="flex flex-col gap-0.5 text-xs font-normal text-white/80 tracking-[-0.228px]">
-                  <span>{displayPriceData.subtext}</span>
-                </div>
-              </div>
+              {shouldLockMobileEditor && priceCard}
 
               {/* Workspace Accordions with Motion Animation */}
               <div className="w-full flex flex-col gap-4">
@@ -5811,7 +6025,7 @@ export function ProductModelWorkspace({
                               const slotAllowedIds = slot.allowedAccessoryIds ?? ((slot as Record<string, unknown>).allowed_accessory_ids as string[] | undefined);
                               const posOptions = slot.positionOptions ?? ((slot as Record<string, unknown>).position_options as AccessoryPositionOptions | undefined);
 
-                              const matchingAccessories = availableAccessories.filter((acc) =>
+                              const matchingAccessories = structuralDefinition?.template.modelStrategy === "Fixed" ? [] : availableAccessories.filter((acc) =>
                                 (slotAllowedIds ?? []).includes(acc.productId) && acc.accessoryCategory === slotCategory && Boolean(acc.previewGlbUrl)
                               );
 
@@ -5840,6 +6054,15 @@ export function ProductModelWorkspace({
 
                                   <div className="flex flex-col gap-2">
                                     <span className="text-xs font-medium text-neutral-700">Model Selection</span>
+                                    {structuralDefinition?.template.modelStrategy === "Fixed" && (
+                                      <p className="text-xs text-neutral-600">Accessory replacement is unavailable for this fixed model preview.</p>
+                                    )}
+                                    {pendingAccessoryIds[slotId] && (
+                                      <p role="status" className="text-xs text-neutral-600">Loading accessory model before applying selection...</p>
+                                    )}
+                                    {accessoryErrors[slotId] && (
+                                      <p role="alert" className="text-xs text-red-600">{accessoryErrors[slotId]}</p>
+                                    )}
                                     <div className="grid grid-cols-1 gap-2">
                                       <button
                                         type="button"
@@ -6497,6 +6720,7 @@ type WorkspaceSnapshotOptions = {
   activeOcclusionObjects: SnapshotOcclusionObject[];
   manualMaskDataUrl?: string | null;
   perspectiveCorners?: QuadrilateralCorners | null;
+  planarFitRect?: { x: number; y: number; width: number; height: number } | null;
   rotateAngle: number;
   isFlipped: boolean;
   modelFilter: React.CSSProperties["filter"];
@@ -6528,6 +6752,7 @@ async function captureWorkspaceCanvas({
   activeOcclusionObjects,
   manualMaskDataUrl,
   perspectiveCorners,
+  planarFitRect,
   rotateAngle,
   isFlipped,
   modelFilter,
@@ -6611,6 +6836,7 @@ async function captureWorkspaceCanvas({
       fallbackProductImageUrl,
       hasGeneratedProduct,
       perspectiveCorners,
+      planarFitRect,
       canvasBounds,
       rotateAngle,
       isFlipped,
@@ -6657,6 +6883,7 @@ async function drawSnapshotOverlay({
   fallbackProductImageUrl,
   hasGeneratedProduct,
   perspectiveCorners,
+  planarFitRect,
   canvasBounds,
   rotateAngle,
   isFlipped,
@@ -6669,6 +6896,7 @@ async function drawSnapshotOverlay({
   fallbackProductImageUrl: string;
   hasGeneratedProduct: boolean;
   perspectiveCorners?: QuadrilateralCorners | null;
+  planarFitRect?: { x: number; y: number; width: number; height: number } | null;
   canvasBounds?: { width: number; height: number };
   rotateAngle: number;
   isFlipped: boolean;
@@ -6727,7 +6955,10 @@ async function drawSnapshotOverlay({
       offCtx.restore();
 
       context.save();
-      drawPerspectiveWarpedImage(context, offscreen, pixelCorners);
+      drawPerspectiveWarpedImage(
+        context, offscreen, pixelCorners, 16,
+        planarFitRect ? { left: planarFitRect.x, top: planarFitRect.y, width: planarFitRect.width, height: planarFitRect.height } : null,
+      );
       context.restore();
       return;
     }

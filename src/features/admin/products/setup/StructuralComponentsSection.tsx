@@ -7,7 +7,7 @@ import type { ComponentType, AccessoryCategory, AccessoryPositionOptions } from 
 import { generatePresignedUrl, confirmAssetUpload, hasQualifyingProductModelAsset, deleteProductAssets } from "@/lib/admin/products/assetUpload";
 import { getComponentIssues, getProductComponentIssue } from "@/lib/admin/products/componentEligibility";
 import type { UpsertComponentInput } from "@/lib/admin/products/types";
-import { autoDetectComponentSettings, suggestCandidateMaterials } from "@/lib/admin/products/autoDetection";
+import { autoDetectComponentSettings, suggestCandidateMaterials, isContinuousPerimeterRole } from "@/lib/admin/products/autoDetection";
 import { decomposeWholeModel, type ExtractedComponentPart } from "@/lib/admin/products/modelDecomposer";
 import { DecompositionPreviewModal } from "./DecompositionPreviewModal";
 import { PartInspectorDrawer, type PartInspectorConfig } from "./PartInspectorDrawer";
@@ -34,6 +34,7 @@ export type StructuralComponentsSectionProps = {
     templateId: string;
     modelStrategy: string | null;
     productType?: string;
+    productName?: string;
     initialData?: unknown;
     wholeModelAsset?: {
         asset_id?: string;
@@ -543,6 +544,7 @@ export function StructuralComponentsSection({
     templateId,
     modelStrategy,
     productType = "Window",
+    productName,
     initialData,
     wholeModelAsset,
     isAccessory = false,
@@ -822,7 +824,7 @@ export function StructuralComponentsSection({
                         : autoDetected.dimensionBinding))) as DimensionBinding;
             const resolvedBaseQty = isJalousie ? jalousieAnalysis!.suggestedBaseQuantity : 1;
             const resolvedPresentation = isJalousie ? jalousieAnalysis!.suggestedPresentationCategory : autoDetected.presentationCategory;
-            const suggested = suggestCandidateMaterials(resolvedPresentation, rawMaterials, undefined, resolvedBinding);
+            const suggested = suggestCandidateMaterials(resolvedPresentation, rawMaterials, undefined, resolvedBinding, { productType, productName, modelStrategy });
             const jalousieConfig = isJalousie ? {
                 pitch_mm: jalousieAnalysis!.pitchMm,
                 blade_height_mm: jalousieAnalysis!.bladeHeightMm,
@@ -835,7 +837,7 @@ export function StructuralComponentsSection({
                 id: crypto.randomUUID(),
                 file: f,
                 componentKey: formatKeyFromName(f.name),
-                componentName: formatLabelFromName(f.name),
+                componentName: autoDetected.componentLabel || formatLabelFromName(f.name),
                 componentType: isJalousie ? (jalousieAnalysis!.isLouverBlade ? "Glass" : "Hardware") : autoDetected.componentType,
                 assemblyGroup: resolvedPresentation.toLowerCase(),
                 baseQuantity: resolvedBaseQty,
@@ -939,12 +941,12 @@ export function StructuralComponentsSection({
 
     const handleApplyExtractedParts = (selectedParts: ExtractedComponentPart[]) => {
         const newMapped: MappedFile[] = selectedParts.map((part) => {
-            const suggested = suggestCandidateMaterials(part.presentationCategory, rawMaterials);
+            const suggested = suggestCandidateMaterials(part.presentationCategory, rawMaterials, undefined, part.dimensionBinding, { productType, productName, modelStrategy });
             return {
                 id: part.id || crypto.randomUUID(),
                 file: part.file,
                 componentKey: part.componentKey,
-                componentName: part.componentName,
+                componentName: autoDetectComponentSettings(part.componentKey).componentLabel || part.componentName,
                 componentType: part.componentType,
                 assemblyGroup: part.presentationCategory.toLowerCase(),
                 baseQuantity: part.baseQuantity || 1,
@@ -1026,7 +1028,7 @@ export function StructuralComponentsSection({
                         ...(updates.isRemovable !== undefined && { isRemovable: updates.isRemovable }),
                         ...(updates.togglePropertyKey !== undefined && { togglePropertyKey: updates.togglePropertyKey }),
                         ...(updates.presentationCategory !== undefined && { presentationCategory: updates.presentationCategory }),
-                        ...(updates.baseQuantity !== undefined && { baseQuantity: updates.baseQuantity }),
+                        ...(updates.baseQuantity !== undefined && { baseQuantity: isContinuousPerimeterRole(updates.bayRole ?? item.bayRole) ? Math.min(2, Math.max(1, updates.baseQuantity)) : updates.baseQuantity }),
                         ...(updates.assemblyGroup !== undefined && { assemblyGroup: updates.assemblyGroup }),
                         ...(updates.isAccessorySlot !== undefined && { isAccessorySlot: updates.isAccessorySlot }),
                         ...("accessoryCategory" in updates ? { accessoryCategory: updates.accessoryCategory } : {}),
@@ -1729,10 +1731,6 @@ export function StructuralComponentsSection({
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 border border-neutral-200 rounded-[16px] overflow-hidden bg-white shadow-sm lg:h-[min(760px,calc(100vh-150px))]">
                     {/* Left Side: 3D Viewport (60% / 7 cols) */}
                     <div className="lg:col-span-7 bg-[#f2f4f7] relative h-[480px] lg:h-full min-h-0 flex flex-col justify-between border-b lg:border-b-0 lg:border-r border-neutral-200">
-                        <div className="absolute top-3 left-3 z-10 bg-white/90 backdrop-blur-md px-3 py-1 rounded-full text-[11px] font-medium text-neutral-700 shadow-xs border border-neutral-200 flex items-center gap-1.5">
-                            <Eye className="size-3.5 text-[#07b6d3]" /> Click part to inspect (Shift+Click for multi-select)
-                        </div>
-
                         <div className="absolute top-3 right-3 z-10 bg-white/90 backdrop-blur-md p-1 rounded-[10px] inline-flex border border-neutral-200 shadow-xs">
                             <button
                                 type="button"
@@ -1756,7 +1754,7 @@ export function StructuralComponentsSection({
                             </button>
                         </div>
 
-                        <div className="w-full min-h-0 flex-1">
+                        <div className="relative w-full min-h-0 flex-1">
                             <Canvas shadows camera={{ position: [0, 1.5, 3], fov: 45 }}>
                                 <ambientLight intensity={0.7} />
                                 <directionalLight position={[5, 8, 5]} intensity={1.2} />
@@ -1775,6 +1773,10 @@ export function StructuralComponentsSection({
                                 <OrbitControls makeDefault />
                                 <ViewerCameraControls action={cameraAction} />
                             </Canvas>
+                            <div className="pointer-events-none absolute bottom-3 left-3 z-10 flex max-w-[calc(100%-1.5rem)] items-center gap-1.5 rounded-full border border-neutral-200 bg-white/90 px-3 py-1 text-[11px] font-medium text-neutral-700 shadow-xs backdrop-blur-md">
+                                <Eye aria-hidden="true" className="size-3.5 shrink-0 text-[#07b6d3]" />
+                                <span>Click part to inspect (Shift+Click for multi-select)</span>
+                            </div>
                         </div>
 
                         <div className="flex gap-2 border-t border-neutral-200 bg-white px-3 py-2 text-xs">
@@ -1818,6 +1820,7 @@ export function StructuralComponentsSection({
                             rawMaterials={rawMaterials}
                             analyzedGrilleData={analyzedGrilleData}
                             modelStrategy={modelStrategy}
+                            productType={`${productType} ${productName || ""}`}
                             isAccessory={isAccessory}
                             productBasePrice={productBasePrice}
                             onUpdateParts={handleBatchUpdateSelected}

@@ -22,6 +22,46 @@ export type ComponentModelCache = {
   getSourceSizeMeters(componentId: string): THREE.Vector3;
 };
 
+/** Validate and cache an active registered accessory asset before selection is committed. */
+export async function preloadAccessoryModel(accessoryId: string, url: string): Promise<void> {
+  await loadAccessoryModel(accessoryId, url);
+}
+
+export async function getAccessoryModelSource(accessoryId: string, url: string): Promise<THREE.Object3D> {
+  const loaded = await loadAccessoryModel(accessoryId, url);
+  return loaded.source;
+}
+
+async function loadAccessoryModel(accessoryId: string, url: string): Promise<LoadedComponentModel> {
+  if (!accessoryId || !url) throw new Error("Accessory model ID and URL are required.");
+  const cached = resolvedCache.get(url);
+  if (cached) return cached;
+  const pending = pendingCache.get(url) ?? loader.loadAsync(url).then((gltf) => {
+    const source = gltf.scene;
+    let hasRenderableGeometry = false;
+    source?.traverse((object) => {
+      if (object instanceof THREE.Mesh && object.geometry?.attributes.position?.count > 0) {
+        hasRenderableGeometry = true;
+      }
+    });
+    if (!source || !hasRenderableGeometry) throw new Error("The model contains no renderable geometry.");
+    const sourceSizeMeters = measureObjectSize(source);
+    if (![sourceSizeMeters.x, sourceSizeMeters.y, sourceSizeMeters.z].every(Number.isFinite) ||
+        sourceSizeMeters.x <= 0 || sourceSizeMeters.y <= 0 || sourceSizeMeters.z <= 0) {
+      throw new Error("The model has invalid dimensions.");
+    }
+    const loaded = { source, sourceSizeMeters };
+    resolvedCache.set(url, loaded);
+    return loaded;
+  }).catch((error: unknown) => {
+    pendingCache.delete(url);
+    throw new Error(`Unable to load accessory ${accessoryId}: ${error instanceof Error ? error.message : "Unknown GLB error"}`);
+  });
+  pendingCache.set(url, pending);
+  void pending.finally(() => pendingCache.delete(url)).catch(() => undefined);
+  return pending;
+}
+
 export async function preloadComponentModels(
   components: ProductComponentDefinition[],
 ): Promise<ComponentModelCache> {

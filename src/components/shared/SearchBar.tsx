@@ -9,6 +9,7 @@ type SearchBarProps = {
   inputClassName?: string;
   className?: string;
   compactMobile?: boolean;
+  compact?: boolean;
 };
 
 export function SearchBar({
@@ -18,13 +19,14 @@ export function SearchBar({
   inputClassName,
   className,
   compactMobile = false,
+  compact = false,
 }: SearchBarProps) {
   return (
     <div
       className={`flex min-w-0 items-center gap-2.5 rounded-[12px_10px_10px_12px] bg-grad-light pr-2.5 ${className ?? ""}`}
     >
       <div
-        className={`flex min-w-0 flex-1 items-center overflow-hidden rounded-[10px] border border-white bg-white px-2 shadow-[0px_4px_12px_0px_rgba(13,10,44,0.06)] ${compactMobile ? "h-11 sm:h-15" : "h-15"} ${inputClassName ?? ""}`}
+        className={`flex min-w-0 flex-1 items-center overflow-hidden rounded-[10px] border border-white bg-white px-2 shadow-[0px_4px_12px_0px_rgba(13,10,44,0.06)] ${compact ? "h-11" : compactMobile ? "h-11 sm:h-15" : "h-15"} ${inputClassName ?? ""}`}
       >
         <input
           type="text"
@@ -32,7 +34,7 @@ export function SearchBar({
           onChange={(e) => onChange?.(e.target.value)}
           placeholder={placeholder}
           aria-label={placeholder}
-          className={`w-full min-w-0 bg-transparent px-2.5 font-normal leading-[1.4] tracking-[-0.38px] text-[#0f1422] outline-none placeholder:text-[#abb7c2] ${compactMobile ? "text-base sm:text-[20px]" : "text-[20px]"}`}
+          className={`w-full min-w-0 bg-transparent px-2.5 font-normal leading-[1.4] tracking-[-0.38px] text-[#0f1422] outline-none placeholder:text-[#abb7c2] ${compact ? "text-base" : compactMobile ? "text-base sm:text-[20px]" : "text-[20px]"}`}
         />
       </div>
       <button

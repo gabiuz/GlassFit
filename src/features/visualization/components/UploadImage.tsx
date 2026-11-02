@@ -18,6 +18,9 @@ interface UploadImageProps {
     retryAttempt?: number;
     onRetry?: (file: File) => void;
     errorMessage?: string | null;
+    browseRequestKey?: number;
+    onImageRemoved?: () => void;
+    onSelectionStart?: () => void;
 }
 
 export function UploadImage({
@@ -27,8 +30,12 @@ export function UploadImage({
     retryAttempt,
     onRetry,
     errorMessage,
+    browseRequestKey = 0,
+    onImageRemoved,
+    onSelectionStart,
 }: UploadImageProps = {}) {
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const selectionIdRef = useRef(0);
     const [isDragging, setIsDragging] = useState(false);
     const [isValidating, setIsValidating] = useState(false);
     const [pendingFile, setPendingFile] = useState<File | null>(null);
@@ -45,6 +52,7 @@ export function UploadImage({
     }, [previewUrl]);
 
     const clearPreview = useCallback(() => {
+        selectionIdRef.current += 1;
         setPreviewUrl((currentUrl) => {
             if (currentUrl) URL.revokeObjectURL(currentUrl);
             return null;
@@ -57,6 +65,8 @@ export function UploadImage({
     }, []);
 
     const processFile = useCallback(async (file: File) => {
+        const selectionId = ++selectionIdRef.current;
+        onSelectionStart?.();
         const validationError = validateImageFile(file);
         if (validationError) {
             setError(validationError);
@@ -69,6 +79,10 @@ export function UploadImage({
         try {
             const nextPreviewMode = await validateImageDecode(file);
             const nextPreviewUrl = nextPreviewMode === "image" ? URL.createObjectURL(file) : null;
+            if (selectionIdRef.current !== selectionId) {
+                if (nextPreviewUrl) URL.revokeObjectURL(nextPreviewUrl);
+                return;
+            }
 
             setError(null);
             setFileName(file.name);
@@ -80,14 +94,21 @@ export function UploadImage({
             });
             onImageSelected?.(file, nextPreviewUrl ?? "");
         } catch (decodeError) {
+            if (selectionIdRef.current !== selectionId) return;
             setError(decodeError instanceof Error ? decodeError.message : "Uploaded image could not be decoded.");
             clearPreview();
         } finally {
             setIsValidating(false);
         }
-    }, [clearPreview, onImageSelected]);
+    }, [clearPreview, onImageSelected, onSelectionStart]);
 
     const handleBrowseClick = () => fileInputRef.current?.click();
+
+    useEffect(() => {
+        if (browseRequestKey > 0) {
+            fileInputRef.current?.click();
+        }
+    }, [browseRequestKey]);
 
     const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
@@ -115,6 +136,7 @@ export function UploadImage({
     const handleRemove = () => {
         clearPreview();
         setError(null);
+        onImageRemoved?.();
     };
 
     return (
@@ -262,7 +284,7 @@ export function UploadImage({
             </div>
 
             {(error || errorMessage) && (
-                <p className="text-red-500 text-lg font-normal">{error || errorMessage}</p>
+                <p role="alert" className="text-red-500 text-lg font-normal">{error || errorMessage}</p>
             )}
 
             <p className="w-full max-w-5xl text-xl text-black font-normal tracking-tight leading-normal">

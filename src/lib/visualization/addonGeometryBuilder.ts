@@ -104,6 +104,8 @@ export function buildParametricScreenGroup(
   topRail.renderOrder = 0;
   topRail.userData.preserveMaterial = true;
   topRail.userData.presentationCategory = "Framing";
+  topRail.userData.isAddon = true;
+  topRail.userData.addonType = "screen";
 
   const bottomRailGeo = new THREE.BoxGeometry(widthM, frameWidth, frameDepth);
   const bottomRail = new THREE.Mesh(bottomRailGeo, resolvedFrameMat);
@@ -114,6 +116,8 @@ export function buildParametricScreenGroup(
   bottomRail.renderOrder = 0;
   bottomRail.userData.preserveMaterial = true;
   bottomRail.userData.presentationCategory = "Framing";
+  bottomRail.userData.isAddon = true;
+  bottomRail.userData.addonType = "screen";
 
   const innerHeightM = Math.max(0, heightM - 2 * frameWidth);
   const sideJambGeo = new THREE.BoxGeometry(frameWidth, innerHeightM, frameDepth);
@@ -126,6 +130,8 @@ export function buildParametricScreenGroup(
   leftJamb.renderOrder = 0;
   leftJamb.userData.preserveMaterial = true;
   leftJamb.userData.presentationCategory = "Framing";
+  leftJamb.userData.isAddon = true;
+  leftJamb.userData.addonType = "screen";
 
   const rightJamb = new THREE.Mesh(sideJambGeo, resolvedFrameMat);
   rightJamb.name = "Screen_Frame_Right";
@@ -135,6 +141,8 @@ export function buildParametricScreenGroup(
   rightJamb.renderOrder = 0;
   rightJamb.userData.preserveMaterial = true;
   rightJamb.userData.presentationCategory = "Framing";
+  rightJamb.userData.isAddon = true;
+  rightJamb.userData.addonType = "screen";
 
   group.add(topRail, bottomRail, leftJamb, rightJamb);
 
@@ -171,18 +179,23 @@ export function buildParametricScreenGroup(
 
     // Sub-frame extrusion rails for hatch opening
     const hTop = new THREE.Mesh(new THREE.BoxGeometry(hatchW, hatchBorderW, hatchDepth), resolvedFrameMat);
+    hTop.name = "Screen_Access_Hatch_Top";
     hTop.position.set(0, hatchH / 2 - hatchBorderW / 2, 0);
     const hBot = new THREE.Mesh(new THREE.BoxGeometry(hatchW, hatchBorderW, hatchDepth), resolvedFrameMat);
+    hBot.name = "Screen_Access_Hatch_Bottom";
     hBot.position.set(0, -hatchH / 2 + hatchBorderW / 2, 0);
     const hLeft = new THREE.Mesh(new THREE.BoxGeometry(hatchBorderW, hatchH - 2 * hatchBorderW, hatchDepth), resolvedFrameMat);
+    hLeft.name = "Screen_Access_Hatch_Left";
     hLeft.position.set(-hatchW / 2 + hatchBorderW / 2, 0, 0);
     const hRight = new THREE.Mesh(new THREE.BoxGeometry(hatchBorderW, hatchH - 2 * hatchBorderW, hatchDepth), resolvedFrameMat);
+    hRight.name = "Screen_Access_Hatch_Right";
     hRight.position.set(hatchW / 2 - hatchBorderW / 2, 0, 0);
 
     // Hatch latch hardware knob: placed at top center when horizontal, or side center when vertical
     const latchMesh = isHorizontal
       ? new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.035, 0.015), resolvedFrameMat)
       : new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.012, 0.015), resolvedFrameMat);
+    latchMesh.name = "Screen_Access_Hatch_Latch";
     if (isHorizontal) {
       latchMesh.position.set(0, hatchH / 2 - hatchBorderW - 0.015, 0.006);
     } else {
@@ -196,6 +209,9 @@ export function buildParametricScreenGroup(
         c.receiveShadow = true;
         c.renderOrder = 0;
         c.userData.preserveMaterial = true;
+        c.userData.isAddon = true;
+        c.userData.addonType = "screen";
+        c.userData.presentationCategory = c === latchMesh ? "Hardware" : "Framing";
       }
     });
 
@@ -353,6 +369,8 @@ export function buildParametricGrillGroup(
   topMesh.renderOrder = 0;
   topMesh.userData.preserveMaterial = true;
   topMesh.userData.presentationCategory = "Framing";
+  topMesh.userData.isAddon = true;
+  topMesh.userData.addonType = "grill";
 
   const bottomMesh = new THREE.Mesh(topGeo, resolvedGrillMat);
   bottomMesh.name = "Grill_Frame_Bottom";
@@ -362,6 +380,8 @@ export function buildParametricGrillGroup(
   bottomMesh.renderOrder = 0;
   bottomMesh.userData.preserveMaterial = true;
   bottomMesh.userData.presentationCategory = "Framing";
+  bottomMesh.userData.isAddon = true;
+  bottomMesh.userData.addonType = "grill";
 
   const innerHeightM = Math.max(0, heightM - 2 * frameWidth);
   const sideGeo = new THREE.BoxGeometry(frameWidth, innerHeightM, frameDepth);
@@ -374,6 +394,8 @@ export function buildParametricGrillGroup(
   leftMesh.renderOrder = 0;
   leftMesh.userData.preserveMaterial = true;
   leftMesh.userData.presentationCategory = "Framing";
+  leftMesh.userData.isAddon = true;
+  leftMesh.userData.addonType = "grill";
 
   const rightMesh = new THREE.Mesh(sideGeo, resolvedGrillMat);
   rightMesh.name = "Grill_Frame_Right";
@@ -383,6 +405,8 @@ export function buildParametricGrillGroup(
   rightMesh.renderOrder = 0;
   rightMesh.userData.preserveMaterial = true;
   rightMesh.userData.presentationCategory = "Framing";
+  rightMesh.userData.isAddon = true;
+  rightMesh.userData.addonType = "grill";
 
   group.add(topMesh, bottomMesh, leftMesh, rightMesh);
 

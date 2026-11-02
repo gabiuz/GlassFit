@@ -522,3 +522,37 @@ QAD-TC94.1 through QAD-TC94.18 are defined in [MS79](implementation/ms79.md). Co
 
 
 
+
+## QAD-TC98: Sill-Independent Product Fit (IMP-MS83)
+
+**Traceability:** BRD-M2, BRD-M4, PRD-F5, PRD-F6, SDD-C4, SDD-C5, DSD-UI4. See [MS83 implementation specification](implementation/ms83.md). Automated scene-bounds coverage is in `tests/unit/ms83SillFit.test.ts`; visual and snapshot checks require a browser with representative product assets.
+
+| Test ID | Scenario | Expected result | Severity |
+|---|---|---|---|
+| QAD-TC98.1 | Fit one sliding window with the sill on and off at fixed dimensions and corners | Outer frame has the same left, right, and horizontal center photo coordinates; corners remain unchanged. Existing vertical fit behavior is preserved | P0 |
+| QAD-TC98.2 | Inspect projecting sill on the fitted example | Sill remains fully visible beyond the frame without narrowing the frame | P0 |
+| QAD-TC98.3 | Compare scene reference, camera, and final bitmap in both states | Horizontal reference and projection are invariant; horizontal alpha bounds do not drive a second scale. Vertical alpha normalization follows its existing path | P0 |
+| QAD-TC98.4 | Toggle sill repeatedly, resize viewport, and edit fit corners | No cumulative drift, stale canvas, clipping, or corner mutation | P0 |
+| QAD-TC98.5 | Save, switch products, reopen, edit, and snapshot a sill-on overlay | Saved layer and snapshot align with live frame and retain sill state | P0 |
+| QAD-TC98.6 | Check natural assembly, legacy window, and product with no optional sill | Structural rails remain part of the installation perimeter and normal fit is stable | P0 |
+| QAD-TC98.7 | Add screen, grille, and protruding hardware before toggling sill | Host reference stays fixed and add-on appearance remains correct | P0 |
+| QAD-TC98.8 | Compare dimensions, measurement evidence, BOM, and quote | Dimensions and measurement are unchanged; only legitimate sill cost differs | P0 |
+| QAD-TC98.9 | Use angled quadrilateral, mobile viewport, and missing-reference fixture | Frame follows corners, overflow is visible, and missing reference has deterministic fallback or actionable diagnostic | P1 |
+
+## fix-14: Space Photo Suitability Acceptance (QAD-TC3, QAD-TC4, QAD-TC50, QAD-TC77, QAD-TC78)
+
+The existing upload and CV cases also require a suitable installation space before a session is usable. For both upload routes and both calibration modes, reject clear portraits, selfies, ID photos, documents, catalog images, and unrelated screenshots with a specific Choose Another Photo path. If semantic evidence is missing or contradictory, show a separate retry path. Neither outcome may expose a workspace URL or retain generated workspace artifacts. Accept representative empty and occupied rooms, building facades, installation walls, and close opening views; a person, absent floor, or portrait orientation alone is not a rejection rule. Exercise supported JPG, PNG, WebP, HEIC, and HEIF samples, stale-request cancellation, keyboard focus, and direct API calls. Record false acceptance, false rejection, latency, and memory separately using consented images. The supplied portrait in fix-14 is local defect evidence and must not become a repository fixture.
+
+fix-14 local regression (October 31, 2026): A consented batch of 12 user-supplied images was uploaded to the local `/analyze-image` service in both `auto_detect` and `paper_fiducial` modes. Seven architectural photos, including two HEIC files and occupied/opening views, returned accepted sessions. Five graphics or artwork images returned `SPACE_PHOTO_UNVERIFIABLE` without a session URL. No source image was copied into repository fixtures. The batch exposed that wall and ceiling labels alone admitted two graphics; the suitability gate now requires an opening, wall with floor, or building with exterior context. This sample does not establish population-level false-acceptance or false-rejection rates.
+
+fix-14 follow-up acceptance: Repeat both calibration modes with real architectural photos, the supplied graphics, a dominant portrait, and a private close-surface crop. Expected results are accepted, non-space or unverifiable without a session, semantic rejection, and too-close guidance respectively. Record false acceptance and false rejection separately; keep all identifiable images out of repository fixtures.
+
+fix-14 local suitability evaluation (November 1, 2026): `fastapi-service/evaluate_photo_suitability.py` accepts a private JSON manifest of local photo paths and expected decisions, runs the installed models in a temporary directory, and prints derived feature summaries without copying images into the repository. The user-supplied 12-image matrix has eight architectural photos (including `ViTkggvW.jpg`, a real window/grille photo) and four graphics or artwork images. Local API verification in both calibration modes accepted all eight architectural photos, kept all four graphics/art images outside the workspace, rejected the supplied portrait, and returned too-close guidance for a private tight wall crop. These 28 requests are a regression sample, not evidence of population accuracy or model training. Expand the consented corpus and use a held-out set before freezing thresholds.
+
+
+## QAD-TC100: Universal BOM Pricing Integrity (IMP-MS85)
+
+Traceability: BRD-M2, BRD-M4, BRD-M5; PRD-F10, PRD-F14, PRD-F19; SDD-C7, SDD-C9; DSD-UI7, DSD-UI10; ERD-E6, ERD-E14, ERD-E17. Acceptance scenarios QAD-TC100.1 through QAD-TC100.14 are registered in [MS85](implementation/ms85.md#5-planned-acceptance-catalog-qad-tc100). Automated verification uses `npm run test:ms85` plus existing pricing, bay, jalousie, add-on and quotation regression suites. Local browser and A4 PDF visual acceptance completed on November 2, 2026 using synthetic fixtures and production components. See the MS85 verification record for evidence scope and local artifacts.
+
+
+fix-14 occupied-room regression (November 2, 2026): the user-reported JPEG was falsely rejected with `insufficient_architectural_evidence` despite 0.119 wall and 0.097 floor coverage. A guarded partial-room branch now accepts this evidence after existing dominant-subject and too-close checks; model readiness remains mandatory. Seventeen pure suitability tests cover the derived regression features, boundaries, dominant portraits/screens/books, graphics, outages and previous room cases. No private image is stored in test fixtures. The exact JPEG returned HTTP 200 in both `auto_detect` and `paper_fiducial`; the direct browser upload displayed successful analysis and reached the workspace. Paper mode retained `manual_pin_required` because no reference sheet was detected. This targeted local regression does not establish population-level accuracy.
