@@ -417,6 +417,13 @@ describe("QAD-TC82: Customer Visualization 3D Model Material and Finish Synchron
       "src/lib/visualization/modelRenderer.ts",
       "utf8",
     );
+    const partSelectionSource = workspaceSource.slice(
+      workspaceSource.indexOf("const handleSelectPartMaterial = useCallback("),
+      workspaceSource.indexOf("const handleResetMaterialsToDefaults = useCallback("),
+    );
+    assert.match(partSelectionSource, /setSelectedMaterials/, "Per-part material IDs remain selected for pricing and persistence");
+    assert.doesNotMatch(partSelectionSource, /updateCustomMaterials|applyPBRToMesh/, "Per-part selections must not change frame or glass shaders");
+    assert.match(workspaceSource, /selectedMaterials:\s*visualMaterialOverrides,\s*rawMaterialsMap/, "Rebuilds use visual overrides separately from BOM selections");
 
     // Verify modelRenderer loadModel hasExplicitOverrides contract
     assert.match(
@@ -440,7 +447,7 @@ describe("QAD-TC82: Customer Visualization 3D Model Material and Finish Synchron
     // Verify skipPreparedBuildRef is set to prevent debounced loadModel races
     assert.match(
       workspaceSource,
-      /skipPreparedBuildRef\.current\s*=\s*nextBuildKey/,
+      /skipPreparedBuildRef\.current\s*=\s*canonicalKey/,
       "applyWorkspacePresentation must set skipPreparedBuildRef to prevent race conditions",
     );
 

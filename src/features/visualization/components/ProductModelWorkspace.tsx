@@ -428,6 +428,7 @@ export function ProductModelWorkspace({
     return {};
   });
   const [hasExplicitOverrides, setHasExplicitOverrides] = useState<boolean>(false);
+  const [visualMaterialOverrides, setVisualMaterialOverrides] = useState<Record<string, string>>({});
   const [isMobileFinishesSheetOpen, setIsMobileFinishesSheetOpen] = useState(false);
   const [isGuardrailModalOpen, setIsGuardrailModalOpen] = useState<boolean>(false);
   const [guardrailValidation, setGuardrailValidation] = useState<EngineeringValidationResult | null>(null);
@@ -1464,6 +1465,7 @@ export function ProductModelWorkspace({
       );
       setSelectedMaterials(nextSelections);
       setHasExplicitOverrides(true);
+      setVisualMaterialOverrides(nextSelections);
 
       if (mvpRendererRef.current) {
         mvpRendererRef.current.updateCustomMaterials(nextSelections, candidateMaterialsMap);
@@ -1475,31 +1477,16 @@ export function ProductModelWorkspace({
 
   const handleSelectPartMaterial = useCallback(
     (componentKey: string, rawMaterialId: string) => {
-      setHasExplicitOverrides(true);
       setSelectedMaterials((prev) => {
         const next = {
           ...prev,
           [componentKey]: rawMaterialId,
         };
-        if (mvpRendererRef.current) {
-          mvpRendererRef.current.updateCustomMaterials(next, candidateMaterialsMap);
-          if (mvpCanvasRef.current) {
-            const isPlanar = Boolean(perspectiveCorners);
-            const sourceCanvas = mvpRendererRef.current.render(yaw, pitch, isPlanar);
-            if (sourceCanvas) {
-              const ctx = mvpCanvasRef.current.getContext("2d");
-              if (ctx) {
-                ctx.clearRect(0, 0, mvpCanvasRef.current.width, mvpCanvasRef.current.height);
-                ctx.drawImage(sourceCanvas, 0, 0, sourceCanvas.width, sourceCanvas.height, 0, 0, mvpCanvasRef.current.width, mvpCanvasRef.current.height);
-              }
-            }
-          }
-        }
         setModelRevision((r) => r + 1);
         return next;
       });
     },
-    [candidateMaterialsMap, perspectiveCorners, yaw, pitch],
+    [],
   );
 
   const handleResetMaterialsToDefaults = useCallback(() => {
@@ -1507,6 +1494,7 @@ export function ProductModelWorkspace({
     const defaultSelections = getDefaultMaterialSelections(structuralDefinition);
     setSelectedMaterials(defaultSelections);
     setHasExplicitOverrides(false);
+    setVisualMaterialOverrides({});
 
     applyWorkspacePresentation();
   }, [structuralDefinition, applyWorkspacePresentation]);
@@ -1772,6 +1760,7 @@ export function ProductModelWorkspace({
       }
     }
     setHasExplicitOverrides(false);
+    setVisualMaterialOverrides({});
   }, [applyWorkspacePresentation, structuralDefinition, materialCustomizationGroups, selectedMaterials]);
 
   const handleAdvancedGlassAppearanceChange = useCallback(
@@ -1780,6 +1769,7 @@ export function ProductModelWorkspace({
       setGlassAppearance(appearance);
       applyWorkspacePresentation({ glassAppearance: appearance });
       setHasExplicitOverrides(false);
+      setVisualMaterialOverrides({});
     },
     [applyWorkspacePresentation],
   );
@@ -1790,6 +1780,7 @@ export function ProductModelWorkspace({
       setGlassType(deriveGlassTypeFromAppearance(mode));
       applyWorkspacePresentation({ glassAppearance: mode });
       setHasExplicitOverrides(false);
+      setVisualMaterialOverrides({});
     },
     [applyWorkspacePresentation],
   );
@@ -1826,6 +1817,7 @@ export function ProductModelWorkspace({
       }
       setSelectedMaterials(nextSelections);
       setHasExplicitOverrides(false);
+      setVisualMaterialOverrides({});
     },
     [applyWorkspacePresentation, structuralDefinition, materialCustomizationGroups, selectedMaterials],
   );
@@ -2177,7 +2169,7 @@ export function ProductModelWorkspace({
         },
       },
       {
-        selectedMaterials,
+        selectedMaterials: visualMaterialOverrides,
         rawMaterialsMap: candidateMaterialsMap,
         hasExplicitOverrides,
       },
@@ -2212,7 +2204,7 @@ export function ProductModelWorkspace({
       }
     });
     return () => { cancelled = true; };
-  }, [structuralDefinition, widthCm, heightCm, panelCount, includeSill, selectedAddon, selectedAddonProductId, addonAlumFinish, addonMountingSide, activeCompatibleAddon, includeHatch, screenMeshDensity, effectiveHatchTargetKeys, effectiveGrilleOpeningTargets, removableStates, glassAppearance, glassColor, glassThicknessMm, alumFinish, hasExplicitOverrides, selectedMaterials, candidateMaterialsMap, selectedAccessories, getFinishHexColor]);
+  }, [structuralDefinition, widthCm, heightCm, panelCount, includeSill, selectedAddon, selectedAddonProductId, addonAlumFinish, addonMountingSide, activeCompatibleAddon, includeHatch, screenMeshDensity, effectiveHatchTargetKeys, effectiveGrilleOpeningTargets, removableStates, glassAppearance, glassColor, glassThicknessMm, alumFinish, hasExplicitOverrides, visualMaterialOverrides, candidateMaterialsMap, selectedAccessories, getFinishHexColor]);
 
   useEffect(() => {
     if (!mvpRendererRef.current) return;
@@ -2679,14 +2671,12 @@ export function ProductModelWorkspace({
       });
       if (configuration.selectedMaterials) {
         setSelectedMaterials(configuration.selectedMaterials);
-        const defaults = structuralDefinition ? getDefaultMaterialSelections(structuralDefinition) : {};
-        const hasDiff = Object.entries(configuration.selectedMaterials).some(
-          ([key, val]) => defaults[key] !== val,
-        );
-        setHasExplicitOverrides(hasDiff);
+        setHasExplicitOverrides(false);
+        setVisualMaterialOverrides({});
       } else if (structuralDefinition) {
         setSelectedMaterials(getDefaultMaterialSelections(structuralDefinition));
         setHasExplicitOverrides(false);
+        setVisualMaterialOverrides({});
       }
 
       if (mvpRendererRef.current) {
@@ -3751,6 +3741,7 @@ export function ProductModelWorkspace({
     }
     setSelectedMaterials(nextSelections);
     setHasExplicitOverrides(false);
+    setVisualMaterialOverrides({});
   }, [applyWorkspacePresentation, structuralDefinition, materialCustomizationGroups, selectedMaterials]);
 
   const handleAddonFinishSelect = useCallback((finishId: string) => {
