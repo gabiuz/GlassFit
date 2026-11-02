@@ -2250,6 +2250,7 @@ export function ProductModelWorkspace({
               applyContactOcclusionAndReveals(ctx, canvas.width, canvas.height, {
                 lightDirection: effectiveLighting.light_direction,
                 shadowOpacity: effectiveLighting.suggested?.shadow_opacity ?? 0.28,
+                installationBounds: mvpRendererRef.current.getPlanarFitRect(),
               });
             }
             if (autoRealism && effectiveLighting?.suggested?.grain) {
@@ -2306,6 +2307,7 @@ export function ProductModelWorkspace({
       applyContactOcclusionAndReveals(ctx, targetCanvas.width, targetCanvas.height, {
         lightDirection: effectiveLighting.light_direction,
         shadowOpacity: effectiveLighting.suggested?.shadow_opacity ?? 0.28,
+        installationBounds: nextFitRect,
       });
     }
 
