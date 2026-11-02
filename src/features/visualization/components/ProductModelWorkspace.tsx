@@ -898,6 +898,9 @@ export function ProductModelWorkspace({
   >(initialConfiguration?.manualOcclusionPolygons ?? []);
   const [showOcclusionPointPicker, setShowOcclusionPointPicker] = useState(false);
   const [perspectiveCorners, setPerspectiveCorners] = useState<QuadrilateralCorners | null>(
+    initialConfiguration?.visualPoseCorners ?? initialConfiguration?.perspectiveFitCorners ?? null,
+  );
+  const [measurementCorners, setMeasurementCorners] = useState<QuadrilateralCorners | null>(
     initialConfiguration?.perspectiveFitCorners ?? null,
   );
   const [targetPlaneId, setTargetPlaneId] = useState<string | null>(initialConfiguration?.targetPlaneId ?? null);
@@ -2371,16 +2374,16 @@ export function ProductModelWorkspace({
   const [manualDimensions, setManualDimensions] = useState(initialConfiguration?.visualParameterValues.dimension_source === "manual_tape");
   const [savedMeasurementEvidence, setSavedMeasurementEvidence] = useState<unknown>(initialConfiguration?.visualParameterValues.calibration_provenance);
   const activeMeasurementRecord = useMemo(() => {
-    if (manualDimensions || !perspectiveCorners) return null;
-    const current = createMeasurementRecord(activeCalibrationMeta, perspectiveCorners, metricFrame, targetPlaneId);
+    if (manualDimensions || !measurementCorners) return null;
+    const current = createMeasurementRecord(activeCalibrationMeta, measurementCorners, metricFrame, targetPlaneId);
     if (current) return current;
     const saved = readMeasurementRecord(savedMeasurementEvidence);
     return saved && metricReference && saved.plane_id !== metricReference.planeId && targetPlaneId === saved.plane_id && saved.image_identity === metricFrame.imageId && saved.image_width_px === metricFrame.width && saved.image_height_px === metricFrame.height
-      && JSON.stringify(saved.opening_corners) === JSON.stringify(perspectiveCorners) ? saved : null;
-  }, [manualDimensions, perspectiveCorners, activeCalibrationMeta, metricFrame, targetPlaneId, savedMeasurementEvidence, metricReference]);
-  const manualPhotoComparison = useMemo(() => manualDimensions && perspectiveCorners
-    ? createMeasurementRecord(activeCalibrationMeta, perspectiveCorners, metricFrame, targetPlaneId) : null,
-    [manualDimensions, perspectiveCorners, activeCalibrationMeta, metricFrame, targetPlaneId]);
+      && JSON.stringify(saved.opening_corners) === JSON.stringify(measurementCorners) ? saved : null;
+  }, [manualDimensions, measurementCorners, activeCalibrationMeta, metricFrame, targetPlaneId, savedMeasurementEvidence, metricReference]);
+  const manualPhotoComparison = useMemo(() => manualDimensions && measurementCorners
+    ? createMeasurementRecord(activeCalibrationMeta, measurementCorners, metricFrame, targetPlaneId) : null,
+    [manualDimensions, measurementCorners, activeCalibrationMeta, metricFrame, targetPlaneId]);
   const activeMetricMeasurement = activeMeasurementRecord;
   const isVerifiedCalibrated = Boolean(activeMeasurementRecord &&
     Math.abs(Number(widthCm) * 10 - activeMeasurementRecord.width_mm) < 1e-6 &&
@@ -2414,7 +2417,8 @@ export function ProductModelWorkspace({
       manualOcclusionMaskDataUrl: manualMaskDataUrl,
       manualOcclusionPolygons,
       targetPlaneId,
-      perspectiveFitCorners: perspectiveCorners,
+      perspectiveFitCorners: measurementCorners,
+      visualPoseCorners: perspectiveCorners,
       ambientLight,
       autoShadow,
       autoRealism,
@@ -2497,6 +2501,7 @@ export function ProductModelWorkspace({
     activeOcclusionIds,
     manualMaskDataUrl,
     manualOcclusionPolygons,
+    measurementCorners,
     perspectiveCorners,
     alumFinish,
     ambientLight,
@@ -2580,6 +2585,7 @@ export function ProductModelWorkspace({
     overlayX.set(0);
     overlayY.set(0);
     setTargetPlaneId(null);
+    setMeasurementCorners(null);
     setPerspectiveCorners(null);
     setManualDimensions(false);
     setSavedMeasurementEvidence(null);
@@ -2654,7 +2660,8 @@ export function ProductModelWorkspace({
       setManualMaskDataUrl(configuration.manualOcclusionMaskDataUrl ?? null);
       setManualOcclusionPolygons(configuration.manualOcclusionPolygons ?? []);
       setTargetPlaneId(configuration.targetPlaneId ?? null);
-      setPerspectiveCorners(configuration.perspectiveFitCorners ?? null);
+      setMeasurementCorners(configuration.perspectiveFitCorners ?? null);
+      setPerspectiveCorners(configuration.visualPoseCorners ?? configuration.perspectiveFitCorners ?? null);
       setManualDimensions(configuration.visualParameterValues.dimension_source === "manual_tape");
       setSavedMeasurementEvidence(configuration.visualParameterValues.calibration_provenance);
       setAmbientLight(configuration.ambientLight ?? true);
@@ -3511,9 +3518,9 @@ export function ProductModelWorkspace({
       const photoWidthPx = spaceImageSession?.workspaceImage?.width ?? 0;
       const photoHeightPx = spaceImageSession?.workspaceImage?.height ?? 0;
 
-      if (perspectiveCorners && !manualDimensions && targetPlaneId === geometry.reference.planeId) {
+      if (measurementCorners && !manualDimensions && targetPlaneId === geometry.reference.planeId) {
         const measurement = evaluateMetricOpening(geometry.reference,
-          denormalizeCorners(perspectiveCorners, photoWidthPx, photoHeightPx), metricFrame);
+          denormalizeCorners(measurementCorners, photoWidthPx, photoHeightPx), metricFrame);
         if (measurement.valid) {
           setWidthCm(String(measurement.widthMm / 10));
           setHeightCm(String(measurement.heightMm / 10));
@@ -3540,7 +3547,7 @@ export function ProductModelWorkspace({
       commitSessionCalibration,
       onCalibrationChange,
       onPlacedOverlaysChange,
-      perspectiveCorners,
+      measurementCorners,
       placedOverlays,
       setModelRevision,
       spaceImageSession?.paperCalibration?.suggested_paper_standard,
@@ -3642,6 +3649,9 @@ export function ProductModelWorkspace({
       setPerspectiveCorners((current) =>
         current ? scaleCornersAlongAxis(current, ratio, "width") : null
       );
+      setMeasurementCorners((current) =>
+        current ? scaleCornersAlongAxis(current, ratio, "width") : null
+      );
     }
   };
 
@@ -3660,6 +3670,9 @@ export function ProductModelWorkspace({
     if (perspectiveCorners && prevH > 0 && numericHeight > 0) {
       const ratio = numericHeight / prevH;
       setPerspectiveCorners((current) =>
+        current ? scaleCornersAlongAxis(current, ratio, "height") : null
+      );
+      setMeasurementCorners((current) =>
         current ? scaleCornersAlongAxis(current, ratio, "height") : null
       );
     }
@@ -4002,12 +4015,17 @@ export function ProductModelWorkspace({
     [rotateAngle],
   );
 
-  const updateMetricPerspectiveCorners = useCallback((corners: QuadrilateralCorners) => {
-    setPerspectiveCorners(corners);
-    if (!metricReference || manualDimensions || targetPlaneId !== metricReference.planeId) return;
+  const updateMetricPerspectiveCorners = useCallback((corners: QuadrilateralCorners, poseCorners: QuadrilateralCorners = corners) => {
+    if (!metricReference || manualDimensions || targetPlaneId !== metricReference.planeId) {
+      setMeasurementCorners(corners);
+      setPerspectiveCorners(poseCorners);
+      return;
+    }
     const measurement = evaluateMetricOpening(metricReference,
       denormalizeCorners(corners, metricFrame.width, metricFrame.height), metricFrame);
     if (!measurement.valid) return;
+    setMeasurementCorners(corners);
+    setPerspectiveCorners(poseCorners);
     setWidthCm(String(measurement.widthMm / 10));
     setHeightCm(String(measurement.heightMm / 10));
     setOverlaySize(getOverlaySizeFromDimensions(String(measurement.widthMm / 10), String(measurement.heightMm / 10)));
@@ -4030,7 +4048,8 @@ export function ProductModelWorkspace({
         mode,
         startX: event.clientX,
         startY: event.clientY,
-        startCorners: [...perspectiveCorners] as QuadrilateralCorners,
+        startCorners: [...(measurementCorners ?? perspectiveCorners)] as QuadrilateralCorners,
+        startPoseCorners: [...perspectiveCorners] as QuadrilateralCorners,
         startWidthCm: Number(widthCm) || 120,
         startHeightCm: Number(heightCm) || 120,
         signX,
@@ -4057,8 +4076,10 @@ export function ProductModelWorkspace({
           const initialSpan = currentW * 0.35;
           const scaleRatio = Math.max(0.15, 1 + dominantDelta / initialSpan);
           const nextCorners = scaleCornersAlongAxis(session.startCorners, scaleRatio, "scale");
-          if (metricReference) { updateMetricPerspectiveCorners(nextCorners); return; }
-          setPerspectiveCorners(nextCorners);
+          const nextPoseCorners = scaleCornersAlongAxis(session.startPoseCorners, scaleRatio, "scale");
+          if (metricReference) { updateMetricPerspectiveCorners(nextCorners, nextPoseCorners); return; }
+          setMeasurementCorners(nextCorners);
+          setPerspectiveCorners(nextPoseCorners);
           const nextW = Math.max(20, Math.round(session.startWidthCm * scaleRatio));
           const nextH = Math.max(20, Math.round(session.startHeightCm * scaleRatio));
           setWidthCm(String(nextW));
@@ -4071,8 +4092,10 @@ export function ProductModelWorkspace({
           const initialSpan = currentW * 0.30;
           const widthRatio = Math.max(0.15, 1 + dx / initialSpan);
           const nextCorners = scaleCornersAlongAxis(session.startCorners, widthRatio, "width");
-          if (metricReference) { updateMetricPerspectiveCorners(nextCorners); return; }
-          setPerspectiveCorners(nextCorners);
+          const nextPoseCorners = scaleCornersAlongAxis(session.startPoseCorners, widthRatio, "width");
+          if (metricReference) { updateMetricPerspectiveCorners(nextCorners, nextPoseCorners); return; }
+          setMeasurementCorners(nextCorners);
+          setPerspectiveCorners(nextPoseCorners);
           const nextW = Math.max(20, Math.round(session.startWidthCm * widthRatio));
           setWidthCm(String(nextW));
           setOverlaySize(getOverlaySizeFromDimensions(String(nextW), heightCm));
@@ -4083,8 +4106,10 @@ export function ProductModelWorkspace({
           const initialSpan = currentH * 0.30;
           const heightRatio = Math.max(0.15, 1 + dy / initialSpan);
           const nextCorners = scaleCornersAlongAxis(session.startCorners, heightRatio, "height");
-          if (metricReference) { updateMetricPerspectiveCorners(nextCorners); return; }
-          setPerspectiveCorners(nextCorners);
+          const nextPoseCorners = scaleCornersAlongAxis(session.startPoseCorners, heightRatio, "height");
+          if (metricReference) { updateMetricPerspectiveCorners(nextCorners, nextPoseCorners); return; }
+          setMeasurementCorners(nextCorners);
+          setPerspectiveCorners(nextPoseCorners);
           const nextH = Math.max(20, Math.round(session.startHeightCm * heightRatio));
           setHeightCm(String(nextH));
           setOverlaySize(getOverlaySizeFromDimensions(widthCm, String(nextH)));
@@ -4105,7 +4130,7 @@ export function ProductModelWorkspace({
       window.addEventListener("pointerup", handleEnd);
       window.addEventListener("pointercancel", handleEnd);
     },
-    [perspectiveCorners, widthCm, heightCm, canvasDisplaySize.width, canvasDisplaySize.height, metricReference, updateMetricPerspectiveCorners],
+    [perspectiveCorners, measurementCorners, widthCm, heightCm, canvasDisplaySize.width, canvasDisplaySize.height, metricReference, updateMetricPerspectiveCorners],
   );
 
   const startPerspectiveRotation = useCallback((event: React.PointerEvent) => {
@@ -4130,7 +4155,7 @@ export function ProductModelWorkspace({
     const handleMove = (moveEvent: PointerEvent) => {
       if (moveEvent.pointerId !== pointerId) return;
       const angle = getPointerAngle(moveEvent.clientX, moveEvent.clientY, centerX, centerY) - startAngle;
-      updateMetricPerspectiveCorners(rotatePerspectiveCorners(startCorners, width, height, angle));
+      setPerspectiveCorners(rotatePerspectiveCorners(startCorners, width, height, angle));
     };
     const handleEnd = (endEvent: PointerEvent) => {
       if (endEvent.pointerId !== pointerId) return;
@@ -4142,7 +4167,7 @@ export function ProductModelWorkspace({
     window.addEventListener("pointermove", handleMove);
     window.addEventListener("pointerup", handleEnd);
     window.addEventListener("pointercancel", handleEnd);
-  }, [perspectiveCorners, isUsingTransformHandle, updateMetricPerspectiveCorners]);
+  }, [perspectiveCorners, isUsingTransformHandle]);
 
   const startPerspectiveMove = useCallback(
     (event: React.PointerEvent) => {
@@ -4153,7 +4178,8 @@ export function ProductModelWorkspace({
       const session = {
         startX: event.clientX,
         startY: event.clientY,
-        startCorners: [...perspectiveCorners] as QuadrilateralCorners,
+        startCorners: [...(measurementCorners ?? perspectiveCorners)] as QuadrilateralCorners,
+        startPoseCorners: [...perspectiveCorners] as QuadrilateralCorners,
       };
       setIsUsingTransformHandle(true);
 
@@ -4168,8 +4194,12 @@ export function ProductModelWorkspace({
           x: clampNumber(p.x + normDx, -0.2, 1.2),
           y: clampNumber(p.y + normDy, -0.2, 1.2),
         })) as QuadrilateralCorners;
+        const nextPoseCorners = session.startPoseCorners.map((p) => ({
+          x: clampNumber(p.x + normDx, -0.2, 1.2),
+          y: clampNumber(p.y + normDy, -0.2, 1.2),
+        })) as QuadrilateralCorners;
 
-        updateMetricPerspectiveCorners(nextCorners);
+        updateMetricPerspectiveCorners(nextCorners, nextPoseCorners);
       };
 
       const handleEnd = () => {
@@ -4183,7 +4213,7 @@ export function ProductModelWorkspace({
       window.addEventListener("pointerup", handleEnd);
       window.addEventListener("pointercancel", handleEnd);
     },
-    [perspectiveCorners, isUsingTransformHandle, canvasDisplaySize.width, canvasDisplaySize.height, updateMetricPerspectiveCorners],
+    [perspectiveCorners, measurementCorners, isUsingTransformHandle, canvasDisplaySize.width, canvasDisplaySize.height, updateMetricPerspectiveCorners],
   );
 
   // PRD-F6 / PRD-F10 / DSD-UI4: keep the live estimate beside the active configuration flow.
@@ -4589,7 +4619,7 @@ export function ProductModelWorkspace({
                           transformOrigin: "0 0",
                           transform: homographyToCssMatrix3d(
                             denormalizeCorners(
-                              overlay.configuration.perspectiveFitCorners,
+                              overlay.configuration.visualPoseCorners ?? overlay.configuration.perspectiveFitCorners,
                               canvasDisplaySize.width,
                               canvasDisplaySize.height,
                             ),
@@ -5071,6 +5101,7 @@ export function ProductModelWorkspace({
                 <button
                   type="button"
                   onClick={() => {
+                    setMeasurementCorners(null);
                     setPerspectiveCorners(null);
                     setModelRevision((prev) => prev + 1);
                   }}
@@ -6722,6 +6753,7 @@ export function ProductModelWorkspace({
               setOverlaySize(getOverlaySizeFromDimensions(String(estimate.widthCm), String(estimate.heightCm)));
             }
 
+            setMeasurementCorners(corners);
             setPerspectiveCorners(corners);
             setYaw(0);
             setPitch(0);

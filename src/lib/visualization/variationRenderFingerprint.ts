@@ -57,6 +57,7 @@ export function createVariationRenderFingerprint(
       positionY: configuration.positionY,
       visualParameterValues: configuration.visualParameterValues,
       perspectiveFitCorners: configuration.perspectiveFitCorners,
+      visualPoseCorners: configuration.visualPoseCorners,
       activeOcclusionIds: configuration.activeOcclusionIds,
       manualOcclusionMaskDataUrl: configuration.manualOcclusionMaskDataUrl,
       manualOcclusionPolygons: configuration.manualOcclusionPolygons,

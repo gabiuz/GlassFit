@@ -1,4 +1,4 @@
-// QAD-TC7 / FIX20-V2: run with `node tests/browser/fix20ContactShadow.mjs`,
+// QAD-TC7 / FIX20-V2 / FIX21-V5: run with `node tests/browser/fix20ContactShadow.mjs`,
 // then open the printed temporary HTML file in a browser.
 import fs from "node:fs";
 import os from "node:os";
@@ -48,12 +48,23 @@ const encoded = (source) => new Promise((resolve, reject) => {
     decoded.getContext('2d').drawImage(image, 0, 0); resolve(decoded);
   }; image.onerror = reject; image.src = composite.toDataURL('image/jpeg', 0.95);
 });
+const transparentPng = (source) => new Promise((resolve, reject) => {
+  const image = new Image();
+  image.onload = () => {
+    const decoded = document.createElement('canvas'); decoded.width = source.width; decoded.height = source.height;
+    decoded.getContext('2d').drawImage(image, 0, 0); resolve(decoded);
+  }; image.onerror = reject; image.src = source.toDataURL('image/png');
+});
 try {
   const on = createScene(true), off = createScene(false);
   assert(pixel(on, 0, 0)[3] === 0 && pixel(on, 0, 50)[3] === 0, 'unused canvas edge has nonzero alpha');
   assert(pixel(on, 18, 50)[3] > 0 && pixel(off, 18, 50)[3] === 0, 'localized outer contact shadow is missing');
   assert(pixel(on, 50, 50)[3] > 0 && pixel(on, 50, 50)[3] < 255, 'glass transparency changed');
   assert(pixel(on, 106, 49)[3] === 255, 'projecting handle was clipped');
+  const placedPng = await transparentPng(on);
+  assert(pixel(placedPng, 0, 0)[3] === 0 && pixel(placedPng, 0, 50)[3] === 0, 'placed PNG gained a source-canvas edge');
+  assert(pixel(placedPng, 18, 50)[3] > 0, 'placed PNG lost localized contact shadow');
+  assert(pixel(placedPng, 50, 50)[3] > 0 && pixel(placedPng, 50, 50)[3] < 255, 'placed PNG lost transparent glass');
   const onJpeg = await encoded(on), offJpeg = await encoded(off);
   assert(pixel(onJpeg, 18, 50)[0] + 5 < pixel(offJpeg, 18, 50)[0], 'JPEG lost localized shadow');
   assert(pixel(onJpeg, 0, 50)[0] > 245, 'JPEG has canvas-edge outline');
@@ -77,7 +88,7 @@ try {
   }
   assert(changed > 20, 'angled warp lost contact and reveal shading');
   document.getElementById('preview').getContext('2d').drawImage(on, 0, 0);
-  document.getElementById('result').textContent = 'PASS: inset contact, transparent margins and glass, projecting handle, Auto Shadow off, angled warp, JPEG decode';
+  document.getElementById('result').textContent = 'PASS: inset contact, transparent PNG margins and glass, projecting handle, Auto Shadow off, angled warp, JPEG room decode';
 } catch (error) {
   document.getElementById('result').textContent = 'FAIL: ' + error.message;
   throw error;

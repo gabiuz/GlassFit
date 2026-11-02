@@ -68,7 +68,7 @@ export class VariationLayerRenderer {
 
     if (configuration.perspectiveFitCorners) {
       const corners = denormalizeCorners(
-        configuration.perspectiveFitCorners,
+        configuration.visualPoseCorners ?? configuration.perspectiveFitCorners,
         this.recipe.sourceCanvasWidth,
         this.recipe.sourceCanvasHeight,
       );
