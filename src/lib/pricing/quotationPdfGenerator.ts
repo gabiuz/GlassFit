@@ -70,7 +70,8 @@ function materialGroupsTable(groups: QuotationDocumentViewModel["items"][number]
   return `<table class="items-table"><caption>Itemized Cost Breakdown (per unit)</caption><colgroup><col style="width:55%"><col style="width:15%"><col style="width:15%"><col style="width:15%"></colgroup><thead><tr><th>Material</th><th>Quantity</th><th>Unit Price</th><th>Subtotal</th></tr></thead><tbody>${rows.map((row) => `<tr><td>${escapeHtml(row.description)}${row.finishType ? `<br><small>${escapeHtml(row.finishType)}</small>` : ""}${row.componentSummary ? `<br><small>Contributing Parts: ${escapeHtml(row.componentSummary)}</small>` : ""}</td><td>${row.quantity} ${escapeHtml(row.unit)}</td><td>${money(row.unitPrice)}</td><td>${money(row.subtotal)}</td></tr>`).join("")}</tbody></table>`;
 }
 
-function bomTable(result: CalculatedBOMResult, hasSill: boolean): string {
+function bomTable(result: CalculatedBOMResult | undefined | null, hasSill: boolean): string {
+  if (!result || !result.widthM) return "";
   return `<section class="item-card item-card--legacy"><header><h3>Legacy quotation</h3><span class="numeric-value">Qty: 1</span></header><div class="fixture-specs"><span><b>Dimensions:</b> <span class="dimension-value">${Math.round(result.widthM * 1000)}mm × ${Math.round(result.heightM * 1000)}mm</span></span><span><b>Panels:</b> ${result.panelCount}</span><span><b>Finish:</b> ${escapeHtml(result.finishType)}</span><span><b>Glass:</b> ${escapeHtml(result.glassType)}</span><span><b>Sill:</b> ${hasSill ? "Standard sill" : SILL_OMISSION_NOTICE}</span></div><div class="item-subtotal"><span>Final item price</span><strong class="currency">${money(result.finalQuotation)}</strong></div>${materialGroupsTable(groupsFromBom(result))}</section>`;
 }
 
@@ -104,14 +105,18 @@ function canonicalGroupsTable(item: QuotationDocumentViewModel["items"][number],
     Boolean(item.addonName)
   );
 
+  const isInterior = item.addonMountingSide === "back";
   const mountingSideLabel = item.addonMountingSide === "back"
     ? "Interior Mount / Back"
     : item.addonMountingSide === "front"
       ? "Exterior Mount / Front"
       : null;
-  const hatchCount = item.hatchCount ?? 0;
-  const hatchDisclosure = hatchCount > 0
-    ? `with ${hatchCount}x Operator Access ${hatchCount === 1 ? "Hatch" : "Hatches"}`
+  const hatchCount = isInterior ? (item.hatchCount ?? 0) : 0;
+  const isGrille = item.selectedAddon === "grill" || (item.addonName || "").toLowerCase().includes("grill");
+  const hatchDisclosure = (isInterior && hatchCount > 0)
+    ? (isGrille
+      ? `with ${hatchCount}x Operator Access ${hatchCount === 1 ? "Opening" : "Openings"}`
+      : `with ${hatchCount}x Operator Access ${hatchCount === 1 ? "Hatch" : "Hatches"}`)
     : null;
   const sideHatchParts = [mountingSideLabel, hatchDisclosure].filter(Boolean);
   const sideHatchSuffix = sideHatchParts.length > 0 ? ` (${sideHatchParts.join(", ")})` : "";
@@ -133,11 +138,11 @@ function canonicalGroupsTable(item: QuotationDocumentViewModel["items"][number],
 
   const hardwareSpecs = item.swappedAccessories && item.swappedAccessories.length > 0
     ? item.swappedAccessories.map((acc) => {
-        const handingLabel = acc.horizontalPosition === "left" ? "Left-Hand Side" : "Right-Hand Side";
-        const verticalLabel = acc.verticalPosition === "bottom" ? "Bottom Rail" : "Mid-Height";
-        const deltaFormatted = (acc.priceDelta ?? 0) > 0 ? ` (+${money(acc.priceDelta!)})` : "";
-        return `<span><b>Hardware / Handle:</b> ${escapeHtml(acc.accessoryName)} | <b>Handing:</b> ${handingLabel} (${verticalLabel}) | <b>Finish:</b> ${escapeHtml(acc.finish ?? "Standard")}${deltaFormatted}</span>`;
-      }).join("")
+      const handingLabel = acc.horizontalPosition === "left" ? "Left-Hand Side" : "Right-Hand Side";
+      const verticalLabel = acc.verticalPosition === "bottom" ? "Bottom Rail" : "Mid-Height";
+      const deltaFormatted = (acc.priceDelta ?? 0) > 0 ? ` (+${money(acc.priceDelta!)})` : "";
+      return `<span><b>Hardware / Handle:</b> ${escapeHtml(acc.accessoryName)} | <b>Handing:</b> ${handingLabel} (${verticalLabel}) | <b>Finish:</b> ${escapeHtml(acc.finish ?? "Standard")}${deltaFormatted}</span>`;
+    }).join("")
     : "";
 
   const accessoryPriceFormatted = (item.accessoryPriceDelta ?? 0) > 0 ? (item.accessoryPriceDelta ?? 0) : 0;
@@ -178,6 +183,7 @@ function renderGrilleCutListSummaryHtml(item: {
   heightMm: number;
   grilleBOM?: GrilleLinearBOMResult | null;
   addonAluminumFinish?: string;
+  hatchCount?: number;
 }): string {
   if (item.selectedAddon !== "grill") return "";
 
@@ -185,6 +191,7 @@ function renderGrilleCutListSummaryHtml(item: {
     widthMm: item.widthMm,
     heightMm: item.heightMm,
     patternType: "staggered_brick",
+    openingCount: item.hatchCount,
     grilleRawMaterial: {
       id: "pdf-grille-mat",
       material_code: "AL-GRILLE-TUBE-16MM",
@@ -199,12 +206,17 @@ function renderGrilleCutListSummaryHtml(item: {
     ? item.addonAluminumFinish.charAt(0).toUpperCase() + item.addonAluminumFinish.slice(1)
     : "Standard";
 
+  const openingSummary = bom.openings
+    ? `<span>• Openings: ${bom.openings.openingCount}x collar frames (${bom.openings.collarLinearMeters.toFixed(2)}m framing, ${bom.openings.cornerCleatQuantity} cleats)</span>`
+    : "";
+
   return `<div class="grille-cut-list-spec" style="grid-column:1 / -1;margin-top:6px;padding:8px 12px;background:#f8fafc;border:1px solid #cbd5e1;border-radius:6px;font-size:11px;color:#334155;">
     <strong style="color:#0f1422;display:block;margin-bottom:3px;">Security Grille Extrusion Cut List (${finishName} Finish - ${bom.totalPieces} Pieces):</strong>
     <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px;">
       <span>• Vertical: ${bom.verticalBars.barCount} bars @ ${bom.verticalBars.cutLengthMm}mm (${bom.verticalBars.totalLinearM.toFixed(2)}m)</span>
       <span>• Horizontal: ${bom.horizontalBars.barCount} bars @ ${bom.horizontalBars.cutLengthMm}mm (${bom.horizontalBars.totalLinearM.toFixed(2)}m)</span>
       <span>• Perimeter: 4 rails (${bom.perimeterRails?.totalLinearM.toFixed(2) ?? "0.00"}m)</span>
+      ${openingSummary}
       <span style="font-weight:600;color:#0f1422;">• Total Extrusion: ${bom.totalLinearMeters.toFixed(2)} linear meters</span>
     </div>
   </div>`;
@@ -337,14 +349,18 @@ function generateLegacyQuotationPdfHtml(metadata: QuotationPdfMetadata, context:
     ? ` (${singleItem.addonAluminumFinish.charAt(0).toUpperCase() + singleItem.addonAluminumFinish.slice(1)})`
     : "";
   const singleAddonPriceFormatted = singleHasAddon && (singleItem?.addonPrice ?? 0) > 0 ? (singleItem?.addonPrice ?? 0) : 0;
+  const singleIsInterior = singleItem?.addonMountingSide === "back";
   const singleSide = singleItem?.addonMountingSide === "back"
     ? "Interior Mount / Back"
     : singleItem?.addonMountingSide === "front"
       ? "Exterior Mount / Front"
       : null;
-  const singleHatchCount = singleItem?.hatchCount ?? 0;
-  const singleHatchDisc = singleHatchCount > 0
-    ? `with ${singleHatchCount}x Operator Access ${singleHatchCount === 1 ? "Hatch" : "Hatches"}`
+  const singleHatchCount = singleIsInterior ? (singleItem?.hatchCount ?? 0) : 0;
+  const isSingleGrille = singleItem?.selectedAddon === "grill" || (singleItem?.addonName || "").toLowerCase().includes("grill");
+  const singleHatchDisc = (singleIsInterior && singleHatchCount > 0)
+    ? (isSingleGrille
+      ? `with ${singleHatchCount}x Operator Access ${singleHatchCount === 1 ? "Opening" : "Openings"}`
+      : `with ${singleHatchCount}x Operator Access ${singleHatchCount === 1 ? "Hatch" : "Hatches"}`)
     : null;
   const singleSideHatch = [singleSide, singleHatchDisc].filter(Boolean);
   const singleSideHatchSuffix = singleSideHatch.length > 0 ? ` (${singleSideHatch.join(", ")})` : "";
@@ -368,14 +384,18 @@ function generateLegacyQuotationPdfHtml(metadata: QuotationPdfMetadata, context:
     const addonFinishSuffix = item.addonAluminumFinish
       ? ` (${item.addonAluminumFinish.charAt(0).toUpperCase() + item.addonAluminumFinish.slice(1)})`
       : "";
+    const itemIsInterior = item.addonMountingSide === "back";
     const itemSide = item.addonMountingSide === "back"
       ? "Interior Mount / Back"
       : item.addonMountingSide === "front"
         ? "Exterior Mount / Front"
         : null;
-    const itemHatchCount = item.hatchCount ?? 0;
-    const itemHatchDisc = itemHatchCount > 0
-      ? `with ${itemHatchCount}x Operator Access ${itemHatchCount === 1 ? "Hatch" : "Hatches"}`
+    const itemHatchCount = itemIsInterior ? (item.hatchCount ?? 0) : 0;
+    const isItemGrille = item.selectedAddon === "grill" || (item.addonName || "").toLowerCase().includes("grill");
+    const itemHatchDisc = (itemIsInterior && itemHatchCount > 0)
+      ? (isItemGrille
+        ? `with ${itemHatchCount}x Operator Access ${itemHatchCount === 1 ? "Opening" : "Openings"}`
+        : `with ${itemHatchCount}x Operator Access ${itemHatchCount === 1 ? "Hatch" : "Hatches"}`)
       : null;
     const itemSideHatch = [itemSide, itemHatchDisc].filter(Boolean);
     const itemSideHatchSuffix = itemSideHatch.length > 0 ? ` (${itemSideHatch.join(", ")})` : "";
@@ -471,7 +491,7 @@ function generateLegacyQuotationPdfHtml(metadata: QuotationPdfMetadata, context:
 }
 </style></head><body><nav class="preview-toolbar no-print" aria-label="Quotation preview controls"><div><strong>Quotation preview</strong><div>${escapeHtml(metadata.quotationNumber)}</div><p class="print-guidance">For a clean Save as PDF result, disable Headers and footers in the browser print dialog when that option is available.</p></div><div class="toolbar-actions"><button class="primary" type="button" onclick="window.print()">Print / Save as PDF</button><button type="button" onclick="window.close()">Close preview</button></div></nav>
 <main class="document-sheet"><header class="document-header"><div><img class="brand-logo" src="${escapeHtml(metadata.brandLogoUrl)}" alt="GlassFit"><p>Consultation Partner: R.R.D. Aluminum &amp; Glass Works</p>${metadata.operatingScheduleFormatted ? `<div class="partner-schedule" style="margin-top:4px;font-size:11px;color:#475569;"><span>Operating Schedule: </span><strong style="color:#0f1422;">${escapeHtml(metadata.operatingScheduleFormatted)}</strong></div>` : ""}</div><div><h1>PRELIMINARY CONSULTATION ESTIMATE</h1><strong>No. ${escapeHtml(metadata.quotationNumber)}</strong><div>${escapeHtml(metadata.createdAtFormatted)}</div>${reference}${metadata.quotationValidityText ? `<div>${escapeHtml(metadata.quotationValidityText)}</div>` : ""}</div></header>
-<section class="meta-grid"><div><span>Customer</span><strong>${escapeHtml(metadata.customerName)}</strong></div>${field("Phone",metadata.customerPhone)}${field("Email",metadata.customerEmail)}${field("Site location",metadata.siteLocation)}<div><span>Project</span><strong>${escapeHtml(metadata.projectName)}</strong></div></section>${waiver}${snapshot(sanitizeImageSource(metadata.snapshotImageUrl,origins),"Client-space visualization preview")}${context.showProjectSpecifications && !isMulti && metadata.bomResult ? `<div class="fixture-specs project-specifications"><span><b>Dimensions:</b> <span class="dimension-value">W: ${Math.round(metadata.bomResult.widthM * 1000)} mm × H: ${Math.round(metadata.bomResult.heightM * 1000)} mm</span></span><span><b>Panels:</b> ${metadata.bomResult.panelCount}</span><span><b>Finish:</b> ${escapeHtml(metadata.bomResult.frozenDetails.finish_type)}</span><span><b>Glass:</b> ${escapeHtml(metadata.bomResult.frozenDetails.glass_type)}</span><span><b>Sill:</b> ${metadata.hasSill ? "Standard sill" : SILL_OMISSION_NOTICE}</span>${singleAddonLabel ? `<span><b>Add-on Attachment:</b> ${escapeHtml(singleAddonLabel)}</span>` : ""}${singleCustomSpec}${singleGrilleCutList}</div>` : ""}
+<section class="meta-grid"><div><span>Customer</span><strong>${escapeHtml(metadata.customerName)}</strong></div>${field("Phone", metadata.customerPhone)}${field("Email", metadata.customerEmail)}${field("Site location", metadata.siteLocation)}<div><span>Project</span><strong>${escapeHtml(metadata.projectName)}</strong></div></section>${waiver}${snapshot(sanitizeImageSource(metadata.snapshotImageUrl, origins), "Client-space visualization preview")}${context.showProjectSpecifications && !isMulti && metadata.bomResult ? `<div class="fixture-specs project-specifications"><span><b>Dimensions:</b> <span class="dimension-value">W: ${Math.round(metadata.bomResult.widthM * 1000)} mm × H: ${Math.round(metadata.bomResult.heightM * 1000)} mm</span></span><span><b>Panels:</b> ${metadata.bomResult.panelCount}</span><span><b>Finish:</b> ${escapeHtml(metadata.bomResult.frozenDetails.finish_type)}</span><span><b>Glass:</b> ${escapeHtml(metadata.bomResult.frozenDetails.glass_type)}</span><span><b>Sill:</b> ${metadata.hasSill ? "Standard sill" : SILL_OMISSION_NOTICE}</span>${singleAddonLabel ? `<span><b>Add-on Attachment:</b> ${escapeHtml(singleAddonLabel)}</span>` : ""}${singleCustomSpec}${singleGrilleCutList}</div>` : ""}
 <section class="summary-card"><span>${escapeHtml(metadata.projectName)}</span><strong class="currency">${money(total)}</strong><span>Preliminary estimated total</span></section><h2>${isMulti ? `ITEMIZED FIXTURE BREAKDOWN (${items.length} FIXTURES)` : "Itemized quotation breakdown"}</h2>${fixtures}
 <table class="total-table"><tr class="grand-total-row"><td>Grand total</td><td>${money(total)}</td></tr></table>
 <section class="ocular-card"><h2>Ocular inspection checklist</h2><ul class="checklist"><li>Aperture dimensions physically measured.</li><li>Opening checked for square, plumb, and level.</li><li>Perimeter substrate inspected.</li><li>Access and work area reviewed.</li><li>Final specifications reviewed with customer.</li></ul>${metadata.operatingDays && metadata.operatingHours ? `<div class="consultation-availability" style="margin-top:14px;padding:10px 14px;background:#f8fafc;border-radius:6px;border-left:3px solid #07b6d3;font-size:11px;color:#334155;"><strong>Consultation &amp; Ocular Measurement Hours:</strong><p style="margin:4px 0 0 0;">Site visits and ocular inspections are scheduled during partner operating days (<strong>${escapeHtml(metadata.operatingDays)}</strong>) between <strong>${escapeHtml(metadata.operatingHours)}</strong>.</p></div>` : ""}<div class="signature-grid"><div class="signature-block"><div class="line"><strong>${escapeHtml(metadata.customerName)}</strong><time>${escapeHtml(metadata.createdAtFormatted)}</time></div><p>Customer signature / Printed name / Date</p></div><div class="signature-block"><div class="line"><strong>${escapeHtml(estimatorName)}</strong><time>${escapeHtml(metadata.createdAtFormatted)}</time></div><p>Estimator signature / Printed name / Date</p></div></div></section>
@@ -480,7 +500,7 @@ function generateLegacyQuotationPdfHtml(metadata: QuotationPdfMetadata, context:
 
 export function createQuotationPdfDocument(metadata: QuotationPdfMetadata): GeneratedPdfDocument {
   const fileName = `GlassFit_Quotation_${metadata.quotationNumber}.pdf`;
-  return { quotationNumber:metadata.quotationNumber, referenceCode:metadata.referenceCode ?? "", fileName, htmlContent:generateQuotationPdfHtml(metadata), documentTitle:`GlassFit Quotation - ${metadata.quotationNumber}`, r2ObjectKey:`quotations/${metadata.quotationNumber}/${fileName}`, hasStructuralWaiver:metadata.items?.some((item)=>item.structuralWaiver) ?? metadata.structuralWaiver, totalEstimatedAmount:metadata.consolidatedSummary?.finalGrandTotal ?? metadata.bomResult?.finalQuotation ?? 0 };
+  return { quotationNumber: metadata.quotationNumber, referenceCode: metadata.referenceCode ?? "", fileName, htmlContent: generateQuotationPdfHtml(metadata), documentTitle: `GlassFit Quotation - ${metadata.quotationNumber}`, r2ObjectKey: `quotations/${metadata.quotationNumber}/${fileName}`, hasStructuralWaiver: metadata.items?.some((item) => item.structuralWaiver) ?? metadata.structuralWaiver, totalEstimatedAmount: metadata.consolidatedSummary?.finalGrandTotal ?? metadata.bomResult?.finalQuotation ?? 0 };
 }
 
 export function formatBookingShareMessage(options: { customerName: string; quotationNumber: string; referenceLink: string; productDescription: string; totalEstimatePhp: number; hasStructuralWaiver?: boolean; addonSummary?: string | null }): { messageText: string; messengerUrl: string; viberUrl: string } {

@@ -515,7 +515,8 @@ export function isAddonObject(object: THREE.Object3D): boolean {
       (typeof curr.name === "string" && (
         curr.name.startsWith("Addon_") ||
         curr.name.startsWith("Screen_") ||
-        curr.name.startsWith("Grill_")
+        curr.name.startsWith("Grill_") ||
+        curr.name.startsWith("Grille_")
       ))
     ) {
       return true;
@@ -534,7 +535,11 @@ export function isAddonFrameMesh(mesh: THREE.Mesh): boolean {
   if (
     mesh.name.startsWith("Screen_Frame_") ||
     mesh.name.startsWith("Grill_Frame_") ||
+    mesh.name.startsWith("Grille_Frame_") ||
     mesh.name.startsWith("Grill_Bar_") ||
+    mesh.name.startsWith("Grille_Bar_") ||
+    mesh.name.startsWith("Grille_Opening_Collar_") ||
+    mesh.name.startsWith("Grill_Opening_Collar_") ||
     (mesh.name.startsWith("Screen_Access_Hatch_") &&
      !mesh.name.toLowerCase().includes("latch") &&
      !mesh.name.toLowerCase().includes("mesh"))
@@ -562,7 +567,8 @@ export function isAddonFrameMesh(mesh: THREE.Mesh): boolean {
       (typeof curr.name === "string" && (
         curr.name.startsWith("Addon_") ||
         curr.name.startsWith("Screen_") ||
-        curr.name.startsWith("Grill_")
+        curr.name.startsWith("Grill_") ||
+        curr.name.startsWith("Grille_")
       ))
     ) {
       // Must be framing, not wire mesh or hardware

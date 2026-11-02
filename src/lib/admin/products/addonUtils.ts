@@ -17,6 +17,8 @@ export type AddonReconciliationResult = {
     default_side: AddonMountingSide;
     hatch_target_component_keys: string[] | null;
     hatch_alignment_config?: Record<string, unknown> | null;
+    grille_opening_target_component_keys?: string[] | null;
+    grille_opening_config?: Record<string, unknown> | null;
   }>;
   toDeleteTypes: AddonType[];
 };
@@ -39,6 +41,12 @@ export function computeAddonReconciliation(
       : [];
 
   if (config.hasScreen && screenIds.length > 0) {
+    const isExteriorOnly = config.screenAllowedSides === "front";
+    const screenTargets = (!isExteriorOnly && config.screenHatchTargetComponentKeys && config.screenHatchTargetComponentKeys.length > 0)
+      ? config.screenHatchTargetComponentKeys
+      : null;
+    const screenConfig = !isExteriorOnly ? (config.screenHatchAlignmentConfig ?? null) : null;
+
     screenIds.forEach((screenId, idx) => {
       toUpsert.push({
         parent_product_id: parentProductId,
@@ -48,10 +56,8 @@ export function computeAddonReconciliation(
         display_order: idx + 1,
         allowed_sides: config.screenAllowedSides ?? "both",
         default_side: config.screenDefaultSide ?? "back",
-        hatch_target_component_keys: (config.screenHatchTargetComponentKeys && config.screenHatchTargetComponentKeys.length > 0)
-          ? config.screenHatchTargetComponentKeys
-          : null,
-        hatch_alignment_config: config.screenHatchAlignmentConfig ?? null,
+        hatch_target_component_keys: screenTargets,
+        hatch_alignment_config: screenConfig,
       });
     });
   } else if (existingTypes.has("screen")) {
@@ -67,6 +73,16 @@ export function computeAddonReconciliation(
   const grillBaseOrder = screenIds.length > 0 ? screenIds.length + 1 : 2;
 
   if (config.hasGrill && grillIds.length > 0) {
+    const isGrillExteriorOnly = config.grillAllowedSides === "front";
+    const rawGrillTargets = (config.grillOpeningTargetComponentKeys && config.grillOpeningTargetComponentKeys.length > 0)
+      ? config.grillOpeningTargetComponentKeys
+      : (config.grillHatchTargetComponentKeys && config.grillHatchTargetComponentKeys.length > 0)
+        ? config.grillHatchTargetComponentKeys
+        : null;
+    const grillTargets = !isGrillExteriorOnly ? rawGrillTargets : null;
+    const rawGrillConfig = (config.grillOpeningConfig as Record<string, unknown> | null) ?? config.grillHatchAlignmentConfig ?? null;
+    const grillConfig = !isGrillExteriorOnly ? rawGrillConfig : null;
+
     grillIds.forEach((grillId, idx) => {
       toUpsert.push({
         parent_product_id: parentProductId,
@@ -76,10 +92,10 @@ export function computeAddonReconciliation(
         display_order: grillBaseOrder + idx,
         allowed_sides: config.grillAllowedSides ?? "both",
         default_side: config.grillDefaultSide ?? "back",
-        hatch_target_component_keys: (config.grillHatchTargetComponentKeys && config.grillHatchTargetComponentKeys.length > 0)
-          ? config.grillHatchTargetComponentKeys
-          : null,
-        hatch_alignment_config: config.grillHatchAlignmentConfig ?? null,
+        hatch_target_component_keys: grillTargets,
+        hatch_alignment_config: grillConfig,
+        grille_opening_target_component_keys: grillTargets,
+        grille_opening_config: grillConfig,
       });
     });
   } else if (existingTypes.has("grill")) {

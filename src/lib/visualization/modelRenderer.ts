@@ -36,6 +36,8 @@ export type ModelPresentationOptions = {
   addonMountingSide?: "front" | "back";
   screenMeshDensity?: "fine" | "micro" | "coarse";
   hatchTargetComponentKeys?: string[];
+  grilleOpeningTargetComponentKeys?: string[];
+  grilleOpeningConfig?: import("@/lib/admin/products/types").GrilleOpeningConfig | Record<string, unknown> | null;
   addonConfig?: AddonGeometryConfig;
   swappedAccessories?: Record<string, import("./types").SelectedAccessoryState>;
   removableStates?: Record<string, boolean>;
@@ -466,6 +468,8 @@ export class ProductModelRenderer {
       addonAluminumFinish: presentation.addonAluminumFinish,
       addonMountingSide: presentation.addonMountingSide,
       hatchTargetComponentKeys: presentation.hatchTargetComponentKeys,
+      grilleOpeningTargetComponentKeys: presentation.grilleOpeningTargetComponentKeys,
+      grilleOpeningConfig: presentation.grilleOpeningConfig,
       screenMeshDensity: presentation.screenMeshDensity,
       addonConfig: presentation.addonConfig,
       swappedAccessories: presentation.swappedAccessories,

@@ -208,6 +208,13 @@ export function MeasurementConfirmationModal({
     ? currentAddonFinish.charAt(0).toUpperCase() + currentAddonFinish.slice(1)
     : "";
 
+  const currentSelectedAddonVal = (currentEntry.overlayConfiguration.visualParameterValues?.selected_addon as Record<string, unknown> | undefined);
+  const currentGrilleOpeningCount = currentEntry.overlayConfiguration.grilleOpeningCount ??
+    (currentSelectedAddonVal?.grille_opening_count as number | undefined) ??
+    (currentSelectedAddon === "grill" ? (currentEntry.overlayConfiguration.hatchCount ?? (currentSelectedAddonVal?.hatch_count as number | undefined) ?? 0) : 0);
+  const currentGrilleOpeningConfig = (currentEntry.overlayConfiguration.grilleOpeningConfig ??
+    currentSelectedAddonVal?.grille_opening_config) as Record<string, unknown> | undefined;
+
   const currentGrilleBOM: GrilleLinearBOMResult | null =
     currentSelectedAddon === "grill"
       ? (() => {
@@ -219,6 +226,15 @@ export function MeasurementConfirmationModal({
             widthMm: Math.round(currentWidthMm),
             heightMm: Math.round(currentHeightMm),
             patternType: "staggered_brick",
+            openingCount: currentGrilleOpeningCount,
+            openingWidthMm: (currentGrilleOpeningConfig?.cutoutWidthMm as number | undefined) ?? 150,
+            openingHeightMm: (currentGrilleOpeningConfig?.cutoutHeightMm as number | undefined) ?? 180,
+            openingConfig: {
+              enabled: currentGrilleOpeningCount > 0,
+              cutoutWidthMm: (currentGrilleOpeningConfig?.cutoutWidthMm as number | undefined) ?? 150,
+              cutoutHeightMm: (currentGrilleOpeningConfig?.cutoutHeightMm as number | undefined) ?? 180,
+              cornerCleatCountPerOpening: 4,
+            },
             grilleRawMaterial: {
               id: "00000000-0000-4000-8000-000000000001",
               material_code: "AL-GRILLE-TUBE-16MM",
@@ -336,10 +352,25 @@ export function MeasurementConfirmationModal({
       const isWhite = (entry.overlayConfiguration.addonAluminumFinish ?? "").toLowerCase().includes("white");
       const isBlack = (entry.overlayConfiguration.addonAluminumFinish ?? "").toLowerCase().includes("black");
       const unitRate = isWhite ? 180 : isBlack ? 175 : 160;
+      const selAddon = (entry.overlayConfiguration.visualParameterValues?.selected_addon as Record<string, unknown> | undefined);
+      const openingCount = entry.overlayConfiguration.grilleOpeningCount ??
+        (selAddon?.grille_opening_count as number | undefined) ??
+        (selAddon?.hatch_count as number | undefined) ?? 0;
+      const openingConfig = (entry.overlayConfiguration.grilleOpeningConfig ?? selAddon?.grille_opening_config) as Record<string, unknown> | undefined;
+
       const grilleBom = calculateGrilleLinearBOM({
         widthMm: Math.round(widthMmVal),
         heightMm: Math.round(heightMmVal),
         patternType: "staggered_brick",
+        openingCount,
+        openingWidthMm: (openingConfig?.cutoutWidthMm as number | undefined) ?? 150,
+        openingHeightMm: (openingConfig?.cutoutHeightMm as number | undefined) ?? 180,
+        openingConfig: {
+          enabled: openingCount > 0,
+          cutoutWidthMm: (openingConfig?.cutoutWidthMm as number | undefined) ?? 150,
+          cutoutHeightMm: (openingConfig?.cutoutHeightMm as number | undefined) ?? 180,
+          cornerCleatCountPerOpening: 4,
+        },
         grilleRawMaterial: {
           id: "recalc-grille-mat",
           material_code: "AL-GRILLE-TUBE-16MM",
@@ -979,6 +1010,12 @@ export function MeasurementConfirmationModal({
                   <div className="flex justify-between items-center">
                     <span>Perimeter Frame (4 rails)</span>
                     <span className="font-mono">{currentGrilleBOM.perimeterRails.totalLinearM.toFixed(2)}m</span>
+                  </div>
+                )}
+                {currentGrilleBOM.openings && (
+                  <div className="flex justify-between items-center text-teal-700 font-medium">
+                    <span>Handle Openings ({currentGrilleBOM.openings.openingCount}x @ {currentGrilleBOM.openings.collarLinearMeters}m collar framing)</span>
+                    <span className="font-mono">{currentGrilleBOM.openings.cornerCleatQuantity} cleats</span>
                   </div>
                 )}
               </div>

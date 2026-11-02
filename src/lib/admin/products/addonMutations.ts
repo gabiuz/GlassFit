@@ -58,7 +58,7 @@ export async function getCompatibleAddonsForProduct(
   // Fetch bindings directly and map products
   const { data: fallbackData, error: fallbackError } = await supabase
     .from("product_compatible_addons")
-    .select("id, parent_product_id, addon_product_id, addon_type, is_default_enabled, display_order, allowed_sides, default_side, hatch_target_component_keys, hatch_alignment_config")
+    .select("id, parent_product_id, addon_product_id, addon_type, is_default_enabled, display_order, allowed_sides, default_side, hatch_target_component_keys, hatch_alignment_config, grille_opening_target_component_keys, grille_opening_config")
     .eq("parent_product_id", parentProductId)
     .order("display_order", { ascending: true });
 
@@ -79,6 +79,11 @@ export async function getCompatibleAddonsForProduct(
 
   return fallbackData.map((row) => {
     const prod = productMap.get(row.addon_product_id);
+    const rawGrilleTargets = (row as Record<string, unknown>).grille_opening_target_component_keys as string[] | undefined;
+    const rawGrilleConfig = (row as Record<string, unknown>).grille_opening_config as Record<string, unknown> | undefined;
+    const grilleTargets = rawGrilleTargets ?? (row.addon_type === "grill" ? (row.hatch_target_component_keys as string[]) : null);
+    const grilleConfig = rawGrilleConfig ?? (row.addon_type === "grill" ? (row.hatch_alignment_config as Record<string, unknown>) : null);
+
     return {
       id: row.id,
       parentProductId: row.parent_product_id,
@@ -90,13 +95,15 @@ export async function getCompatibleAddonsForProduct(
       defaultSide: (row.default_side as import("./types").AddonMountingSide) || "back",
       hatchTargetComponentKeys: (row.hatch_target_component_keys as string[]) || null,
       hatchAlignmentConfig: (row.hatch_alignment_config as Record<string, unknown>) || null,
+      grilleOpeningTargetComponentKeys: grilleTargets || null,
+      grilleOpeningConfig: grilleConfig || null,
       addonProduct: prod
         ? {
-            productId: prod.product_id,
-            productName: prod.product_name,
-            basePrice: Number(prod.base_price) || 0,
-            status: prod.status,
-          }
+          productId: prod.product_id,
+          productName: prod.product_name,
+          basePrice: Number(prod.base_price) || 0,
+          status: prod.status,
+        }
         : undefined,
     };
   });

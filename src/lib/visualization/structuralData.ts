@@ -119,7 +119,7 @@ async function fetchCompatibleAddons(
 ): Promise<CompatibleAddon[]> {
   const { data: addonsData, error } = await supabase
     .from("product_compatible_addons")
-    .select("id, parent_product_id, addon_product_id, addon_type, is_default_enabled, display_order, allowed_sides, default_side, hatch_target_component_keys, hatch_alignment_config")
+    .select("id, parent_product_id, addon_product_id, addon_type, is_default_enabled, display_order, allowed_sides, default_side, hatch_target_component_keys, hatch_alignment_config, grille_opening_target_component_keys, grille_opening_config")
     .eq("parent_product_id", productId)
     .order("display_order", { ascending: true });
 
@@ -150,8 +150,8 @@ async function fetchCompatibleAddons(
 
   const componentsRes = templateIds.length > 0
     ? await supabase
-        .from("product_components")
-        .select(`
+      .from("product_components")
+      .select(`
           component_id,
           template_id,
           component_key,
@@ -204,8 +204,8 @@ async function fetchCompatibleAddons(
             )
           )
         `)
-        .in("template_id", templateIds)
-        .order("component_key", { ascending: true })
+      .in("template_id", templateIds)
+      .order("component_key", { ascending: true })
     : { data: [] };
 
   const allComponents = componentsRes.data || [];
@@ -282,22 +282,28 @@ async function fetchCompatibleAddons(
       defaultSide: (row.default_side as "front" | "back") || "back",
       hatchTargetComponentKeys: (row.hatch_target_component_keys as string[]) || null,
       hatchAlignmentConfig: (row.hatch_alignment_config as Record<string, unknown>) || null,
+      grilleOpeningTargetComponentKeys:
+        ((row as Record<string, unknown>).grille_opening_target_component_keys as string[]) ||
+        (row.addon_type === "grill" ? (row.hatch_target_component_keys as string[]) : null),
+      grilleOpeningConfig:
+        ((row as Record<string, unknown>).grille_opening_config as Record<string, unknown>) ||
+        (row.addon_type === "grill" ? (row.hatch_alignment_config as Record<string, unknown>) : null),
       addonProduct: prod
         ? {
-            productId: prod.product_id,
-            productName: prod.product_name,
-            basePrice: Number(prod.base_price) || 0,
-            status: prod.status,
-          }
+          productId: prod.product_id,
+          productName: prod.product_name,
+          basePrice: Number(prod.base_price) || 0,
+          status: prod.status,
+        }
         : undefined,
       template: template
         ? {
-            templateId: template.template_id,
-            templateName: template.template_name,
-            modelStrategy: template.model_strategy,
-            measurementUnit: template.measurement_unit,
-            baseConfiguration: toJsonObject(template.base_configuration),
-          }
+          templateId: template.template_id,
+          templateName: template.template_name,
+          modelStrategy: template.model_strategy,
+          measurementUnit: template.measurement_unit,
+          baseConfiguration: toJsonObject(template.base_configuration),
+        }
         : undefined,
       components: mappedComponents,
       assets: mappedAssets,

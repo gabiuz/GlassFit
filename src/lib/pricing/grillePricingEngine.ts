@@ -9,6 +9,7 @@ import type {
   GrilleLinearPricingInput,
   GrilleLinearBOMResult,
   GrilleBarMetric,
+  GrilleOpeningBOMImpact,
 } from "./types";
 
 const DEFAULT_AL_SCRAP = 0.12; // 12% offcut scrap allowance
@@ -34,6 +35,11 @@ export function calculateGrilleLinearBOM(input: GrilleLinearPricingInput): Grill
     nominalPitchRowMm = 191,
     frameProfileWidthMm = 20,
     includePerimeterFrame = true,
+    openingCount,
+    openingWidthMm,
+    openingHeightMm,
+    openingTargetKeys,
+    openingConfig,
     grilleRawMaterial,
     frameRawMaterial,
     laborRate = DEFAULT_LABOR_RATE,
@@ -49,6 +55,21 @@ export function calculateGrilleLinearBOM(input: GrilleLinearPricingInput): Grill
   const widthM = widthMm / 1000;
   const heightM = heightMm / 1000;
   const frameWidthM = frameProfileWidthMm / 1000;
+
+  // 0. Resolve Operator Clearance Openings (IMP-MS86)
+  const resolvedOpeningCount = openingCount !== undefined
+    ? openingCount
+    : (openingConfig?.enabled && openingConfig.targetComponentKeys)
+      ? openingConfig.targetComponentKeys.length
+      : (openingTargetKeys ? openingTargetKeys.length : 0);
+
+  const rawCutoutW = openingWidthMm ?? openingConfig?.cutoutWidthMm ?? 150;
+  const rawCutoutH = openingHeightMm ?? openingConfig?.cutoutHeightMm ?? 180;
+  // Guardrail clamping per QAD-TC101.10 (width: 100mm to 250mm, height: 120mm to 300mm)
+  const cutoutWidthMm = Math.max(100, Math.min(250, rawCutoutW));
+  const cutoutHeightMm = Math.max(120, Math.min(300, rawCutoutH));
+  const cutoutWidthM = cutoutWidthMm / 1000;
+  const cutoutHeightM = cutoutHeightMm / 1000;
 
   // Inner aperture dimensions inside the mounting perimeter frame
   const innerWidthM = includePerimeterFrame ? Math.max(0.1, widthM - 2 * frameWidthM) : widthM;
@@ -132,6 +153,8 @@ export function calculateGrilleLinearBOM(input: GrilleLinearPricingInput): Grill
   const vMetrics: GrilleBarMetric[] = [];
   const hMetrics: GrilleBarMetric[] = [];
 
+  let splitPicketsCount = 0;
+
   if (patternType === "grid") {
     // Style 1: Grid pattern (full-height vertical pickets + full-width horizontal divider rails)
     const colCount = input.verticalBarCount !== undefined
@@ -141,21 +164,54 @@ export function calculateGrilleLinearBOM(input: GrilleLinearPricingInput): Grill
       ? input.horizontalBarCount
       : (innerHeightMm > 0 ? Math.max(1, Math.floor(innerHeightMm / nominalPitchRowMm)) : 0);
 
-    const vBarLengthM = innerHeightM;
-    const vTotalLinearM = colCount * vBarLengthM;
-    const vCost = round2(vTotalLinearM * barRatePerMeter * (1 + barScrap));
+    const picketsPerOpening = Math.max(1, Math.round(cutoutWidthMm / (nominalPitchColMm > 0 ? nominalPitchColMm : 140)));
+    splitPicketsCount = resolvedOpeningCount > 0 ? Math.min(colCount, resolvedOpeningCount * picketsPerOpening) : 0;
+    const fullPicketsCount = Math.max(0, colCount - splitPicketsCount);
 
-    vMetrics.push({
-      id: "grid-v-bars",
-      name: `Vertical Grille Bars (${colCount} pickets)`,
-      orientation: "VERTICAL",
-      lengthMm: Math.round(vBarLengthM * 1000),
-      lengthM: vBarLengthM,
-      count: colCount,
-      totalLinearM: round2(vTotalLinearM),
-      unitPricePerMeter: barRatePerMeter,
-      subtotalCost: vCost,
-    });
+    const vBarLengthM = innerHeightM;
+    const splitBarLengthM = Math.max(0.01, innerHeightM - cutoutHeightM);
+
+    if (splitPicketsCount > 0) {
+      if (fullPicketsCount > 0) {
+        const vFullTotalM = fullPicketsCount * vBarLengthM;
+        vMetrics.push({
+          id: "grid-v-bars-full",
+          name: `Vertical Grille Bars (${fullPicketsCount} continuous pickets)`,
+          orientation: "VERTICAL",
+          lengthMm: Math.round(vBarLengthM * 1000),
+          lengthM: vBarLengthM,
+          count: fullPicketsCount,
+          totalLinearM: round2(vFullTotalM),
+          unitPricePerMeter: barRatePerMeter,
+          subtotalCost: round2(vFullTotalM * barRatePerMeter * (1 + barScrap)),
+        });
+      }
+      const vSplitTotalM = splitPicketsCount * splitBarLengthM;
+      vMetrics.push({
+        id: "grid-v-bars-split",
+        name: `Vertical Grille Bars (${splitPicketsCount} interrupted pickets / ${splitPicketsCount * 2} segments)`,
+        orientation: "VERTICAL",
+        lengthMm: Math.round(splitBarLengthM * 1000),
+        lengthM: splitBarLengthM,
+        count: splitPicketsCount * 2,
+        totalLinearM: round2(vSplitTotalM),
+        unitPricePerMeter: barRatePerMeter,
+        subtotalCost: round2(vSplitTotalM * barRatePerMeter * (1 + barScrap)),
+      });
+    } else {
+      const vTotalLinearM = colCount * vBarLengthM;
+      vMetrics.push({
+        id: "grid-v-bars",
+        name: `Vertical Grille Bars (${colCount} pickets)`,
+        orientation: "VERTICAL",
+        lengthMm: Math.round(vBarLengthM * 1000),
+        lengthM: vBarLengthM,
+        count: colCount,
+        totalLinearM: round2(vTotalLinearM),
+        unitPricePerMeter: barRatePerMeter,
+        subtotalCost: round2(vTotalLinearM * barRatePerMeter * (1 + barScrap)),
+      });
+    }
 
     const hBarLengthM = innerWidthM;
     const hTotalLinearM = rowCount * hBarLengthM;
@@ -212,21 +268,56 @@ export function calculateGrilleLinearBOM(input: GrilleLinearPricingInput): Grill
     // Style 3: Staggered brick / running bond (matches Lab_Grill_Middle_Bars.glb and buildDynamicGrillPatternGroup)
     const colCount = innerWidthMm > 0 ? Math.max(1, Math.floor(innerWidthMm / nominalPitchColMm)) : 0;
     const actualPitchM = colCount > 0 ? innerWidthM / (colCount + 1) : 0;
-    const vBarLengthM = innerHeightM;
-    const vTotalLinearM = colCount * vBarLengthM;
-    const vCost = round2(vTotalLinearM * barRatePerMeter * (1 + barScrap));
+    const actualPitchMm = actualPitchM * 1000;
 
-    vMetrics.push({
-      id: "brick-v-bars",
-      name: `Vertical Grille Bars (${colCount} pickets)`,
-      orientation: "VERTICAL",
-      lengthMm: Math.round(vBarLengthM * 1000),
-      lengthM: vBarLengthM,
-      count: colCount,
-      totalLinearM: round2(vTotalLinearM),
-      unitPricePerMeter: barRatePerMeter,
-      subtotalCost: vCost,
-    });
+    const picketsPerOpening = Math.max(1, Math.round(cutoutWidthMm / (actualPitchMm > 0 ? actualPitchMm : nominalPitchColMm)));
+    splitPicketsCount = resolvedOpeningCount > 0 ? Math.min(colCount, resolvedOpeningCount * picketsPerOpening) : 0;
+    const fullPicketsCount = Math.max(0, colCount - splitPicketsCount);
+
+    const vBarLengthM = innerHeightM;
+    const splitBarLengthM = Math.max(0.01, innerHeightM - cutoutHeightM);
+
+    if (splitPicketsCount > 0) {
+      if (fullPicketsCount > 0) {
+        const vFullTotalM = fullPicketsCount * vBarLengthM;
+        vMetrics.push({
+          id: "brick-v-bars-full",
+          name: `Vertical Grille Bars (${fullPicketsCount} continuous pickets)`,
+          orientation: "VERTICAL",
+          lengthMm: Math.round(vBarLengthM * 1000),
+          lengthM: vBarLengthM,
+          count: fullPicketsCount,
+          totalLinearM: round2(vFullTotalM),
+          unitPricePerMeter: barRatePerMeter,
+          subtotalCost: round2(vFullTotalM * barRatePerMeter * (1 + barScrap)),
+        });
+      }
+      const vSplitTotalM = splitPicketsCount * splitBarLengthM;
+      vMetrics.push({
+        id: "brick-v-bars-split",
+        name: `Vertical Grille Bars (${splitPicketsCount} interrupted pickets / ${splitPicketsCount * 2} segments)`,
+        orientation: "VERTICAL",
+        lengthMm: Math.round(splitBarLengthM * 1000),
+        lengthM: splitBarLengthM,
+        count: splitPicketsCount * 2,
+        totalLinearM: round2(vSplitTotalM),
+        unitPricePerMeter: barRatePerMeter,
+        subtotalCost: round2(vSplitTotalM * barRatePerMeter * (1 + barScrap)),
+      });
+    } else {
+      const vTotalLinearM = colCount * vBarLengthM;
+      vMetrics.push({
+        id: "brick-v-bars",
+        name: `Vertical Grille Bars (${colCount} pickets)`,
+        orientation: "VERTICAL",
+        lengthMm: Math.round(vBarLengthM * 1000),
+        lengthM: vBarLengthM,
+        count: colCount,
+        totalLinearM: round2(vTotalLinearM),
+        unitPricePerMeter: barRatePerMeter,
+        subtotalCost: round2(vTotalLinearM * barRatePerMeter * (1 + barScrap)),
+      });
+    }
 
     const totalCols = colCount + 1;
     const numLevels = Math.max(2, Math.round(innerHeightMm / nominalPitchRowMm));
@@ -257,7 +348,57 @@ export function calculateGrilleLinearBOM(input: GrilleLinearPricingInput): Grill
     });
   }
 
-  // 3. Summaries & Final Totals
+  // 3. Opening Collar Extrusion Framing and Hardware (IMP-MS86)
+  let collarLinearMeters = 0;
+  let collarPieceCount = 0;
+  let collarCostTotal = 0;
+  let collarRailsMetric: GrilleBarMetric | null = null;
+  let collarStilesMetric: GrilleBarMetric | null = null;
+
+  const cleatUnitPrice = 25.0; // PHP per internal corner bracket
+  const cleatsPerOpening = openingConfig?.cornerCleatCountPerOpening ?? 4;
+  const totalCornerCleats = resolvedOpeningCount * cleatsPerOpening;
+  const cleatCostTotal = round2(totalCornerCleats * cleatUnitPrice);
+
+  if (resolvedOpeningCount > 0) {
+    const collarRailsCount = 2 * resolvedOpeningCount;
+    const collarRailsLinearM = round2(collarRailsCount * cutoutWidthM);
+    const collarRailsCost = round2(collarRailsLinearM * frameRatePerMeter * (1 + frameScrap));
+
+    collarRailsMetric = {
+      id: "collar-border-rails",
+      name: `Handle Opening Collar Border Rails (${collarRailsCount} rails @ ${cutoutWidthMm}mm)`,
+      orientation: "HORIZONTAL",
+      lengthMm: cutoutWidthMm,
+      lengthM: cutoutWidthM,
+      count: collarRailsCount,
+      totalLinearM: collarRailsLinearM,
+      unitPricePerMeter: frameRatePerMeter,
+      subtotalCost: collarRailsCost,
+    };
+
+    const collarStilesCount = 2 * resolvedOpeningCount;
+    const collarStilesLinearM = round2(collarStilesCount * cutoutHeightM);
+    const collarStilesCost = round2(collarStilesLinearM * frameRatePerMeter * (1 + frameScrap));
+
+    collarStilesMetric = {
+      id: "collar-border-stiles",
+      name: `Handle Opening Collar Border Stiles (${collarStilesCount} stiles @ ${cutoutHeightMm}mm)`,
+      orientation: "VERTICAL",
+      lengthMm: cutoutHeightMm,
+      lengthM: cutoutHeightM,
+      count: collarStilesCount,
+      totalLinearM: collarStilesLinearM,
+      unitPricePerMeter: frameRatePerMeter,
+      subtotalCost: collarStilesCost,
+    };
+
+    collarPieceCount = 4 * resolvedOpeningCount;
+    collarLinearMeters = round2(collarRailsLinearM + collarStilesLinearM);
+    collarCostTotal = round2(collarRailsCost + collarStilesCost);
+  }
+
+  // 4. Summaries & Final Totals
   const vPieces = vMetrics.reduce((s, m) => s + m.count, 0);
   const vLinearM = vMetrics.reduce((s, m) => s + m.totalLinearM, 0);
   const vCostTotal = vMetrics.reduce((s, m) => s + m.subtotalCost, 0);
@@ -266,13 +407,17 @@ export function calculateGrilleLinearBOM(input: GrilleLinearPricingInput): Grill
   const hLinearM = hMetrics.reduce((s, m) => s + m.totalLinearM, 0);
   const hCostTotal = hMetrics.reduce((s, m) => s + m.subtotalCost, 0);
 
-  const totalPieces = (perimeterDetails ? 4 : 0) + vPieces + hPieces;
-  const totalLinearMeters = round2(perimeterMetersTotal + vLinearM + hLinearM);
+  const totalPieces = (perimeterDetails ? 4 : 0) + vPieces + hPieces + collarPieceCount;
+  const totalLinearMeters = round2(perimeterMetersTotal + vLinearM + hLinearM + collarLinearMeters);
 
   // Raw material subtotal without scrap
   const netMaterialCost =
-    perimeterMetersTotal * frameRatePerMeter + (vLinearM + hLinearM) * barRatePerMeter;
-  const grossMaterialCost = perimeterCostTotal + vCostTotal + hCostTotal;
+    perimeterMetersTotal * frameRatePerMeter +
+    (vLinearM + hLinearM) * barRatePerMeter +
+    collarLinearMeters * frameRatePerMeter +
+    (totalCornerCleats * cleatUnitPrice);
+
+  const grossMaterialCost = perimeterCostTotal + vCostTotal + hCostTotal + collarCostTotal + cleatCostTotal;
   const wasteAllowanceCost = round2(grossMaterialCost - netMaterialCost);
   const directMaterialCost = round2(grossMaterialCost);
 
@@ -341,6 +486,58 @@ export function calculateGrilleLinearBOM(input: GrilleLinearPricingInput): Grill
     });
   }
 
+  if (resolvedOpeningCount > 0 && collarRailsMetric && collarStilesMetric) {
+    itemizedBreakdown.push({
+      item: collarRailsMetric.name,
+      orientation: "COLLAR",
+      pieces: collarRailsMetric.count,
+      lengthMm: collarRailsMetric.lengthMm,
+      totalMeters: collarRailsMetric.totalLinearM,
+      unitRate: collarRailsMetric.unitPricePerMeter,
+      subtotal: collarRailsMetric.subtotalCost,
+    });
+    itemizedBreakdown.push({
+      item: collarStilesMetric.name,
+      orientation: "COLLAR",
+      pieces: collarStilesMetric.count,
+      lengthMm: collarStilesMetric.lengthMm,
+      totalMeters: collarStilesMetric.totalLinearM,
+      unitRate: collarStilesMetric.unitPricePerMeter,
+      subtotal: collarStilesMetric.subtotalCost,
+    });
+    itemizedBreakdown.push({
+      item: `Opening Internal Corner Cleats (${totalCornerCleats} pcs)`,
+      orientation: "HARDWARE",
+      pieces: totalCornerCleats,
+      lengthMm: 0,
+      totalMeters: 0,
+      unitRate: cleatUnitPrice,
+      subtotal: cleatCostTotal,
+    });
+  }
+
+  const openingsImpact: GrilleOpeningBOMImpact | null = resolvedOpeningCount > 0
+    ? {
+      openingCount: resolvedOpeningCount,
+      collarLinearMeters,
+      collarPieceCount,
+      interruptedPicketCount: splitPicketsCount,
+      netPicketLengthDeduction: round2(splitPicketsCount * cutoutHeightM),
+      cornerCleatQuantity: totalCornerCleats,
+    }
+    : null;
+
+  const openingDetails = (resolvedOpeningCount > 0 && collarRailsMetric && collarStilesMetric)
+    ? {
+      count: resolvedOpeningCount,
+      cutoutWidthMm,
+      cutoutHeightMm,
+      collarRailsMetric,
+      collarStilesMetric,
+      cornerCleatCount: totalCornerCleats,
+    }
+    : null;
+
   return {
     patternType,
     totalPieces,
@@ -365,6 +562,8 @@ export function calculateGrilleLinearBOM(input: GrilleLinearPricingInput): Grill
       subtotalCost: round2(hCostTotal),
       details: hMetrics,
     },
+    openings: openingsImpact,
+    openingDetails,
     itemizedBreakdown,
   };
 }

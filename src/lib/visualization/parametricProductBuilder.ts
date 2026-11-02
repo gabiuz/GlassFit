@@ -15,6 +15,7 @@ import {
   buildParametricScreenGroup,
   buildParametricGrillGroup,
   buildDynamicGrillPatternGroup,
+  clipGrilleAssemblyOpenings,
   type AddonGeometryConfig,
 } from "./addonGeometryBuilder";
 
@@ -79,6 +80,8 @@ export interface ParametricProductBuilderOptions {
   addonAluminumFinish?: string;
   addonMountingSide?: "front" | "back";
   hatchTargetComponentKeys?: string[];
+  grilleOpeningTargetComponentKeys?: string[];
+  grilleOpeningConfig?: import("@/lib/admin/products/types").GrilleOpeningConfig | Record<string, unknown> | null;
   addonConfig?: AddonGeometryConfig;
   grilleBOM?: GrilleLinearBOMResult;
   swappedAccessories?: Record<string, SelectedAccessoryState>;
@@ -1076,10 +1079,10 @@ function buildWindowLikeProduct(
         : matchingAddon?.allowedSides === "front"
           ? "front"
           : matchingAddon?.defaultSide ?? (
-              options.addonConfig?.mountPosition === "rear" || (options.addonConfig?.zOffsetMm !== undefined && options.addonConfig.zOffsetMm < 0)
-                ? "back"
-                : "front"
-            ));
+            options.addonConfig?.mountPosition === "rear" || (options.addonConfig?.zOffsetMm !== undefined && options.addonConfig.zOffsetMm < 0)
+              ? "back"
+              : "front"
+          ));
 
     const clearanceGapMeters = 0.008;
 
@@ -1107,13 +1110,13 @@ function buildWindowLikeProduct(
       const matchingComp = definition.components.find((c) => c.componentId === slotId || c.componentKey === slotId);
       const posOptions: AccessoryPositionOptions = matchingComp?.positionOptions ??
         ((matchingComp as Record<string, unknown> | undefined)?.position_options as AccessoryPositionOptions | undefined) ?? {
-          allowHorizontalToggle: true,
-          defaultHorizontal: "right",
-          horizontalOffsetMm: 45,
-          allowVerticalToggle: swapped.category === "lock",
-          defaultVertical: "up",
-          verticalOffsetMm: 1000,
-        };
+        allowHorizontalToggle: true,
+        defaultHorizontal: "right",
+        horizontalOffsetMm: 45,
+        allowVerticalToggle: swapped.category === "lock",
+        defaultVertical: "up",
+        verticalOffsetMm: 1000,
+      };
       const sourceHanding = swapped.handingMetadata?.sourceHanding ?? matchingComp?.handingMetadata?.sourceHanding ?? null;
       mountAccessoryMesh(
         accessories,
@@ -2787,10 +2790,10 @@ function buildAssembledProduct(
         : matchingAddon?.allowedSides === "front"
           ? "front"
           : matchingAddon?.defaultSide ?? (
-              options.addonConfig?.mountPosition === "rear" || (options.addonConfig?.zOffsetMm !== undefined && options.addonConfig.zOffsetMm < 0)
-                ? "back"
-                : "front"
-            ));
+            options.addonConfig?.mountPosition === "rear" || (options.addonConfig?.zOffsetMm !== undefined && options.addonConfig.zOffsetMm < 0)
+              ? "back"
+              : "front"
+          ));
 
     // Calculate reference perimeter frame bounds, isolating from projecting exterior sills and interior operator handles
     const hostFrameBounds = new THREE.Box3();
@@ -3052,6 +3055,18 @@ function resolveAllHostTargetCoordinates(
     const operatorInstances: THREE.Object3D[] = [];
     hostGroup.traverse((child) => {
       if (child.userData?.isLouverOperatorInstance === true) {
+        let ancestor = child.parent;
+        let isNested = false;
+        while (ancestor) {
+          if (ancestor.userData?.isLouverOperatorInstance === true) {
+            isNested = true;
+            break;
+          }
+          ancestor = ancestor.parent;
+        }
+        if (isNested) {
+          return;
+        }
         if (
           targetKeys.length === 0 ||
           targetKeys.some(
@@ -3149,6 +3164,14 @@ function buildAddonAttachment(
     options.addonProductId ? a.addonProductId === options.addonProductId : a.addonType === addonType
   );
 
+  const effectiveMountingSide: "front" | "back" =
+    matchingAddon?.allowedSides === "front"
+      ? "front"
+      : matchingAddon?.allowedSides === "back"
+        ? "back"
+        : (options.addonMountingSide ?? matchingAddon?.defaultSide ?? "back");
+  const isInteriorMounting = effectiveMountingSide === "back";
+
   // Modular security grill add-on: use dedicated assembly with dynamic pattern repetition
   if (addonType === "grill") {
     return buildGrillAssembly(
@@ -3158,6 +3181,8 @@ function buildAddonAttachment(
       cache,
       options,
       frameMat,
+      hostGroup,
+      definition,
     );
   }
 
@@ -3320,6 +3345,10 @@ function buildAddonAttachment(
           }
 
           if (isHatch) {
+            if (!isInteriorMounting) {
+              // Suppress hatch generation entirely for exterior mounting (IMP-MS87)
+              continue;
+            }
             const targetOperatorKeys = options.hatchTargetComponentKeys ?? matchingAddon.hatchTargetComponentKeys ?? [];
             if (targetOperatorKeys.length === 0) {
               // No operator hatch alignment target selected: hatch is not available for this product and will not show
@@ -3706,15 +3735,18 @@ function buildAddonAttachment(
     }
   }
 
-  // 2. Procedural parametric generation fallback (IMP-MS68)
+  // 2. Procedural parametric generation fallback (IMP-MS68, IMP-MS87)
   const isHatchDisabled = Boolean(
-    options.removableStates && (
+    !isInteriorMounting ||
+    (options.removableStates && (
       options.removableStates["screen_access_hatch"] === false ||
       options.removableStates["has_screen_access_hatch"] === false ||
       options.removableStates["has_hatch"] === false
-    )
+    ))
   );
-  const targetOperatorKeys = options.hatchTargetComponentKeys ?? matchingAddon?.hatchTargetComponentKeys ?? [];
+  const targetOperatorKeys = isInteriorMounting
+    ? (options.hatchTargetComponentKeys ?? matchingAddon?.hatchTargetComponentKeys ?? [])
+    : [];
   const proceduralHasHatch = (targetOperatorKeys.length > 0 && !isHatchDisabled)
     ? (options.addonConfig?.hasHatch !== undefined ? options.addonConfig.hasHatch : true)
     : false;
@@ -3780,6 +3812,8 @@ export function buildGrillAssembly(
   cache: ComponentModelCache,
   options: ParametricProductBuilderOptions,
   frameMaterial?: THREE.Material,
+  hostGroup?: THREE.Group,
+  definition?: ProductStructuralDefinition,
 ): THREE.Group {
   const targetWidthM = targetWidthMm / 1000;
   const targetHeightM = targetHeightMm / 1000;
@@ -3790,20 +3824,97 @@ export function buildGrillAssembly(
   const addonFinish = options.addonAluminumFinish ?? options.alumFinish ?? "analok";
   const resolvedFrameMat = frameMaterial ?? createMaterialPalette(addonFinish).framing;
 
+  const matchingAddon = definition?.compatibleAddons?.find((a) =>
+    options.addonProductId ? a.addonProductId === options.addonProductId : a.addonType === "grill"
+  );
+
+  const effectiveMountingSide: "front" | "back" =
+    matchingAddon?.allowedSides === "front"
+      ? "front"
+      : matchingAddon?.allowedSides === "back"
+        ? "back"
+        : (options.addonMountingSide ?? matchingAddon?.defaultSide ?? "back");
+  const isInteriorMounting = effectiveMountingSide === "back";
+
+  const rawOpeningTargets = options.grilleOpeningTargetComponentKeys ??
+    matchingAddon?.grilleOpeningTargetComponentKeys ??
+    (matchingAddon?.addonType === "grill" ? matchingAddon?.hatchTargetComponentKeys : undefined) ??
+    options.hatchTargetComponentKeys ?? [];
+  const targetOpeningKeys = isInteriorMounting ? rawOpeningTargets : [];
+
+  const rawConfig = (options.grilleOpeningConfig ?? matchingAddon?.grilleOpeningConfig) as Record<string, unknown> | undefined;
+  const rawCutoutW = Number(rawConfig?.cutoutWidthMm) || 150;
+  const rawCutoutH = Number(rawConfig?.cutoutHeightMm) || 180;
+  const cutoutWidthMm = Math.max(100, Math.min(250, rawCutoutW));
+  const cutoutHeightMm = Math.max(120, Math.min(300, rawCutoutH));
+  const cutoutWidthM = cutoutWidthMm * 0.001;
+  const cutoutHeightM = cutoutHeightMm * 0.001;
+
+  // Resolve clearance opening target coordinates from host group (IMP-MS86, IMP-MS87)
+  const resolvedTargets: Array<{ x: number; y: number; z: number; targetKey: string }> = [];
+  if (isInteriorMounting && hostGroup && targetOpeningKeys.length > 0) {
+    const hits = resolveAllHostTargetCoordinates(targetOpeningKeys, hostGroup, definition, cache);
+    for (const h of hits) {
+      resolvedTargets.push(h);
+    }
+  }
+
+  // Clamping guardrails per MS86 Section 3.2.1: minimum 35mm structural perimeter margin
+  const estFrameW = 0.028;
+  const innerEstW = Math.max(0.1, targetWidthM - 2 * estFrameW);
+  const innerEstH = Math.max(0.1, targetHeightM - 2 * estFrameW);
+  const marginM = 0.035;
+  const clampMinX = -innerEstW / 2 + cutoutWidthM / 2 + marginM;
+  const clampMaxX = innerEstW / 2 - cutoutWidthM / 2 - marginM;
+  const clampMinY = -innerEstH / 2 + cutoutHeightM / 2 + marginM;
+  const clampMaxY = innerEstH / 2 - cutoutHeightM / 2 - marginM;
+
+  const resolvedGrilleOpenings = isInteriorMounting
+    ? resolvedTargets.map((t, idx) => ({
+      x: Math.max(clampMinX, Math.min(clampMaxX, t.x)),
+      y: Math.max(clampMinY, Math.min(clampMaxY, t.y)),
+      widthMm: cutoutWidthMm,
+      heightMm: cutoutHeightMm,
+      targetKey: t.targetKey,
+      index: idx,
+    }))
+    : [];
+
+  const effectiveAddonConfig: AddonGeometryConfig = {
+    ...options.addonConfig,
+    grilleOpenings: isInteriorMounting
+      ? (resolvedGrilleOpenings.length > 0
+        ? resolvedGrilleOpenings
+        : options.addonConfig?.grilleOpenings)
+      : undefined,
+  };
+
   const assembly = new THREE.Group();
   assembly.name = "Addon_Grill_Assembly";
   assembly.userData.addonType = "grill";
   assembly.userData.isAddon = true;
   assembly.userData.widthMm = targetWidthMm;
   assembly.userData.heightMm = targetHeightMm;
+  assembly.userData.openingCount = resolvedGrilleOpenings.length;
+  assembly.userData.grilleOpenings = resolvedGrilleOpenings;
 
-  const grilleBOM = options.grilleBOM ?? calculateGrilleLinearBOM({
+  const grilleBOM = (!isInteriorMounting ? undefined : options.grilleBOM) ?? calculateGrilleLinearBOM({
     widthMm: targetWidthMm,
     heightMm: targetHeightMm,
     patternType: "staggered_brick",
     nominalPitchColMm: options.addonConfig?.nominalBarPitchMm ?? 140,
     nominalPitchRowMm: options.addonConfig?.nominalRowPitchMm ?? 191,
     includePerimeterFrame: true,
+    openingCount: resolvedGrilleOpenings.length,
+    openingWidthMm: cutoutWidthMm,
+    openingHeightMm: cutoutHeightMm,
+    openingTargetKeys: targetOpeningKeys,
+    openingConfig: {
+      enabled: resolvedGrilleOpenings.length > 0,
+      cutoutWidthMm,
+      cutoutHeightMm,
+      cornerCleatCountPerOpening: 4,
+    },
     grilleRawMaterial: {
       id: "default-grille-mat",
       material_code: "AL-GRILLE-TUBE-16MM",
@@ -3815,7 +3926,7 @@ export function buildGrillAssembly(
   assembly.userData.grilleBOM = grilleBOM;
 
   if (!components || components.length === 0) {
-    const procedural = buildParametricGrillGroup(targetWidthMm, targetHeightMm, options.addonConfig, resolvedFrameMat);
+    const procedural = buildParametricGrillGroup(targetWidthMm, targetHeightMm, effectiveAddonConfig, resolvedFrameMat);
     assembly.add(procedural);
     assembly.userData.verticalBarCount = procedural.userData.verticalBarCount;
     assembly.userData.horizontalBarCount = procedural.userData.horizontalBarCount;
@@ -4214,7 +4325,7 @@ export function buildGrillAssembly(
       innerWidthM,
       innerHeightM,
       {
-        ...options.addonConfig,
+        ...effectiveAddonConfig,
         zOffsetMm: zOffset * 1000,
         grillBarWidthMm: options.addonConfig?.grillBarWidthMm ?? 14,
         nominalBarPitchMm: options.addonConfig?.nominalBarPitchMm ?? 230,
@@ -4234,6 +4345,100 @@ export function buildGrillAssembly(
   } else {
     assembly.userData.verticalBarCount = middleAssembly.userData.verticalBarCount;
     assembly.userData.horizontalBarCount = middleAssembly.userData.horizontalBarCount;
+  }
+
+  // Mount 4-piece collar sub-frame assemblies for all resolved handle openings (IMP-MS86)
+  if (resolvedGrilleOpenings.length > 0) {
+    // 1. Clip infill geometry so the interior of each clearance opening is completely empty
+    if (middleMounted) {
+      clipGrilleAssemblyOpenings(middleAssembly, resolvedGrilleOpenings);
+    } else {
+      const patternGroup = assembly.getObjectByName("Grill_Middle_Bars_Assembly") ||
+        assembly.children.find((c) => c !== assembly && c.userData?.addonType === "grill" && !c.name.startsWith("Grill_Frame_"));
+      if (patternGroup) {
+        clipGrilleAssemblyOpenings(patternGroup, resolvedGrilleOpenings);
+      }
+    }
+
+    // 2. Sample color/material directly from the grille components to guarantee matching finish
+    let collarMat = resolvedFrameMat;
+    let sampledFromGrille = false;
+
+    if (middleMounted && middleAssembly) {
+      middleAssembly.traverse((child) => {
+        if (!sampledFromGrille && child instanceof THREE.Mesh && child.material) {
+          const m = Array.isArray(child.material) ? child.material[0] : child.material;
+          if (m) {
+            collarMat = m.clone();
+            sampledFromGrille = true;
+          }
+        }
+      });
+    }
+
+    if (!sampledFromGrille) {
+      assembly.traverse((child) => {
+        if (!sampledFromGrille && child instanceof THREE.Mesh && child.material && !child.name.startsWith("Grille_Opening_Collar")) {
+          const m = Array.isArray(child.material) ? child.material[0] : child.material;
+          if (m) {
+            collarMat = m.clone();
+            sampledFromGrille = true;
+          }
+        }
+      });
+    }
+
+    const barWidth = (options.addonConfig?.grillBarWidthMm ?? 14) * 0.001;
+    const barDepth = (options.addonConfig?.frameDepthMm ?? 16) * 0.001;
+
+    resolvedGrilleOpenings.forEach((op, idx) => {
+      const wM = (op.widthMm ?? 150) * 0.001;
+      const hM = (op.heightMm ?? 180) * 0.001;
+      const minX = op.x - wM / 2;
+      const maxX = op.x + wM / 2;
+      const minY = op.y - hM / 2;
+      const maxY = op.y + hM / 2;
+
+      const collarGroup = new THREE.Group();
+      collarGroup.name = `Grille_Opening_Collar_${idx}`;
+      collarGroup.userData.isAddon = true;
+      collarGroup.userData.addonType = "grill";
+      collarGroup.userData.isOpenClearance = true;
+      collarGroup.userData.openingIndex = idx;
+      collarGroup.userData.targetKey = op.targetKey;
+      collarGroup.userData.presentationCategory = "Framing";
+
+      const cBot = new THREE.Mesh(new THREE.BoxGeometry(wM, barWidth, barDepth), collarMat);
+      cBot.name = `Grille_Opening_Collar_Bottom_${idx}`;
+      cBot.position.set(op.x, minY + barWidth / 2, zOffset);
+
+      const cTop = new THREE.Mesh(new THREE.BoxGeometry(wM, barWidth, barDepth), collarMat);
+      cTop.name = `Grille_Opening_Collar_Top_${idx}`;
+      cTop.position.set(op.x, maxY - barWidth / 2, zOffset);
+
+      const sideH = Math.max(0.005, hM - 2 * barWidth);
+      const cLeft = new THREE.Mesh(new THREE.BoxGeometry(barWidth, sideH, barDepth), collarMat);
+      cLeft.name = `Grille_Opening_Collar_Left_${idx}`;
+      cLeft.position.set(minX + barWidth / 2, op.y, zOffset);
+
+      const cRight = new THREE.Mesh(new THREE.BoxGeometry(barWidth, sideH, barDepth), collarMat);
+      cRight.name = `Grille_Opening_Collar_Right_${idx}`;
+      cRight.position.set(maxX - barWidth / 2, op.y, zOffset);
+
+      collarGroup.add(cBot, cTop, cLeft, cRight);
+      collarGroup.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          child.castShadow = true;
+          child.receiveShadow = true;
+          child.renderOrder = 0;
+          child.userData.preserveMaterial = true;
+          child.userData.presentationCategory = "Framing";
+          child.userData.isAddon = true;
+          child.userData.addonType = "grill";
+        }
+      });
+      assembly.add(collarGroup);
+    });
   }
 
   // 8. Enforce Material Flags and Depth Order

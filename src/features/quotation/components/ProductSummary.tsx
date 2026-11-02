@@ -214,15 +214,16 @@ function createProductSummaryItemFromOverlay(
   const addonProductId = config.addonProductId ?? null;
   const addonAluminumFinish = config.addonAluminumFinish;
   const addonMountingSide = (config.addonMountingSide as "front" | "back") ?? undefined;
-  const hatchCount = Number(config.hatchCount) || 0;
-  const hatchTargetKeys = Array.isArray(config.hatchTargetKeys) ? (config.hatchTargetKeys as string[]) : undefined;
+  const isInterior = addonMountingSide === "back";
+  const hatchCount = isInterior ? (Number(config.hatchCount) || 0) : 0;
+  const hatchTargetKeys = isInterior && Array.isArray(config.hatchTargetKeys) ? (config.hatchTargetKeys as string[]) : undefined;
 
   const sideLabel = addonMountingSide === "back"
     ? "Interior Mount / Back"
     : addonMountingSide === "front"
       ? "Exterior Mount / Front"
       : null;
-  const hatchLabel = hatchCount > 0
+  const hatchLabel = (isInterior && hatchCount > 0)
     ? `with ${hatchCount}x Operator Access ${hatchCount === 1 ? "Hatch" : "Hatches"}`
     : null;
   const sideHatchClause = [sideLabel, hatchLabel].filter(Boolean).length > 0
@@ -394,15 +395,16 @@ function createProductSummaryItem(
   const addonProductId = configuration?.addonProductId ?? null;
   const addonAluminumFinish = configuration?.addonAluminumFinish;
   const addonMountingSide = (configuration?.addonMountingSide as "front" | "back") ?? undefined;
-  const hatchCount = Number(configuration?.hatchCount) || 0;
-  const hatchTargetKeys = Array.isArray(configuration?.hatchTargetKeys) ? (configuration?.hatchTargetKeys as string[]) : undefined;
+  const isInterior = addonMountingSide === "back";
+  const hatchCount = isInterior ? (Number(configuration?.hatchCount) || 0) : 0;
+  const hatchTargetKeys = isInterior && Array.isArray(configuration?.hatchTargetKeys) ? (configuration?.hatchTargetKeys as string[]) : undefined;
 
   const sideLabel = addonMountingSide === "back"
     ? "Interior Mount / Back"
     : addonMountingSide === "front"
       ? "Exterior Mount / Front"
       : null;
-  const hatchLabel = hatchCount > 0
+  const hatchLabel = (isInterior && hatchCount > 0)
     ? `with ${hatchCount}x Operator Access ${hatchCount === 1 ? "Hatch" : "Hatches"}`
     : null;
   const sideHatchClause = [sideLabel, hatchLabel].filter(Boolean).length > 0
