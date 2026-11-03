@@ -1,3 +1,4 @@
+import { getConfigurationProductFacing } from "./productFacing";
 import { captureTransparentCanvasBlob } from "./captureSnapshot";
 import { normalizeAluminumFinish, type AluminumFinishKey } from "./colorVariations";
 import {
@@ -7,7 +8,7 @@ import {
 } from "./configurationPropagation";
 import { ProductModelRenderer } from "./modelRenderer";
 import { getAllCandidateMaterialsMap } from "./materialCustomization";
-import { denormalizeCorners, drawPerspectiveWarpedImage } from "./perspectiveTransform";
+import { denormalizeCorners, drawPerspectiveWarpedImage, getPlanarFitImageBounds } from "./perspectiveTransform";
 import type { VariationRenderRecipe } from "./types";
 
 export class VariationLayerRenderer {
@@ -30,6 +31,16 @@ export class VariationLayerRenderer {
       glassColor: normalizeGlassColor(configuration.glassColor),
       glassThicknessMm: normalizeGlassThickness(configuration.glassThicknessMm),
       includeSill: configuration.includeSill,
+      activeAddon: configuration.selectedAddon,
+      addonProductId: configuration.addonProductId,
+      addonAluminumFinish: configuration.addonAluminumFinish,
+      addonMountingSide: configuration.addonMountingSide,
+      screenMeshDensity: configuration.screenMeshDensity,
+      hatchTargetComponentKeys: configuration.includeHatch ? configuration.hatchTargetKeys : [],
+      grilleOpeningTargetComponentKeys: configuration.grilleOpeningTargetKeys,
+      grilleOpeningConfig: configuration.grilleOpeningConfig,
+      removableStates: configuration.removableStates,
+      swappedAccessories: configuration.swappedAccessories,
     };
     // The compared aluminum finish owns framing appearance; retain grouped
     // visual choices on other components without importing fabrication picks.
@@ -71,6 +82,7 @@ export class VariationLayerRenderer {
       configuration.yaw,
       configuration.pitch,
       Boolean(configuration.perspectiveFitCorners),
+      getConfigurationProductFacing(configuration),
     );
     if (!rendered) throw new Error("The requested finish could not be rendered.");
 
@@ -103,7 +115,7 @@ export class VariationLayerRenderer {
       const fitRect = this.renderer.getPlanarFitRect();
       drawPerspectiveWarpedImage(
         context, source, corners, 16,
-        fitRect ? { left: fitRect.x, top: fitRect.y, width: fitRect.width, height: fitRect.height } : null,
+        getPlanarFitImageBounds(fitRect, configuration.isFlipped),
       );
     } else {
       const centerX = this.recipe.sourceCanvasWidth / 2 + (configuration.positionX ?? 0);

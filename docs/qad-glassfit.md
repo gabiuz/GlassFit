@@ -564,3 +564,31 @@ Traceability: BRD-M2, BRD-M4, BRD-M5; PRD-F5, PRD-F10, PRD-F14; SDD-C4, SDD-C5, 
 
 
 fix-14 occupied-room regression (November 2, 2026): the user-reported JPEG was falsely rejected with `insufficient_architectural_evidence` despite 0.119 wall and 0.097 floor coverage. A guarded partial-room branch now accepts this evidence after existing dominant-subject and too-close checks; model readiness remains mandatory. Seventeen pure suitability tests cover the derived regression features, boundaries, dominant portraits/screens/books, graphics, outages and previous room cases. No private image is stored in test fixtures. The exact JPEG returned HTTP 200 in both `auto_detect` and `paper_fiducial`; the direct browser upload displayed successful analysis and reached the workspace. Paper mode retained `manual_pin_required` because no reference sheet was detected. This targeted local regression does not establish population-level accuracy.
+
+
+## QAD-TC103: Post-Fit Product Facing (IMP-MS88)
+
+Traceability: BRD-M2, BRD-M4; PRD-F5, PRD-F6, PRD-F9; SDD-C4, SDD-C5, SDD-C6; DSD-UI4; ERD-E10, ERD-E11. Automated verification: `npm run test:ms88`. Browser and asset acceptance evidence is recorded in [MS88](implementation/ms88.md).
+
+| Test ID | Scenario | Expected Result |
+|---|---|---|
+| `QAD-TC103.1` | Confirm Fit for a newly placed product. | Product Facing is reachable afterward and defaults to Front (Exterior). |
+| `QAD-TC103.2` | Select Back (Interior) on an asymmetric fixture with interior handles or operators. | Actual rear geometry faces the viewer immediately, with correct depth and handedness. |
+| `QAD-TC103.3` | Switch Front to Back to Front repeatedly. | Original placement and appearance return without accumulated rotation, crop, or scale drift. |
+| `QAD-TC103.4` | Change facing on a calibrated or manually measured fitted opening. | Fit corners, installation dimensions, calibration evidence, confirmation, and price remain unchanged. |
+| `QAD-TC103.5` | Change facing with nonzero manual yaw and pitch, then refit. | Facing change preserves manual angles; refit preserves facing and resets those angles to zero under MS40. |
+| `QAD-TC103.6` | Switch facing with a sill and asymmetric protruding hardware present. | Structural installation bounds remain aligned under MS83; decorations do not redefine fit width. |
+| `QAD-TC103.7` | View exterior and interior add-on mounting from both faces. | Physical mounting stays unchanged; MS87 hatch/cutout rules and BOM totals remain correct. |
+| `QAD-TC103.8` | Save an overlay, edit it, duplicate it, and select another overlay. | Facing restores and duplicates per instance without affecting other products. |
+| `QAD-TC103.9` | Restore a legacy configuration or validate an invalid explicit enum. | Missing values default to Front; invalid values follow explicit validation handling. |
+| `QAD-TC103.10` | Switch facing while changing finishes or while a model load is pending. | Latest facing and finish win consistently without a stale render overwriting them. |
+| `QAD-TC103.11` | Capture the final composite with Back selected. | Workspace, overlay preview, and exported composite show the same face and preserve existing occlusion. |
+| `QAD-TC103.12` | Operate the fitted-product setting on mobile and by keyboard. | Both options remain reachable, selectable, clearly labeled, and visibly focused within existing UI patterns. |
+
+### QAD-TC6: Initial product reset regression
+
+Traces to PRD-F6, SDD-C5, DSD-UI4. Automated state coverage: `npx tsx --test tests/unit/workspaceReset.test.ts`. In the customer workspace, record the first rendered product, change dimensions, materials, facing, fit, translation, rotation, and add-ons, then Reset. Confirm the original appearance and footprint return. Repeat Reset, resize the viewport, and switch between two product instances; each instance restores its own initial state at the current viewport scale. Browser acceptance requires representative product assets.
+
+QAD-TC6 reset lifecycle regression: repeat initial mount effects under React Strict Mode before template defaults and model loading finish. No baseline may be retained until the active model matches the committed dimensions and the canvas measurement matches the committed display geometry. The first visible footprint must survive edit, reset, and viewport resize without shrinking.
+
+November 3, 2026 browser evidence: Jalousie Window with the repository sample room in the development workspace restored the original 409.421875 x 408.09375 CSS-pixel canvas after resizing to 491 x 490 and after rotate/flip. Switching to a 1440 x 1000 desktop viewport preserved its proportional 373.6328125 x 372.4296875 footprint through Reset; reopening the compact editor restored 409.421875 x 408.09375. Automated reset/facing tests, typecheck, production build, and CV health passed. Lint passed with 19 existing warnings.

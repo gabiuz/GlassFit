@@ -1,5 +1,8 @@
 "use client";
 
+import { captureWorkspaceResetState, isWorkspaceResetCaptureReady, restoreWorkspaceResetState, type WorkspaceResetState } from "@/lib/visualization/workspaceReset";
+import { getConfigurationProductFacing } from "@/lib/visualization/productFacing";
+import type { ProductFacing } from "@/lib/visualization/types";
 import { evaluatePlaneEligibility } from "@/lib/visualization/planeEligibility";
 import { createMeasurementRecord, readMeasurementRecord } from "@/lib/visualization/measurementRecord";
 import { createMetricReference, evaluateMetricOpening } from "@/lib/visualization/metricGeometry";
@@ -84,6 +87,7 @@ import type { AccessoryPositionOptions, HorizontalPosition, VerticalPosition } f
 
 export type AddonSelectionType = "none" | "screen" | "grill";
 import {
+  getPlanarFitImageBounds,
   homographyToCssMatrix3d,
   computeHomographyMatrix,
   denormalizeCorners,
@@ -297,6 +301,7 @@ export function ProductModelWorkspace({
   const mobileReentryRef = useRef<HTMLButtonElement>(null);
   const resizeSessionRef = useRef<ResizeSession | null>(null);
   const rotationSessionRef = useRef<RotationSession | null>(null);
+  const initialProductStatesRef = useRef(new Map<string, WorkspaceResetState>());
   const appliedTemplateDefaultsRef = useRef<string | null>(
     initialConfiguration || (seedConfiguration?.widthCm && seedConfiguration.heightCm)
       ? structuralDefinition?.product.productId ?? null
@@ -327,6 +332,7 @@ export function ProductModelWorkspace({
   const [autoRealism, setAutoRealism] = useState(
     initialConfiguration?.autoRealism ?? true,
   );
+  const [productFacing, setProductFacing] = useState<ProductFacing>(() => getConfigurationProductFacing(initialConfiguration));
   const [yaw, setYaw] = useState(initialConfiguration?.yaw ?? 0);
   const [pitch, setPitch] = useState(initialConfiguration?.pitch ?? 0);
   const [alumFinish, setAlumFinish] = useState(
@@ -1076,6 +1082,7 @@ export function ProductModelWorkspace({
 
   const mvpCanvasRef = useRef<HTMLCanvasElement>(null);
   const mvpRendererRef = useRef<ProductModelRenderer | null>(null);
+  const loadedModelRef = useRef<{ definition: ProductStructuralDefinition; widthCm: string; heightCm: string } | null>(null);
   const [planarFitRect, setPlanarFitRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
   const [isUsingTransformHandle, setIsUsingTransformHandle] = useState(false);
   const [isOutlineMeasurementPaused, setIsOutlineMeasurementPaused] = useState(false);
@@ -1385,7 +1392,7 @@ export function ProductModelWorkspace({
     // 2. Immediate 2D canvas blit
     if (mvpCanvasRef.current) {
       const isPlanar = Boolean(perspectiveCorners);
-      const sourceCanvas = mvpRendererRef.current.render(yaw, pitch, isPlanar);
+      const sourceCanvas = mvpRendererRef.current.render(yaw, pitch, isPlanar, productFacing);
       if (sourceCanvas) {
         const rect = mvpRendererRef.current.getPlanarFitRect();
         setPlanarFitRect((current) => current?.x === rect?.x && current?.y === rect?.y &&
@@ -1449,6 +1456,7 @@ export function ProductModelWorkspace({
     selectedAccessories,
     getFinishHexColor,
     perspectiveCorners,
+    productFacing,
     yaw,
     pitch,
     structuralDefinition,
@@ -1563,11 +1571,12 @@ export function ProductModelWorkspace({
     const pxCorners = denormalizeCorners(perspectiveCorners, currentW, currentH);
     let [p0, p1, p2, p3] = pxCorners;
     if (structuralDefinition && planarFitRect) {
+      const frame = getPlanarFitImageBounds(planarFitRect, isFlipped)!;
       const sourceFrame: QuadrilateralCorners = [
-        { x: planarFitRect.x, y: planarFitRect.y },
-        { x: planarFitRect.x + planarFitRect.width, y: planarFitRect.y },
-        { x: planarFitRect.x + planarFitRect.width, y: planarFitRect.y + planarFitRect.height },
-        { x: planarFitRect.x, y: planarFitRect.y + planarFitRect.height },
+        { x: frame.left, y: frame.top },
+        { x: frame.left + frame.width, y: frame.top },
+        { x: frame.left + frame.width, y: frame.top + frame.height },
+        { x: frame.left, y: frame.top + frame.height },
       ];
       const matrix = computeHomographyMatrix(sourceFrame, pxCorners);
       if (matrix) {
@@ -1603,7 +1612,7 @@ export function ProductModelWorkspace({
         y: (p0.y + p1.y + p2.y + p3.y) / 4,
       },
     };
-  }, [perspectiveCorners, canvasDisplaySize.width, canvasDisplaySize.height, structuralDefinition, planarFitRect]);
+  }, [perspectiveCorners, canvasDisplaySize.width, canvasDisplaySize.height, structuralDefinition, planarFitRect, isFlipped]);
 
   const [dismissedObstructionKeys, setDismissedObstructionKeys] = useState<Set<string>>(new Set());
 
@@ -2179,6 +2188,7 @@ export function ProductModelWorkspace({
     ).then((result) => {
       if (!result || cancelled) return;
       for (const slotId of Object.keys(selectedAccessories)) delete accessoryRollbackRef.current[slotId];
+      loadedModelRef.current = { definition: structuralDefinition, widthCm, heightCm };
       setMaterialCapabilities(result.capabilities);
       // Preserve the last measured outline while resize interactions pause measurement.
       // The revision redraw measures the rebuilt model as soon as measurement resumes.
@@ -2219,7 +2229,7 @@ export function ProductModelWorkspace({
       (mvpCanvasRef as React.MutableRefObject<HTMLCanvasElement | null>).current = canvas;
       if (canvas && mvpRendererRef.current && structuralDefinition) {
         const isPlanar = Boolean(perspectiveCorners);
-        const sourceCanvas = mvpRendererRef.current.render(yaw, pitch, isPlanar);
+        const sourceCanvas = mvpRendererRef.current.render(yaw, pitch, isPlanar, productFacing);
         if (sourceCanvas) {
           const ctx = canvas.getContext("2d");
           if (ctx) {
@@ -2258,7 +2268,7 @@ export function ProductModelWorkspace({
         }
       }
     },
-    [yaw, pitch, structuralDefinition, perspectiveCorners, autoRealism, autoShadow, effectiveLighting, isOutlineMeasurementPaused],
+    [productFacing, yaw, pitch, structuralDefinition, perspectiveCorners, autoRealism, autoShadow, effectiveLighting, isOutlineMeasurementPaused],
   );
 
   useLayoutEffect(() => {
@@ -2267,7 +2277,7 @@ export function ProductModelWorkspace({
     mvpRendererRef.current.setSize(renderFrameSize.width, renderFrameSize.height);
 
     const isPlanar = Boolean(perspectiveCorners);
-    const sourceCanvas = mvpRendererRef.current.render(yaw, pitch, isPlanar);
+    const sourceCanvas = mvpRendererRef.current.render(yaw, pitch, isPlanar, productFacing);
     if (!sourceCanvas) return;
     const nextFitRect = mvpRendererRef.current.getPlanarFitRect();
     setPlanarFitRect((current) =>
@@ -2313,6 +2323,7 @@ export function ProductModelWorkspace({
       applyNoiseToCanvas(ctx, targetCanvas.width, targetCanvas.height, effectiveLighting.suggested.grain);
     }
   }, [
+    productFacing,
     yaw,
     pitch,
     structuralDefinition,
@@ -2404,6 +2415,7 @@ export function ProductModelWorkspace({
       includeSill,
       selectedMaterials,
       visualMaterialOverrides,
+      productFacing,
       yaw,
       pitch,
       rotateAngle,
@@ -2431,11 +2443,15 @@ export function ProductModelWorkspace({
       removableStates,
       hatchCount: effectiveSelectedAddon !== "none" ? effectiveHatchCount : 0,
       hatchTargetKeys: (effectiveSelectedAddon !== "none" && includeHatch && effectiveHatchTargetKeys.length > 0) ? effectiveHatchTargetKeys : [],
+      grilleOpeningCount: effectiveGrilleOpeningCount,
+      grilleOpeningTargetKeys: effectiveGrilleOpeningTargets,
+      grilleOpeningConfig: activeCompatibleAddon?.grilleOpeningConfig ?? null,
       grilleBOM: activeGrilleBOM ?? null,
       baseUnitPrice: realtimePricing.baseUnitPrice,
       swappedAccessories: selectedAccessories,
       accessoryPriceDelta: totalAccessoryPriceDelta,
       visualParameterValues: {
+        productFacing,
         width: width * 10,
         height: height * 10,
         thickness: thickness,
@@ -2539,6 +2555,7 @@ export function ProductModelWorkspace({
     structuralWaiver,
     thicknessMm,
     widthCm,
+    productFacing,
     yaw,
     zoomLevel,
   ]);
@@ -2566,37 +2583,9 @@ export function ProductModelWorkspace({
     setIsFlipped((prev) => !prev);
   };
 
-  const resetProductPlacement = useCallback(() => {
-    const baseSize = getOverlaySizeFromDimensions(widthCm, heightCm);
-    const defaultScale = 1 + DEFAULT_SCENE_ZOOM / 100;
-
-    resizeSessionRef.current = null;
-    rotationSessionRef.current = null;
-    setIsUsingTransformHandle(false);
-    setIsOutlineMeasurementPaused(false);
-    setRotateAngle(0);
-    setIsFlipped(false);
-    setYaw(0);
-    setPitch(0);
-    setOverlayPosition({ x: 0, y: 0 });
-    overlayX.set(0);
-    overlayY.set(0);
-    setTargetPlaneId(null);
-    setMeasurementCorners(null);
-    setPerspectiveCorners(null);
-    setManualDimensions(false);
-    setSavedMeasurementEvidence(null);
-    setZoomLevel(DEFAULT_SCENE_ZOOM);
-    setOverlaySize({
-      width: Math.round(baseSize.width * defaultScale),
-      height: Math.round(baseSize.height * defaultScale),
-    });
-    setProjectedModelBounds({ left: 0, top: 0, width: 1, height: 1 });
-    setProductInstanceRevision((current) => current + 1);
-  }, [heightCm, overlayX, overlayY, widthCm, setManualDimensions, setSavedMeasurementEvidence]);
-
   const applyProductConfiguration = useCallback(
     (configuration: ProductConfigurationSnapshot, configurationDefinition = structuralDefinition) => {
+      const nextFacing = getConfigurationProductFacing(configuration);
       const nextWidth = String(configuration.widthCm);
       const nextHeight = String(configuration.heightCm);
       const baseSize = getOverlaySizeFromDimensions(nextWidth, nextHeight);
@@ -2632,6 +2621,7 @@ export function ProductModelWorkspace({
       } else {
         setSelectedAddon("none");
       }
+      setSelectedAddonProductId(configuration.addonProductId ?? null);
       if (configuration.addonProductId) {
         setSelectedAddonProductId(configuration.addonProductId);
       } else if (configuration.visualParameterValues?.selected_addon) {
@@ -2640,6 +2630,7 @@ export function ProductModelWorkspace({
           setSelectedAddonProductId(rawAddon.addon_product_id);
         }
       }
+      setAddonAlumFinish(configuration.addonAluminumFinish ?? "analok");
       if (configuration.addonAluminumFinish) {
         setAddonAlumFinish(configuration.addonAluminumFinish);
       } else if (configuration.visualParameterValues?.selected_addon) {
@@ -2648,6 +2639,18 @@ export function ProductModelWorkspace({
           setAddonAlumFinish(rawAddon.finish);
         }
       }
+      setAddonMountingSide(configuration.addonMountingSide ?? "back");
+      setScreenMeshDensity(configuration.screenMeshDensity ?? "fine");
+      setIncludeHatch(configuration.includeHatch ?? true);
+      setRemovableStates(configuration.removableStates ?? {});
+      for (const slotId of Object.keys(accessoryRequestSequence.current)) {
+        accessoryRequestSequence.current[slotId] += 1;
+      }
+      setPendingAccessoryIds({});
+      setAccessoryErrors({});
+      accessoryRollbackRef.current = {};
+      setSelectedAccessories(configuration.swappedAccessories ?? {});
+      setProductFacing(nextFacing);
       setYaw(configuration.yaw);
       setPitch(configuration.pitch);
       setRotateAngle(configuration.rotateAngle);
@@ -2705,7 +2708,7 @@ export function ProductModelWorkspace({
         }
         if (mvpCanvasRef.current) {
           const isPlanar = Boolean(configuration.perspectiveFitCorners);
-          const sourceCanvas = mvpRendererRef.current.render(configuration.yaw ?? 0, configuration.pitch ?? 0, isPlanar);
+          const sourceCanvas = mvpRendererRef.current.render(configuration.yaw ?? 0, configuration.pitch ?? 0, isPlanar, getConfigurationProductFacing(configuration));
           if (sourceCanvas) {
             const ctx = mvpCanvasRef.current.getContext("2d");
             if (ctx) {
@@ -2723,6 +2726,36 @@ export function ProductModelWorkspace({
     },
     [overlayX, overlayY, setManualDimensions, setSavedMeasurementEvidence, structuralDefinition, getFinishHexColor],
   );
+
+  // PRD-F6 / SDD-C5 / QAD-TC6: retain the first rendered state per instance.
+  const resetStateKey = `${assetSessionId ?? "room"}:${activeOverlayId}:${currentProductId ?? "product"}`;
+  useLayoutEffect(() => {
+    if (!isWorkspaceResetCaptureReady({
+      modelReady: materialCapabilities !== null && loadedModelRef.current?.definition === structuralDefinition
+        && loadedModelRef.current?.widthCm === widthCm && loadedModelRef.current?.heightCm === heightCm,
+      canvasWidth: canvasDisplaySize.width,
+      measuredCanvasWidth: measuredCanvasSizeRef.current?.width ?? 0,
+    })) return;
+    if (!structuralDefinition || !selectedProduct ||
+      structuralDefinition.product.productId !== currentProductId ||
+      initialProductStatesRef.current.has(resetStateKey)) return;
+    initialProductStatesRef.current.set(resetStateKey, captureWorkspaceResetState(
+      currentConfiguration, overlaySize, canvasDisplaySize.width,
+    ));
+  }, [resetStateKey, currentProductId, structuralDefinition, selectedProduct, materialCapabilities, widthCm, heightCm, currentConfiguration, overlaySize, canvasDisplaySize.width]);
+
+  const resetProductPlacement = useCallback(() => {
+    const initialState = initialProductStatesRef.current.get(resetStateKey);
+    if (!initialState) return;
+    const restored = restoreWorkspaceResetState(initialState, canvasDisplaySize.width);
+    resizeSessionRef.current = null;
+    rotationSessionRef.current = null;
+    setIsUsingTransformHandle(false);
+    setIsOutlineMeasurementPaused(false);
+    setProjectedModelBounds({ left: 0, top: 0, width: 1, height: 1 });
+    applyProductConfiguration(restored.configuration);
+    setOverlaySize(restored.overlaySize);
+  }, [resetStateKey, canvasDisplaySize.width, applyProductConfiguration]);
 
   const handleReset = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -2789,6 +2822,7 @@ export function ProductModelWorkspace({
           glassType: "regular",
           visualMaterialOverrides: {},
           quantity: 1,
+          productFacing: "front",
           yaw: 0,
           pitch: 0,
           rotateAngle: intent.mode === "change" ? currentConfiguration.rotateAngle : 0,
@@ -2802,6 +2836,7 @@ export function ProductModelWorkspace({
           manualOcclusionMaskDataUrl: null,
           manualOcclusionPolygons: [],
           visualParameterValues: {
+            productFacing: "front",
             width: Math.round(stagedWidthCm * 10),
             height: Math.round(stagedHeightCm * 10),
             thickness: Number(definition.parameters.find((parameter) => parameter.parameterKey === "thickness")?.defaultValue) || 3,
@@ -2847,6 +2882,7 @@ export function ProductModelWorkspace({
       suppressNextConfigurationPublicationRef.current = true;
       appliedTemplateDefaultsRef.current = intent.productId;
       renderer.commitPreparedModel(prepared);
+      loadedModelRef.current = { definition, widthCm: String(targetConfiguration.widthCm), heightCm: String(targetConfiguration.heightCm) };
       flushSync(() => {
         applyProductConfiguration(targetConfiguration, definition);
         setActiveOverlayId(intent.targetOverlayId);
@@ -2877,6 +2913,7 @@ export function ProductModelWorkspace({
 
     if (product.id === currentProductId && !selectedProduct) {
       resetProductPlacement();
+      setProductFacing("front");
       setSelectedProduct(true);
       setIsSnapshotApplied(false);
       return;
@@ -2955,6 +2992,7 @@ export function ProductModelWorkspace({
       // Use the export filter - stripped of selection-guide outlines.
       modelFilter: exportModelFilter,
       structuralDefinition: structuralDefinition ?? null,
+      productFacing,
       yaw,
       pitch,
       lighting: effectiveLighting ?? null,
@@ -2981,6 +3019,7 @@ export function ProductModelWorkspace({
     productOverlayImage,
     rotateAngle,
     structuralDefinition,
+    productFacing,
     yaw,
     pitch,
     effectiveLighting,
@@ -3004,6 +3043,7 @@ export function ProductModelWorkspace({
       isFlipped,
       modelFilter: exportModelFilter,
       structuralDefinition: structuralDefinition ?? null,
+      productFacing,
       yaw,
       pitch,
       lighting: effectiveLighting ?? null,
@@ -3025,6 +3065,7 @@ export function ProductModelWorkspace({
       rotateAngle,
       structuralDefinition,
       widthCm,
+      productFacing,
       yaw,
     ],
   );
@@ -4722,7 +4763,7 @@ export function ProductModelWorkspace({
                             overlaySize.width,
                             overlaySize.height,
                             structuralDefinition && planarFitRect
-                              ? { left: planarFitRect.x, top: planarFitRect.y, width: planarFitRect.width, height: planarFitRect.height }
+                              ? getPlanarFitImageBounds(planarFitRect, isFlipped)
                               : null,
                           ),
                           transformStyle: "preserve-3d",
@@ -5308,6 +5349,23 @@ export function ProductModelWorkspace({
                         className="overflow-hidden"
                       >
                         <div className="px-6 pb-6 flex flex-col gap-5">
+                          {perspectiveCorners && (
+                            <fieldset className="flex flex-col gap-2">
+                              <legend className="text-[#0f1422] text-sm font-medium">Product Facing</legend>
+                              <p id="product-facing-hint" className="text-xs text-neutral-600">Choose the side of the product visible in your photo.</p>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 p-1 bg-neutral-100 rounded-[12px]" aria-describedby="product-facing-hint">
+                                {(["front", "back"] as const).map((face) => (
+                                  <label key={face} className={cn(
+                                    "min-h-11 flex items-center justify-center gap-2 py-2 px-3 text-xs rounded-[10px] font-medium transition-all cursor-pointer focus-within:ring-2 focus-within:ring-[#07b6d3]",
+                                    productFacing === face ? "bg-[#0f1422] text-white shadow-xs" : "text-neutral-600 hover:text-black",
+                                  )}>
+                                    <input type="radio" name="product-facing" value={face} checked={productFacing === face} onChange={() => setProductFacing(face)} className="sr-only" />
+                                    {face === "front" ? "Front (Exterior)" : "Back (Interior)"}
+                                  </label>
+                                ))}
+                              </div>
+                            </fieldset>
+                          )}
                           <div className="flex flex-col gap-2">
                             <span className="text-[#c3c3c3] text-base font-normal">Turn Left / Right</span>
                             <div className="flex items-center gap-2">
@@ -6827,6 +6885,7 @@ type WorkspaceSnapshotOptions = {
   modelFilter: React.CSSProperties["filter"];
   generatedCanvasOverride?: HTMLCanvasElement | null;
   structuralDefinition: ProductStructuralDefinition | null;
+  productFacing: ProductFacing;
   yaw: number;
   pitch: number;
   lighting: LightingAnalysis | null;
@@ -6877,14 +6936,23 @@ async function captureWorkspaceCanvas({
     // is still the geometric center of the element for any rotation angle.
     const width = overlayElement.offsetWidth || overlayBounds.width;
     const height = overlayElement.offsetHeight || overlayBounds.height;
+    const liveCanvas = generatedCanvasOverride ?? overlayElement.querySelector("canvas");
+    let capturedCanvas: HTMLCanvasElement | null = null;
+    if (liveCanvas) {
+      capturedCanvas = document.createElement("canvas");
+      capturedCanvas.width = liveCanvas.width;
+      capturedCanvas.height = liveCanvas.height;
+      const captureContext = capturedCanvas.getContext("2d");
+      if (!captureContext) throw new Error("Snapshot rendering is not available in this browser.");
+      captureContext.drawImage(liveCanvas, 0, 0);
+    }
     overlayCapture = {
       centerX: overlayBounds.left - canvasBounds.left + overlayBounds.width / 2,
       centerY: overlayBounds.top - canvasBounds.top + overlayBounds.height / 2,
       width,
       height,
-      // querySelector is synchronous - grab the Three.js WebGL canvas now.
-      generatedCanvas:
-        generatedCanvasOverride ?? overlayElement.querySelector("canvas"),
+      // Freeze the chosen face before asynchronous background/mask loading.
+      generatedCanvas: capturedCanvas,
     };
   }
   // End synchronous DOM capture
@@ -7058,7 +7126,7 @@ async function drawSnapshotOverlay({
       context.save();
       drawPerspectiveWarpedImage(
         context, offscreen, pixelCorners, 16,
-        planarFitRect ? { left: planarFitRect.x, top: planarFitRect.y, width: planarFitRect.width, height: planarFitRect.height } : null,
+        planarFitRect ? getPlanarFitImageBounds(planarFitRect, isFlipped) : null,
       );
       context.restore();
       return;

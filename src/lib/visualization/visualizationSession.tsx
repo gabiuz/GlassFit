@@ -1,5 +1,6 @@
 "use client";
 
+import { getConfigurationProductFacing } from "./productFacing";
 import {
   createContext,
   useCallback,
@@ -523,7 +524,10 @@ export function validateSessionPlaneEligibility(state: VisualizationSessionState
   const frame = { imageId: session?.sessionId ?? "", width: session?.workspaceImage.width ?? 0,
     height: session?.workspaceImage.height ?? 0 };
   const validate = (configuration: ProductConfigurationSnapshot) =>
-    recalculateMetricConfiguration(configuration, meta?.metricReference, frame, meta);
+    recalculateMetricConfiguration({ ...configuration,
+      productFacing: getConfigurationProductFacing(configuration),
+      visualParameterValues: { ...configuration.visualParameterValues, productFacing: getConfigurationProductFacing(configuration) },
+    }, meta?.metricReference, frame, meta);
   const overlays = (items: PlacedOverlay[]) => items.map(overlay => ({ ...overlay,
     configuration: validate(overlay.configuration),
     variationRenderRecipe: overlay.variationRenderRecipe ? { ...overlay.variationRenderRecipe,

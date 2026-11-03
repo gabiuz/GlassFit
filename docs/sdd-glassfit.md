@@ -193,3 +193,8 @@ SDD-C2 and SDD-C3 (IMP-MS63 / QAD-TC78):
 SDD-C2 and SDD-C3 (fix-14 / QAD-TC3, QAD-TC4, QAD-TC77, QAD-TC78): The normalized uploaded image must pass one authoritative three-way scene-suitability gate before `/analyze-image` returns a workspace session. Both `auto_detect` (including legacy `standard`) and `paper_fiducial` use it. Rejected and unverifiable outcomes return distinct machine-readable errors, do not retry as network failures, and remove generated session artifacts. Depth-only fallback and a paper marker are insufficient evidence of a usable space. Client entry paths preserve selected-file recovery and ignore canceled or superseded responses.
 
 SDD-C2 and SDD-C3 (fix-14 follow-up): The suitability gate exposes `SPACE_PHOTO_REJECTED`, `SPACE_PHOTO_TOO_CLOSE`, and `SPACE_PHOTO_UNVERIFIABLE` as separate machine-readable failures. The too-close decision requires dominant wall evidence without opening, floor, ceiling, or building context. A wall/ceiling label pair alone is insufficient for acceptance. Both upload routes show the corresponding guidance without retrying semantic 4xx failures.
+
+
+## IMP-MS88: Post-Fit Product Facing
+
+SDD-C4, SDD-C5, SDD-C6: Compose productFacing as a local vertical half-turn around the structural installation center before relative manual yaw/pitch. Use the same face in active renders, overlay restoration, variation recipes and flattened capture. Validate front/back at configuration boundaries; do not rebuild geometry or CV evidence on a facing change. See [MS88](implementation/ms88.md), QAD-TC103.1 through QAD-TC103.12.

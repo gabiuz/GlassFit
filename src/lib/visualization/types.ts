@@ -356,7 +356,11 @@ export type ManualOcclusionMaskResult = {
   maskDataUrl: string | null;
 };
 
+export type ProductFacing = "front" | "back";
+
 export type ProductConfigurationSnapshot = {
+  /** IMP-MS88: visible physical face; absent legacy values default to front. */
+  productFacing?: ProductFacing;
   /** IMP-MS55: explicit opening-plane assignment; absent means approximate. */
   targetPlaneId?: string | null;
   widthCm: number;
@@ -403,7 +407,7 @@ export type ProductConfigurationSnapshot = {
   hatchTargetKeys?: string[];
   grilleOpeningCount?: number;
   grilleOpeningTargetKeys?: string[];
-  grilleOpeningConfig?: import("@/lib/admin/products/types").GrilleOpeningConfig | null;
+  grilleOpeningConfig?: import("@/lib/admin/products/types").GrilleOpeningConfig | Record<string, unknown> | null;
   baseUnitPrice?: number;
   grilleBOM?: import("@/lib/pricing/types").GrilleLinearBOMResult | null;
   swappedAccessories?: Record<string, SelectedAccessoryState>;

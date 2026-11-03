@@ -611,3 +611,8 @@ Introduces automated parameter and geometric replication logic for modular fenes
 ## MS85: Universal BOM Pricing Integrity
 
 Implemented November 2, 2026 under PRD-F10, PRD-F14, PRD-F19, SDD-C7, SDD-C9 and QAD-TC100.1 through QAD-TC100.14. See [implementation and verification record](implementation/ms85.md#8-implementation-and-verification-record). No schema migration or deployment performed. Local browser and exported PDF visual acceptance completed with synthetic fixtures; see the verification record for evidence scope.
+
+
+## MS88: Post-Fit Product Facing
+
+**Status:** Implemented (November 3, 2026); production asset and full-scene acceptance pending. **Specification:** [IMP-MS88](implementation/ms88.md). **Traceability:** PRD-F5, PRD-F6, PRD-F9; SDD-C4, SDD-C5, SDD-C6; DSD-UI4; ERD-E10, ERD-E11; QAD-TC103.1 through QAD-TC103.12. Implementation and verification evidence is maintained in the specification.

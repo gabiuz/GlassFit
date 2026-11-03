@@ -65,6 +65,8 @@ GlassFit is a responsive, web-based photo-simulation and consultation-support pl
 | IMP-MS81 | Parametric Jalousie Dynamic Louver and Operator Generation, Automated Pitch Counting, and Per-Piece BOM Pricing Engine | `docs/implementation/ms81.md` | Implemented | October 29, 2026 | GlassFit Capstone Team |
 | IMP-MS82 | Smart Dynamic Modular Bay Replication, Directional Aperture Expansion, and Automated Infill and Hardware Generation | `docs/implementation/ms82.md` | Implemented | October 29, 2026 | GlassFit Capstone Team |
 
+| IMP-MS88 | Post-Fit Front (Exterior) and Back (Interior) Product Facing | `docs/implementation/ms88.md` | Implemented; production asset acceptance pending | November 3, 2026 | GlassFit Capstone Team |
+
 ---
 
 ## 3. End-to-End Traceability Matrix
@@ -192,3 +194,6 @@ fix-14 traceability: PRD-F3, PRD-F4, PRD-F6 -> SDD-C2, SDD-C3, SDD-C5 -> DSD-UI3
 
 
 MS85 traceability: IMP-MS85 / BRD-M2, BRD-M4, BRD-M5 -> PRD-F10, PRD-F14, PRD-F19 -> SDD-C7, SDD-C9 -> DSD-UI7, DSD-UI10 -> ERD-E6, ERD-E14, ERD-E17 -> QAD-TC100.1 through QAD-TC100.14. See [MS85](implementation/ms85.md) for BOM consolidation, extrusion count isolation, fixture profile suitability and sill omission disclosure. No database migration is required.
+
+
+IMP-MS88 traceability: BRD-M2, BRD-M4 -> PRD-F5, PRD-F6, PRD-F9 -> SDD-C4, SDD-C5, SDD-C6 -> DSD-UI4 -> ERD-E10, ERD-E11 -> QAD-TC103.1 through QAD-TC103.12. See [Post-Fit Product Facing](implementation/ms88.md).
