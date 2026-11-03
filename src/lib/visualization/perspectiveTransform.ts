@@ -810,3 +810,17 @@ export function drawPerspectiveWarpedImage(
   drawPerspectiveWarpedImage2D(context, source, targetCorners, subdivisions, left, top, width, height, Boolean(srcBounds));
 }
 
+
+
+/** IMP-MS88 / QAD-TC103.4: image flip mirrors asymmetric padding with its frame. */
+export function getPlanarFitImageBounds(
+  rect: { x: number; y: number; width: number; height: number } | null | undefined,
+  isFlipped: boolean,
+) {
+  return rect ? {
+    left: isFlipped ? 1 - rect.x - rect.width : rect.x,
+    top: rect.y,
+    width: rect.width,
+    height: rect.height,
+  } : null;
+}

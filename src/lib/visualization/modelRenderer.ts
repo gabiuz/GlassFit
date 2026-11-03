@@ -1,4 +1,6 @@
 import * as THREE from "three";
+import { applyProductFacing } from "./productFacing";
+import type { ProductFacing } from "./types";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { ProductStructuralDefinition } from "@/lib/visualization/types";
 import type { LightingAnalysis } from "@/lib/imageApi";
@@ -50,6 +52,7 @@ export type LoadedModelResult = {
 export type PreparedProductModel = LoadedModelResult & {
   group: THREE.Group;
   sharedGeometry: boolean;
+  exteriorYaw: number;
 };
 
 // Cache the environment map globally so we only download the HDR once
@@ -115,6 +118,7 @@ export class ProductModelRenderer {
   private planarFitRect: { x: number; y: number; width: number; height: number } | null = null;
   private modelGroup: THREE.Group;
   private modelLoadVersion = 0;
+  private exteriorYaw = 0;
   private materialCapabilities: ProductMaterialCapabilities = {
     hasAluminum: false,
     hasGlass: false,
@@ -295,7 +299,10 @@ export class ProductModelRenderer {
       console.warn("Failed to load environment map", e);
     }
 
-    return { group, capabilities, sharedGeometry: definition.template.modelStrategy !== "Fixed" };
+    // MS80 defines parametric exterior at -Z, interior at +Z. Fixed assets
+    // retain their authored +Z presentation as the exterior baseline.
+    return { group, capabilities, sharedGeometry: definition.template.modelStrategy !== "Fixed",
+      exteriorYaw: definition.template.modelStrategy === "Fixed" ? 0 : Math.PI };
   }
 
   commitPreparedModel(prepared: PreparedProductModel) {
@@ -308,6 +315,7 @@ export class ProductModelRenderer {
     prepared.group.userData.sharedGeometry = prepared.sharedGeometry;
     this.modelGroup.add(prepared.group);
     this.materialCapabilities = prepared.capabilities;
+    this.exteriorYaw = prepared.exteriorYaw;
   }
 
   releasePreparedModel(prepared: PreparedProductModel) {
@@ -585,17 +593,25 @@ export class ProductModelRenderer {
     this.bevelLight.position.set(direction.x * 2.2 || 2.2, 3.8, 3.0);
   }
 
-  render(yaw: number, pitch: number, isPlanarFit = false) {
+  render(yaw: number, pitch: number, isPlanarFit = false, productFacing?: ProductFacing) {
     if (this.modelGroup.children.length === 0) {
       return null;
     }
 
-    if (isPlanarFit) {
-      // 1. Establish the reference base bounds of the unrotated model at (0, 0, 0)
-      // Exclude add-on attachments so planar perspective camera framing never shifts or resizes host product
-      this.modelGroup.rotation.set(0, 0, 0);
-      this.modelGroup.updateMatrixWorld(true);
+    // Derive one installation pivot in authored coordinates, excluding projections.
+    this.modelGroup.position.set(0, 0, 0);
+    this.modelGroup.rotation.set(0, 0, 0);
+    this.modelGroup.updateMatrixWorld(true);
+    const installation = computeFitFrameBounds(this.modelGroup) ?? computeInstallationProductBounds(this.modelGroup);
+    const pivot = (installation ?? computeHostProductBounds(this.modelGroup)).getCenter(new THREE.Vector3());
+    // Callers without a facing argument retain the historical catalog view.
+    const exteriorYaw = productFacing === undefined ? 0 : this.exteriorYaw;
+    const facing = productFacing ?? "front";
+    applyProductFacing(this.modelGroup, pivot, 0, 0, facing, exteriorYaw);
 
+    if (isPlanarFit) {
+      // 1. Establish reference bounds for the selected face at zero manual angles.
+      // Exclude add-on attachments so planar perspective camera framing never shifts or resizes host product
       const fitBounds = computeFitFrameBounds(this.modelGroup) ?? computeInstallationProductBounds(this.modelGroup);
       if (!fitBounds) {
         console.error("[MS83] Cannot fit product: no structural installation perimeter is available. Check component roles and frame metadata.");
@@ -662,13 +678,8 @@ export class ProductModelRenderer {
         this.camera.projectionMatrixInverse.copy(this.camera.projectionMatrix).invert();
         this.camera.updateMatrixWorld(true);
 
-        // 2. Apply the user's yaw and pitch rotations to the 3D model
-        this.modelGroup.rotation.set(
-          THREE.MathUtils.degToRad(pitch),
-          THREE.MathUtils.degToRad(yaw),
-          0
-        );
-        this.modelGroup.updateMatrixWorld(true);
+        // 2. Compose relative yaw/pitch after the physical face transform.
+        applyProductFacing(this.modelGroup, pivot, yaw, pitch, facing, exteriorYaw);
 
         this.renderer.render(this.scene, this.camera);
         // Retain the pre-MS83 vertical visible-alpha normalization. Only the
@@ -707,11 +718,7 @@ export class ProductModelRenderer {
     this.camera.updateProjectionMatrix();
     this.camera.position.copy(CAMERA_DIRECTION).multiplyScalar(CAMERA_BASE_DISTANCE);
     this.camera.lookAt(0, 0, 0);
-    this.modelGroup.rotation.set(
-      THREE.MathUtils.degToRad(pitch),
-      THREE.MathUtils.degToRad(yaw),
-      0
-    );
+    applyProductFacing(this.modelGroup, pivot, yaw, pitch, facing, exteriorYaw);
 
     this.modelGroup.updateMatrixWorld(true);
     this.camera.updateMatrixWorld(true);

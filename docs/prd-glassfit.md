@@ -112,6 +112,7 @@ GlassFit bridges this gap through an accessible, asynchronous **"Photo-Based Sim
 - Given an active product overlay in `/visualize/[productId]/workspace`, when the user drags on-screen handles or touches the overlay, then the model translates along the X/Y plane, scales proportionally, and rotates with smooth 60 FPS performance.
 - Given an active product overlay with non-zero yaw or pitch, when the user confirms a perspective fit, then the workspace sets yaw and pitch to 0 degrees before rendering the fitted state and reflects those values in the visible controls and current configuration snapshot.
 - Given a perspective fit has been confirmed, when the user subsequently changes yaw or pitch using an available orientation control, then the selected value is rendered and retained in the current configuration until another perspective fit or placement reset occurs.
+- Given an edited product, when the user clicks Reset, restore its first rendered configuration, dimensions, appearance, orientation, and placement. Preserve its initial overlay footprint proportionally across viewport changes. Reset is repeatable and scoped to the active product instance (SDD-C5, QAD-TC6).
 - Given a placed overlay, when the user clicks "Place", then the overlay is rendered to an off-screen canvas and cached as a transparent 2D bitmap layer, releasing active Three.js GPU overhead.
 - Given an editable product on a compact touch viewport, when the mobile editor opens, then the workspace uses the available dynamic viewport, isolates canvas gestures from document scrolling, keeps all actions reachable, and provides thumb-safe four-point controls.
 - Given the compact mobile editor is active, when the user taps `Done` or leaves the view, then document scrolling and the prior scroll position are restored without applying, saving, or discarding the current in-memory configuration.
@@ -580,3 +581,8 @@ PRD-F3, PRD-F4, PRD-F5, PRD-F6, and PRD-F10 (IMP-MS62 / QAD-TC77): retain two vi
 This requirement supersedes earlier default paper-localization intake expectations in MS48/MS51/MS53. The request mode controls new sessions even when response metadata disagrees. Restore unreviewed automatic sessions without paper evidence; preserve explicitly reviewed legacy automatic sessions under paper mode, subject to existing eligibility checks. Saved historical quotations remain unchanged. The legacy API value `standard` remains paper-free and is not a third visible mode.
 
 PRD-F3 and PRD-F4 (fix-14 follow-up): A photo dominated by a known non-space subject receives explicit non-space guidance. A close view consisting almost entirely of a detected surface, without enough room or opening context for placement, receives separate move-back guidance. Ambiguous or unavailable evidence remains unverifiable. These outcomes do not create a workspace session; accepted architectural photos continue normally.
+
+
+## IMP-MS88: Post-Fit Product Facing
+
+PRD-F5, PRD-F6, PRD-F9: Each fitted product offers Front (Exterior) and Back (Interior) facing in Placement. Facing is independent of manual angles, image flip, dimensions, physical add-on mounting and pricing. New and legacy configurations default to front; duplication inherits facing and refit preserves it. See [MS88](implementation/ms88.md), QAD-TC103.1 through QAD-TC103.12.

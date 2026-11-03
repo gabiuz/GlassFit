@@ -188,3 +188,8 @@ Automatic upload guidance and workspace controls must not request paper or expos
 DSD-UI3 and DSD-UI4 (fix-14): Both upload entry paths keep the user on upload when the service rejects or cannot verify a space photo. Reuse the existing error modal and design tokens. Semantic rejection explains that a room or installation opening is required and offers Choose Another Photo; temporary verification failure offers retry. Neither state exposes the paper review, success modal, or workspace. Restore focus to the upload control for another selection.
 
 DSD-UI3 (fix-14 follow-up): Confirmed non-space images say that the upload is not a room or opening photo. A surface photo taken too close asks the user to step back and include the surrounding wall or opening. Both offer Choose Another Photo; classifier outages and ambiguous evidence retain distinct verification guidance.
+
+
+## IMP-MS88: Post-Fit Product Facing
+
+DSD-UI4: After Fit, Placement contains Product Facing with Front (Exterior) and Back (Interior) and the hint "Choose the side of the product visible in your photo." Reuse segmented selection styling, native keyboard controls, visible focus and 44px touch targets on mobile. See [MS88](implementation/ms88.md), QAD-TC103.1 through QAD-TC103.12.
