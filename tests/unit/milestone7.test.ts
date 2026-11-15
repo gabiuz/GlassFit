@@ -218,9 +218,8 @@ describe("Milestone 7: Quotation Summary & Consultation PDF Handoff", () => {
 
       // Check deep link formats
       assert.ok(booking.messengerUrl.startsWith("https://m.me/rrdaluminumglass?text="));
-      assert.ok(booking.viberUrl.startsWith("viber://forward?text="));
-      const viberText = decodeURIComponent(booking.viberUrl.split("text=")[1]);
-      assert.ok(viberText.length <= 200);
+      assert.ok(booking.viberUrl.startsWith("https://viber.me/639053258970?draft="));
+      const viberText = new URL(booking.viberUrl).searchParams.get("draft") ?? "";
       assert.ok(viberText.includes("glassfit.ph/q/cf-2026-001"));
       assert.ok(viberText.includes("Q-2026-0482"));
       assert.ok(viberText.includes("Series 798"));
@@ -241,7 +240,7 @@ describe("Milestone 7: Quotation Summary & Consultation PDF Handoff", () => {
       assert.ok(booking.messengerUrl.includes(encodeURIComponent("Structural waiver attached")));
     });
 
-    it("does not launch a Viber draft when the reference alone exceeds its text limit", () => {
+    it("keeps a long signed reference in the addressed Viber draft", () => {
       const referenceLink = `https://glassfit.ph/q/${"a".repeat(210)}`;
       const booking = formatBookingShareMessage({
         customerName: "Customer",
@@ -250,7 +249,8 @@ describe("Milestone 7: Quotation Summary & Consultation PDF Handoff", () => {
         productDescription: "Sliding Window",
         totalEstimatePhp: 5000,
       });
-      assert.equal(booking.viberUrl, "");
+      assert.ok(booking.viberUrl.startsWith("https://viber.me/639053258970?draft="));
+      assert.ok((new URL(booking.viberUrl).searchParams.get("draft") ?? "").includes(referenceLink));
       assert.ok(booking.messageText.includes(referenceLink));
     });
 
@@ -263,8 +263,7 @@ describe("Milestone 7: Quotation Summary & Consultation PDF Handoff", () => {
         productDescription: "Jalousie Window ".repeat(12),
         totalEstimatePhp: 9372,
       });
-      const viberText = decodeURIComponent(booking.viberUrl.split("text=")[1]);
-      assert.ok(viberText.length <= 200);
+      const viberText = new URL(booking.viberUrl).searchParams.get("draft") ?? "";
       assert.ok(viberText.includes(referenceLink));
       assert.ok(viberText.includes("Lebron English"));
     });

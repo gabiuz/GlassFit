@@ -11,7 +11,7 @@ const navbarIcons = [
   {
     key: "phone",
     src: "/navbar_icons/phone.svg",
-    label: "0918-601-4737",
+    label: "0905-325-8970",
   },
   {
     key: "clock",

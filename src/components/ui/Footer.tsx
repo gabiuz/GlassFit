@@ -26,7 +26,7 @@ export default function Footer({ className = "" }: FooterProps) {
             <div className="flex flex-col gap-4 text-[#3a3a3a] text-lg font-normal leading-7">
               <p>Bicutan, Parañaque</p>
               <div>
-                <p className="">Contact Number: 0918-601-4737</p>
+                <p className="">Contact Number: 0905-325-8970</p>
                 <p className="">Email: glassfit@gmail.com</p>
               </div>
             </div>

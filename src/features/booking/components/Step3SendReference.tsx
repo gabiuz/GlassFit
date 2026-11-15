@@ -71,10 +71,10 @@ export function Step3SendReference({
   };
 
   const handleViberShare = () => {
-    if (!viberUrl) {
-      setFeedback("The reference is too long for Viber's pre-filled message. Copy the full message above instead.");
-      return;
-    }
+    if (launchPending.current) return;
+    launchPending.current = true;
+    setTimeout(() => { launchPending.current = false; }, 1500);
+    setFeedback("If Viber does not open or the draft is missing, copy the full message above and paste it into the business chat.");
     window.location.href = viberUrl;
     onSend("Viber");
   };
@@ -176,7 +176,7 @@ export function Step3SendReference({
                     Send via Viber
                   </p>
                   <p className="font-normal text-sm sm:text-[16px] tracking-[-0.304px] leading-[1.4] text-[#c3c3c3]">
-                    Opens a short quote with the full reference link
+                    Opens the business chat with your message
                   </p>
                 </div>
               </div>
