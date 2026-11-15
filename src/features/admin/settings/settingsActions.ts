@@ -373,7 +373,7 @@ export async function getSystemPreferences(): Promise<SettingsActionResult<Syste
                 id: "default",
                 businessName: "GlassFit",
                 contactEmail: "glassfit@gmail.com",
-                contactPhone: "+63 917 123 4567",
+                contactPhone: "+63 905 325 8970",
                 operatingDaysRange: "Monday - Saturday",
                 operatingHoursRange: "8:00 AM - 5:00 PM",
                 operatingSchedules: [

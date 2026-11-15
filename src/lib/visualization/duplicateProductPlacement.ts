@@ -32,6 +32,7 @@ export function createSplitConfigurations(
     throw new Error("The split products do not fit on the canvas. Resize or reposition the opening and retry.");
   }
   const corners = source.perspectiveFitCorners;
+  const poseCorners = source.visualPoseCorners ?? corners;
   if (corners && (!isValidQuadrilateral(corners) || corners.some(point => point.x < 0 || point.x > 1 || point.y < 0 || point.y > 1))) {
     throw new Error("The perspective opening is invalid or outside the canvas. Fit it again and retry.");
   }
@@ -39,11 +40,17 @@ export function createSplitConfigurations(
     const start = index / count;
     const end = (index + 1) / count;
     let pieceCorners: QuadrilateralCorners | null = null;
+    let piecePoseCorners: QuadrilateralCorners | null = null;
     if (corners) {
       pieceCorners = axis === "width"
         ? [interpolate(corners[0], corners[1], start), interpolate(corners[0], corners[1], end), interpolate(corners[3], corners[2], end), interpolate(corners[3], corners[2], start)]
         : [interpolate(corners[0], corners[3], start), interpolate(corners[1], corners[2], start), interpolate(corners[1], corners[2], end), interpolate(corners[0], corners[3], end)];
       if (!isValidQuadrilateral(pieceCorners)) throw new Error("The fitted opening cannot be split into valid adjacent regions.");
+      if (poseCorners) {
+        piecePoseCorners = axis === "width"
+          ? [interpolate(poseCorners[0], poseCorners[1], start), interpolate(poseCorners[0], poseCorners[1], end), interpolate(poseCorners[3], poseCorners[2], end), interpolate(poseCorners[3], poseCorners[2], start)]
+          : [interpolate(poseCorners[0], poseCorners[3], start), interpolate(poseCorners[1], poseCorners[2], start), interpolate(poseCorners[1], poseCorners[2], end), interpolate(poseCorners[0], poseCorners[3], end)];
+      }
     }
     return {
       ...source,
@@ -52,6 +59,7 @@ export function createSplitConfigurations(
       positionX: (source.positionX ?? 0) + (axis === "width" ? (index + 0.5 - count / 2) * pieceWidth * Math.cos(radians) : -(index + 0.5 - count / 2) * pieceHeight * Math.sin(radians)),
       positionY: (source.positionY ?? 0) + (axis === "width" ? (index + 0.5 - count / 2) * pieceWidth * Math.sin(radians) : (index + 0.5 - count / 2) * pieceHeight * Math.cos(radians)),
       perspectiveFitCorners: pieceCorners,
+      visualPoseCorners: piecePoseCorners,
       visualParameterValues: {
         ...source.visualParameterValues,
         [axis]: pieceMm,

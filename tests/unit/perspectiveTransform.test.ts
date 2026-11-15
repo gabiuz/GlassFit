@@ -302,7 +302,7 @@ describe("MS-02: 4-Point Perspective Plane Fitting for Window Products", () => {
       assert.match(confirmationHandler, /const \{ widthRatio, heightRatio \} = estimateDimensionsFromCorners\(photoCorners\)/);
       assert.match(workspace, /value=\{yaw\}[\s\S]*?onChange=\{\(e\) => setYaw\(Number\(e\.target\.value\)\)\}/);
       assert.match(workspace, /value=\{pitch\}[\s\S]*?onChange=\{\(e\) => setPitch\(Number\(e\.target\.value\)\)\}/);
-      assert.match(workspace, /mvpRendererRef\.current\.render\(yaw, pitch, isPlanar\)/);
+      assert.match(workspace, /mvpRendererRef\.current\.render\(yaw, pitch, isPlanar, productFacing\)/);
       assert.match(workspace, /yaw,\s*pitch,/);
     });
   });

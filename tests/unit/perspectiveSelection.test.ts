@@ -6,6 +6,7 @@ import {
   denormalizeCorners,
   isValidQuadrilateral,
   normalizeCorners,
+  rotatePerspectiveCorners,
 } from "../../src/lib/visualization/perspectiveTransform";
 
 const expected = [
@@ -57,5 +58,18 @@ describe("MS-02 drag selection geometry", () => {
       denormalizeCorners(normalizeCorners(corners, 800, 600), 800, 600),
       corners,
     );
+  });
+
+  it("rotates fitted corners around their pixel center on a non-square canvas", () => {
+    const corners = normalizeCorners([
+      { x: 100, y: 100 }, { x: 300, y: 100 },
+      { x: 300, y: 200 }, { x: 100, y: 200 },
+    ], 800, 600);
+    const rotated = denormalizeCorners(rotatePerspectiveCorners(corners, 800, 600, 90), 800, 600);
+    assert.deepEqual(rotated.map((point) => ({ x: Math.round(point.x), y: Math.round(point.y) })), [
+      { x: 250, y: 50 }, { x: 250, y: 250 },
+      { x: 150, y: 250 }, { x: 150, y: 50 },
+    ]);
+    assert.equal(isValidQuadrilateral(rotated), true);
   });
 });

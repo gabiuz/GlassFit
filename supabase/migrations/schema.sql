@@ -349,7 +349,7 @@ CREATE TABLE system_preferences (
     singleton_key VARCHAR(50) NOT NULL DEFAULT 'GLOBAL_PREFERENCES' UNIQUE,
     business_name VARCHAR(255) NOT NULL DEFAULT 'GlassFit',
     contact_email VARCHAR(255) NOT NULL DEFAULT 'glassfit@gmail.com',
-    contact_phone VARCHAR(50) NOT NULL DEFAULT '+63 917 123 4567',
+    contact_phone VARCHAR(50) NOT NULL DEFAULT '+63 905 325 8970',
     operating_days_range VARCHAR(100) NOT NULL DEFAULT 'Monday - Saturday',
     operating_hours_range VARCHAR(100) NOT NULL DEFAULT '8:00 AM - 5:00 PM',
     operating_schedules JSONB NOT NULL DEFAULT '[{"id": "default-schedule-1", "start_day": "Monday", "end_day": "Saturday", "start_time": "08:00", "end_time": "17:00"}]'::jsonb,

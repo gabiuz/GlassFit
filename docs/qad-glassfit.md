@@ -379,4 +379,216 @@ The implementation adds client test suite `npm run test:ms63` and FastAPI CV ser
 | QAD-TC78.7 | Mobile Safari native HEIC decode | Client pre-flight on Safari 17+ (iOS / macOS) renders native image preview immediately; bypasses file-card fallback | P1 |
 | QAD-TC78.8 | Non-Safari HEIC progress communication | Dropzone HUD feedback on Chrome/Firefox during HEIC processing displays progressive stages: "uploading", "retrying", "processing", "completed" | P1 |
 
+## QAD-TC86: Parametric Grille Linear-Meter Pricing Engine, Automated 3D Sub-Bar Geometry Analyzer, and Pattern Repetition Metric Engine (IMP-MS71)
 
+**Status:** Implemented with automated unit tests (`npm run test:ms71`). Traces to IMP-MS71, PRD-F2, PRD-F5, PRD-F6, PRD-F10, PRD-F11, PRD-F14, SDD-C4, SDD-C7, SDD-C9, DSD-UI4, DSD-UI7, DSD-UI10, ERD-E6, ERD-E13, ERD-E14, ERD-E17, BRD-M2, BRD-M3, BRD-M5. See [MS71 implementation specification](implementation/ms71.md) for detailed contracts, mathematical formulas, and execution commands.
+
+| Test ID | Scenario | Preconditions | Execution Steps | Expected Outcome | Severity |
+|---|---|---|---|---|---|
+| QAD-TC86.1 | Automated orientation classification of horizontal bars | Uploaded GLB with sub-mesh dimensions 1160mm x 16mm x 16mm | 1. Run `analyzeGrilleGeometry()` on root object<br>2. Inspect analyzed sub-bar collection | Bar is classified as `orientation = "HORIZONTAL"` with `lengthMm = 1160` | P0 |
+| QAD-TC86.2 | Automated orientation classification of vertical bars | Uploaded GLB with sub-mesh dimensions 16mm x 1400mm x 16mm | 1. Run `analyzeGrilleGeometry()` on root object<br>2. Inspect analyzed sub-bar collection | Bar is classified as `orientation = "VERTICAL"` with `lengthMm = 1400` | P0 |
+| QAD-TC86.3 | Grid pattern dynamic bar count and linear meters | Aperture width = 1200mm, height = 1200mm, grid pattern, 140mm pitch | 1. Execute `calculateGrilleLinearBOM()` with PHP 180/m material | Generates 8 vertical pickets (1.16m each) and 6 horizontal rails (1.16m each); total linear meters calculated exactly (20.96m) | P0 |
+| QAD-TC86.4 | Louver pattern dynamic bar count and linear meters | Aperture width = 1000mm, height = 1500mm, louver pattern, 45mm pitch | 1. Execute `calculateGrilleLinearBOM()` with PHP 160/m material | Generates 32 horizontal slats (0.96m each) and 1 center mullion (1.46m); linear meters computed per piece (37.1m) | P0 |
+| QAD-TC86.5 | Staggered brick pattern dynamic bar count | Aperture width = 1400mm, height = 1200mm, staggered brick pattern | 1. Execute `calculateGrilleLinearBOM()` | Generates 9 vertical pickets and alternating staggered horizontal tie bars matching 3D visual count (25 ties) | P0 |
+| QAD-TC86.6 | Perimeter rail cut lengths match aperture boundary | Aperture width = 1500mm, height = 1200mm, frame profile = 20mm | 1. Inspect `perimeterRails` output | Top/bottom rails measure 1500mm; left/right jambs measure 1160mm; total perimeter = 5.32m | P0 |
+| QAD-TC86.7 | Scrap allowance calculation (12% aluminum offcut) | Total net extrusion = 10.0m at PHP 200/m (net PHP 2,000.00) | 1. Inspect `wasteAllowanceCost` in result | Waste cost equals exactly PHP 240.00 (10.0m * 0.12 * 200) | P0 |
+| QAD-TC86.8 | Fabrication labor floor enforcement | Small grille with direct material cost = PHP 1,200.00 | 1. Calculate labor cost at 25% (PHP 300.00) | Labor cost clamps up to the minimum labor floor of PHP 650.00 | P0 |
+| QAD-TC86.9 | Contractor gross margin enforcement (25%) | Material = PHP 3,000.00, Labor = PHP 750.00 | 1. Compute margin at 25% of cost sum | Contractor margin equals exactly PHP 937.50; final price equals PHP 4,687.50 | P0 |
+| QAD-TC86.10 | Calculation performance under 10ms | Continuous dimension loop varying width/height 100 times | 1. Measure execution duration for 100 recalculations | Total execution time < 100ms (average < 1ms per recalculation), guaranteeing 60 FPS slider reactivity | P0 |
+
+## QAD-TC87: Admin Product Setup Wizard Center-Grille Part Inspector, Single-Click Material Binding, and Linear Calculation Preview (IMP-MS72)
+
+**Status:** Implemented with automated unit tests (`npm run test:ms72`). Traces to IMP-MS72, PRD-F14, PRD-F19, SDD-C4, SDD-C9, DSD-UI10, ERD-E6, ERD-E17, BRD-M2, BRD-M4, BRD-M5. See [MS72 implementation specification](implementation/ms72.md) for architectural contracts, UI specifications, and execution instructions.
+
+| Test ID | Scenario | Preconditions | Execution Steps | Expected Outcome | Severity |
+|---|---|---|---|---|---|
+| QAD-TC87.1 | Automatic detection of GRILLE_LINEAR from file name | Upload GLB file named `window_center_grille.glb` in Step 2 | 1. Upload file<br>2. Inspect component card in Step 2 | Auto-detects `dimensionBinding = "GRILLE_LINEAR"` and `presentationCategory = "Framing"` | P0 |
+| QAD-TC87.2 | Single-click material assignment applies to entire grille | Admin selects Center Grille in Part Inspector | 1. Select '16mm Square Tube White' from raw materials<br>2. Click Save | Material binds to the entire center grille assembly; all constituent bars inherit the rate | P0 |
+| QAD-TC87.3 | Part Inspector renders dynamic bar breakdown summary | Center Grille component selected in Part Inspector | 1. Open drawer<br>2. Inspect geometry analysis summary card | Displays discrete vertical bar count, horizontal bar count, individual cut lengths, and total linear meters | P0 |
+| QAD-TC87.4 | Raw materials dropdown filters to linear units (m) | `GRILLE_LINEAR` selected in dimension binding | 1. Open raw materials selection dropdown | Displays aluminum extrusion profiles billed in meters (`/m`); hides sheet glass (`sqm`) | P0 |
+| QAD-TC87.5 | Validation sandbox dynamically recalculates on width drag | In Step 4 validation preview, move width slider from 1000mm to 1600mm | 1. Drag width slider to 1600mm<br>2. Inspect Cut List table | Vertical pickets count increases proportionally; total linear meters updates in < 16ms | P0 |
+| QAD-TC87.6 | Validation sandbox dynamically recalculates on height drag | In Step 4 validation preview, move height slider from 1000mm to 1800mm | 1. Drag height slider to 1800mm<br>2. Inspect Cut List table | Vertical bar cut lengths lengthen from 960mm to 1760mm; horizontal tie bar rows recalculate | P0 |
+| QAD-TC87.7 | Cut List table displays exact piece counts and lengths | Test-drive sandbox loaded with 1200mm x 1200mm aperture | 1. Inspect table columns for pieces, cut length, total meters | Displays exact physical quantities matching Three.js 3D model geometry without rounding errors | P0 |
+| QAD-TC87.8 | Preserves single-selection state across wizard navigation | Admin binds material in Step 2, navigates to Step 3 and back | 1. Click Next to Step 3<br>2. Click Back to Step 2 | Center grille retains `GRILLE_LINEAR` binding and assigned raw material with zero state loss | P0 |
+| QAD-TC87.9 | Warning modal when non-linear material is bound | Admin attempts to force a glass material (`sqm`) on `GRILLE_LINEAR` | 1. Select 6mm Clear Glass<br>2. Attempt to save | Displays clear validation warning: "Grilles require linear profile extrusions billed per meter." | P1 |
+| QAD-TC87.10 | Database persistence of GRILLE_LINEAR binding | Admin clicks Save and Publish product | 1. Inspect PostgreSQL `product_components` record | Record persists `dimension_binding = 'GRILLE_LINEAR'` cleanly under Supabase RLS | P0 |
+
+## QAD-TC88: Customer Visualization Workspace Dynamic Grille Sizing, Real-Time Linear BOM Recalculation, and Itemized Quotation/PDF Handoff (IMP-MS73)
+
+**Status:** Implemented with automated unit tests (`npm run test:ms73`). Traces to IMP-MS73, PRD-F2, PRD-F5, PRD-F6, PRD-F10, PRD-F11, SDD-C4, SDD-C5, SDD-C7, SDD-C8, DSD-UI4, DSD-UI7, DSD-UI16, ERD-E13, ERD-E14, BRD-M2, BRD-M3, BRD-M4, BRD-M5. See [MS73 implementation specification](implementation/ms73.md) for architectural contracts, UI specifications, and execution instructions.
+
+| Test ID | Scenario | Preconditions | Execution Steps | Expected Outcome | Severity |
+|---|---|---|---|---|---|
+| QAD-TC88.1 | Workspace recalculates linear meters on width slider change | Security grille active in workspace; width = 1200mm | 1. Drag width slider to 1600mm<br>2. Inspect Add-on Options dock | Vertical pickets count increases; total linear meters updates in < 50ms | P0 |
+| QAD-TC88.2 | Workspace recalculates cut lengths on height slider change | Security grille active in workspace; height = 1200mm | 1. Drag height slider to 1800mm<br>2. Inspect Add-on Options dock | Vertical bar cut length increases from 1160mm to 1760mm; total linear meters recalculates | P0 |
+| QAD-TC88.3 | Finish swatch selection updates linear profile rate | Customer selects 'Powder Coated White' for grille | 1. Click White finish swatch<br>2. Observe HUD price delta | Canvas updates shader to White; unit rate updates to White extrusion price; BOM subtotal updates | P0 |
+| QAD-TC88.4 | Quotation modal renders expandable Cut List accordion | Customer configures window with Grille and clicks Review Quotation | 1. Open quotation modal<br>2. Click 'View Breakdown' | Displays itemized table with piece counts, cut lengths, total meters, and subtotals | P0 |
+| QAD-TC88.5 | Exact match between 3D canvas and quotation piece count | 1400mm x 1200mm window with staggered brick grille | 1. Count physical mesh bars in 3D canvas<br>2. Compare with modal cut list count | Physical mesh count exactly equals total pieces in the quotation modal (38 pieces) | P0 |
+| QAD-TC88.6 | Consultation PDF includes itemized linear cut quantities | Customer completes quotation and downloads PDF | 1. Download PDF<br>2. Inspect specification column | Prints exact vertical bar count, horizontal bar count, lengths, and total linear meters | P0 |
+| QAD-TC88.7 | Zero UI blocking or dropped frames on continuous slider drag | User rapidly scrubs width and height sliders | 1. Monitor calculation performance during 100 rapid changes | Calculations complete in < 16ms without memory leaks or dropped frames | P0 |
+| QAD-TC88.8 | Mutual exclusion unmounts grille and zeroes extrusion BOM | Customer has Grille active, then clicks Screen | 1. Click 'Screen' segment | Grille geometry unmounts; grille linear BOM is removed; screen area pricing activates | P0 |
+| QAD-TC88.9 | Standalone Grille product workspace dynamic calculation | Customer opens a standalone Grille catalog product | 1. Adjust dimensions in workspace | Dynamic linear engine calculates full aperture BOM without host window dependencies | P0 |
+| QAD-TC88.10 | Offline and network error resilience | Catalog raw material query fails or is delayed | 1. Trigger dimension change with network paused | Engine gracefully falls back to default linear rates (PHP 160/m) without throwing runtime exceptions | P1 |
+
+## QAD-TC92: Approved Registered Accessory Bindings (IMP-MS77)
+
+**Status:** Focused quotation validation tests and MS75/MS76 regressions pass; browser acceptance pending. Traces to PRD-F5, PRD-F14, SDD-C4, SDD-C9, DSD-UI10, ERD-E3, ERD-E6, BRD-M2, BRD-M4, and BRD-M5. See [MS77](implementation/ms77.md).
+
+| ID | Scenario | Expected result | Priority |
+|---|---|---|---|
+| QAD-TC92.1 | Bind a registered handle to a replaceable uploaded part, save, and reload | The selected product ID persists and appears in the inspector | P0 |
+| QAD-TC92.2 | Include draft, inactive, incompatible, and model-less products in catalog | Only active, same-category Accessories products with usable 3D assets are selectable | P0 |
+| QAD-TC92.3 | Search for a missing accessory | Empty guidance directs registration through Accessories, without inline creation | P0 |
+| QAD-TC92.4 | Change slot category after selecting options | Incompatible IDs clear and the inspector explains the reset | P0 |
+| QAD-TC92.5 | Save or publish duplicate, forged, stale, or nonexistent IDs | Server rejects invalid binding before publication | P0 |
+| QAD-TC92.6 | Leave an auto-detected draft slot without options | Draft can be edited; publication identifies and blocks the slot | P0 |
+| QAD-TC92.7 | Preview a slot with two approved options | Admin and customer see the original plus exactly those two active registered products | P0 |
+| QAD-TC92.8 | Deactivate or recategorize an approved accessory | Customer choice disappears; admin sees repair state; republish blocks | P0 |
+| QAD-TC92.9 | Submit quotation with unapproved, revoked, or altered accessory data | New quotation is rejected before persistence | P0 |
+| QAD-TC92.10 | Restore original part | Original mesh returns and accessory price delta is zero | P0 |
+
+## QAD-TC94: Admin Components Workspace (IMP-MS79)
+
+QAD-TC94.1 through QAD-TC94.18 are defined in [MS79](implementation/ms79.md). Code checks completed on October 28, 2026: static typecheck, production build, focused ESLint, and 40 existing component, material, accessory, grille, and wizard regression tests. Browser acceptance on the 18-part Jalousie fixture, Fixed strategy, accessory products, responsive widths, and keyboard operation remains pending. Traces to PRD-F5, PRD-F10, PRD-F14, PRD-F19, SDD-C4, SDD-C7, SDD-C9, DSD-UI10, ERD-E6, and ERD-E17.
+
+## QAD-TC95: Directional Add-on Placement Side Compatibility and Operator-Targeted Multi-Hatch Alignment (IMP-MS80)
+
+**Status:** Implemented with automated unit tests (`npm run test:ms80`). Traces to IMP-MS80, PRD-F5, PRD-F10, PRD-F14, PRD-F19, SDD-C4, SDD-C5, SDD-C7, SDD-C9, DSD-UI4, DSD-UI7, DSD-UI10, ERD-E3, ERD-E6, ERD-E14, BRD-M2, BRD-M4, BRD-M5. See [MS80 implementation specification](implementation/ms80.md) for architectural contracts, Three.js 3D positioning, and quotation disclosure details.
+
+| Test ID | Scenario | Preconditions | Execution Steps | Expected Outcome | Severity |
+|---|---|---|---|---|---|
+| QAD-TC95.1 | Admin selects mounting side compatibility in Setup Wizard | Admin edits a window fixture in `/admin/products/[id]/setup` and opens Add-on Attachments step | 1. Select Front, Back, or Both<br>2. Save wizard | Choice persists cleanly to `product_compatible_addons.allowed_sides` | P0 |
+| QAD-TC95.2 | Awning window sash collision warning and automatic default | Product has `product_type = 'Awning Window'` and Screen add-on is enabled | 1. Inspect mounting side options<br>2. Select Front | Defaults screen mounting side to `back` (Interior); selecting `front` renders amber sash collision warning banner | P0 |
+| QAD-TC95.3 | Backward compatibility for legacy add-on bindings | Database contains existing rows in `product_compatible_addons` created prior to migration 026 | 1. Query compatible addons | Migration assigns `allowed_sides = 'both'` and `default_side = 'back'` without throwing runtime null errors | P0 |
+| QAD-TC95.4 | Admin selects multiple operator parts for hatch alignment | Admin opens Screen configuration on window with 2 right operator handles | 1. Check operator checkboxes<br>2. Save wizard | Both operator parts are selected; keys persist to `hatch_target_component_keys` | P0 |
+| QAD-TC95.5 | Single operator hatch alignment verification | Host window has 1 operator handle at X = +0.42m, Y = 0.50m; screen add-on enabled | 1. Build 3D assembly<br>2. Measure hatch center | Exactly 1 hatch is rendered, centered at X = +0.42m, Y = 0.50m on the screen mesh plane | P0 |
+| QAD-TC95.6 | Dual operator multi-hatch automated instantiation | Host window has 2 operators at Y = 0.35m and Y = 1.10m on the right jamb | 1. Build 3D assembly<br>2. Measure hatch centers | Exactly 2 access hatches are instantiated, each centered at vertical elevation of its respective operator | P0 |
+| QAD-TC95.7 | Bilateral handing matching for left vs right operators | Host window has an operator on the left jamb (X = -0.40m) | 1. Build 3D assembly<br>2. Inspect hatch mesh geometry | Assembly engine mirrors hatch mesh laterally across X axis matching left-side operator orientation | P0 |
+| QAD-TC95.8 | Customer workspace side toggle when allowed_sides is 'both' | Host sliding window has `allowed_sides = 'both'`; customer opens 3D workspace | 1. Click Front/Back toggle in Options dock | Switches add-on Z position across host frame between Front and Back with 8mm clearance gap | P0 |
+| QAD-TC95.9 | Customer workspace locked side when allowed_sides is 'back' | Host Awning window has `allowed_sides = 'back'`; customer opens 3D workspace | 1. Inspect Add-on Options dock | Dock displays locked badge `Interior Mount (Back) - Prevents Sash Collision`; customer cannot move screen to exterior | P0 |
+| QAD-TC95.10 | Parametric BOM scales hatch hardware by operator count | Jalousie window has 2 hatch targets; hatch hardware has `base_quantity = 1` | 1. Run parametric BOM calculation | Evaluates hatch hardware quantity to 2 pcs and calculates hardware cost subtotal accordingly | P0 |
+| QAD-TC95.11 | Quotation modal and Consultation PDF specification disclosure | Customer creates quotation for 2-operator Jalousie with screen mounted to Back | 1. Generate quotation and PDF | Specification line states `Insect Screen (Interior Mount / Back, with 2x Operator Access Hatches)` | P0 |
+| QAD-TC95.12 | Wizard round-trip state persistence | Admin configures mounting side and 2 operator targets, saves, and reloads | 1. Navigate between steps<br>2. Refresh page | Selections, radio values, and target operator tags are faithfully restored from database state | P0 |
+
+## QAD-TC96: Parametric Jalousie Dynamic Louver and Operator Sizing (IMP-MS81)
+
+**Status:** Implemented (October 29, 2026); all 12 test cases verified passing in `tests/unit/jalousiePricing.test.ts`. Traces to IMP-MS81, PRD-F5, PRD-F10, PRD-F14, PRD-F19, SDD-C4, SDD-C5, SDD-C7, SDD-C9, DSD-UI4, DSD-UI7, DSD-UI10, ERD-E3, ERD-E6, ERD-E14, ERD-E17, BRD-M2, BRD-M4, BRD-M5. See [MS81 implementation specification](implementation/ms81.md) for automated pitch detection, unscaled 1:1 metric height preservation, and per-piece quotation details.
+
+| Test ID | Scenario | Preconditions | Execution Steps | Expected Outcome | Severity |
+|---|---|---|---|---|---|
+| QAD-TC96.1 | Louver GLB geometry analysis and automated blade counting | Admin uploads `JW_Louver_Clips_And_Glass.glb` in Step 3 Components | 1. Upload GLB<br>2. Inspect detected fields | System automatically detects 7 louver blades, sets baseQuantity = 7, and detects 175mm pitch | P0 |
+| QAD-TC96.2 | Operator GLB geometry analysis and unit count | Admin uploads `JW_Operators.glb` in Step 3 Components | 1. Upload GLB<br>2. Inspect detected fields | System automatically detects 2 operator units and sets baseQuantity = 2 | P0 |
+| QAD-TC96.3 | Automated dimension binding assignment | Admin uploads louver glass and operator meshes | 1. Review Part Inspector drawer | Louver mesh binds to `LOUVER_BLADE`; operator mesh binds to `LOUVER_OPERATOR` | P0 |
+| QAD-TC96.4 | Dynamic louver blade addition on height increase | Jalousie window aperture height expanded from 1200mm to 2100mm | 1. Adjust height slider in Step 6 / workspace | Scene graph adds discrete louver instances, increasing blade count from 7 to 12 louvers | P0 |
+| QAD-TC96.5 | Dynamic louver blade deletion on height decrease | Jalousie window aperture height reduced from 1200mm to 600mm | 1. Adjust height slider in Step 6 / workspace | Scene graph deletes louver instances, decreasing blade count from 7 to 3 louvers | P0 |
+| QAD-TC96.6 | Louver blade 1:1 metric height preservation | Window height adjusted across range (600mm to 2400mm) | 1. Measure rendered blade bounding box | Individual blade height remains exactly 105.3mm ($scaleY = 1.0$); no mesh distortion | P0 |
+| QAD-TC96.7 | Louver blade width span scaling | Window aperture width expanded from 800mm to 1200mm | 1. Adjust width slider | Louver blades scale along X ($scaleX = 1.5$) spanning frame aperture width cleanly | P0 |
+| QAD-TC96.8 | Operator proportional count scaling | Window height expanded to 2100mm (12 louvers) with blades_per_operator = 4 | 1. Inspect rendered operator count | System evaluates 12 / 4 = 3 operators; scene graph instantiates 3 operator handles | P0 |
+| QAD-TC96.9 | Operator vertical bank positioning | Window height set to 2100mm with 3 operators | 1. Inspect operator Y coordinates | Operators are positioned at vertical centroids of upper, middle, and lower banks | P0 |
+| QAD-TC96.10 | Louver and operator per-piece pricing calculation | Jalousie at 2100mm: 12 blades @ ₱45.00/pc, 3 operators @ ₱450.00/pc | 1. Run parametric BOM calculation | BOM calculates glass = ₱540.00 and operators = ₱1,350.00 without area conversions | P0 |
+| QAD-TC96.11 | Quotation modal and Consultation PDF disclosure | Customer requests quotation for 2100mm Jalousie window | 1. Generate quotation and PDF | Quotation and PDF itemize: 12x Glass Louver Blades and 3x Window Operators | P0 |
+| QAD-TC96.12 | Synergy with MS80 operator-targeted screen access hatches | Insect screen add-on enabled on 2100mm Jalousie with 3 operators | 1. Mount screen add-on in 3D canvas | MS80 engine generates exactly 3 screen access hatches aligned to the 3 operators | P0 |
+| QAD-TC96.13 | Frame uploads strictly assigned to Framing/Aluminum | Admin uploads frame profile GLB with glass material or keyword | 1. Inspect auto-detection result | Assigns `Framing` and `Aluminum` without defaulting to glazing | P0 |
+| QAD-TC96.14 | Operators stay anchored to jambs without floating outside | Jalousie window scaled to different widths (800mm to 2000mm) | 1. Build 3D assembly<br>2. Inspect operator X position | Operator mechanism remains anchored to frame jamb/stile boundaries | P0 |
+| QAD-TC96.15 | Dynamic operator count adaptation to height | Jalousie window height adjusted from 600mm to 2400mm | 1. Vary height in workspace | Operator count increases and decreases proportionally with blade count | P0 |
+| QAD-TC96.16 | Screen hatch targeting operator hardware | Window has components with `LOUVER_OPERATOR` dimension binding | 1. Inspect hatch target candidates | Identifies operator mechanism as valid screen hatch target | P0 |
+| QAD-TC96.17 | Louver blades strictly bound within clear aperture | Jalousie window scaled across height range (800mm to 2200mm) | 1. Inspect rendered blade bounding box | Top and bottom louver blades never penetrate frame header or sill | P0 |
+
+## QAD-TC97: Smart Dynamic Modular Bay Replication & Aperture Expansion (IMP-MS82)
+
+**Status:** Implemented (October 29, 2026); all 14 test suites (17 test cases) verified passing in `tests/unit/bayReplication.test.ts`. Traces to IMP-MS82, PRD-F5, PRD-F10, PRD-F14, PRD-F19, SDD-C4, SDD-C5, SDD-C7, SDD-C9, DSD-UI4, DSD-UI7, DSD-UI10, ERD-E3, ERD-E4, ERD-E6, ERD-E7, ERD-E14, ERD-E17, BRD-M2, BRD-M4, BRD-M5. See [MS82 implementation specification](implementation/ms82.md) for automated cluster inspection, directional expansion math, and per-piece multi-bay BOM itemization.
+
+| Test ID | Scenario | Preconditions | Execution Steps | Expected Outcome | Severity |
+|---|---|---|---|---|---|
+| QAD-TC97.1 | Automated baseline bay count and pitch detection | Multi-component jalousie uploaded with 2-bay louver assembly | 1. Run geometry analyzer<br>2. Inspect detected config | System detects 2 bay clusters, sets default_bay_count = 2, nominal_bay_pitch_mm = 600, and classifies bay roles | P0 |
+| QAD-TC97.2 | Dynamic bay replication feature toggle enablement | Admin activates Smart Dynamic Bay Replication card in Step 5 | 1. Toggle feature ON<br>2. Inspect rule generator | Dynamic bay count evaluates parametrically; manual WHEN/THEN rules suppressed without blocking setup | P0 |
+| QAD-TC97.3 | Inactive dynamic bay replication backward compatibility | Product has dynamic_bay_config disabled or omitted | 1. Expand width to 1800mm in 3D canvas | Product operates in standard continuous stretch mode; intermediate mullions not duplicated | P0 |
+| QAD-TC97.4 | Rightward width expansion dynamic right-flank bay generation | Expansion anchor set to 'rightward' (left-anchored) | 1. Expand width from 1200mm to 1800mm | Left jamb stays anchored at X = -0.6m; right jamb extends to X = +1.2m; new bay appends on right flank | P0 |
+| QAD-TC97.5 | Leftward width expansion dynamic left-flank bay generation | Expansion anchor set to 'leftward' (right-anchored) | 1. Expand width from 1200mm to 1800mm | Right jamb stays anchored at X = +0.6m; left jamb extends to X = -1.2m; new bay appends on left flank | P0 |
+| QAD-TC97.6 | Symmetric width expansion dynamic bay centering | Expansion anchor set to 'symmetric' (center origin) | 1. Expand width from 1200mm to 1800mm | 3 bays and 2 intermediate mullions center symmetrically across [-0.9m, +0.9m] | P0 |
+| QAD-TC97.7 | Intermediate center mullion quantity scaling | Window scaled across width milestones (600mm, 1200mm, 1800mm, 2400mm) | 1. Evaluate mullion count | Evaluates 0, 1, 2, and 3 intermediate mullions strictly matching bayCount - 1 | P0 |
+| QAD-TC97.8 | Modular louver blade array replication across bays | Window width set to 1800mm (3 bays) with 7 blades/bay | 1. Inspect 3D scene graph | Instantiates 3 discrete louver bay assemblies (21 total blades) at unscaled 1:1 metric scale | P0 |
+| QAD-TC97.9 | Modular window operator replication across bays | Window width set to 1800mm (3 bays) with 2 operators/bay | 1. Inspect 3D scene graph | Instantiates 3 operator sets (6 total operators) aligned to stile coordinates of each bay | P0 |
+| QAD-TC97.10 | Dynamic width reduction clean bay disposal | Window width reduced from 1800mm (3 bays) to 1200mm (2 bays) | 1. Adjust width slider downward | Disposed bay meshes cleanly freed from memory without orphan Three.js geometries or memory leaks | P0 |
+| QAD-TC97.11 | Multi-bay parametric BOM pricing engine calculation | Multi-bay window evaluated at 1800mm (3 bays) with linear and per-piece parts | 1. Run parametric BOM calculation | Scales mullions by linear meters (2x 1.2m = 2.4m), louvers by 21 pcs, and operators by 6 pcs | P0 |
+| QAD-TC97.12 | Orthogonal synergy with MS81 vertical louver scaling | Window dimensions set to 1800mm W x 2100mm H (3 bays, 12 blades/bay) | 1. Evaluate combined BOM | BOM calculates 3 x 12 = 36 total blades and 3 x 3 = 9 total operators with zero pitch distortion | P0 |
+| QAD-TC97.13 | Orthogonal synergy with MS80 screen access hatches | Insect screen add-on mounted on 1800mm W x 2100mm H 3-bay window | 1. Mount screen add-on in 3D canvas | MS80 engine generates exactly 9 screen access hatches in 1:1 alignment with the 9 operator centroids | P0 |
+| QAD-TC97.14 | Customer quotation itemization and consultation PDF disclosure | Customer requests quotation for 3-bay jalousie window | 1. Generate quotation and PDF | Discloses: '3-Sided Jalousie Window \| 36x Glass Louver Blades \| 9x Window Operators \| 2x Center Mullions' | P0 |
+
+
+
+
+
+
+
+
+
+## QAD-TC98: Sill-Independent Product Fit (IMP-MS83)
+
+**Traceability:** BRD-M2, BRD-M4, PRD-F5, PRD-F6, SDD-C4, SDD-C5, DSD-UI4. See [MS83 implementation specification](implementation/ms83.md). Automated scene-bounds coverage is in `tests/unit/ms83SillFit.test.ts`; visual and snapshot checks require a browser with representative product assets.
+
+| Test ID | Scenario | Expected result | Severity |
+|---|---|---|---|
+| QAD-TC98.1 | Fit one sliding window with the sill on and off at fixed dimensions and corners | Outer frame has the same left, right, and horizontal center photo coordinates; corners remain unchanged. Existing vertical fit behavior is preserved | P0 |
+| QAD-TC98.2 | Inspect projecting sill on the fitted example | Sill remains fully visible beyond the frame without narrowing the frame | P0 |
+| QAD-TC98.3 | Compare scene reference, camera, and final bitmap in both states | Horizontal reference and projection are invariant; horizontal alpha bounds do not drive a second scale. Vertical alpha normalization follows its existing path | P0 |
+| QAD-TC98.4 | Toggle sill repeatedly, resize viewport, and edit fit corners | No cumulative drift, stale canvas, clipping, or corner mutation | P0 |
+| QAD-TC98.5 | Save, switch products, reopen, edit, and snapshot a sill-on overlay | Saved layer and snapshot align with live frame and retain sill state | P0 |
+| QAD-TC98.6 | Check natural assembly, legacy window, and product with no optional sill | Structural rails remain part of the installation perimeter and normal fit is stable | P0 |
+| QAD-TC98.7 | Add screen, grille, and protruding hardware before toggling sill | Host reference stays fixed and add-on appearance remains correct | P0 |
+| QAD-TC98.8 | Compare dimensions, measurement evidence, BOM, and quote | Dimensions and measurement are unchanged; only legitimate sill cost differs | P0 |
+| QAD-TC98.9 | Use angled quadrilateral, mobile viewport, and missing-reference fixture | Frame follows corners, overflow is visible, and missing reference has deterministic fallback or actionable diagnostic | P1 |
+
+## fix-14: Space Photo Suitability Acceptance (QAD-TC3, QAD-TC4, QAD-TC50, QAD-TC77, QAD-TC78)
+
+The existing upload and CV cases also require a suitable installation space before a session is usable. For both upload routes and both calibration modes, reject clear portraits, selfies, ID photos, documents, catalog images, and unrelated screenshots with a specific Choose Another Photo path. If semantic evidence is missing or contradictory, show a separate retry path. Neither outcome may expose a workspace URL or retain generated workspace artifacts. Accept representative empty and occupied rooms, building facades, installation walls, and close opening views; a person, absent floor, or portrait orientation alone is not a rejection rule. Exercise supported JPG, PNG, WebP, HEIC, and HEIF samples, stale-request cancellation, keyboard focus, and direct API calls. Record false acceptance, false rejection, latency, and memory separately using consented images. The supplied portrait in fix-14 is local defect evidence and must not become a repository fixture.
+
+fix-14 local regression (October 31, 2026): A consented batch of 12 user-supplied images was uploaded to the local `/analyze-image` service in both `auto_detect` and `paper_fiducial` modes. Seven architectural photos, including two HEIC files and occupied/opening views, returned accepted sessions. Five graphics or artwork images returned `SPACE_PHOTO_UNVERIFIABLE` without a session URL. No source image was copied into repository fixtures. The batch exposed that wall and ceiling labels alone admitted two graphics; the suitability gate now requires an opening, wall with floor, or building with exterior context. This sample does not establish population-level false-acceptance or false-rejection rates.
+
+fix-14 follow-up acceptance: Repeat both calibration modes with real architectural photos, the supplied graphics, a dominant portrait, and a private close-surface crop. Expected results are accepted, non-space or unverifiable without a session, semantic rejection, and too-close guidance respectively. Record false acceptance and false rejection separately; keep all identifiable images out of repository fixtures.
+
+fix-14 local suitability evaluation (November 1, 2026): `fastapi-service/evaluate_photo_suitability.py` accepts a private JSON manifest of local photo paths and expected decisions, runs the installed models in a temporary directory, and prints derived feature summaries without copying images into the repository. The user-supplied 12-image matrix has eight architectural photos (including `ViTkggvW.jpg`, a real window/grille photo) and four graphics or artwork images. Local API verification in both calibration modes accepted all eight architectural photos, kept all four graphics/art images outside the workspace, rejected the supplied portrait, and returned too-close guidance for a private tight wall crop. These 28 requests are a regression sample, not evidence of population accuracy or model training. Expand the consented corpus and use a held-out set before freezing thresholds.
+
+
+## QAD-TC100: Universal BOM Pricing Integrity (IMP-MS85)
+
+Traceability: BRD-M2, BRD-M4, BRD-M5; PRD-F10, PRD-F14, PRD-F19; SDD-C7, SDD-C9; DSD-UI7, DSD-UI10; ERD-E6, ERD-E14, ERD-E17. Acceptance scenarios QAD-TC100.1 through QAD-TC100.14 are registered in [MS85](implementation/ms85.md#5-planned-acceptance-catalog-qad-tc100). Automated verification uses `npm run test:ms85` plus existing pricing, bay, jalousie, add-on and quotation regression suites. Local browser and A4 PDF visual acceptance completed on November 2, 2026 using synthetic fixtures and production components. See the MS85 verification record for evidence scope and local artifacts.
+
+## QAD-TC101: Operator-Targeted Security Grille Clearance Openings and Linear BOM (IMP-MS86)
+
+Traceability: BRD-M2, BRD-M4, BRD-M5; PRD-F5, PRD-F10, PRD-F14; SDD-C4, SDD-C5, SDD-C7, SDD-C9; DSD-UI4, DSD-UI7, DSD-UI10; ERD-E3, ERD-E6, ERD-E14, ERD-E17. Acceptance scenarios QAD-TC101.1 through QAD-TC101.12 are registered in [MS86](implementation/ms86.md). Automated verification uses `npm run test:ms86`.
+
+## QAD-TC102: Interior-Restricted Operator Alignment Targets and Exterior Cutout Suppression (IMP-MS87)
+
+Traceability: BRD-M2, BRD-M4, BRD-M5; PRD-F5, PRD-F10, PRD-F14; SDD-C4, SDD-C5, SDD-C7, SDD-C9; DSD-UI4, DSD-UI7, DSD-UI10; ERD-E3, ERD-E6, ERD-E14, ERD-E17. Acceptance scenarios QAD-TC102.1 through QAD-TC102.12 are registered in [MS87](implementation/ms87.md). Automated verification uses `npm run test:ms87`.
+
+
+fix-14 occupied-room regression (November 2, 2026): the user-reported JPEG was falsely rejected with `insufficient_architectural_evidence` despite 0.119 wall and 0.097 floor coverage. A guarded partial-room branch now accepts this evidence after existing dominant-subject and too-close checks; model readiness remains mandatory. Seventeen pure suitability tests cover the derived regression features, boundaries, dominant portraits/screens/books, graphics, outages and previous room cases. No private image is stored in test fixtures. The exact JPEG returned HTTP 200 in both `auto_detect` and `paper_fiducial`; the direct browser upload displayed successful analysis and reached the workspace. Paper mode retained `manual_pin_required` because no reference sheet was detected. This targeted local regression does not establish population-level accuracy.
+
+
+## QAD-TC103: Post-Fit Product Facing (IMP-MS88)
+
+Traceability: BRD-M2, BRD-M4; PRD-F5, PRD-F6, PRD-F9; SDD-C4, SDD-C5, SDD-C6; DSD-UI4; ERD-E10, ERD-E11. Automated verification: `npm run test:ms88`. Browser and asset acceptance evidence is recorded in [MS88](implementation/ms88.md).
+
+| Test ID | Scenario | Expected Result |
+|---|---|---|
+| `QAD-TC103.1` | Confirm Fit for a newly placed product. | Product Facing is reachable afterward and defaults to Front (Exterior). |
+| `QAD-TC103.2` | Select Back (Interior) on an asymmetric fixture with interior handles or operators. | Actual rear geometry faces the viewer immediately, with correct depth and handedness. |
+| `QAD-TC103.3` | Switch Front to Back to Front repeatedly. | Original placement and appearance return without accumulated rotation, crop, or scale drift. |
+| `QAD-TC103.4` | Change facing on a calibrated or manually measured fitted opening. | Fit corners, installation dimensions, calibration evidence, confirmation, and price remain unchanged. |
+| `QAD-TC103.5` | Change facing with nonzero manual yaw and pitch, then refit. | Facing change preserves manual angles; refit preserves facing and resets those angles to zero under MS40. |
+| `QAD-TC103.6` | Switch facing with a sill and asymmetric protruding hardware present. | Structural installation bounds remain aligned under MS83; decorations do not redefine fit width. |
+| `QAD-TC103.7` | View exterior and interior add-on mounting from both faces. | Physical mounting stays unchanged; MS87 hatch/cutout rules and BOM totals remain correct. |
+| `QAD-TC103.8` | Save an overlay, edit it, duplicate it, and select another overlay. | Facing restores and duplicates per instance without affecting other products. |
+| `QAD-TC103.9` | Restore a legacy configuration or validate an invalid explicit enum. | Missing values default to Front; invalid values follow explicit validation handling. |
+| `QAD-TC103.10` | Switch facing while changing finishes or while a model load is pending. | Latest facing and finish win consistently without a stale render overwriting them. |
+| `QAD-TC103.11` | Capture the final composite with Back selected. | Workspace, overlay preview, and exported composite show the same face and preserve existing occlusion. |
+| `QAD-TC103.12` | Operate the fitted-product setting on mobile and by keyboard. | Both options remain reachable, selectable, clearly labeled, and visibly focused within existing UI patterns. |
+
+### QAD-TC6: Initial product reset regression
+
+Traces to PRD-F6, SDD-C5, DSD-UI4. Automated state coverage: `npx tsx --test tests/unit/workspaceReset.test.ts`. In the customer workspace, record the first rendered product, change dimensions, materials, facing, fit, translation, rotation, and add-ons, then Reset. Confirm the original appearance and footprint return. Repeat Reset, resize the viewport, and switch between two product instances; each instance restores its own initial state at the current viewport scale. Browser acceptance requires representative product assets.
+
+QAD-TC6 reset lifecycle regression: repeat initial mount effects under React Strict Mode before template defaults and model loading finish. No baseline may be retained until the active model matches the committed dimensions and the canvas measurement matches the committed display geometry. The first visible footprint must survive edit, reset, and viewport resize without shrinking.
+
+November 3, 2026 browser evidence: Jalousie Window with the repository sample room in the development workspace restored the original 409.421875 x 408.09375 CSS-pixel canvas after resizing to 491 x 490 and after rotate/flip. Switching to a 1440 x 1000 desktop viewport preserved its proportional 373.6328125 x 372.4296875 footprint through Reset; reopening the compact editor restored 409.421875 x 408.09375. Automated reset/facing tests, typecheck, production build, and CV health passed. Lint passed with 19 existing warnings.

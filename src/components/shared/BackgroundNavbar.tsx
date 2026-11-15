@@ -9,7 +9,7 @@ const navbarIcons = [
   {
     key: "phone",
     src: "/navbar_icons/phone.svg",
-    label: "0918-601-4737",
+    label: "0905-325-8970",
   },
   {
     key: "clock",
@@ -18,10 +18,10 @@ const navbarIcons = [
   },
 ];
 
-export function BackgroundNavbar() {
+export function BackgroundNavbar({ compact = false }: { compact?: boolean }) {
   return (
     <section className="relative z-0 bg-white-20">
-      <div className="hidden sm:block bg-grad-dark py-2.5 font-normal text-white">
+      <div className="hidden lg:block bg-grad-dark py-2.5 font-normal text-white">
         <div className="flex flex-wrap justify-center items-center gap-6.25">
           {navbarIcons.map((icon) => (
             <div key={icon.key} className="flex items-center gap-2">
@@ -37,7 +37,7 @@ export function BackgroundNavbar() {
           ))}
         </div>
       </div>
-      <div className="relative min-h-60">
+      <div className={compact ? "relative h-24 sm:h-32 lg:h-48" : "relative min-h-60"}>
         <div className="absolute inset-0 overflow-hidden bg-gradient-to-br from-[#045E6D]/15 via-white/80 to-[#045E6D]/10">
           <video
             className="absolute inset-0 h-full w-full object-cover motion-reduce:hidden"

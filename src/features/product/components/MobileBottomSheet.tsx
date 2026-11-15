@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect } from "react";
+import { AnimatePresence, motion } from "motion/react";
 import { X } from "lucide-react";
 import { useProductFilter } from "./ProductFilterContext";
 import { ProductFilter } from "./ProductFilter";
@@ -14,48 +15,37 @@ export function MobileBottomSheet() {
     resetDraftFilters,
   } = useProductFilter();
 
-  const [shouldRender, setShouldRender] = useState(isMobileSheetOpen);
-  const [active, setActive] = useState(false);
-
-  // Sync scroll locking and animation trigger states
+  // PRD-F1 / SDD-C1 / QAD-TC1: synchronize the external scroll lock only.
+  // AnimatePresence keeps the closing sheet mounted until its exit completes.
   useEffect(() => {
-    if (isMobileSheetOpen) {
-      setShouldRender(true);
-      document.body.style.overflow = "hidden";
-      const animTimer = setTimeout(() => setActive(true), 20);
-      return () => clearTimeout(animTimer);
-    } else {
-      setActive(false);
-      document.body.style.overflow = "";
-      const renderTimer = setTimeout(() => setShouldRender(false), 300);
-      return () => clearTimeout(renderTimer);
-    }
+    if (!isMobileSheetOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = previousOverflow; };
   }, [isMobileSheetOpen]);
 
-  // Clean up overflow on unmount
-  useEffect(() => {
-    return () => {
-      document.body.style.overflow = "";
-    };
-  }, []);
-
-  if (!shouldRender) return null;
-
   return (
-    <>
+    <AnimatePresence>
+      {isMobileSheetOpen && <React.Fragment key="mobile-product-filters">
       {/* Backdrop */}
-      <div
+      <motion.div
+        key="filter-backdrop"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.3 }}
         onClick={() => setIsMobileSheetOpen(false)}
-        className={`fixed inset-0 bg-black/60 z-[9998] transition-opacity duration-300 ${
-          active ? "opacity-100" : "opacity-0"
-        }`}
+        className="fixed inset-0 bg-black/60 z-[9998]"
       />
 
       {/* Sheet */}
-      <div
-        className={`fixed bottom-0 left-0 right-0 h-[88vh] bg-white rounded-t-[24px] shadow-[0_-8px_32px_rgba(0,0,0,0.15)] flex flex-col transition-transform duration-300 ease-out z-[9999] ${
-          active ? "translate-y-0" : "translate-y-full"
-        }`}
+      <motion.div
+        key="filter-sheet"
+        initial={{ y: "100%" }}
+        animate={{ y: 0 }}
+        exit={{ y: "100%" }}
+        transition={{ duration: 0.3, ease: "easeOut" }}
+        className="fixed bottom-0 left-0 right-0 h-[88vh] bg-white rounded-t-[24px] shadow-[0_-8px_32px_rgba(0,0,0,0.15)] flex flex-col z-[9999]"
       >
         {/* Swipe Handle Indicator */}
         <div className="w-full flex justify-center py-2 shrink-0">
@@ -98,7 +88,8 @@ export function MobileBottomSheet() {
             Show {draftFilteredProducts.length} results
           </button>
         </div>
-      </div>
-    </>
+      </motion.div>
+      </React.Fragment>}
+    </AnimatePresence>
   );
 }

@@ -63,7 +63,19 @@ export async function duplicateProductPreset(
           presentation_category,
           glb_file_url,
           component_data,
-          status
+          unit_price,
+          pricing_method,
+          jalousie_config,
+          is_accessory_slot,
+          accessory_category,
+          allowed_accessory_ids,
+          position_options,
+          status,
+          product_component_materials (
+            raw_material_id,
+            is_default,
+            display_order
+          )
         ),
         structural_rules (
           rule_name,
@@ -198,6 +210,13 @@ export async function duplicateProductPreset(
           presentation_category: comp.presentation_category || "Framing",
           glb_file_url: comp.glb_file_url,
           component_data: comp.component_data,
+          unit_price: comp.unit_price,
+          pricing_method: comp.pricing_method,
+          jalousie_config: comp.jalousie_config,
+          is_accessory_slot: comp.is_accessory_slot ?? false,
+          accessory_category: comp.accessory_category,
+          allowed_accessory_ids: comp.allowed_accessory_ids,
+          position_options: comp.position_options,
           status: "Active",
           created_by: adminCtx.profileId,
           updated_by: adminCtx.profileId,
@@ -207,6 +226,19 @@ export async function duplicateProductPreset(
 
       if (!compError && newComp) {
         componentIdMap.set(comp.component_id, newComp.component_id);
+
+        const srcMaterials = Array.isArray(comp.product_component_materials)
+          ? comp.product_component_materials
+          : [];
+        if (srcMaterials.length > 0) {
+          const matRows = srcMaterials.map((m: { raw_material_id: string; is_default?: boolean; display_order?: number }) => ({
+            product_component_id: newComp.component_id,
+            raw_material_id: m.raw_material_id,
+            is_default: Boolean(m.is_default),
+            display_order: m.display_order ?? 0,
+          }));
+          await supabase.from("product_component_materials").insert(matRows);
+        }
       }
     }
 

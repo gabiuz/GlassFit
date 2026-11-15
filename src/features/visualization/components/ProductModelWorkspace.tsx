@@ -1,5 +1,8 @@
 "use client";
 
+import { captureWorkspaceResetState, isWorkspaceResetCaptureReady, restoreWorkspaceResetState, type WorkspaceResetState } from "@/lib/visualization/workspaceReset";
+import { getConfigurationProductFacing } from "@/lib/visualization/productFacing";
+import type { ProductFacing } from "@/lib/visualization/types";
 import { evaluatePlaneEligibility } from "@/lib/visualization/planeEligibility";
 import { createMeasurementRecord, readMeasurementRecord } from "@/lib/visualization/measurementRecord";
 import { createMetricReference, evaluateMetricOpening } from "@/lib/visualization/metricGeometry";
@@ -16,13 +19,29 @@ import {
   useMotionValue,
   useReducedMotion,
 } from "motion/react";
-import { ChevronDown, RotateCw, FlipHorizontal, RotateCcw, Trash2, MousePointer2, Maximize, Move, Minus, Plus, CheckCircle2, Info, Lock } from "lucide-react";
+import { ChevronDown, RotateCw, FlipHorizontal, RotateCcw, Trash2, MousePointer2, Maximize, Move, Minus, Plus, CheckCircle2, Info, Lock, ShieldCheck } from "lucide-react";
 import Button from "@/components/shared/Button";
+import { cn } from "@/lib/utils";
 import { AddProductModal } from "./AddProductModal";
 import { ManualOcclusionPointPicker } from "./ManualOcclusionPointPicker";
 import { PerspectivePlanePicker } from "./PerspectivePlanePicker";
 import { PaperDetectionConfirmationModal } from "./PaperDetectionConfirmationModal";
 import { ObstructionWarningTooltip } from "./ObstructionWarningTooltip";
+import { MaterialCustomizerPanel } from "./MaterialCustomizerPanel";
+import { PartMaterialsPicker } from "./PartMaterialsPicker";
+import { getRawMaterials } from "@/lib/admin/materials/materialActions";
+import {
+  buildMaterialCustomizationGroups,
+  getDefaultMaterialSelections,
+  getAllCandidateMaterialsMap,
+  applyGroupSelection,
+  applyScopedGroupVisualOverride,
+  resolveSwatchColor,
+  type MaterialCustomizationGroup,
+  type MaterialCustomizationOption,
+} from "@/lib/visualization/materialCustomization";
+
+import type { RawMaterial } from "@/lib/pricing/types";
 import { useNavbarVisibility } from "@/components/shared/NavbarVisibilityContext";
 import { useCompactViewport } from "../hooks/useCompactViewport";
 import { useDocumentScrollLock } from "../hooks/useDocumentScrollLock";
@@ -30,7 +49,16 @@ import { TOUCH_PROXY_OFFSET_CSS_PX } from "../mobileConfiguratorGeometry";
 import { TouchDragProxy } from "./TouchDragProxy";
 import type { CatalogProduct } from "@/lib/products/types";
 import type { SpaceImageSession, LightingAnalysis } from "@/lib/imageApi";
-import { ProductModelRenderer } from "@/lib/visualization/modelRenderer";
+import {
+  ProductModelRenderer,
+  type ModelPresentationOptions,
+} from "@/lib/visualization/modelRenderer";
+import {
+  computeWorkspaceBuildKey,
+  type WorkspaceBuildKeyParams,
+} from "@/lib/visualization/workspaceBuildKey";
+
+export { computeWorkspaceBuildKey, type WorkspaceBuildKeyParams };
 import { getWorkspaceDefinition } from "@/lib/visualization/workspaceDefinitionCache";
 import {
   GlassAppearanceMode,
@@ -44,12 +72,28 @@ import {
   PlacedOverlay,
   QuadrilateralCorners,
   ManualOcclusionPolygon,
+  CompatibleAddon,
+  ProductComponentDefinition,
 } from "@/lib/visualization/types";
+import { calculateAddonBOM, type AddonBOMResult } from "@/lib/pricing/addonPricingEngine";
+import { calculateGrilleLinearBOM } from "@/lib/pricing/grillePricingEngine";
+import { computeLouverBladeCount, computeLouverOperatorCount } from "@/lib/visualization/jalousieGeometryAnalyzer";
+import type { GrilleLinearBOMResult } from "@/lib/pricing/types";
+import { getCompatibleAddonsForProduct } from "@/lib/admin/products/addonMutations";
+import { getActiveAccessories, type ActiveAccessoryProduct } from "@/lib/products/getActiveAccessories";
+import type { SelectedAccessoryState } from "@/lib/visualization/types";
+import { preloadAccessoryModel } from "@/lib/visualization/componentModelCache";
+import type { AccessoryPositionOptions, HorizontalPosition, VerticalPosition } from "@/lib/admin/products/types";
+
+export type AddonSelectionType = "none" | "screen" | "grill";
 import {
+  getPlanarFitImageBounds,
   homographyToCssMatrix3d,
+  computeHomographyMatrix,
   denormalizeCorners,
   drawPerspectiveWarpedImage,
   estimateDimensionsFromCorners,
+  rotatePerspectiveCorners,
   scaleCornersAlongAxis,
 } from "@/lib/visualization/perspectiveTransform";
 import {
@@ -218,6 +262,13 @@ const MAX_MODEL_RENDER_SIDE = 2048;
 const MIN_MODEL_RENDER_SIDE = 512;
 const MODEL_CONTROLS_PADDING_PX = 8;
 
+const HARDWARE_FINISH_OPTIONS = [
+  { id: "Matte Black", label: "Matte Black", previewHex: "#18191a" },
+  { id: "Brushed Chrome", label: "Brushed Chrome", previewHex: "#c5c6c7" },
+  { id: "Satin Brass", label: "Satin Brass", previewHex: "#d4af37" },
+  { id: "Stainless Steel", label: "Stainless Steel", previewHex: "#e5e5ea" },
+];
+
 export function ProductModelWorkspace({
   assetSessionId,
   uploadedImage,
@@ -250,6 +301,7 @@ export function ProductModelWorkspace({
   const mobileReentryRef = useRef<HTMLButtonElement>(null);
   const resizeSessionRef = useRef<ResizeSession | null>(null);
   const rotationSessionRef = useRef<RotationSession | null>(null);
+  const initialProductStatesRef = useRef(new Map<string, WorkspaceResetState>());
   const appliedTemplateDefaultsRef = useRef<string | null>(
     initialConfiguration || (seedConfiguration?.widthCm && seedConfiguration.heightCm)
       ? structuralDefinition?.product.productId ?? null
@@ -280,6 +332,7 @@ export function ProductModelWorkspace({
   const [autoRealism, setAutoRealism] = useState(
     initialConfiguration?.autoRealism ?? true,
   );
+  const [productFacing, setProductFacing] = useState<ProductFacing>(() => getConfigurationProductFacing(initialConfiguration));
   const [yaw, setYaw] = useState(initialConfiguration?.yaw ?? 0);
   const [pitch, setPitch] = useState(initialConfiguration?.pitch ?? 0);
   const [alumFinish, setAlumFinish] = useState(
@@ -298,16 +351,427 @@ export function ProductModelWorkspace({
   const [includeSill, setIncludeSill] = useState(
     initialConfiguration?.includeSill ?? true,
   );
+  const [selectedAddon, setSelectedAddon] = useState<AddonSelectionType>(() => {
+    if (initialConfiguration?.selectedAddon) {
+      return initialConfiguration.selectedAddon;
+    }
+    const raw = initialConfiguration?.visualParameterValues?.selected_addon as Record<string, unknown> | undefined;
+    if (raw?.type === "screen" || raw?.type === "grill") {
+      return raw.type;
+    }
+    return "none";
+  });
+  const [addonAlumFinish, setAddonAlumFinish] = useState<string>(() => {
+    if (initialConfiguration?.addonAluminumFinish) {
+      return initialConfiguration.addonAluminumFinish;
+    }
+    const raw = initialConfiguration?.visualParameterValues?.selected_addon as Record<string, unknown> | undefined;
+    if (typeof raw?.finish === "string" && raw.finish) {
+      return raw.finish;
+    }
+    return "analok";
+  });
+  const [includeHatch, setIncludeHatch] = useState<boolean>(() => {
+    if (initialConfiguration?.includeHatch !== undefined) {
+      return initialConfiguration.includeHatch;
+    }
+    return true;
+  });
+  const [screenMeshDensity, setScreenMeshDensity] = useState<"fine" | "micro" | "coarse">(() => {
+    if (initialConfiguration?.screenMeshDensity) {
+      return initialConfiguration.screenMeshDensity;
+    }
+    return "fine";
+  });
+  const [removableStates, setRemovableStates] = useState<Record<string, boolean>>(() => {
+    if (initialConfiguration?.removableStates) {
+      return initialConfiguration.removableStates;
+    }
+    return {};
+  });
+
+  // Hardware Accessories Customization State (IMP-MS76)
+  const [selectedAccessories, setSelectedAccessories] = useState<Record<string, SelectedAccessoryState>>({});
+  const [pendingAccessoryIds, setPendingAccessoryIds] = useState<Record<string, string>>({});
+  const [accessoryErrors, setAccessoryErrors] = useState<Record<string, string>>({});
+  const accessoryRequestSequence = useRef<Record<string, number>>({});
+  const accessoryMountedRef = useRef(true);
+  const accessoryRollbackRef = useRef<Record<string, SelectedAccessoryState | null>>({});
+  const restoredAccessories = useRef(initialConfiguration?.swappedAccessories ?? {});
+  useEffect(() => {
+    accessoryMountedRef.current = true;
+    return () => { accessoryMountedRef.current = false; };
+  }, []);
+  const [availableAccessories, setAvailableAccessories] = useState<ActiveAccessoryProduct[]>([]);
+  const [accessoriesLoaded, setAccessoriesLoaded] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    getActiveAccessories().then((accs) => {
+      if (active) {
+        setAvailableAccessories(accs);
+        setAccessoriesLoaded(true);
+      }
+    }).catch((err: unknown) => {
+      console.warn("Could not load catalog accessories:", err);
+      if (active) setAccessoriesLoaded(true);
+    });
+    return () => { active = false; };
+  }, []);
+
   const [panelCount, setPanelCount] = useState<number>(
     initialConfiguration?.panelCount ?? 2,
   );
   const [structuralWaiver, setStructuralWaiver] = useState<boolean>(
     initialConfiguration?.structuralWaiver ?? false,
   );
+  const [selectedMaterials, setSelectedMaterials] = useState<Record<string, string>>(() => {
+    if (initialConfiguration?.selectedMaterials) {
+      return initialConfiguration.selectedMaterials;
+    }
+    if (structuralDefinition) {
+      return getDefaultMaterialSelections(structuralDefinition);
+    }
+    return {};
+  });
+  const [visualMaterialOverrides, setVisualMaterialOverrides] = useState<Record<string, string>>(
+    () => initialConfiguration?.visualMaterialOverrides ?? {},
+  );
+  const hasExplicitOverrides = Object.keys(visualMaterialOverrides).length > 0;
+  const [isMobileFinishesSheetOpen, setIsMobileFinishesSheetOpen] = useState(false);
   const [isGuardrailModalOpen, setIsGuardrailModalOpen] = useState<boolean>(false);
   const [guardrailValidation, setGuardrailValidation] = useState<EngineeringValidationResult | null>(null);
   const [isMeasurementModalOpen, setIsMeasurementModalOpen] = useState(false);
   const [measurementEntries, setMeasurementEntries] = useState<MeasurementConfirmationEntry[]>([]);
+
+  // Admin-configured compatible add-ons for the active product (IMP-MS67, IMP-MS69)
+  const [asyncAddonsList, setAsyncAddonsList] = useState<CompatibleAddon[]>([]);
+
+  useEffect(() => {
+    if (structuralDefinition?.compatibleAddons && structuralDefinition.compatibleAddons.length > 0) {
+      return;
+    }
+    const productId = structuralDefinition?.product.productId;
+    if (!productId) {
+      return;
+    }
+    let cancelled = false;
+    getCompatibleAddonsForProduct(productId)
+      .then((bindings) => {
+        if (!cancelled && bindings && bindings.length > 0) {
+          setAsyncAddonsList(
+            bindings.map((b) => ({
+              id: b.id || b.addonProductId,
+              parentProductId: b.parentProductId,
+              addonProductId: b.addonProductId,
+              addonType: b.addonType,
+              isDefaultEnabled: b.isDefaultEnabled,
+              displayOrder: b.displayOrder,
+              addonProduct: b.addonProduct,
+            }))
+          );
+        }
+      })
+      .catch((err: unknown) => {
+        console.warn("Failed to load compatible add-ons for workspace product:", err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [structuralDefinition?.product.productId, structuralDefinition?.compatibleAddons]);
+
+  const compatibleAddonsList = (structuralDefinition?.compatibleAddons && structuralDefinition.compatibleAddons.length > 0)
+    ? structuralDefinition.compatibleAddons
+    : asyncAddonsList;
+
+  const screenAddons = useMemo(
+    () => compatibleAddonsList.filter((a) => a.addonType === "screen"),
+    [compatibleAddonsList]
+  );
+  const grillAddons = useMemo(
+    () => compatibleAddonsList.filter((a) => a.addonType === "grill"),
+    [compatibleAddonsList]
+  );
+  const hasScreenConfigured = screenAddons.length > 0;
+  const hasGrillConfigured = grillAddons.length > 0;
+  const hasCompatibleAddons = hasScreenConfigured || hasGrillConfigured;
+
+  // Track specific chosen add-on product ID
+  const [selectedAddonProductId, setSelectedAddonProductId] = useState<string | null>(() => {
+    if (initialConfiguration?.addonProductId) {
+      return initialConfiguration.addonProductId;
+    }
+    const raw = initialConfiguration?.visualParameterValues?.selected_addon as Record<string, unknown> | undefined;
+    if (raw && typeof raw.addon_product_id === "string") {
+      return raw.addon_product_id;
+    }
+    return null;
+  });
+
+  // Reconcile effective add-on selection if active product does not support current choice
+  const effectiveSelectedAddon: AddonSelectionType =
+    (selectedAddon === "screen" && !hasScreenConfigured && compatibleAddonsList.length > 0) ||
+      (selectedAddon === "grill" && !hasGrillConfigured && compatibleAddonsList.length > 0)
+      ? "none"
+      : selectedAddon;
+
+  const activeCompatibleAddon = useMemo(() => {
+    if (effectiveSelectedAddon === "none") return null;
+    const list = effectiveSelectedAddon === "screen" ? screenAddons : grillAddons;
+    if (selectedAddonProductId) {
+      const found = list.find((a) => a.addonProductId === selectedAddonProductId);
+      if (found) return found;
+    }
+    return list[0] ?? null;
+  }, [effectiveSelectedAddon, screenAddons, grillAddons, selectedAddonProductId]);
+
+  const [addonMountingSide, setAddonMountingSide] = useState<"front" | "back">(() => {
+    if (initialConfiguration?.addonMountingSide === "front" || initialConfiguration?.addonMountingSide === "back") {
+      return initialConfiguration.addonMountingSide;
+    }
+    return "back";
+  });
+
+  useEffect(() => {
+    if (activeCompatibleAddon) {
+      const timer = window.setTimeout(() => {
+        if (activeCompatibleAddon.allowedSides === "back") {
+          setAddonMountingSide("back");
+        } else if (activeCompatibleAddon.allowedSides === "front") {
+          setAddonMountingSide("front");
+        } else if (activeCompatibleAddon.allowedSides === "both") {
+          setAddonMountingSide(activeCompatibleAddon.defaultSide ?? "back");
+        }
+      }, 0);
+      return () => window.clearTimeout(timer);
+    }
+  }, [activeCompatibleAddon]);
+
+  // Identify swappable hardware accessory slots on active product (IMP-MS76)
+  const accessorySlots = useMemo(() => {
+    if (!structuralDefinition?.components) return [];
+    const explicit = structuralDefinition.components.filter(
+      (c) => (c.isAccessorySlot || (c as Record<string, unknown>).is_accessory_slot) && (c.accessoryCategory || (c as Record<string, unknown>).accessory_category)
+    );
+    return explicit;
+  }, [structuralDefinition]);
+
+  useEffect(() => {
+    if (!accessoriesLoaded || !structuralDefinition) return;
+    const restored = restoredAccessories.current;
+    restoredAccessories.current = {};
+    for (const [slotId, selected] of Object.entries(restored)) {
+      const slot = accessorySlots.find((item) => item.componentId === slotId || item.componentKey === slotId);
+      const catalogItem = availableAccessories.find((item) => item.productId === selected.accessoryId && item.accessoryCategory === slot?.accessoryCategory);
+      if (selected.accessoryId === "default") {
+        setSelectedAccessories((current) => ({ ...current, [slotId]: selected }));
+      } else if (structuralDefinition.template.modelStrategy !== "Fixed" && slot?.allowedAccessoryIds?.includes(selected.accessoryId) && catalogItem?.previewGlbUrl) {
+        const sequence = (accessoryRequestSequence.current[slotId] ?? 0) + 1;
+        accessoryRequestSequence.current[slotId] = sequence;
+        setPendingAccessoryIds((current) => ({ ...current, [slotId]: selected.accessoryId }));
+        preloadAccessoryModel(selected.accessoryId, catalogItem.previewGlbUrl).then(() => {
+          if (!accessoryMountedRef.current || accessoryRequestSequence.current[slotId] !== sequence) return;
+          accessoryRollbackRef.current[slotId] = null;
+          setSelectedAccessories((current) => ({
+            ...current, [slotId]: {
+              ...selected,
+              accessoryName: catalogItem.productName,
+              price: catalogItem.basePrice,
+              priceDelta: catalogItem.basePrice,
+              glbUrl: catalogItem.previewGlbUrl,
+            }
+          }));
+        }).catch(() => {
+          if (accessoryMountedRef.current && accessoryRequestSequence.current[slotId] === sequence) {
+            setAccessoryErrors((current) => ({ ...current, [slotId]: "This accessory model could not be loaded. Standard hardware is shown." }));
+          }
+        }).finally(() => {
+          if (accessoryMountedRef.current && accessoryRequestSequence.current[slotId] === sequence) {
+            setPendingAccessoryIds((current) => { const next = { ...current }; delete next[slotId]; return next; });
+          }
+        });
+      }
+    }
+  }, [accessoriesLoaded, accessorySlots, availableAccessories, structuralDefinition]);
+
+  useEffect(() => {
+    if (!accessoriesLoaded || !structuralDefinition) return;
+    const timer = window.setTimeout(() => setSelectedAccessories((current) => {
+      let changed = false;
+      const next = { ...current };
+      for (const [slotId, selected] of Object.entries(current)) {
+        if (selected.accessoryId === "default") continue;
+        const slot = accessorySlots.find((item) => item.componentId === slotId || item.componentKey === slotId);
+        const allowed = slot?.allowedAccessoryIds ?? [];
+        const eligible = availableAccessories.some((item) => item.productId === selected.accessoryId && item.accessoryCategory === slot?.accessoryCategory && Boolean(item.previewGlbUrl));
+        if (!slot || structuralDefinition.template.modelStrategy === "Fixed" || !allowed.includes(selected.accessoryId) || !eligible) {
+          next[slotId] = {
+            ...selected,
+            accessoryId: "default",
+            accessoryName: slot?.componentName || "Standard Hardware",
+            price: 0,
+            priceDelta: 0,
+            glbUrl: null,
+          };
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    }), 0);
+    return () => window.clearTimeout(timer);
+  }, [accessoriesLoaded, accessorySlots, availableAccessories, structuralDefinition]);
+
+  // Real-time Total Accessory Price Delta
+  const totalAccessoryPriceDelta = useMemo(() => {
+    return Object.values(selectedAccessories).reduce((sum, acc) => {
+      return sum + (acc.priceDelta ?? (acc.accessoryId !== "default" ? acc.price : 0));
+    }, 0);
+  }, [selectedAccessories]);
+
+  // Handler for selecting an accessory for a slot
+  const handleSelectAccessory = useCallback(async (
+    slotComponentId: string,
+    slotCategory: string,
+    accessory: { id: string; name: string; price: number; glbUrl?: string | null },
+  ) => {
+    const slot = accessorySlots.find((item) => item.componentId === slotComponentId || item.componentKey === slotComponentId);
+    if (!slot) return;
+    if (accessory.id !== "default" && structuralDefinition?.template.modelStrategy === "Fixed") {
+      setAccessoryErrors((current) => ({ ...current, [slotComponentId]: "This product model does not support accessory replacement in the preview." }));
+      return;
+    }
+    const catalogItem = accessory.id === "default" ? null : availableAccessories.find((item) =>
+      item.productId === accessory.id && item.accessoryCategory === slotCategory && slot.allowedAccessoryIds?.includes(item.productId)
+    );
+    if (accessory.id !== "default" && !catalogItem?.previewGlbUrl) return;
+    const sequence = (accessoryRequestSequence.current[slotComponentId] ?? 0) + 1;
+    accessoryRequestSequence.current[slotComponentId] = sequence;
+    setAccessoryErrors((current) => { const next = { ...current }; delete next[slotComponentId]; return next; });
+    if (catalogItem?.previewGlbUrl) {
+      setPendingAccessoryIds((current) => ({ ...current, [slotComponentId]: accessory.id }));
+      try {
+        await preloadAccessoryModel(accessory.id, catalogItem.previewGlbUrl);
+      } catch {
+        if (accessoryRequestSequence.current[slotComponentId] === sequence) {
+          setAccessoryErrors((current) => ({ ...current, [slotComponentId]: "This accessory model could not be loaded. Your previous selection remains active." }));
+          setPendingAccessoryIds((current) => { const next = { ...current }; delete next[slotComponentId]; return next; });
+        }
+        return;
+      }
+    }
+    if (accessoryRequestSequence.current[slotComponentId] !== sequence) return;
+    accessoryRollbackRef.current[slotComponentId] = selectedAccessories[slotComponentId] ?? null;
+    setPendingAccessoryIds((current) => { const next = { ...current }; delete next[slotComponentId]; return next; });
+    setSelectedAccessories((prev) => {
+      const current = prev[slotComponentId];
+      const slot = accessorySlots.find((s) => s.componentId === slotComponentId || s.componentKey === slotComponentId);
+      if (!slot) return prev;
+      if (accessory.id !== "default") {
+        const allowedIds = slot.allowedAccessoryIds ?? [];
+        const currentCatalogItem = availableAccessories.find((item) => item.productId === accessory.id && item.accessoryCategory === slotCategory);
+        if (!allowedIds.includes(accessory.id) || !currentCatalogItem) return prev;
+      }
+      const posOptions = slot?.positionOptions ?? ((slot as Record<string, unknown> | undefined)?.position_options as AccessoryPositionOptions | undefined);
+      const defaultHoriz = posOptions?.defaultHorizontal ?? "right";
+      const defaultVert = posOptions?.defaultVertical ?? "up";
+
+      return {
+        ...prev,
+        [slotComponentId]: {
+          slotComponentId,
+          slotCategory,
+          accessoryId: accessory.id,
+          accessoryName: accessory.name,
+          category: slotCategory,
+          price: accessory.price,
+          priceDelta: accessory.id === "default" ? 0 : accessory.price,
+          finish: current?.finish ?? (alumFinish === "white" ? "Brushed Chrome" : "Matte Black"),
+          horizontalPosition: current?.horizontalPosition ?? defaultHoriz,
+          verticalPosition: current?.verticalPosition ?? defaultVert,
+          glbUrl: catalogItem?.previewGlbUrl ?? null,
+        },
+      };
+    });
+  }, [accessorySlots, alumFinish, availableAccessories, selectedAccessories, structuralDefinition]);
+
+  // Handler for toggling accessory handing (Left vs Right)
+  const handleToggleAccessoryHanding = useCallback((slotComponentId: string, horizontalPosition: HorizontalPosition) => {
+    setSelectedAccessories((prev) => {
+      const current = prev[slotComponentId];
+      const slot = accessorySlots.find((s) => s.componentId === slotComponentId || s.componentKey === slotComponentId);
+      const posOptions = slot?.positionOptions ?? ((slot as Record<string, unknown> | undefined)?.position_options as AccessoryPositionOptions | undefined);
+
+      return {
+        ...prev,
+        [slotComponentId]: {
+          slotComponentId,
+          slotCategory: current?.slotCategory ?? slot?.accessoryCategory ?? "handle",
+          accessoryId: current?.accessoryId ?? "default",
+          accessoryName: current?.accessoryName ?? (slot?.componentName || "Default Handle"),
+          category: current?.category ?? slot?.accessoryCategory ?? "handle",
+          price: current?.price ?? 0,
+          priceDelta: current?.priceDelta ?? 0,
+          glbUrl: current?.glbUrl ?? null,
+          finish: current?.finish ?? (alumFinish === "white" ? "Brushed Chrome" : "Matte Black"),
+          horizontalPosition,
+          verticalPosition: current?.verticalPosition ?? posOptions?.defaultVertical ?? "up",
+        },
+      };
+    });
+  }, [accessorySlots, alumFinish]);
+
+  // Handler for toggling accessory vertical height (Bottom vs Up)
+  const handleToggleAccessoryElevation = useCallback((slotComponentId: string, verticalPosition: VerticalPosition) => {
+    setSelectedAccessories((prev) => {
+      const current = prev[slotComponentId];
+      const slot = accessorySlots.find((s) => s.componentId === slotComponentId || s.componentKey === slotComponentId);
+      const posOptions = slot?.positionOptions ?? ((slot as Record<string, unknown> | undefined)?.position_options as AccessoryPositionOptions | undefined);
+
+      return {
+        ...prev,
+        [slotComponentId]: {
+          slotComponentId,
+          slotCategory: current?.slotCategory ?? slot?.accessoryCategory ?? "handle",
+          accessoryId: current?.accessoryId ?? "default",
+          accessoryName: current?.accessoryName ?? (slot?.componentName || "Default Handle"),
+          category: current?.category ?? slot?.accessoryCategory ?? "handle",
+          price: current?.price ?? 0,
+          priceDelta: current?.priceDelta ?? 0,
+          glbUrl: current?.glbUrl ?? null,
+          finish: current?.finish ?? (alumFinish === "white" ? "Brushed Chrome" : "Matte Black"),
+          horizontalPosition: current?.horizontalPosition ?? posOptions?.defaultHorizontal ?? "right",
+          verticalPosition,
+        },
+      };
+    });
+  }, [accessorySlots, alumFinish]);
+
+  // Handler for changing accessory finish
+  const handleChangeAccessoryFinish = useCallback((slotComponentId: string, finish: string) => {
+    setSelectedAccessories((prev) => {
+      const current = prev[slotComponentId];
+      const slot = accessorySlots.find((s) => s.componentId === slotComponentId || s.componentKey === slotComponentId);
+      const posOptions = slot?.positionOptions ?? ((slot as Record<string, unknown> | undefined)?.position_options as AccessoryPositionOptions | undefined);
+
+      return {
+        ...prev,
+        [slotComponentId]: {
+          slotComponentId,
+          slotCategory: current?.slotCategory ?? slot?.accessoryCategory ?? "handle",
+          accessoryId: current?.accessoryId ?? "default",
+          accessoryName: current?.accessoryName ?? (slot?.componentName || "Default Handle"),
+          category: current?.category ?? slot?.accessoryCategory ?? "handle",
+          price: current?.price ?? 0,
+          priceDelta: current?.priceDelta ?? 0,
+          glbUrl: current?.glbUrl ?? null,
+          finish,
+          horizontalPosition: current?.horizontalPosition ?? posOptions?.defaultHorizontal ?? "right",
+          verticalPosition: current?.verticalPosition ?? posOptions?.defaultVertical ?? "up",
+        },
+      };
+    });
+  }, [accessorySlots]);
+
   const pendingComparisonOverlaysRef = useRef<PlacedOverlay[]>([]);
 
   // Fiducial Paper Calibration and Grounded Scale State (IMP-MS47, IMP-MS49)
@@ -355,9 +819,11 @@ export function ProductModelWorkspace({
     }
   }
 
-  const metricFrame = useMemo(() => ({ imageId: spaceImageSession?.sessionId ?? sessionContext?.spaceImageSession?.sessionId ?? "",
+  const metricFrame = useMemo(() => ({
+    imageId: spaceImageSession?.sessionId ?? sessionContext?.spaceImageSession?.sessionId ?? "",
     width: spaceImageSession?.workspaceImage?.width ?? sessionContext?.spaceImageSession?.workspaceImage?.width ?? 0,
-    height: spaceImageSession?.workspaceImage?.height ?? sessionContext?.spaceImageSession?.workspaceImage?.height ?? 0 }), [spaceImageSession, sessionContext?.spaceImageSession]);
+    height: spaceImageSession?.workspaceImage?.height ?? sessionContext?.spaceImageSession?.workspaceImage?.height ?? 0
+  }), [spaceImageSession, sessionContext?.spaceImageSession]);
   const referenceEligibility = evaluatePlaneEligibility(activeCalibrationMeta, activeCalibrationMeta?.metricReference?.planeId, null, metricFrame);
   const metricReference = referenceEligibility.status === "eligible_planar_estimate" ? activeCalibrationMeta?.metricReference ?? null : null;
   const latestFitIdentityRef = useRef({ imageId: metricFrame.imageId, productId: structuralDefinition?.product.productId });
@@ -424,6 +890,7 @@ export function ProductModelWorkspace({
     );
     return String(initialDims.heightCm);
   });
+
   const [thicknessMm, setThicknessMm] = useState(
     initialConfiguration?.thicknessMm
       ? String(initialConfiguration.thicknessMm)
@@ -441,6 +908,9 @@ export function ProductModelWorkspace({
   >(initialConfiguration?.manualOcclusionPolygons ?? []);
   const [showOcclusionPointPicker, setShowOcclusionPointPicker] = useState(false);
   const [perspectiveCorners, setPerspectiveCorners] = useState<QuadrilateralCorners | null>(
+    initialConfiguration?.visualPoseCorners ?? initialConfiguration?.perspectiveFitCorners ?? null,
+  );
+  const [measurementCorners, setMeasurementCorners] = useState<QuadrilateralCorners | null>(
     initialConfiguration?.perspectiveFitCorners ?? null,
   );
   const [targetPlaneId, setTargetPlaneId] = useState<string | null>(initialConfiguration?.targetPlaneId ?? null);
@@ -612,10 +1082,437 @@ export function ProductModelWorkspace({
 
   const mvpCanvasRef = useRef<HTMLCanvasElement>(null);
   const mvpRendererRef = useRef<ProductModelRenderer | null>(null);
+  const loadedModelRef = useRef<{ definition: ProductStructuralDefinition; widthCm: string; heightCm: string } | null>(null);
+  const [planarFitRect, setPlanarFitRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
   const [isUsingTransformHandle, setIsUsingTransformHandle] = useState(false);
   const [isOutlineMeasurementPaused, setIsOutlineMeasurementPaused] = useState(false);
   const [isSnapshotApplied, setIsSnapshotApplied] = useState(false);
   const [isCapturingSnapshot, setIsCapturingSnapshot] = useState(false);
+
+  useEffect(() => {
+    if (structuralDefinition) {
+      queueMicrotask(() => {
+        setSelectedMaterials((prev) => {
+          if (Object.keys(prev).length === 0) {
+            return getDefaultMaterialSelections(structuralDefinition);
+          }
+          const compKeys = new Set(structuralDefinition.components.map((c) => c.componentKey));
+          const hasMatch = Object.keys(prev).some((k) => compKeys.has(k));
+          if (!hasMatch) {
+            return getDefaultMaterialSelections(structuralDefinition);
+          }
+          return prev;
+        });
+      });
+    }
+  }, [structuralDefinition]);
+
+  const [allRawMaterials, setAllRawMaterials] = useState<RawMaterial[]>([]);
+
+  useEffect(() => {
+    let isMounted = true;
+    getRawMaterials({ is_active: true })
+      .then((mats) => {
+        if (isMounted && mats.length > 0) {
+          setAllRawMaterials(mats);
+        }
+      })
+      .catch((err) => {
+        console.warn("Could not load all raw materials for part picker:", err);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const candidateMaterialsMap = useMemo(() => {
+    return getAllCandidateMaterialsMap(structuralDefinition, allRawMaterials);
+  }, [structuralDefinition, allRawMaterials]);
+
+  // Evaluates target component keys for hatch alignment on host products (IMP-MS80, IMP-MS87: interior mounting only)
+  const effectiveHatchTargetKeys = useMemo(() => {
+    if (addonMountingSide !== "back") {
+      return [];
+    }
+    if (activeCompatibleAddon?.hatchTargetComponentKeys && activeCompatibleAddon.hatchTargetComponentKeys.length > 0) {
+      return activeCompatibleAddon.hatchTargetComponentKeys;
+    }
+    return [];
+  }, [activeCompatibleAddon, addonMountingSide]);
+
+  // Evaluates target component keys for grille handle access openings (IMP-MS86, IMP-MS87: interior mounting only)
+  const effectiveGrilleOpeningTargets = useMemo(() => {
+    if (addonMountingSide !== "back" || effectiveSelectedAddon !== "grill" || !activeCompatibleAddon) return [];
+    if (activeCompatibleAddon.grilleOpeningTargetComponentKeys && activeCompatibleAddon.grilleOpeningTargetComponentKeys.length > 0) {
+      return activeCompatibleAddon.grilleOpeningTargetComponentKeys;
+    }
+    if (activeCompatibleAddon.hatchTargetComponentKeys && activeCompatibleAddon.hatchTargetComponentKeys.length > 0) {
+      return activeCompatibleAddon.hatchTargetComponentKeys;
+    }
+    return [];
+  }, [effectiveSelectedAddon, activeCompatibleAddon, addonMountingSide]);
+
+  const dynamicOperatorCount = useMemo(() => {
+    if (effectiveHatchTargetKeys.length === 0) return 0;
+    const operatorComp = structuralDefinition?.components?.find(
+      (c) => c.dimensionBinding === "LOUVER_OPERATOR" || (c as Record<string, unknown>).dimension_binding === "LOUVER_OPERATOR"
+    );
+    if (operatorComp) {
+      const pitchMm = operatorComp.jalousieConfig?.pitch_mm ?? operatorComp.jalousieConfig?.pitchMm ?? 175;
+      const bladesPerOp = operatorComp.jalousieConfig?.blades_per_operator ?? operatorComp.jalousieConfig?.bladesPerOperator ?? 4;
+      const heightValMm = (Number(heightCm) || DEFAULT_PRODUCT_HEIGHT_CM) * 10;
+      const louverCount = computeLouverBladeCount(heightValMm, pitchMm);
+      return computeLouverOperatorCount(louverCount, bladesPerOp);
+    }
+    return effectiveHatchTargetKeys.length;
+  }, [structuralDefinition, effectiveHatchTargetKeys, heightCm]);
+
+  // Evaluates dynamic operator-aligned hatch count for host products (IMP-MS80, IMP-MS81, IMP-MS87)
+  const effectiveHatchCount = useMemo(() => {
+    if (effectiveSelectedAddon === "none" || addonMountingSide !== "back" || !includeHatch || effectiveHatchTargetKeys.length === 0) {
+      return 0;
+    }
+    return dynamicOperatorCount;
+  }, [effectiveSelectedAddon, addonMountingSide, includeHatch, effectiveHatchTargetKeys, dynamicOperatorCount]);
+
+  const effectiveGrilleOpeningCount = useMemo(() => {
+    if (effectiveSelectedAddon !== "grill" || addonMountingSide !== "back" || effectiveGrilleOpeningTargets.length === 0) {
+      return 0;
+    }
+    const operatorComp = structuralDefinition?.components?.find(
+      (c) => c.dimensionBinding === "LOUVER_OPERATOR" || (c as Record<string, unknown>).dimension_binding === "LOUVER_OPERATOR"
+    );
+    if (operatorComp) {
+      const pitchMm = operatorComp.jalousieConfig?.pitch_mm ?? operatorComp.jalousieConfig?.pitchMm ?? 175;
+      const bladesPerOp = operatorComp.jalousieConfig?.blades_per_operator ?? operatorComp.jalousieConfig?.bladesPerOperator ?? 4;
+      const heightValMm = (Number(heightCm) || DEFAULT_PRODUCT_HEIGHT_CM) * 10;
+      const louverCount = computeLouverBladeCount(heightValMm, pitchMm);
+      return computeLouverOperatorCount(louverCount, bladesPerOp);
+    }
+    return effectiveGrilleOpeningTargets.length;
+  }, [effectiveSelectedAddon, addonMountingSide, structuralDefinition, effectiveGrilleOpeningTargets, heightCm]);
+
+  const otherRemovableAddonParts = useMemo(() => {
+    if (effectiveSelectedAddon === "none" || !activeCompatibleAddon?.components) return [];
+    return activeCompatibleAddon.components.filter((c) => {
+      const isHatch =
+        (c.componentKey || "").toLowerCase().includes("hatch") ||
+        (c.componentName || "").toLowerCase().includes("hatch") ||
+        Boolean(c.togglePropertyKey && c.togglePropertyKey.toLowerCase().includes("hatch"));
+      if (isHatch) return false;
+      return Boolean(c.isRemovable || c.togglePropertyKey);
+    });
+  }, [effectiveSelectedAddon, activeCompatibleAddon]);
+
+  const handleHatchToggle = useCallback((checked: boolean) => {
+    setIncludeHatch(checked);
+    const nextStates: Record<string, boolean> = {
+      ...removableStates,
+      screen_access_hatch: checked,
+      has_screen_access_hatch: checked,
+      has_hatch: checked,
+    };
+    if (activeCompatibleAddon?.components) {
+      for (const comp of activeCompatibleAddon.components) {
+        const isHatch =
+          comp.componentKey.toLowerCase().includes("hatch") ||
+          (comp.componentName || "").toLowerCase().includes("hatch") ||
+          Boolean(comp.togglePropertyKey && comp.togglePropertyKey.toLowerCase().includes("hatch"));
+        if (isHatch) {
+          nextStates[comp.componentId] = checked;
+          nextStates[comp.componentKey] = checked;
+          if (comp.togglePropertyKey) {
+            nextStates[comp.togglePropertyKey] = checked;
+          }
+        }
+      }
+    }
+    setRemovableStates(nextStates);
+  }, [removableStates, activeCompatibleAddon]);
+
+  const handleRemovableToggle = useCallback((componentId: string, componentKey: string, checked: boolean) => {
+    setRemovableStates((prev) => ({
+      ...prev,
+      [componentId]: checked,
+      [componentKey]: checked,
+    }));
+  }, []);
+
+  const handleMeshDensityChange = useCallback((density: "fine" | "micro" | "coarse") => {
+    setScreenMeshDensity(density);
+  }, []);
+
+  const customizableComponents = useMemo(() => {
+    if (!structuralDefinition?.components) return [];
+    const list: (ProductComponentDefinition & { isFromAddon?: boolean; addonType?: string })[] = [
+      ...structuralDefinition.components.map((c) => ({ ...c, isFromAddon: false })),
+    ];
+    if (effectiveSelectedAddon !== "none" && activeCompatibleAddon?.components) {
+      for (const comp of activeCompatibleAddon.components) {
+        const isHatch =
+          comp.componentKey.toLowerCase().includes("hatch") ||
+          (comp.componentName || "").toLowerCase().includes("hatch") ||
+          Boolean(comp.togglePropertyKey && comp.togglePropertyKey.toLowerCase().includes("hatch"));
+        if (isHatch && (!includeHatch || effectiveHatchTargetKeys.length === 0)) continue;
+        const isExcluded =
+          removableStates[comp.componentId] === false ||
+          removableStates[comp.componentKey] === false ||
+          Boolean(comp.togglePropertyKey && removableStates[comp.togglePropertyKey] === false);
+        if (isExcluded) continue;
+        list.push({ ...comp, isFromAddon: true, addonType: effectiveSelectedAddon });
+      }
+    }
+    return list;
+  }, [structuralDefinition, effectiveSelectedAddon, activeCompatibleAddon, includeHatch, effectiveHatchTargetKeys, removableStates]);
+
+  // Real-time Dedicated Add-on Parametric BOM Calculation (Sub-50ms sync)
+  const addonBOM = useMemo<AddonBOMResult | null>(() => {
+    if (effectiveSelectedAddon === "none") return null;
+    const widthValCm = Number(widthCm) || DEFAULT_PRODUCT_WIDTH_CM;
+    const heightValCm = Number(heightCm) || DEFAULT_PRODUCT_HEIGHT_CM;
+    return calculateAddonBOM({
+      addonType: effectiveSelectedAddon,
+      widthMm: widthValCm * 10,
+      heightMm: heightValCm * 10,
+      hatchCount: effectiveHatchCount,
+      mountingSide: addonMountingSide,
+      hatchTargetKeys: includeHatch && effectiveHatchTargetKeys.length > 0 ? effectiveHatchTargetKeys : undefined,
+    });
+  }, [effectiveSelectedAddon, widthCm, heightCm, effectiveHatchCount, addonMountingSide, includeHatch, effectiveHatchTargetKeys]);
+
+  // Real-time Dedicated Grille Linear BOM Calculation (IMP-MS73 / Sub-50ms sync)
+  const activeGrilleBOM = useMemo<GrilleLinearBOMResult | null>(() => {
+    if (effectiveSelectedAddon !== "grill") return null;
+    const widthValCm = Number(widthCm) || DEFAULT_PRODUCT_WIDTH_CM;
+    const heightValCm = Number(heightCm) || DEFAULT_PRODUCT_HEIGHT_CM;
+    const widthMm = widthValCm * 10;
+    const heightMm = heightValCm * 10;
+
+    const finishKey = addonAlumFinish || alumFinish || "analok";
+    const normalizedKey = finishKey.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+    const matchedMaterial = allRawMaterials.find((m) => {
+      const f = m.finish_type.toLowerCase().replace(/[^a-z0-9]/g, "");
+      if (normalizedKey === "white" && (f === "powdercoatedwhite" || f === "white")) return true;
+      if (normalizedKey === "powdercoatedwhite" && (f === "powdercoatedwhite" || f === "white")) return true;
+      if (normalizedKey === "analok" && f === "analok") return true;
+      if (normalizedKey === "black" && (f === "powdercoatedblack" || f === "black" || f === "al1009")) return true;
+      if (normalizedKey === "mill" && f === "mill") return true;
+      return f.includes(normalizedKey) || normalizedKey.includes(f);
+    });
+
+    const isWhite = normalizedKey.includes("white");
+    const isBlack = normalizedKey.includes("black") || normalizedKey === "al1009";
+    const defaultRate = isWhite ? 180 : isBlack ? 175 : 160;
+
+    const unitPrice = matchedMaterial?.unit_price ?? defaultRate;
+    const wasteAllowance = matchedMaterial?.waste_allowance ?? 0.12;
+
+    const rawCutoutW = (activeCompatibleAddon?.grilleOpeningConfig as Record<string, unknown> | undefined)?.cutoutWidthMm as number | undefined ?? 150;
+    const rawCutoutH = (activeCompatibleAddon?.grilleOpeningConfig as Record<string, unknown> | undefined)?.cutoutHeightMm as number | undefined ?? 180;
+    const cutoutWidthMm = Math.max(100, Math.min(250, rawCutoutW));
+    const cutoutHeightMm = Math.max(120, Math.min(300, rawCutoutH));
+
+    return calculateGrilleLinearBOM({
+      widthMm,
+      heightMm,
+      patternType: "staggered_brick",
+      openingCount: effectiveGrilleOpeningCount,
+      openingWidthMm: cutoutWidthMm,
+      openingHeightMm: cutoutHeightMm,
+      openingTargetKeys: effectiveGrilleOpeningTargets,
+      openingConfig: {
+        enabled: effectiveGrilleOpeningCount > 0,
+        cutoutWidthMm,
+        cutoutHeightMm,
+        cornerCleatCountPerOpening: 4,
+        targetComponentKeys: effectiveGrilleOpeningTargets,
+      },
+      grilleRawMaterial: {
+        id: matchedMaterial?.id ?? "default-grille-mat",
+        material_code: matchedMaterial?.material_code ?? "AL-GRILLE-TUBE-16MM",
+        description: matchedMaterial?.description ?? "16mm Square Tube Aluminum",
+        unit_price: unitPrice,
+        waste_allowance: wasteAllowance,
+      },
+      includePerimeterFrame: true,
+    });
+  }, [
+    effectiveSelectedAddon,
+    widthCm,
+    heightCm,
+    addonAlumFinish,
+    alumFinish,
+    allRawMaterials,
+    effectiveGrilleOpeningCount,
+    effectiveGrilleOpeningTargets,
+    activeCompatibleAddon,
+  ]);
+
+  const addonPrice = effectiveSelectedAddon === "grill"
+    ? (activeGrilleBOM?.finalPrice ?? 0)
+    : (addonBOM?.finalAddonPrice ?? 0);
+
+  const materialCustomizationGroups = useMemo(() => {
+    if (!structuralDefinition) return [];
+    return buildMaterialCustomizationGroups(structuralDefinition, selectedMaterials);
+  }, [structuralDefinition, selectedMaterials]);
+
+  const getFinishHexColor = useCallback((finishId: string): string => {
+    const option = ALUMINUM_FINISH_OPTIONS.find((o) => o.id === finishId);
+    if (option) return option.previewHex;
+    return resolveSwatchColor(finishId);
+  }, []);
+
+  const applyWorkspacePresentation = useCallback((overrides?: Partial<ModelPresentationOptions>) => {
+    if (!mvpRendererRef.current) return;
+
+    const currentOptions: ModelPresentationOptions = {
+      aluminumFinish: overrides?.aluminumFinish ?? normalizeAluminumFinish(alumFinish),
+      glassAppearance: overrides?.glassAppearance ?? glassAppearance,
+      glassColor: overrides?.glassColor ?? glassColor,
+      glassThicknessMm: overrides?.glassThicknessMm ?? glassThicknessMm,
+      includeSill: overrides?.includeSill ?? includeSill,
+      activeAddon: overrides?.activeAddon ?? selectedAddon,
+      addonProductId: overrides?.addonProductId ?? selectedAddonProductId,
+      addonAluminumFinish: overrides?.addonAluminumFinish ?? addonAlumFinish,
+      addonMountingSide: overrides?.addonMountingSide ?? addonMountingSide,
+      screenMeshDensity: overrides?.screenMeshDensity ?? screenMeshDensity,
+      hatchTargetComponentKeys: overrides?.hatchTargetComponentKeys ?? (includeHatch && effectiveHatchTargetKeys.length > 0 ? effectiveHatchTargetKeys : []),
+      removableStates: overrides?.removableStates ?? removableStates,
+      addonConfig: {
+        finishColor: getFinishHexColor(overrides?.addonAluminumFinish ?? addonAlumFinish),
+        zOffsetMm: 18,
+      },
+    };
+
+    // 1. Update 3D scene materials in real time (< 16ms)
+    mvpRendererRef.current.updatePresentation(currentOptions);
+
+    // 2. Immediate 2D canvas blit
+    if (mvpCanvasRef.current) {
+      const isPlanar = Boolean(perspectiveCorners);
+      const sourceCanvas = mvpRendererRef.current.render(yaw, pitch, isPlanar, productFacing);
+      if (sourceCanvas) {
+        const rect = mvpRendererRef.current.getPlanarFitRect();
+        setPlanarFitRect((current) => current?.x === rect?.x && current?.y === rect?.y &&
+          current?.width === rect?.width && current?.height === rect?.height ? current : rect);
+        const ctx = mvpCanvasRef.current.getContext("2d");
+        if (ctx) {
+          ctx.clearRect(0, 0, mvpCanvasRef.current.width, mvpCanvasRef.current.height);
+          ctx.drawImage(
+            sourceCanvas,
+            0,
+            0,
+            sourceCanvas.width,
+            sourceCanvas.height,
+            0,
+            0,
+            mvpCanvasRef.current.width,
+            mvpCanvasRef.current.height,
+          );
+        }
+      }
+    }
+
+    // 3. Mark skipPreparedBuildRef to prevent redundant debounced loadModel() rebuilds
+    const canonicalKey = computeWorkspaceBuildKey({
+      productId: structuralDefinition?.product.productId ?? "",
+      widthCm,
+      heightCm,
+      panelCount,
+      includeSill: currentOptions.includeSill ?? includeSill,
+      selectedAddon: currentOptions.activeAddon ?? selectedAddon,
+      selectedAddonProductId: currentOptions.addonProductId ?? selectedAddonProductId,
+      addonMountingSide: (currentOptions.addonMountingSide as "front" | "back") ?? addonMountingSide,
+      addonAlumFinish: currentOptions.addonAluminumFinish ?? addonAlumFinish,
+      alumFinish: currentOptions.aluminumFinish ?? alumFinish,
+      glassAppearance: currentOptions.glassAppearance ?? glassAppearance,
+      glassColor: currentOptions.glassColor ?? glassColor,
+      glassThicknessMm: currentOptions.glassThicknessMm ?? glassThicknessMm,
+      includeHatch,
+      screenMeshDensity: currentOptions.screenMeshDensity ?? screenMeshDensity,
+      accessoriesKey: JSON.stringify(selectedAccessories),
+      removableStatesKey: JSON.stringify(currentOptions.removableStates ?? removableStates),
+    });
+    skipPreparedBuildRef.current = canonicalKey;
+
+    // 4. Invalidate model revision for outline measurement and UI updates
+    setModelRevision((prev) => prev + 1);
+  }, [
+    alumFinish,
+    glassAppearance,
+    glassColor,
+    glassThicknessMm,
+    includeSill,
+    selectedAddon,
+    selectedAddonProductId,
+    addonAlumFinish,
+    addonMountingSide,
+    includeHatch,
+    screenMeshDensity,
+    effectiveHatchTargetKeys,
+    removableStates,
+    selectedAccessories,
+    getFinishHexColor,
+    perspectiveCorners,
+    productFacing,
+    yaw,
+    pitch,
+    structuralDefinition,
+    widthCm,
+    heightCm,
+    panelCount,
+  ]);
+
+  const handleSelectMaterialOption = useCallback(
+    (group: MaterialCustomizationGroup, option: MaterialCustomizationOption) => {
+      if (!structuralDefinition) return;
+      const nextSelections = applyGroupSelection(
+        group,
+        option,
+        selectedMaterials,
+        structuralDefinition,
+      );
+      const nextVisualOverrides = applyScopedGroupVisualOverride(
+        group,
+        option,
+        visualMaterialOverrides,
+        structuralDefinition,
+      );
+      setSelectedMaterials(nextSelections);
+      setVisualMaterialOverrides(nextVisualOverrides);
+
+      if (mvpRendererRef.current) {
+        mvpRendererRef.current.updateCustomMaterials(nextVisualOverrides, candidateMaterialsMap);
+        setModelRevision((prev) => prev + 1);
+      }
+    },
+    [structuralDefinition, selectedMaterials, visualMaterialOverrides, candidateMaterialsMap],
+  );
+
+  const handleSelectPartMaterial = useCallback(
+    (componentKey: string, rawMaterialId: string) => {
+      setSelectedMaterials((prev) => {
+        const next = {
+          ...prev,
+          [componentKey]: rawMaterialId,
+        };
+        setModelRevision((r) => r + 1);
+        return next;
+      });
+    },
+    [],
+  );
+
+  const handleResetMaterialsToDefaults = useCallback(() => {
+    if (!structuralDefinition) return;
+    const defaultSelections = getDefaultMaterialSelections(structuralDefinition);
+    setSelectedMaterials(defaultSelections);
+    setVisualMaterialOverrides({});
+
+    applyWorkspacePresentation();
+  }, [structuralDefinition, applyWorkspacePresentation]);
 
   useEffect(() => {
     overlayX.set(overlayPosition.x);
@@ -633,13 +1530,29 @@ export function ProductModelWorkspace({
     width: aspectWidth,
     height: aspectHeight,
   });
+  const measuredCanvasSizeRef = useRef<{ width: number; height: number } | null>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = canvasRef.current;
     if (!el) return;
     const updateSize = () => {
       const rect = el.getBoundingClientRect();
       if (rect.width > 0 && rect.height > 0) {
+        const previousSize = measuredCanvasSizeRef.current;
+        if (previousSize && previousSize.width !== rect.width) {
+          const scale = rect.width / previousSize.width;
+          setOverlayPosition((position) => ({
+            x: position.x * scale,
+            y: position.y * scale,
+          }));
+          setOverlaySize((size) => ({
+            width: size.width * scale,
+            height: size.height * scale,
+          }));
+          overlayX.set(overlayX.get() * scale);
+          overlayY.set(overlayY.get() * scale);
+        }
+        measuredCanvasSizeRef.current = { width: rect.width, height: rect.height };
         setCanvasDisplaySize({ width: rect.width, height: rect.height });
       }
     };
@@ -647,25 +1560,7 @@ export function ProductModelWorkspace({
     const observer = new ResizeObserver(updateSize);
     observer.observe(el);
     return () => observer.disconnect();
-  }, [aspectWidth, aspectHeight]);
-
-  const perspectiveToolbarPosition = useMemo(() => {
-    if (!perspectiveCorners) return null;
-    const currentWidth = canvasDisplaySize.width;
-    const currentHeight = canvasDisplaySize.height;
-    const pxCorners = denormalizeCorners(
-      perspectiveCorners,
-      currentWidth,
-      currentHeight,
-    );
-    const minX = Math.min(...pxCorners.map((p) => p.x));
-    const maxX = Math.max(...pxCorners.map((p) => p.x));
-    const minY = Math.min(...pxCorners.map((p) => p.y));
-    return {
-      left: Math.max(160, Math.min(currentWidth - 160, (minX + maxX) / 2)),
-      top: Math.max(12, minY - 48),
-    };
-  }, [perspectiveCorners, canvasDisplaySize.width, canvasDisplaySize.height]);
+  }, [aspectWidth, aspectHeight, overlayX, overlayY, shouldLockMobileEditor, compactOrientation]);
 
   const perspectiveHandlePoints = useMemo(() => {
     if (!perspectiveCorners) return null;
@@ -674,7 +1569,30 @@ export function ProductModelWorkspace({
     if (currentW <= 0 || currentH <= 0) return null;
 
     const pxCorners = denormalizeCorners(perspectiveCorners, currentW, currentH);
-    const [p0, p1, p2, p3] = pxCorners;
+    let [p0, p1, p2, p3] = pxCorners;
+    if (structuralDefinition && planarFitRect) {
+      const frame = getPlanarFitImageBounds(planarFitRect, isFlipped)!;
+      const sourceFrame: QuadrilateralCorners = [
+        { x: frame.left, y: frame.top },
+        { x: frame.left + frame.width, y: frame.top },
+        { x: frame.left + frame.width, y: frame.top + frame.height },
+        { x: frame.left, y: frame.top + frame.height },
+      ];
+      const matrix = computeHomographyMatrix(sourceFrame, pxCorners);
+      if (matrix) {
+        const outline: QuadrilateralCorners = [
+          { x: 0, y: 0 }, { x: 1, y: 0 },
+          { x: 1, y: 1 }, { x: 0, y: 1 },
+        ];
+        [p0, p1, p2, p3] = outline.map(({ x, y }) => {
+          const divisor = matrix[6] * x + matrix[7] * y + matrix[8];
+          return {
+            x: (matrix[0] * x + matrix[1] * y + matrix[2]) / divisor,
+            y: (matrix[3] * x + matrix[4] * y + matrix[5]) / divisor
+          };
+        }) as QuadrilateralCorners;
+      }
+    }
 
     return {
       corners: [
@@ -694,7 +1612,7 @@ export function ProductModelWorkspace({
         y: (p0.y + p1.y + p2.y + p3.y) / 4,
       },
     };
-  }, [perspectiveCorners, canvasDisplaySize.width, canvasDisplaySize.height]);
+  }, [perspectiveCorners, canvasDisplaySize.width, canvasDisplaySize.height, structuralDefinition, planarFitRect, isFlipped]);
 
   const [dismissedObstructionKeys, setDismissedObstructionKeys] = useState<Set<string>>(new Set());
 
@@ -826,24 +1744,102 @@ export function ProductModelWorkspace({
   const workspaceFinishOptions = supportedProductType
     ? getAvailableFinishOptions(supportedProductType)
     : ALUMINUM_FINISH_OPTIONS.filter((option) =>
-        option.id === "white" || option.id === "al_1009" || option.id === "al_1001",
-      );
+      option.id === "white" || option.id === "al_1009" || option.id === "al_1001",
+    );
   const workspaceGlassTypeOptions = supportedProductType
     ? getAvailableGlassTypeOptions(supportedProductType)
     : [];
   const glassControlsDisabled = materialCapabilities?.hasGlass === false;
 
   const handleGlassTypeChange = useCallback((nextType: GlassTypeKey) => {
+    const nextAppearance = mapGlassTypeToAppearanceMode(nextType);
     setGlassType(nextType);
-    setGlassAppearance(mapGlassTypeToAppearanceMode(nextType));
-  }, []);
+    setGlassAppearance(nextAppearance);
+    applyWorkspacePresentation({ glassAppearance: nextAppearance });
+
+    // Synchronize glazing in selectedMaterials if matching glass option exists
+    if (structuralDefinition && materialCustomizationGroups.length > 0) {
+      const glazingGroup = materialCustomizationGroups.find((g) => g.presentationCategory === "Glazing");
+      if (glazingGroup) {
+        const matchedOption = glazingGroup.options.find((opt) =>
+          opt.description.toLowerCase().includes(nextType.toLowerCase())
+        );
+        if (matchedOption) {
+          const nextSelections = applyGroupSelection(
+            glazingGroup,
+            matchedOption,
+            selectedMaterials,
+            structuralDefinition,
+          );
+          setSelectedMaterials(nextSelections);
+        }
+      }
+    }
+    setVisualMaterialOverrides({});
+  }, [applyWorkspacePresentation, structuralDefinition, materialCustomizationGroups, selectedMaterials]);
 
   const handleAdvancedGlassAppearanceChange = useCallback(
     (appearance: "opaque" | "outdoor") => {
       setGlassType(undefined);
       setGlassAppearance(appearance);
+      applyWorkspacePresentation({ glassAppearance: appearance });
+      setVisualMaterialOverrides({});
     },
-    [],
+    [applyWorkspacePresentation],
+  );
+
+  const handleFallbackGlassAppearanceChange = useCallback(
+    (mode: GlassAppearanceMode) => {
+      setGlassAppearance(mode);
+      setGlassType(deriveGlassTypeFromAppearance(mode));
+      applyWorkspacePresentation({ glassAppearance: mode });
+      setVisualMaterialOverrides({});
+    },
+    [applyWorkspacePresentation],
+  );
+
+  const handleGlassColorChange = useCallback(
+    (colorKey: GlassColorKey) => {
+      setGlassColor(colorKey);
+      applyWorkspacePresentation({ glassColor: colorKey });
+
+      let nextSelections = { ...selectedMaterials };
+      if (structuralDefinition && materialCustomizationGroups.length > 0) {
+        const glassGroup = materialCustomizationGroups.find((g) => g.presentationCategory === "Glazing");
+        if (glassGroup) {
+          const targetColor = colorKey.toLowerCase();
+          const matchedOption = glassGroup.options.find((opt) => {
+            const optColor = (opt.finishType || opt.description || "").toLowerCase();
+            return optColor.includes(targetColor);
+          });
+          if (matchedOption) {
+            nextSelections = applyGroupSelection(
+              glassGroup,
+              matchedOption,
+              selectedMaterials,
+              structuralDefinition,
+            );
+          } else {
+            for (const comp of structuralDefinition.components) {
+              if (comp.presentationCategory === "Glazing") {
+                delete nextSelections[comp.componentKey];
+              }
+            }
+          }
+        }
+      }
+      setSelectedMaterials(nextSelections);
+      setVisualMaterialOverrides({});
+    },
+    [applyWorkspacePresentation, structuralDefinition, materialCustomizationGroups, selectedMaterials],
+  );
+
+  const handleGlassThicknessChange = useCallback(
+    (thicknessVal: GlassThicknessMm) => {
+      setGlassThicknessMm(thicknessVal);
+      applyWorkspacePresentation({ glassThicknessMm: thicknessVal });
+    },
+    [applyWorkspacePresentation],
   );
   const supportsPerspectivePlane = isWindowProduct || isDoorProduct;
   const modelEffectStyle = useMemo(
@@ -906,25 +1902,40 @@ export function ProductModelWorkspace({
         finishType,
         glassType,
         structuralWaiver,
+        selectedMaterials,
+        rawMaterials: candidateMaterialsMap,
       });
 
-      const unitPrice = bomCalc.finalQuotation > 0
+      const baseUnitPrice = bomCalc.finalQuotation > 0
         ? bomCalc.finalQuotation
         : (structuralDefinition.product.basePrice ?? 0);
 
+      const unitPrice = baseUnitPrice + addonPrice + totalAccessoryPriceDelta;
       const totalPrice = unitPrice * Math.max(1, quantity);
 
       return {
+        baseUnitPrice,
+        addonPrice,
+        accessoryPriceDelta: totalAccessoryPriceDelta,
         unitPrice,
         totalPrice,
         bomCalc,
+        addonBOM,
+        grilleBOM: activeGrilleBOM,
+        swappedAccessories: selectedAccessories,
       };
     }
 
     return {
+      baseUnitPrice: 0,
+      addonPrice: 0,
+      accessoryPriceDelta: 0,
       unitPrice: 0,
       totalPrice: 0,
       bomCalc: null,
+      addonBOM: null,
+      grilleBOM: null,
+      swappedAccessories: {},
     };
   }, [
     structuralDefinition,
@@ -935,15 +1946,23 @@ export function ProductModelWorkspace({
     alumFinish,
     glassAppearance,
     includeSill,
+    addonPrice,
+    addonBOM,
+    activeGrilleBOM,
     panelCount,
     structuralWaiver,
+    selectedMaterials,
+    candidateMaterialsMap,
+    totalAccessoryPriceDelta,
+    selectedAccessories,
   ]);
 
   const formattedPrice = useMemo(() => {
     return new Intl.NumberFormat("en-PH", {
       style: "currency",
       currency: "PHP",
-      maximumFractionDigits: 0,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     })
       .format(realtimePricing.totalPrice)
       .replace("PHP", "Php");
@@ -953,7 +1972,8 @@ export function ProductModelWorkspace({
     return new Intl.NumberFormat("en-PH", {
       style: "currency",
       currency: "PHP",
-      maximumFractionDigits: 0,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     })
       .format(realtimePricing.unitPrice)
       .replace("PHP", "Php");
@@ -1046,7 +2066,8 @@ export function ProductModelWorkspace({
       const formattedTotal = new Intl.NumberFormat("en-PH", {
         style: "currency",
         currency: "PHP",
-        maximumFractionDigits: 0,
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
       })
         .format(totalScenePrice)
         .replace("PHP", "Php");
@@ -1099,7 +2120,25 @@ export function ProductModelWorkspace({
 
   useEffect(() => {
     if (!mvpRendererRef.current || !structuralDefinition) return;
-    const buildKey = `${structuralDefinition.product.productId}:${widthCm}:${heightCm}:${panelCount}:${includeSill}:${alumFinish}:${glassAppearance}:${glassColor}:${glassThicknessMm}`;
+    const buildKey = computeWorkspaceBuildKey({
+      productId: structuralDefinition.product.productId,
+      widthCm,
+      heightCm,
+      panelCount,
+      includeSill,
+      selectedAddon,
+      selectedAddonProductId,
+      addonMountingSide,
+      addonAlumFinish,
+      alumFinish,
+      glassAppearance,
+      glassColor,
+      glassThicknessMm,
+      includeHatch,
+      screenMeshDensity,
+      accessoriesKey: JSON.stringify(selectedAccessories),
+      removableStatesKey: JSON.stringify(removableStates),
+    });
     if (skipPreparedBuildRef.current === buildKey) {
       skipPreparedBuildRef.current = null;
       return;
@@ -1122,23 +2161,63 @@ export function ProductModelWorkspace({
       },
       {
         aluminumFinish: alumFinish,
+        addonAluminumFinish: addonAlumFinish,
         glassAppearance,
         glassColor,
         glassThicknessMm,
         includeSill,
+        activeAddon: selectedAddon,
+        addonProductId: selectedAddonProductId,
+        addonMountingSide,
+        screenMeshDensity,
+        hatchTargetComponentKeys: includeHatch && effectiveHatchTargetKeys.length > 0 ? effectiveHatchTargetKeys : [],
+        grilleOpeningTargetComponentKeys: effectiveGrilleOpeningTargets,
+        grilleOpeningConfig: (activeCompatibleAddon?.grilleOpeningConfig as Record<string, unknown> | null) ?? null,
+        removableStates,
+        swappedAccessories: selectedAccessories,
+        addonConfig: {
+          finishColor: getFinishHexColor(addonAlumFinish),
+          zOffsetMm: 18,
+        },
+      },
+      {
+        selectedMaterials: visualMaterialOverrides,
+        rawMaterialsMap: candidateMaterialsMap,
+        hasExplicitOverrides,
       },
     ).then((result) => {
       if (!result || cancelled) return;
+      for (const slotId of Object.keys(selectedAccessories)) delete accessoryRollbackRef.current[slotId];
+      loadedModelRef.current = { definition: structuralDefinition, widthCm, heightCm };
       setMaterialCapabilities(result.capabilities);
       // Preserve the last measured outline while resize interactions pause measurement.
       // The revision redraw measures the rebuilt model as soon as measurement resumes.
       setModelRevision((prev) => prev + 1);
       setProductBuildError(null);
     }).catch((error: unknown) => {
-      if (!cancelled) setProductBuildError(error instanceof Error ? error.message : "Could not build the product model.");
+      if (cancelled) return;
+      const rollbackEntries = Object.entries(accessoryRollbackRef.current);
+      if (rollbackEntries.length > 0) {
+        accessoryRollbackRef.current = {};
+        setSelectedAccessories((current) => {
+          const next = { ...current };
+          for (const [slotId, previous] of rollbackEntries) {
+            if (previous) next[slotId] = previous;
+            else delete next[slotId];
+          }
+          return next;
+        });
+        setAccessoryErrors((errors) => {
+          const next = { ...errors };
+          for (const [slotId] of rollbackEntries) next[slotId] = "The accessory could not be shown in the preview. Your previous selection was restored.";
+          return next;
+        });
+      } else {
+        setProductBuildError(error instanceof Error ? error.message : "Could not build the product model.");
+      }
     });
     return () => { cancelled = true; };
-  }, [structuralDefinition, widthCm, heightCm, panelCount, includeSill, glassAppearance, glassColor, glassThicknessMm, alumFinish]);
+  }, [structuralDefinition, widthCm, heightCm, panelCount, includeSill, selectedAddon, selectedAddonProductId, addonAlumFinish, addonMountingSide, activeCompatibleAddon, includeHatch, screenMeshDensity, effectiveHatchTargetKeys, effectiveGrilleOpeningTargets, removableStates, glassAppearance, glassColor, glassThicknessMm, alumFinish, hasExplicitOverrides, visualMaterialOverrides, candidateMaterialsMap, selectedAccessories, getFinishHexColor]);
 
   useEffect(() => {
     if (!mvpRendererRef.current) return;
@@ -1150,7 +2229,7 @@ export function ProductModelWorkspace({
       (mvpCanvasRef as React.MutableRefObject<HTMLCanvasElement | null>).current = canvas;
       if (canvas && mvpRendererRef.current && structuralDefinition) {
         const isPlanar = Boolean(perspectiveCorners);
-        const sourceCanvas = mvpRendererRef.current.render(yaw, pitch, isPlanar);
+        const sourceCanvas = mvpRendererRef.current.render(yaw, pitch, isPlanar, productFacing);
         if (sourceCanvas) {
           const ctx = canvas.getContext("2d");
           if (ctx) {
@@ -1179,6 +2258,7 @@ export function ProductModelWorkspace({
               applyContactOcclusionAndReveals(ctx, canvas.width, canvas.height, {
                 lightDirection: effectiveLighting.light_direction,
                 shadowOpacity: effectiveLighting.suggested?.shadow_opacity ?? 0.28,
+                installationBounds: mvpRendererRef.current.getPlanarFitRect(),
               });
             }
             if (autoRealism && effectiveLighting?.suggested?.grain) {
@@ -1188,7 +2268,7 @@ export function ProductModelWorkspace({
         }
       }
     },
-    [yaw, pitch, structuralDefinition, perspectiveCorners, autoRealism, autoShadow, effectiveLighting, isOutlineMeasurementPaused],
+    [productFacing, yaw, pitch, structuralDefinition, perspectiveCorners, autoRealism, autoShadow, effectiveLighting, isOutlineMeasurementPaused],
   );
 
   useLayoutEffect(() => {
@@ -1197,8 +2277,14 @@ export function ProductModelWorkspace({
     mvpRendererRef.current.setSize(renderFrameSize.width, renderFrameSize.height);
 
     const isPlanar = Boolean(perspectiveCorners);
-    const sourceCanvas = mvpRendererRef.current.render(yaw, pitch, isPlanar);
+    const sourceCanvas = mvpRendererRef.current.render(yaw, pitch, isPlanar, productFacing);
     if (!sourceCanvas) return;
+    const nextFitRect = mvpRendererRef.current.getPlanarFitRect();
+    setPlanarFitRect((current) =>
+      current?.x === nextFitRect?.x && current?.y === nextFitRect?.y &&
+        current?.width === nextFitRect?.width && current?.height === nextFitRect?.height
+        ? current : nextFitRect,
+    );
 
     const targetCanvas = mvpCanvasRef.current;
     const ctx = targetCanvas.getContext("2d");
@@ -1229,6 +2315,7 @@ export function ProductModelWorkspace({
       applyContactOcclusionAndReveals(ctx, targetCanvas.width, targetCanvas.height, {
         lightDirection: effectiveLighting.light_direction,
         shadowOpacity: effectiveLighting.suggested?.shadow_opacity ?? 0.28,
+        installationBounds: nextFitRect,
       });
     }
 
@@ -1236,6 +2323,7 @@ export function ProductModelWorkspace({
       applyNoiseToCanvas(ctx, targetCanvas.width, targetCanvas.height, effectiveLighting.suggested.grain);
     }
   }, [
+    productFacing,
     yaw,
     pitch,
     structuralDefinition,
@@ -1243,7 +2331,11 @@ export function ProductModelWorkspace({
     heightCm,
     includeSill,
     glassAppearance,
+    glassColor,
+    glassThicknessMm,
     alumFinish,
+    selectedAddon,
+    addonAlumFinish,
     effectiveLighting,
     autoRealism,
     autoShadow,
@@ -1256,10 +2348,6 @@ export function ProductModelWorkspace({
 
   const outlineControlsStyle = useMemo(
     () => getOutlineControlsStyle(structuralDefinition ? projectedModelBounds : null),
-    [projectedModelBounds, structuralDefinition],
-  );
-  const toolbarControlsStyle = useMemo(
-    () => getToolbarControlsStyle(structuralDefinition ? projectedModelBounds : null),
     [projectedModelBounds, structuralDefinition],
   );
   const isEditingProduct = !isSnapshotApplied;
@@ -1292,16 +2380,16 @@ export function ProductModelWorkspace({
   const [manualDimensions, setManualDimensions] = useState(initialConfiguration?.visualParameterValues.dimension_source === "manual_tape");
   const [savedMeasurementEvidence, setSavedMeasurementEvidence] = useState<unknown>(initialConfiguration?.visualParameterValues.calibration_provenance);
   const activeMeasurementRecord = useMemo(() => {
-    if (manualDimensions || !perspectiveCorners) return null;
-    const current = createMeasurementRecord(activeCalibrationMeta, perspectiveCorners, metricFrame, targetPlaneId);
+    if (manualDimensions || !measurementCorners) return null;
+    const current = createMeasurementRecord(activeCalibrationMeta, measurementCorners, metricFrame, targetPlaneId);
     if (current) return current;
     const saved = readMeasurementRecord(savedMeasurementEvidence);
     return saved && metricReference && saved.plane_id !== metricReference.planeId && targetPlaneId === saved.plane_id && saved.image_identity === metricFrame.imageId && saved.image_width_px === metricFrame.width && saved.image_height_px === metricFrame.height
-      && JSON.stringify(saved.opening_corners) === JSON.stringify(perspectiveCorners) ? saved : null;
-  }, [manualDimensions, perspectiveCorners, activeCalibrationMeta, metricFrame, targetPlaneId, savedMeasurementEvidence, metricReference]);
-  const manualPhotoComparison = useMemo(() => manualDimensions && perspectiveCorners
-    ? createMeasurementRecord(activeCalibrationMeta, perspectiveCorners, metricFrame, targetPlaneId) : null,
-    [manualDimensions, perspectiveCorners, activeCalibrationMeta, metricFrame, targetPlaneId]);
+      && JSON.stringify(saved.opening_corners) === JSON.stringify(measurementCorners) ? saved : null;
+  }, [manualDimensions, measurementCorners, activeCalibrationMeta, metricFrame, targetPlaneId, savedMeasurementEvidence, metricReference]);
+  const manualPhotoComparison = useMemo(() => manualDimensions && measurementCorners
+    ? createMeasurementRecord(activeCalibrationMeta, measurementCorners, metricFrame, targetPlaneId) : null,
+    [manualDimensions, measurementCorners, activeCalibrationMeta, metricFrame, targetPlaneId]);
   const activeMetricMeasurement = activeMeasurementRecord;
   const isVerifiedCalibrated = Boolean(activeMeasurementRecord &&
     Math.abs(Number(widthCm) * 10 - activeMeasurementRecord.width_mm) < 1e-6 &&
@@ -1325,6 +2413,9 @@ export function ProductModelWorkspace({
       glassThicknessMm,
       ...(glassType ? { glassType } : {}),
       includeSill,
+      selectedMaterials,
+      visualMaterialOverrides,
+      productFacing,
       yaw,
       pitch,
       rotateAngle,
@@ -1334,24 +2425,76 @@ export function ProductModelWorkspace({
       manualOcclusionMaskDataUrl: manualMaskDataUrl,
       manualOcclusionPolygons,
       targetPlaneId,
-      perspectiveFitCorners: perspectiveCorners,
+      perspectiveFitCorners: measurementCorners,
+      visualPoseCorners: perspectiveCorners,
       ambientLight,
       autoShadow,
       autoRealism,
       positionX: overlayPosition.x,
       positionY: overlayPosition.y,
+      selectedAddon: effectiveSelectedAddon,
+      addonProductId: effectiveSelectedAddon !== "none" ? (activeCompatibleAddon?.addonProductId ?? selectedAddonProductId ?? null) : null,
+      addonName: effectiveSelectedAddon !== "none" ? (activeCompatibleAddon?.addonProduct?.productName ?? (effectiveSelectedAddon === "grill" ? "Architectural Security Window Grille" : (addonBOM?.addonName ?? "Extruded Aluminum Insect Screen"))) : null,
+      addonPrice: effectiveSelectedAddon !== "none" ? addonPrice : 0,
+      addonAluminumFinish: effectiveSelectedAddon !== "none" ? addonAlumFinish : undefined,
+      addonMountingSide: effectiveSelectedAddon !== "none" ? addonMountingSide : undefined,
+      screenMeshDensity: effectiveSelectedAddon === "screen" ? screenMeshDensity : undefined,
+      includeHatch,
+      removableStates,
+      hatchCount: effectiveSelectedAddon !== "none" ? effectiveHatchCount : 0,
+      hatchTargetKeys: (effectiveSelectedAddon !== "none" && includeHatch && effectiveHatchTargetKeys.length > 0) ? effectiveHatchTargetKeys : [],
+      grilleOpeningCount: effectiveGrilleOpeningCount,
+      grilleOpeningTargetKeys: effectiveGrilleOpeningTargets,
+      grilleOpeningConfig: activeCompatibleAddon?.grilleOpeningConfig ?? null,
+      grilleBOM: activeGrilleBOM ?? null,
+      baseUnitPrice: realtimePricing.baseUnitPrice,
+      swappedAccessories: selectedAccessories,
+      accessoryPriceDelta: totalAccessoryPriceDelta,
       visualParameterValues: {
+        productFacing,
         width: width * 10,
         height: height * 10,
         thickness: thickness,
         pane_count: panelCount,
         includeSill,
         include_sill: includeSill,
+        selected_materials: selectedMaterials,
+        selected_addon: effectiveSelectedAddon !== "none" ? {
+          type: effectiveSelectedAddon,
+          addon_product_id: activeCompatibleAddon?.addonProductId ?? selectedAddonProductId ?? null,
+          addon_name: activeCompatibleAddon?.addonProduct?.productName ?? (effectiveSelectedAddon === "grill" ? "Architectural Security Window Grille" : (addonBOM?.addonName ?? "Extruded Aluminum Insect Screen")),
+          finish: addonAlumFinish,
+          mounting_side: addonMountingSide,
+          allowed_sides: activeCompatibleAddon?.allowedSides ?? "both",
+          screen_mesh_density: screenMeshDensity,
+          include_hatch: effectiveHatchTargetKeys.length > 0 ? includeHatch : false,
+          removable_states: removableStates,
+          hatch_count: effectiveHatchCount,
+          hatch_target_keys: (includeHatch && effectiveHatchTargetKeys.length > 0) ? effectiveHatchTargetKeys : [],
+          grille_opening_count: effectiveGrilleOpeningCount,
+          grille_opening_target_keys: effectiveGrilleOpeningTargets,
+          grille_opening_config: activeCompatibleAddon?.grilleOpeningConfig ?? null,
+          price: addonPrice,
+          grille_bom: activeGrilleBOM ?? null,
+        } : null,
+        swapped_accessories: Object.values(selectedAccessories).map((acc) => ({
+          slot_component_id: acc.slotComponentId,
+          slot_category: acc.category,
+          accessory_id: acc.accessoryId,
+          accessory_name: acc.accessoryName,
+          finish: acc.finish,
+          horizontal_position: acc.horizontalPosition,
+          vertical_position: acc.verticalPosition,
+          unit_price: acc.price,
+          price_delta: acc.priceDelta ?? (acc.accessoryId !== "default" ? acc.price : 0),
+        })),
         dimension_source: manualDimensions ? "manual_tape" : isVerifiedCalibrated ? "planar_paper_estimate" : "heuristic",
         calibration_provenance: isVerifiedCalibrated ? activeMeasurementRecord : null,
         metric_measurement: isVerifiedCalibrated ? activeMetricMeasurement : null,
-        photo_disagreement_mm: manualPhotoComparison ? { width: manualPhotoComparison.width_mm - width * 10,
-          height: manualPhotoComparison.height_mm - height * 10 } : null,
+        photo_disagreement_mm: manualPhotoComparison ? {
+          width: manualPhotoComparison.width_mm - width * 10,
+          height: manualPhotoComparison.height_mm - height * 10
+        } : null,
         metric_eligibility: isVerifiedCalibrated ? "eligible_planar_estimate" : referenceEligibility.status,
         placement_review: activeCalibrationMeta?.placementReview ?? null,
         measurement_source: manualDimensions ? "manual_tape" : isVerifiedCalibrated ? "planar_photo_estimate" : "heuristic_preview",
@@ -1370,6 +2513,7 @@ export function ProductModelWorkspace({
     activeOcclusionIds,
     manualMaskDataUrl,
     manualOcclusionPolygons,
+    measurementCorners,
     perspectiveCorners,
     alumFinish,
     ambientLight,
@@ -1381,6 +2525,24 @@ export function ProductModelWorkspace({
     glassType,
     heightCm,
     includeSill,
+    effectiveSelectedAddon,
+    selectedAddonProductId,
+    activeCompatibleAddon,
+    addonAlumFinish,
+    addonMountingSide,
+    screenMeshDensity,
+    includeHatch,
+    effectiveHatchTargetKeys,
+    removableStates,
+    effectiveHatchCount,
+    effectiveGrilleOpeningCount,
+    effectiveGrilleOpeningTargets,
+    addonPrice,
+    addonBOM,
+    activeGrilleBOM,
+    realtimePricing.baseUnitPrice,
+    selectedAccessories,
+    totalAccessoryPriceDelta,
     isFlipped,
     overlayPosition.x,
     overlayPosition.y,
@@ -1388,9 +2550,12 @@ export function ProductModelWorkspace({
     pitch,
     quantity,
     rotateAngle,
+    selectedMaterials,
+    visualMaterialOverrides,
     structuralWaiver,
     thicknessMm,
     widthCm,
+    productFacing,
     yaw,
     zoomLevel,
   ]);
@@ -1418,36 +2583,9 @@ export function ProductModelWorkspace({
     setIsFlipped((prev) => !prev);
   };
 
-  const resetProductPlacement = useCallback(() => {
-    const baseSize = getOverlaySizeFromDimensions(widthCm, heightCm);
-    const defaultScale = 1 + DEFAULT_SCENE_ZOOM / 100;
-
-    resizeSessionRef.current = null;
-    rotationSessionRef.current = null;
-    setIsUsingTransformHandle(false);
-    setIsOutlineMeasurementPaused(false);
-    setRotateAngle(0);
-    setIsFlipped(false);
-    setYaw(0);
-    setPitch(0);
-    setOverlayPosition({ x: 0, y: 0 });
-    overlayX.set(0);
-    overlayY.set(0);
-    setTargetPlaneId(null);
-    setPerspectiveCorners(null);
-    setManualDimensions(false);
-    setSavedMeasurementEvidence(null);
-    setZoomLevel(DEFAULT_SCENE_ZOOM);
-    setOverlaySize({
-      width: Math.round(baseSize.width * defaultScale),
-      height: Math.round(baseSize.height * defaultScale),
-    });
-    setProjectedModelBounds({ left: 0, top: 0, width: 1, height: 1 });
-    setProductInstanceRevision((current) => current + 1);
-  }, [heightCm, overlayX, overlayY, widthCm, setManualDimensions, setSavedMeasurementEvidence]);
-
   const applyProductConfiguration = useCallback(
-    (configuration: ProductConfigurationSnapshot) => {
+    (configuration: ProductConfigurationSnapshot, configurationDefinition = structuralDefinition) => {
+      const nextFacing = getConfigurationProductFacing(configuration);
       const nextWidth = String(configuration.widthCm);
       const nextHeight = String(configuration.heightCm);
       const baseSize = getOverlaySizeFromDimensions(nextWidth, nextHeight);
@@ -1466,11 +2604,53 @@ export function ProductModelWorkspace({
       setGlassAppearance(configuration.glassAppearance);
       setGlassType(
         normalizeGlassType(configuration.glassType)
-          ?? deriveGlassTypeFromAppearance(configuration.glassAppearance),
+        ?? deriveGlassTypeFromAppearance(configuration.glassAppearance),
       );
       setGlassColor(normalizeGlassColor(configuration.glassColor));
       setGlassThicknessMm(normalizeGlassThickness(configuration.glassThicknessMm));
       setIncludeSill(configuration.includeSill);
+      if (configuration.selectedAddon) {
+        setSelectedAddon(configuration.selectedAddon);
+      } else if (configuration.visualParameterValues?.selected_addon) {
+        const rawAddon = configuration.visualParameterValues.selected_addon as Record<string, unknown>;
+        if (rawAddon?.type === "screen" || rawAddon?.type === "grill") {
+          setSelectedAddon(rawAddon.type);
+        } else {
+          setSelectedAddon("none");
+        }
+      } else {
+        setSelectedAddon("none");
+      }
+      setSelectedAddonProductId(configuration.addonProductId ?? null);
+      if (configuration.addonProductId) {
+        setSelectedAddonProductId(configuration.addonProductId);
+      } else if (configuration.visualParameterValues?.selected_addon) {
+        const rawAddon = configuration.visualParameterValues.selected_addon as Record<string, unknown>;
+        if (typeof rawAddon?.addon_product_id === "string") {
+          setSelectedAddonProductId(rawAddon.addon_product_id);
+        }
+      }
+      setAddonAlumFinish(configuration.addonAluminumFinish ?? "analok");
+      if (configuration.addonAluminumFinish) {
+        setAddonAlumFinish(configuration.addonAluminumFinish);
+      } else if (configuration.visualParameterValues?.selected_addon) {
+        const rawAddon = configuration.visualParameterValues.selected_addon as Record<string, unknown>;
+        if (typeof rawAddon?.finish === "string" && rawAddon.finish) {
+          setAddonAlumFinish(rawAddon.finish);
+        }
+      }
+      setAddonMountingSide(configuration.addonMountingSide ?? "back");
+      setScreenMeshDensity(configuration.screenMeshDensity ?? "fine");
+      setIncludeHatch(configuration.includeHatch ?? true);
+      setRemovableStates(configuration.removableStates ?? {});
+      for (const slotId of Object.keys(accessoryRequestSequence.current)) {
+        accessoryRequestSequence.current[slotId] += 1;
+      }
+      setPendingAccessoryIds({});
+      setAccessoryErrors({});
+      accessoryRollbackRef.current = {};
+      setSelectedAccessories(configuration.swappedAccessories ?? {});
+      setProductFacing(nextFacing);
       setYaw(configuration.yaw);
       setPitch(configuration.pitch);
       setRotateAngle(configuration.rotateAngle);
@@ -1480,7 +2660,8 @@ export function ProductModelWorkspace({
       setManualMaskDataUrl(configuration.manualOcclusionMaskDataUrl ?? null);
       setManualOcclusionPolygons(configuration.manualOcclusionPolygons ?? []);
       setTargetPlaneId(configuration.targetPlaneId ?? null);
-      setPerspectiveCorners(configuration.perspectiveFitCorners ?? null);
+      setMeasurementCorners(configuration.perspectiveFitCorners ?? null);
+      setPerspectiveCorners(configuration.visualPoseCorners ?? configuration.perspectiveFitCorners ?? null);
       setManualDimensions(configuration.visualParameterValues.dimension_source === "manual_tape");
       setSavedMeasurementEvidence(configuration.visualParameterValues.calibration_provenance);
       setAmbientLight(configuration.ambientLight ?? true);
@@ -1496,12 +2677,85 @@ export function ProductModelWorkspace({
         width: Math.round(baseSize.width * scale),
         height: Math.round(baseSize.height * scale),
       });
+      if (configuration.selectedMaterials) {
+        setSelectedMaterials(configuration.selectedMaterials);
+        setVisualMaterialOverrides(configuration.visualMaterialOverrides ?? {});
+      } else if (configurationDefinition) {
+        setSelectedMaterials(getDefaultMaterialSelections(configurationDefinition));
+        setVisualMaterialOverrides({});
+      }
+
+      if (mvpRendererRef.current) {
+        const nextPres = {
+          aluminumFinish: normalizeAluminumFinish(configuration.aluminumFinish),
+          glassAppearance: configuration.glassAppearance,
+          glassColor: normalizeGlassColor(configuration.glassColor),
+          glassThicknessMm: normalizeGlassThickness(configuration.glassThicknessMm),
+          includeSill: configuration.includeSill,
+          activeAddon: (configuration.selectedAddon as AddonSelectionType) ?? "none",
+          addonAluminumFinish: configuration.addonAluminumFinish ?? "analok",
+          addonConfig: {
+            finishColor: getFinishHexColor(configuration.addonAluminumFinish ?? "analok"),
+            zOffsetMm: 18,
+          },
+        };
+        mvpRendererRef.current.updatePresentation(nextPres);
+        if (configuration.visualMaterialOverrides && Object.keys(configuration.visualMaterialOverrides).length > 0 && configurationDefinition) {
+          mvpRendererRef.current.updateCustomMaterials(
+            configuration.visualMaterialOverrides,
+            getAllCandidateMaterialsMap(configurationDefinition),
+          );
+        }
+        if (mvpCanvasRef.current) {
+          const isPlanar = Boolean(configuration.perspectiveFitCorners);
+          const sourceCanvas = mvpRendererRef.current.render(configuration.yaw ?? 0, configuration.pitch ?? 0, isPlanar, getConfigurationProductFacing(configuration));
+          if (sourceCanvas) {
+            const ctx = mvpCanvasRef.current.getContext("2d");
+            if (ctx) {
+              ctx.clearRect(0, 0, mvpCanvasRef.current.width, mvpCanvasRef.current.height);
+              ctx.drawImage(sourceCanvas, 0, 0, sourceCanvas.width, sourceCanvas.height, 0, 0, mvpCanvasRef.current.width, mvpCanvasRef.current.height);
+            }
+          }
+        }
+      }
+      setModelRevision((prev) => prev + 1);
+
       setSelectedProduct(true);
       setIsSnapshotApplied(false);
       setProductInstanceRevision((current) => current + 1);
     },
-    [overlayX, overlayY, setManualDimensions, setSavedMeasurementEvidence],
+    [overlayX, overlayY, setManualDimensions, setSavedMeasurementEvidence, structuralDefinition, getFinishHexColor],
   );
+
+  // PRD-F6 / SDD-C5 / QAD-TC6: retain the first rendered state per instance.
+  const resetStateKey = `${assetSessionId ?? "room"}:${activeOverlayId}:${currentProductId ?? "product"}`;
+  useLayoutEffect(() => {
+    if (!isWorkspaceResetCaptureReady({
+      modelReady: materialCapabilities !== null && loadedModelRef.current?.definition === structuralDefinition
+        && loadedModelRef.current?.widthCm === widthCm && loadedModelRef.current?.heightCm === heightCm,
+      canvasWidth: canvasDisplaySize.width,
+      measuredCanvasWidth: measuredCanvasSizeRef.current?.width ?? 0,
+    })) return;
+    if (!structuralDefinition || !selectedProduct ||
+      structuralDefinition.product.productId !== currentProductId ||
+      initialProductStatesRef.current.has(resetStateKey)) return;
+    initialProductStatesRef.current.set(resetStateKey, captureWorkspaceResetState(
+      currentConfiguration, overlaySize, canvasDisplaySize.width,
+    ));
+  }, [resetStateKey, currentProductId, structuralDefinition, selectedProduct, materialCapabilities, widthCm, heightCm, currentConfiguration, overlaySize, canvasDisplaySize.width]);
+
+  const resetProductPlacement = useCallback(() => {
+    const initialState = initialProductStatesRef.current.get(resetStateKey);
+    if (!initialState) return;
+    const restored = restoreWorkspaceResetState(initialState, canvasDisplaySize.width);
+    resizeSessionRef.current = null;
+    rotationSessionRef.current = null;
+    setIsUsingTransformHandle(false);
+    setIsOutlineMeasurementPaused(false);
+    setProjectedModelBounds({ left: 0, top: 0, width: 1, height: 1 });
+    applyProductConfiguration(restored.configuration);
+    setOverlaySize(restored.overlaySize);
+  }, [resetStateKey, canvasDisplaySize.width, applyProductConfiguration]);
 
   const handleReset = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -1549,45 +2803,60 @@ export function ProductModelWorkspace({
       const targetConfiguration: ProductConfigurationSnapshot = intent.mode === "edit" && intent.targetOverlay
         ? intent.targetOverlay.configuration
         : {
-            ...currentConfiguration,
-            widthCm: stagedWidthCm,
-            heightCm: stagedHeightCm,
-            thicknessMm: Number(definition.parameters.find((parameter) => parameter.parameterKey === "thickness")?.defaultValue) || 3,
-            panelCount: Number(definition.parameters.find((parameter) => parameter.parameterKey === "pane_count")?.defaultValue) || 2,
+          ...currentConfiguration,
+          widthCm: stagedWidthCm,
+          heightCm: stagedHeightCm,
+          thicknessMm: Number(definition.parameters.find((parameter) => parameter.parameterKey === "thickness")?.defaultValue) || 3,
+          panelCount: Number(definition.parameters.find((parameter) => parameter.parameterKey === "pane_count")?.defaultValue) || 2,
+          includeSill: Boolean(definition.template.baseConfiguration.includeSill ?? true),
+          selectedAddon: intent.mode === "change" ? selectedAddon : "none",
+          addonProductId: intent.mode === "change" && selectedAddon !== "none" ? (activeCompatibleAddon?.addonProductId ?? null) : null,
+          addonName: intent.mode === "change" && selectedAddon !== "none" ? (activeCompatibleAddon?.addonProduct?.productName ?? addonBOM?.addonName ?? null) : null,
+          addonPrice: intent.mode === "change" ? addonPrice : 0,
+          addonAluminumFinish: intent.mode === "change" ? (selectedAddon !== "none" ? addonAlumFinish : "analok") : "analok",
+          structuralWaiver: false,
+          aluminumFinish: "white",
+          glassAppearance: "clear",
+          glassColor: "clear",
+          glassThicknessMm: 6,
+          glassType: "regular",
+          visualMaterialOverrides: {},
+          quantity: 1,
+          productFacing: "front",
+          yaw: 0,
+          pitch: 0,
+          rotateAngle: intent.mode === "change" ? currentConfiguration.rotateAngle : 0,
+          isFlipped: intent.mode === "change" ? currentConfiguration.isFlipped : false,
+          zoomLevel: intent.mode === "change" ? currentConfiguration.zoomLevel : DEFAULT_SCENE_ZOOM,
+          positionX: intent.mode === "change" ? currentConfiguration.positionX : 0,
+          positionY: intent.mode === "change" ? currentConfiguration.positionY : 0,
+          targetPlaneId: null,
+          perspectiveFitCorners: null,
+          activeOcclusionIds: [],
+          manualOcclusionMaskDataUrl: null,
+          manualOcclusionPolygons: [],
+          visualParameterValues: {
+            productFacing: "front",
+            width: Math.round(stagedWidthCm * 10),
+            height: Math.round(stagedHeightCm * 10),
+            thickness: Number(definition.parameters.find((parameter) => parameter.parameterKey === "thickness")?.defaultValue) || 3,
+            pane_count: Number(definition.parameters.find((parameter) => parameter.parameterKey === "pane_count")?.defaultValue) || 2,
             includeSill: Boolean(definition.template.baseConfiguration.includeSill ?? true),
-            structuralWaiver: false,
-            aluminumFinish: "white",
-            glassAppearance: "clear",
-            glassColor: "clear",
-            glassThicknessMm: 6,
-            glassType: "regular",
-            quantity: 1,
-            yaw: 0,
-            pitch: 0,
-            rotateAngle: intent.mode === "change" ? currentConfiguration.rotateAngle : 0,
-            isFlipped: intent.mode === "change" ? currentConfiguration.isFlipped : false,
-            zoomLevel: intent.mode === "change" ? currentConfiguration.zoomLevel : DEFAULT_SCENE_ZOOM,
-            positionX: intent.mode === "change" ? currentConfiguration.positionX : 0,
-            positionY: intent.mode === "change" ? currentConfiguration.positionY : 0,
-            targetPlaneId: null,
-            perspectiveFitCorners: null,
-            activeOcclusionIds: [],
-            manualOcclusionMaskDataUrl: null,
-            manualOcclusionPolygons: [],
-            visualParameterValues: {
-              width: Math.round(stagedWidthCm * 10),
-              height: Math.round(stagedHeightCm * 10),
-              thickness: Number(definition.parameters.find((parameter) => parameter.parameterKey === "thickness")?.defaultValue) || 3,
-              pane_count: Number(definition.parameters.find((parameter) => parameter.parameterKey === "pane_count")?.defaultValue) || 2,
-              includeSill: Boolean(definition.template.baseConfiguration.includeSill ?? true),
-              include_sill: Boolean(definition.template.baseConfiguration.includeSill ?? true),
-              dimension_source: "default_heuristic",
-              metric_measurement: null, calibration_provenance: null,
-              paper_standard: activeCalibrationMeta?.paperStandard ?? null,
-              calibration_scale_cm_per_px: verifiedScaleCmPerPx ?? scaleSignal?.best_scale_cm_per_px ?? null,
-              user_verified: Boolean(activeCalibrationMeta?.user_verified),
-            },
-          };
+            include_sill: Boolean(definition.template.baseConfiguration.includeSill ?? true),
+            selected_addon: intent.mode === "change" && selectedAddon !== "none" ? {
+              type: selectedAddon,
+              addon_product_id: activeCompatibleAddon?.addonProductId ?? null,
+              addon_name: activeCompatibleAddon?.addonProduct?.productName ?? addonBOM?.addonName ?? null,
+              finish: addonAlumFinish,
+              price: addonPrice,
+            } : null,
+            dimension_source: "default_heuristic",
+            metric_measurement: null, calibration_provenance: null,
+            paper_standard: activeCalibrationMeta?.paperStandard ?? null,
+            calibration_scale_cm_per_px: verifiedScaleCmPerPx ?? scaleSignal?.best_scale_cm_per_px ?? null,
+            user_verified: Boolean(activeCalibrationMeta?.user_verified),
+          },
+        };
       const renderer = mvpRendererRef.current;
       if (!renderer) throw new Error("The product renderer is unavailable.");
       const prepared = await renderer.prepareModel(definition, {
@@ -1598,21 +2867,24 @@ export function ProductModelWorkspace({
         include_sill: targetConfiguration.includeSill,
       }, {
         aluminumFinish: normalizeAluminumFinish(targetConfiguration.aluminumFinish),
+        addonAluminumFinish: targetConfiguration.addonAluminumFinish,
         glassAppearance: targetConfiguration.glassAppearance,
         glassColor: targetConfiguration.glassColor ?? "clear",
         glassThicknessMm: targetConfiguration.glassThicknessMm ?? 6,
         includeSill: targetConfiguration.includeSill,
+        activeAddon: targetConfiguration.selectedAddon,
       });
       if (requestId !== switchRequestRef.current || roomId !== assetSessionRef.current) {
         renderer.releasePreparedModel(prepared);
         return;
       }
-      skipPreparedBuildRef.current = `${intent.productId}:${targetConfiguration.widthCm}:${targetConfiguration.heightCm}:${targetConfiguration.panelCount}:${targetConfiguration.includeSill}:${normalizeAluminumFinish(targetConfiguration.aluminumFinish)}:${targetConfiguration.glassAppearance}:${targetConfiguration.glassColor}:${targetConfiguration.glassThicknessMm}`;
+      skipPreparedBuildRef.current = `${intent.productId}:${targetConfiguration.widthCm}:${targetConfiguration.heightCm}:${targetConfiguration.panelCount}:${targetConfiguration.includeSill}:${targetConfiguration.selectedAddon ?? "none"}:${targetConfiguration.addonAluminumFinish ?? "analok"}:${normalizeAluminumFinish(targetConfiguration.aluminumFinish)}:${targetConfiguration.glassAppearance}:${targetConfiguration.glassColor}:${targetConfiguration.glassThicknessMm}`;
       suppressNextConfigurationPublicationRef.current = true;
       appliedTemplateDefaultsRef.current = intent.productId;
       renderer.commitPreparedModel(prepared);
+      loadedModelRef.current = { definition, widthCm: String(targetConfiguration.widthCm), heightCm: String(targetConfiguration.heightCm) };
       flushSync(() => {
-        applyProductConfiguration(targetConfiguration);
+        applyProductConfiguration(targetConfiguration, definition);
         setActiveOverlayId(intent.targetOverlayId);
         setActiveLayerNumber(intent.targetLayerNumber);
         setMaterialCapabilities(prepared.capabilities);
@@ -1641,6 +2913,7 @@ export function ProductModelWorkspace({
 
     if (product.id === currentProductId && !selectedProduct) {
       resetProductPlacement();
+      setProductFacing("front");
       setSelectedProduct(true);
       setIsSnapshotApplied(false);
       return;
@@ -1670,12 +2943,14 @@ export function ProductModelWorkspace({
       }
     }
 
-    const nextActiveOverlayId = `active-${product.id}-${crypto.randomUUID()}`;
+    const nextActiveOverlayId = `active-${product.id}-${generateSafeUUID()}`;
     if (product.id !== currentProductId) {
       let maxNum = activeLayerNumber;
       for (const overlay of placedOverlays) maxNum = Math.max(maxNum, overlay.layerNumber ?? 0);
-      await activateDifferentProduct({ requestId, productId: product.id, mode, placedOverlay: newlyPlacedOverlay,
-        targetLayerNumber: mode === "add" ? maxNum + 1 : activeLayerNumber, targetOverlayId: nextActiveOverlayId });
+      await activateDifferentProduct({
+        requestId, productId: product.id, mode, placedOverlay: newlyPlacedOverlay,
+        targetLayerNumber: mode === "add" ? maxNum + 1 : activeLayerNumber, targetOverlayId: nextActiveOverlayId
+      });
       return;
     }
     setActiveOverlayId(nextActiveOverlayId);
@@ -1711,11 +2986,13 @@ export function ProductModelWorkspace({
       activeOcclusionObjects,
       manualMaskDataUrl,
       perspectiveCorners,
+      planarFitRect: structuralDefinition ? mvpRendererRef.current?.getPlanarFitRect() : null,
       rotateAngle,
       isFlipped,
       // Use the export filter - stripped of selection-guide outlines.
       modelFilter: exportModelFilter,
       structuralDefinition: structuralDefinition ?? null,
+      productFacing,
       yaw,
       pitch,
       lighting: effectiveLighting ?? null,
@@ -1742,6 +3019,7 @@ export function ProductModelWorkspace({
     productOverlayImage,
     rotateAngle,
     structuralDefinition,
+    productFacing,
     yaw,
     pitch,
     effectiveLighting,
@@ -1760,10 +3038,12 @@ export function ProductModelWorkspace({
       hasGeneratedProduct: Boolean(structuralDefinition),
       activeOcclusionObjects: [],
       perspectiveCorners,
+      planarFitRect: structuralDefinition ? mvpRendererRef.current?.getPlanarFitRect() : null,
       rotateAngle,
       isFlipped,
       modelFilter: exportModelFilter,
       structuralDefinition: structuralDefinition ?? null,
+      productFacing,
       yaw,
       pitch,
       lighting: effectiveLighting ?? null,
@@ -1785,6 +3065,7 @@ export function ProductModelWorkspace({
       rotateAngle,
       structuralDefinition,
       widthCm,
+      productFacing,
       yaw,
     ],
   );
@@ -1801,11 +3082,16 @@ export function ProductModelWorkspace({
         ? { ...projectedModelBounds }
         : (mvpCanvasRef.current ? getVisibleModelBounds(mvpCanvasRef.current) ?? undefined : undefined);
       const capturedCanvas = await captureCurrentProductCanvas();
-      const activeImageDataUrl = capturedCanvas.toDataURL("image/png");
+      let activeImageDataUrl = "";
+      try {
+        activeImageDataUrl = capturedCanvas.toDataURL("image/png");
+      } catch (exportErr) {
+        console.warn("[Snapshot] Could not extract data URL from captured canvas:", exportErr);
+      }
       const currentFinish = normalizeAluminumFinish(
         currentConfiguration.aluminumFinish,
       );
-      const uniqueOverlayId = crypto.randomUUID();
+      const uniqueOverlayId = generateSafeUUID();
       const posX = overlayX.get();
       const posY = overlayY.get();
       const prodId = currentProductId ?? structuralDefinition?.product.productId ?? "";
@@ -1847,6 +3133,7 @@ export function ProductModelWorkspace({
       } : undefined;
       const variationAssetRefs = assetSessionId && variationRenderRecipe
         ? await (async () => {
+          try {
             const fingerprint = createVariationRenderFingerprint(
               variationRenderRecipe,
               currentFinish,
@@ -1872,7 +3159,11 @@ export function ProductModelWorkspace({
               priority: "visible",
             });
             return { [currentFinish]: asset };
-          })()
+          } catch (assetErr) {
+            console.warn("[Snapshot] Could not generate or store variation asset ref:", assetErr);
+            return undefined;
+          }
+        })()
         : undefined;
 
       return {
@@ -1894,6 +3185,7 @@ export function ProductModelWorkspace({
         unitPrice: realtimePricing.unitPrice,
         totalPrice: realtimePricing.totalPrice,
         previewGlbUrl: glbUrl,
+        grilleBOM: activeGrilleBOM ?? undefined,
       };
     },
     [
@@ -1911,6 +3203,7 @@ export function ProductModelWorkspace({
       projectedModelBounds,
       realtimePricing,
       structuralDefinition,
+      activeGrilleBOM,
     ],
   );
 
@@ -2029,6 +3322,7 @@ export function ProductModelWorkspace({
 
   const handleSaveSnapshot = useCallback(async () => {
     setIsCapturingSnapshot(true);
+    setProductBuildError(null);
 
     try {
       const dataUrl = await captureCurrentSnapshot();
@@ -2056,6 +3350,7 @@ export function ProductModelWorkspace({
 
   const handleContinueToComparison = useCallback(async () => {
     setIsCapturingSnapshot(true);
+    setProductBuildError(null);
 
     try {
       await captureCurrentSnapshot();
@@ -2080,6 +3375,13 @@ export function ProductModelWorkspace({
         currentConfiguration,
       );
 
+      if (entries.length === 0) {
+        onPlacedOverlaysChange?.(comparisonOverlays);
+        onComparisonOverlaysChange?.(comparisonOverlays);
+        router.push("/comparison");
+        return;
+      }
+
       setMeasurementEntries(entries);
       setIsMeasurementModalOpen(true);
     } catch (error) {
@@ -2097,8 +3399,11 @@ export function ProductModelWorkspace({
     createPlacedOverlay,
     currentConfiguration,
     heightCm,
+    onComparisonOverlaysChange,
+    onPlacedOverlaysChange,
     placedOverlays,
     realtimePricing.totalPrice,
+    router,
     selectedProduct,
     structuralDefinition,
     widthCm,
@@ -2137,9 +3442,9 @@ export function ProductModelWorkspace({
       const activeComparisonOverlay = patchedComparisonOverlays.find((o) => o.isActive);
       const completePlacedOverlays = activeComparisonOverlay
         ? [
-            ...patchedOverlays.filter((o) => o.overlayId !== activeComparisonOverlay.overlayId),
-            activeComparisonOverlay,
-          ]
+          ...patchedOverlays.filter((o) => o.overlayId !== activeComparisonOverlay.overlayId),
+          activeComparisonOverlay,
+        ]
         : patchedOverlays;
 
       // Clear the pending ref
@@ -2237,8 +3542,10 @@ export function ProductModelWorkspace({
         selectedCandidateId: scaleResult.selectedCandidateId,
         paperStandardConfirmed: true,
         samePlaneConfirmed: true,
-        placementReview: { version: "plane-placement-v1", assessment: "user_confirmed_same_plane",
-          riskReasons: scaleResult.placementRiskReasons ?? [], targetPlaneId: geometry.reference.planeId },
+        placementReview: {
+          version: "plane-placement-v1", assessment: "user_confirmed_same_plane",
+          riskReasons: scaleResult.placementRiskReasons ?? [], targetPlaneId: geometry.reference.planeId
+        },
         user_verified: true,
         verified_corners: orderedCorners,
         verified_scale_cm_per_px: scaleResult.scaleCmPerPx,
@@ -2252,9 +3559,9 @@ export function ProductModelWorkspace({
       const photoWidthPx = spaceImageSession?.workspaceImage?.width ?? 0;
       const photoHeightPx = spaceImageSession?.workspaceImage?.height ?? 0;
 
-      if (perspectiveCorners && !manualDimensions && targetPlaneId === geometry.reference.planeId) {
+      if (measurementCorners && !manualDimensions && targetPlaneId === geometry.reference.planeId) {
         const measurement = evaluateMetricOpening(geometry.reference,
-          denormalizeCorners(perspectiveCorners, photoWidthPx, photoHeightPx), metricFrame);
+          denormalizeCorners(measurementCorners, photoWidthPx, photoHeightPx), metricFrame);
         if (measurement.valid) {
           setWidthCm(String(measurement.widthMm / 10));
           setHeightCm(String(measurement.heightMm / 10));
@@ -2281,7 +3588,7 @@ export function ProductModelWorkspace({
       commitSessionCalibration,
       onCalibrationChange,
       onPlacedOverlaysChange,
-      perspectiveCorners,
+      measurementCorners,
       placedOverlays,
       setModelRevision,
       spaceImageSession?.paperCalibration?.suggested_paper_standard,
@@ -2297,8 +3604,10 @@ export function ProductModelWorkspace({
       homographyMatrix: null, detectedCorners: null, user_verified: false,
       verified_corners: null, verified_scale_cm_per_px: null, paperStandardConfirmed: false,
       samePlaneConfirmed: false, selectedCandidateId: null,
-      placementReview: { version: "plane-placement-v1", assessment: review?.placementAssessment ?? "unknown",
-        riskReasons: review?.placementRiskReasons ?? [], targetPlaneId: null },
+      placementReview: {
+        version: "plane-placement-v1", assessment: review?.placementAssessment ?? "unknown",
+        riskReasons: review?.placementRiskReasons ?? [], targetPlaneId: null
+      },
     };
     setActiveCalibrationMeta(updatedMeta);
     const signalToCommit: ScaleEstimationSignal = {
@@ -2381,6 +3690,9 @@ export function ProductModelWorkspace({
       setPerspectiveCorners((current) =>
         current ? scaleCornersAlongAxis(current, ratio, "width") : null
       );
+      setMeasurementCorners((current) =>
+        current ? scaleCornersAlongAxis(current, ratio, "width") : null
+      );
     }
   };
 
@@ -2401,6 +3713,9 @@ export function ProductModelWorkspace({
       setPerspectiveCorners((current) =>
         current ? scaleCornersAlongAxis(current, ratio, "height") : null
       );
+      setMeasurementCorners((current) =>
+        current ? scaleCornersAlongAxis(current, ratio, "height") : null
+      );
     }
   };
 
@@ -2419,6 +3734,71 @@ export function ProductModelWorkspace({
   const handleIncludeSillToggle = useCallback(() => {
     setIncludeSill((current) => !current);
   }, []);
+
+  const handleAddonSelect = useCallback((type: AddonSelectionType) => {
+    // Strict mutual exclusion: selecting screen unselects grill; selecting grill unselects screen; selecting none clears both.
+    setSelectedAddon(type);
+    if (type === "screen") {
+      const isAlreadyScreen = screenAddons.some((a) => a.addonProductId === selectedAddonProductId);
+      if (!isAlreadyScreen && screenAddons.length > 0) {
+        setSelectedAddonProductId(screenAddons[0].addonProductId);
+      }
+    } else if (type === "grill") {
+      const isAlreadyGrill = grillAddons.some((a) => a.addonProductId === selectedAddonProductId);
+      if (!isAlreadyGrill && grillAddons.length > 0) {
+        setSelectedAddonProductId(grillAddons[0].addonProductId);
+      }
+    } else {
+      setSelectedAddonProductId(null);
+    }
+  }, [screenAddons, grillAddons, selectedAddonProductId]);
+
+  const handleBaseFinishSelect = useCallback((finishId: string) => {
+    const normalizedFinish = normalizeAluminumFinish(finishId);
+    setAlumFinish(normalizedFinish);
+
+    // Apply 3D presentation in real time (< 16ms)
+    applyWorkspacePresentation({ aluminumFinish: normalizedFinish });
+
+    // Synchronize framing in selectedMaterials if alternate raw materials exist
+    let nextSelections = { ...selectedMaterials };
+    if (structuralDefinition && materialCustomizationGroups.length > 0) {
+      const framingGroup = materialCustomizationGroups.find((g) => g.presentationCategory === "Framing");
+      if (framingGroup) {
+        const normalizedTarget = normalizedFinish.toLowerCase();
+        const matchedOption = framingGroup.options.find((opt) => {
+          const optFinish = (opt.finishType || opt.description || "").toLowerCase();
+          return optFinish.includes(normalizedTarget) ||
+            (normalizedTarget === "white" && optFinish.includes("white")) ||
+            (normalizedTarget === "analok" && optFinish.includes("analok"));
+        });
+        if (matchedOption) {
+          nextSelections = applyGroupSelection(
+            framingGroup,
+            matchedOption,
+            selectedMaterials,
+            structuralDefinition,
+          );
+        } else {
+          // If no matching raw material exists in the catalog (e.g. specialized R.R.D. color finishes):
+          // purge framing component keys from selectedMaterials so they fall back to the global presentation finish
+          for (const comp of structuralDefinition.components) {
+            if (comp.presentationCategory === "Framing") {
+              delete nextSelections[comp.componentKey];
+            }
+          }
+        }
+      }
+    }
+    setSelectedMaterials(nextSelections);
+    setVisualMaterialOverrides({});
+  }, [applyWorkspacePresentation, structuralDefinition, materialCustomizationGroups, selectedMaterials]);
+
+  const handleAddonFinishSelect = useCallback((finishId: string) => {
+    setAddonAlumFinish(finishId);
+    applyWorkspacePresentation({ addonAluminumFinish: finishId });
+  }, [applyWorkspacePresentation]);
+
 
   const toggleAccordion = (title: string) => {
     setOpenAccordions((prev) =>
@@ -2519,6 +3899,7 @@ export function ProductModelWorkspace({
     ) => {
       event.preventDefault();
       event.stopPropagation();
+      event.currentTarget.setPointerCapture(event.pointerId);
 
       const resizeSession: ResizeSession = {
         pointerId: event.pointerId,
@@ -2675,12 +4056,17 @@ export function ProductModelWorkspace({
     [rotateAngle],
   );
 
-  const updateMetricPerspectiveCorners = useCallback((corners: QuadrilateralCorners) => {
-    setPerspectiveCorners(corners);
-    if (!metricReference || manualDimensions || targetPlaneId !== metricReference.planeId) return;
+  const updateMetricPerspectiveCorners = useCallback((corners: QuadrilateralCorners, poseCorners: QuadrilateralCorners = corners) => {
+    if (!metricReference || manualDimensions || targetPlaneId !== metricReference.planeId) {
+      setMeasurementCorners(corners);
+      setPerspectiveCorners(poseCorners);
+      return;
+    }
     const measurement = evaluateMetricOpening(metricReference,
       denormalizeCorners(corners, metricFrame.width, metricFrame.height), metricFrame);
     if (!measurement.valid) return;
+    setMeasurementCorners(corners);
+    setPerspectiveCorners(poseCorners);
     setWidthCm(String(measurement.widthMm / 10));
     setHeightCm(String(measurement.heightMm / 10));
     setOverlaySize(getOverlaySizeFromDimensions(String(measurement.widthMm / 10), String(measurement.heightMm / 10)));
@@ -2696,13 +4082,15 @@ export function ProductModelWorkspace({
       event.preventDefault();
       event.stopPropagation();
       if (!perspectiveCorners) return;
+      event.currentTarget.setPointerCapture(event.pointerId);
 
       const session = {
         pointerId: event.pointerId,
         mode,
         startX: event.clientX,
         startY: event.clientY,
-        startCorners: [...perspectiveCorners] as QuadrilateralCorners,
+        startCorners: [...(measurementCorners ?? perspectiveCorners)] as QuadrilateralCorners,
+        startPoseCorners: [...perspectiveCorners] as QuadrilateralCorners,
         startWidthCm: Number(widthCm) || 120,
         startHeightCm: Number(heightCm) || 120,
         signX,
@@ -2729,8 +4117,10 @@ export function ProductModelWorkspace({
           const initialSpan = currentW * 0.35;
           const scaleRatio = Math.max(0.15, 1 + dominantDelta / initialSpan);
           const nextCorners = scaleCornersAlongAxis(session.startCorners, scaleRatio, "scale");
-          if (metricReference) { updateMetricPerspectiveCorners(nextCorners); return; }
-          setPerspectiveCorners(nextCorners);
+          const nextPoseCorners = scaleCornersAlongAxis(session.startPoseCorners, scaleRatio, "scale");
+          if (metricReference) { updateMetricPerspectiveCorners(nextCorners, nextPoseCorners); return; }
+          setMeasurementCorners(nextCorners);
+          setPerspectiveCorners(nextPoseCorners);
           const nextW = Math.max(20, Math.round(session.startWidthCm * scaleRatio));
           const nextH = Math.max(20, Math.round(session.startHeightCm * scaleRatio));
           setWidthCm(String(nextW));
@@ -2743,8 +4133,10 @@ export function ProductModelWorkspace({
           const initialSpan = currentW * 0.30;
           const widthRatio = Math.max(0.15, 1 + dx / initialSpan);
           const nextCorners = scaleCornersAlongAxis(session.startCorners, widthRatio, "width");
-          if (metricReference) { updateMetricPerspectiveCorners(nextCorners); return; }
-          setPerspectiveCorners(nextCorners);
+          const nextPoseCorners = scaleCornersAlongAxis(session.startPoseCorners, widthRatio, "width");
+          if (metricReference) { updateMetricPerspectiveCorners(nextCorners, nextPoseCorners); return; }
+          setMeasurementCorners(nextCorners);
+          setPerspectiveCorners(nextPoseCorners);
           const nextW = Math.max(20, Math.round(session.startWidthCm * widthRatio));
           setWidthCm(String(nextW));
           setOverlaySize(getOverlaySizeFromDimensions(String(nextW), heightCm));
@@ -2755,8 +4147,10 @@ export function ProductModelWorkspace({
           const initialSpan = currentH * 0.30;
           const heightRatio = Math.max(0.15, 1 + dy / initialSpan);
           const nextCorners = scaleCornersAlongAxis(session.startCorners, heightRatio, "height");
-          if (metricReference) { updateMetricPerspectiveCorners(nextCorners); return; }
-          setPerspectiveCorners(nextCorners);
+          const nextPoseCorners = scaleCornersAlongAxis(session.startPoseCorners, heightRatio, "height");
+          if (metricReference) { updateMetricPerspectiveCorners(nextCorners, nextPoseCorners); return; }
+          setMeasurementCorners(nextCorners);
+          setPerspectiveCorners(nextPoseCorners);
           const nextH = Math.max(20, Math.round(session.startHeightCm * heightRatio));
           setHeightCm(String(nextH));
           setOverlaySize(getOverlaySizeFromDimensions(widthCm, String(nextH)));
@@ -2777,8 +4171,44 @@ export function ProductModelWorkspace({
       window.addEventListener("pointerup", handleEnd);
       window.addEventListener("pointercancel", handleEnd);
     },
-    [perspectiveCorners, widthCm, heightCm, canvasDisplaySize.width, canvasDisplaySize.height, metricReference, updateMetricPerspectiveCorners],
+    [perspectiveCorners, measurementCorners, widthCm, heightCm, canvasDisplaySize.width, canvasDisplaySize.height, metricReference, updateMetricPerspectiveCorners],
   );
+
+  const startPerspectiveRotation = useCallback((event: React.PointerEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!perspectiveCorners || isUsingTransformHandle) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const bounds = canvas.getBoundingClientRect();
+    const width = bounds.width;
+    const height = bounds.height;
+    if (width <= 0 || height <= 0) return;
+    const centerX = bounds.left + perspectiveCorners.reduce((sum, point) => sum + point.x, 0) * width / 4;
+    const centerY = bounds.top + perspectiveCorners.reduce((sum, point) => sum + point.y, 0) * height / 4;
+    const pointerId = event.pointerId;
+    const startAngle = getPointerAngle(event.clientX, event.clientY, centerX, centerY);
+    const startCorners = perspectiveCorners;
+    setIsUsingTransformHandle(true);
+
+    const handleMove = (moveEvent: PointerEvent) => {
+      if (moveEvent.pointerId !== pointerId) return;
+      const angle = getPointerAngle(moveEvent.clientX, moveEvent.clientY, centerX, centerY) - startAngle;
+      setPerspectiveCorners(rotatePerspectiveCorners(startCorners, width, height, angle));
+    };
+    const handleEnd = (endEvent: PointerEvent) => {
+      if (endEvent.pointerId !== pointerId) return;
+      setIsUsingTransformHandle(false);
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleEnd);
+      window.removeEventListener("pointercancel", handleEnd);
+    };
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", handleEnd);
+    window.addEventListener("pointercancel", handleEnd);
+  }, [perspectiveCorners, isUsingTransformHandle]);
 
   const startPerspectiveMove = useCallback(
     (event: React.PointerEvent) => {
@@ -2789,7 +4219,8 @@ export function ProductModelWorkspace({
       const session = {
         startX: event.clientX,
         startY: event.clientY,
-        startCorners: [...perspectiveCorners] as QuadrilateralCorners,
+        startCorners: [...(measurementCorners ?? perspectiveCorners)] as QuadrilateralCorners,
+        startPoseCorners: [...perspectiveCorners] as QuadrilateralCorners,
       };
       setIsUsingTransformHandle(true);
 
@@ -2804,8 +4235,12 @@ export function ProductModelWorkspace({
           x: clampNumber(p.x + normDx, -0.2, 1.2),
           y: clampNumber(p.y + normDy, -0.2, 1.2),
         })) as QuadrilateralCorners;
+        const nextPoseCorners = session.startPoseCorners.map((p) => ({
+          x: clampNumber(p.x + normDx, -0.2, 1.2),
+          y: clampNumber(p.y + normDy, -0.2, 1.2),
+        })) as QuadrilateralCorners;
 
-        updateMetricPerspectiveCorners(nextCorners);
+        updateMetricPerspectiveCorners(nextCorners, nextPoseCorners);
       };
 
       const handleEnd = () => {
@@ -2819,7 +4254,29 @@ export function ProductModelWorkspace({
       window.addEventListener("pointerup", handleEnd);
       window.addEventListener("pointercancel", handleEnd);
     },
-    [perspectiveCorners, isUsingTransformHandle, canvasDisplaySize.width, canvasDisplaySize.height, updateMetricPerspectiveCorners],
+    [perspectiveCorners, measurementCorners, isUsingTransformHandle, canvasDisplaySize.width, canvasDisplaySize.height, updateMetricPerspectiveCorners],
+  );
+
+  // PRD-F6 / PRD-F10 / DSD-UI4: keep the live estimate beside the active configuration flow.
+  const priceCard = selectedProduct && (
+    <div className="bg-grad-light rounded-[20px] p-6 sm:p-7 flex flex-col gap-2.5 w-full text-white shadow-md">
+      <div className="flex items-center justify-between">
+        <span className="text-xl sm:text-2xl font-normal text-white/90 tracking-[-0.456px]">
+          {displayPriceData.title}
+        </span>
+        {displayPriceData.badgeText && (
+          <span className="text-xs font-medium bg-white/20 px-2.5 py-1 rounded-full text-white">
+            {displayPriceData.badgeText}
+          </span>
+        )}
+      </div>
+      <span className="text-3xl sm:text-4xl font-medium tracking-[-0.608px] text-white">
+        {displayPriceData.formattedPrice}
+      </span>
+      <div className="flex flex-col gap-0.5 text-xs font-normal text-white/80 tracking-[-0.228px]">
+        <span>{displayPriceData.subtext}</span>
+      </div>
+    </div>
   );
 
   return (
@@ -2855,25 +4312,9 @@ export function ProductModelWorkspace({
       </div>
 
       {/* ── Top Toolbar Controls ── */}
-      <div className={shouldLockMobileEditor ? "hidden" : "w-full flex flex-col md:flex-row items-center justify-between gap-6 mb-10"}>
-        {/* Left: Undo, Redo, Zoom */}
-        <div className="flex flex-wrap items-center gap-4 sm:gap-6 justify-center md:justify-start">
-          {/* Undo / Redo */}
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              className="bg-[#0f1422] hover:bg-black text-white px-4 py-2 rounded-[10px] text-sm font-normal transition-colors cursor-pointer"
-            >
-              Undo
-            </button>
-            <button
-              type="button"
-              className="bg-white border border-[#c3c3c3] hover:bg-neutral-50 text-[#0f1422] px-4 py-2 rounded-[10px] text-sm font-normal transition-colors cursor-pointer"
-            >
-              Redo
-            </button>
-          </div>
-
+      <div className={shouldLockMobileEditor ? "hidden" : "w-full flex flex-col lg:flex-row items-center justify-between gap-6 mb-10"}>
+        {/* Left: Zoom */}
+        <div className="flex flex-wrap items-center gap-4 sm:gap-6 justify-center lg:justify-start">
           {/* Zoom Controls */}
           <div className="bg-white border border-[#c3c3c3] flex items-center justify-center gap-3 px-4 py-2 rounded-[10px] select-none">
             <button
@@ -2909,7 +4350,7 @@ export function ProductModelWorkspace({
         </div>
 
         {/* Right: Change Product Banner */}
-        <div className="bg-[#f5f5f5] flex flex-wrap items-center justify-center md:justify-end gap-4 px-4 py-2.5 rounded-[20px] shadow-xs relative">
+        <div className="bg-[#f5f5f5] flex flex-wrap items-center justify-center lg:justify-end gap-4 px-4 py-2.5 rounded-[20px] shadow-xs relative">
           <span className="text-green text-lg sm:text-xl font-normal tracking-[-0.38px] whitespace-nowrap">
             Want to make changes?
           </span>
@@ -3113,28 +4554,35 @@ export function ProductModelWorkspace({
         {/* Left Side: Space Canvas + Instructions */}
         <div className={shouldLockMobileEditor ? "flex h-full min-w-0 flex-1 items-center justify-center overflow-hidden" : "flex-1 min-w-0 flex flex-col gap-6 w-full lg:sticky lg:top-35 lg:self-start"}>
           {/* Main Space Canvas Card */}
-          <div className={shouldLockMobileEditor ? "relative flex h-full w-full items-center justify-center overflow-hidden bg-[#0f1422] touch-none" : "bg-white/10 border border-[#f5f5f5] p-3 sm:p-5 rounded-[20px] shadow-[0px_0px_5px_0px_rgba(0,0,0,0.25)] relative w-full flex items-center justify-center overflow-hidden"}>
+          <div className={shouldLockMobileEditor ? "relative flex h-full w-full items-center justify-center overflow-hidden bg-[#0f1422] touch-none [container-type:size]" : "bg-white/10 border border-[#f5f5f5] p-3 sm:p-5 rounded-[20px] shadow-[0px_0px_5px_0px_rgba(0,0,0,0.25)] relative w-full flex flex-col items-center justify-center gap-3"}>
             <div
               ref={canvasRef}
               className="relative mx-auto rounded-[15px] overflow-hidden bg-neutral-100"
               style={{
                 aspectRatio: workspaceAspectRatio,
                 width: shouldLockMobileEditor
-                  ? "auto"
+                  ? `min(100cqw, calc(100cqh * ${aspectWidth} / ${aspectHeight}))`
                   : `min(100%, calc(55vh * ${aspectWidth} / ${aspectHeight}))`,
                 maxWidth: "100%",
                 maxHeight: shouldLockMobileEditor ? "100%" : "55vh",
-                height: shouldLockMobileEditor ? "100%" : undefined,
+                height: shouldLockMobileEditor ? "auto" : undefined,
                 touchAction: shouldLockMobileEditor ? "none" : undefined,
               }}
             >
               {/* Background Space Image */}
               <img
                 src={bgImage}
+                crossOrigin="anonymous"
                 alt="Space image background"
                 draggable={false}
-                className="w-full h-full object-cover select-none"
+                className="absolute inset-0 h-full w-full object-contain select-none"
               />
+
+              {!shouldLockMobileEditor && selectedProduct && (
+                <div className="pointer-events-none absolute bottom-3 left-3 z-40 max-w-[calc(100%-24px)] truncate rounded-[20px] border border-neutral-100 bg-white/95 px-4 py-2 text-sm font-normal tracking-[-0.266px] text-black shadow-xs">
+                  {structuralDefinition?.product.productName ?? "1 product on Canvas"}
+                </div>
+              )}
 
               {/* ── Calibration Scale HUD Indicator (IMP-MS47, IMP-MS52) ── */}
               <div className="absolute top-3 left-3 z-30 flex items-center gap-2 select-none pointer-events-auto">
@@ -3212,7 +4660,7 @@ export function ProductModelWorkspace({
                           transformOrigin: "0 0",
                           transform: homographyToCssMatrix3d(
                             denormalizeCorners(
-                              overlay.configuration.perspectiveFitCorners,
+                              overlay.configuration.visualPoseCorners ?? overlay.configuration.perspectiveFitCorners,
                               canvasDisplaySize.width,
                               canvasDisplaySize.height,
                             ),
@@ -3298,9 +4746,8 @@ export function ProductModelWorkspace({
                       <div
                         ref={overlayBoxRef}
                         onPointerDown={isEditingProduct ? startPerspectiveMove : undefined}
-                        className={`absolute pointer-events-auto select-none transition-all ${
-                          isEditingProduct ? "cursor-grab active:cursor-grabbing" : "cursor-default"
-                        } ${activeFocusPulse ? "ring-4 ring-[#07b6d3] ring-offset-2 animate-pulse rounded-[6px]" : ""}`}
+                        className={`absolute pointer-events-auto select-none transition-all ${isEditingProduct ? "cursor-grab active:cursor-grabbing" : "cursor-default"
+                          } ${activeFocusPulse ? "ring-4 ring-[#07b6d3] ring-offset-2 animate-pulse rounded-[6px]" : ""}`}
                         style={{
                           left: 0,
                           top: 0,
@@ -3315,6 +4762,9 @@ export function ProductModelWorkspace({
                             ),
                             overlaySize.width,
                             overlaySize.height,
+                            structuralDefinition && planarFitRect
+                              ? getPlanarFitImageBounds(planarFitRect, isFlipped)
+                              : null,
                           ),
                           transformStyle: "preserve-3d",
                           WebkitTransformStyle: "preserve-3d",
@@ -3342,6 +4792,7 @@ export function ProductModelWorkspace({
                           ) : (
                             <img
                               src={productOverlayImage}
+                              crossOrigin="anonymous"
                               alt="Selected Product Overlay"
                               draggable={false}
                               className="w-full h-full object-cover transition-transform duration-300 select-none pointer-events-none"
@@ -3447,6 +4898,7 @@ export function ProductModelWorkspace({
                       <img
                         key={object.id}
                         src={bgImage}
+                        crossOrigin="anonymous"
                         alt=""
                         aria-hidden="true"
                         className="absolute inset-0 h-full w-full object-contain select-none"
@@ -3465,6 +4917,7 @@ export function ProductModelWorkspace({
                     {manualMaskDataUrl && (
                       <img
                         src={bgImage}
+                        crossOrigin="anonymous"
                         alt=""
                         aria-hidden="true"
                         className="absolute inset-0 h-full w-full object-contain select-none"
@@ -3489,64 +4942,27 @@ export function ProductModelWorkspace({
                 >
                   {perspectiveCorners ? (
                     <>
-                      {perspectiveToolbarPosition && !shouldLockMobileEditor && (
-                        <div
-                          className="absolute flex items-center gap-2.5 select-none animate-in fade-in slide-in-from-bottom-2 duration-200 pointer-events-auto"
-                          style={{
-                            left: perspectiveToolbarPosition.left,
-                            top: perspectiveToolbarPosition.top,
-                            transform: "translateX(-50%)",
-                          }}
-                        >
-                          <button
-                            type="button"
-                            onClick={() => setShowPerspectivePicker(true)}
-                            className="bg-[#0f1422] hover:bg-black text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
-                          >
-                            <Maximize className="w-4 h-4 text-white" />
-                            <span className="text-[13px] font-normal tracking-[-0.266px]">Edit Corners</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setPerspectiveCorners(null);
-                              setModelRevision((prev) => prev + 1);
-                            }}
-                            className="bg-[#0f1422] hover:bg-black text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
-                          >
-                            <Move className="w-4 h-4 text-white" />
-                            <span className="text-[13px] font-normal tracking-[-0.266px]">Free Place</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleFlip}
-                            className="bg-[#0f1422] hover:bg-black text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
-                          >
-                            <FlipHorizontal className="w-4 h-4 text-white" />
-                            <span className="text-[13px] font-normal tracking-[-0.266px]">Flip</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleReset}
-                            className="bg-[#0f1422] hover:bg-black text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
-                          >
-                            <RotateCcw className="w-4 h-4 text-white" />
-                            <span className="text-[13px] font-normal tracking-[-0.266px]">Reset</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleRemove}
-                            className="bg-[#c50000] hover:bg-[#a30000] text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
-                          >
-                            <Trash2 className="w-4 h-4 text-white" />
-                            <span className="text-[13px] font-normal tracking-[-0.266px]">Remove</span>
-                          </button>
-                        </div>
-                      )}
-
                       {/* 9 Perspective Quadrilateral Transform Handles (Picture 2 Parity) */}
                       {perspectiveHandlePoints && (
                         <>
+                          {perspectiveHandlePoints.corners.map((corner) => {
+                            const dx = corner.x - perspectiveHandlePoints.center.x;
+                            const dy = corner.y - perspectiveHandlePoints.center.y;
+                            const distance = Math.hypot(dx, dy) || 1;
+                            return (
+                              <button
+                                type="button"
+                                key={`rotate-${corner.id}`}
+                                aria-label={`Rotate fitted product from ${corner.id}`}
+                                title="Drag to rotate fitted product"
+                                onPointerDown={startPerspectiveRotation}
+                                className="absolute z-40 flex size-11 items-center justify-center pointer-events-auto touch-none cursor-grab active:cursor-grabbing"
+                                style={{ left: corner.x + 34 * dx / distance, top: corner.y + 34 * dy / distance, transform: "translate(-50%, -50%)" }}
+                              >
+                                <span className="flex size-7 items-center justify-center rounded-full border border-[#07b6d3] bg-white text-[#0f1422] shadow-md"><RotateCw className="size-4" /></span>
+                              </button>
+                            );
+                          })}
                           {/* 4 Corner Scale Handles */}
                           {perspectiveHandlePoints.corners.map((c) => (
                             <button
@@ -3568,17 +4984,21 @@ export function ProductModelWorkspace({
 
                           {/* 4 Edge Midpoint Handles */}
                           {perspectiveHandlePoints.edges.map((e) => (
-                            <div
+                            <button
+                              type="button"
                               key={e.id}
                               onPointerDown={(evt) => startPerspectiveResize(evt, e.mode, e.signX, e.signY)}
-                              className={`absolute size-3 bg-[#07b6d3] rounded-full shadow-md z-20 ${e.cursor} pointer-events-auto`}
+                              className={`absolute flex size-11 items-center justify-center z-40 ${e.cursor} pointer-events-auto touch-none`}
                               style={{
                                 left: e.x,
                                 top: e.y,
                                 transform: "translate(-50%, -50%)",
                               }}
                               title={e.mode === "width" ? "Drag to resize width" : "Drag to resize length/height"}
-                            />
+                              aria-label={e.mode === "width" ? `Resize fitted product width from ${e.id}` : `Resize fitted product height from ${e.id}`}
+                            >
+                              <span className="size-3 rounded-full bg-[#07b6d3] shadow-md" />
+                            </button>
                           ))}
 
                           {/* 1 Center Move Handle */}
@@ -3608,54 +5028,6 @@ export function ProductModelWorkspace({
                         }}
                         className="relative pointer-events-none"
                       >
-                        {!shouldLockMobileEditor && <div
-                          className="absolute flex items-center gap-2.5 select-none animate-in fade-in slide-in-from-bottom-2 duration-200 pointer-events-auto"
-                          style={toolbarControlsStyle}
-                        >
-                          {supportsPerspectivePlane && (
-                            <button
-                              type="button"
-                              onClick={() => setShowPerspectivePicker(true)}
-                              className="bg-[#0f1422] hover:bg-black text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
-                            >
-                              <Maximize className="w-4 h-4 text-white" />
-                              <span className="text-[13px] font-normal tracking-[-0.266px]">Fit</span>
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            onClick={handleRotate}
-                            className="bg-[#0f1422] hover:bg-black text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
-                          >
-                            <RotateCw className="w-4 h-4 text-white" />
-                            <span className="text-[13px] font-normal tracking-[-0.266px]">Rotate</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleFlip}
-                            className="bg-[#0f1422] hover:bg-black text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
-                          >
-                            <FlipHorizontal className="w-4 h-4 text-white" />
-                            <span className="text-[13px] font-normal tracking-[-0.266px]">Flip</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleReset}
-                            className="bg-[#0f1422] hover:bg-black text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
-                          >
-                            <RotateCcw className="w-4 h-4 text-white" />
-                            <span className="text-[13px] font-normal tracking-[-0.266px]">Reset</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleRemove}
-                            className="bg-[#c50000] hover:bg-[#a30000] text-white px-3.5 py-1.5 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md"
-                          >
-                            <Trash2 className="w-4 h-4 text-white" />
-                            <span className="text-[13px] font-normal tracking-[-0.266px]">Remove</span>
-                          </button>
-                        </div>}
-
                         <div
                           className="relative pointer-events-none"
                           style={{
@@ -3680,10 +5052,10 @@ export function ProductModelWorkspace({
                             <button type="button" aria-label="Resize from bottom left" onPointerDown={(event) => startResize(event, "scale", -1, 1)} className="absolute bottom-0 left-0 -translate-x-1/2 translate-y-1/2 flex size-11 items-center justify-center z-40 cursor-nesw-resize pointer-events-auto touch-none"><span className="size-4 rounded-[2px] bg-white border border-[#06e5ff] shadow-md" /></button>
                             <button type="button" aria-label="Resize from bottom right" onPointerDown={(event) => startResize(event, "scale", 1, 1)} className="absolute bottom-0 right-0 translate-x-1/2 translate-y-1/2 flex size-11 items-center justify-center z-40 cursor-nwse-resize pointer-events-auto touch-none"><span className="size-4 rounded-[2px] bg-white border border-[#06e5ff] shadow-md" /></button>
 
-                            <div onPointerDown={(event) => startResize(event, "height", 0, -1)} className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 size-3 bg-[#07b6d3] rounded-full shadow-md z-20 cursor-ns-resize pointer-events-auto" />
-                            <div onPointerDown={(event) => startResize(event, "height", 0, 1)} className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 size-3 bg-[#07b6d3] rounded-full shadow-md z-20 cursor-ns-resize pointer-events-auto" />
-                            <div onPointerDown={(event) => startResize(event, "width", -1, 0)} className="absolute left-0 top-1/2 -translate-x-1/2 -translate-y-1/2 size-3 bg-[#07b6d3] rounded-full shadow-md z-20 cursor-ew-resize pointer-events-auto" />
-                            <div onPointerDown={(event) => startResize(event, "width", 1, 0)} className="absolute right-0 top-1/2 translate-x-1/2 -translate-y-1/2 size-3 bg-[#07b6d3] rounded-full shadow-md z-20 cursor-ew-resize pointer-events-auto" />
+                            <button type="button" aria-label="Resize product height from top" onPointerDown={(event) => startResize(event, "height", 0, -1)} className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 flex size-11 items-center justify-center z-40 cursor-ns-resize pointer-events-auto touch-none"><span className="size-3 rounded-full bg-[#07b6d3] shadow-md" /></button>
+                            <button type="button" aria-label="Resize product height from bottom" onPointerDown={(event) => startResize(event, "height", 0, 1)} className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 flex size-11 items-center justify-center z-40 cursor-ns-resize pointer-events-auto touch-none"><span className="size-3 rounded-full bg-[#07b6d3] shadow-md" /></button>
+                            <button type="button" aria-label="Resize product width from left" onPointerDown={(event) => startResize(event, "width", -1, 0)} className="absolute left-0 top-1/2 -translate-x-1/2 -translate-y-1/2 flex size-11 items-center justify-center z-40 cursor-ew-resize pointer-events-auto touch-none"><span className="size-3 rounded-full bg-[#07b6d3] shadow-md" /></button>
+                            <button type="button" aria-label="Resize product width from right" onPointerDown={(event) => startResize(event, "width", 1, 0)} className="absolute right-0 top-1/2 translate-x-1/2 -translate-y-1/2 flex size-11 items-center justify-center z-40 cursor-ew-resize pointer-events-auto touch-none"><span className="size-3 rounded-full bg-[#07b6d3] shadow-md" /></button>
 
                             <div onPointerDown={startOverlayDrag} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 size-6 rounded-full bg-[#07b6d3] flex items-center justify-center shadow-md cursor-grab active:cursor-grabbing z-20 pointer-events-auto">
                               <div className="size-2 bg-white rounded-full" />
@@ -3729,7 +5101,86 @@ export function ProductModelWorkspace({
                 />
               )}
             </div>
+            {!shouldLockMobileEditor && selectedProduct && isEditingProduct && !perspectiveCorners && (
+              <div className="grid w-full max-w-[600px] grid-cols-2 gap-2 select-none sm:grid-cols-5">
+                {supportsPerspectivePlane && (
+                  <button type="button" onClick={() => setShowPerspectivePicker(true)} className="bg-[#0f1422] hover:bg-black text-white min-h-11 min-w-0 px-2 py-2 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]">
+                    <Maximize className="w-4 h-4 text-white" />
+                    <span className="text-[13px] font-normal tracking-[-0.266px] text-center">Fit</span>
+                  </button>
+                )}
+                <button type="button" onClick={handleRotate} className="bg-[#0f1422] hover:bg-black text-white min-h-11 min-w-0 px-2 py-2 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]">
+                  <RotateCw className="w-4 h-4 text-white" />
+                  <span className="text-[13px] font-normal tracking-[-0.266px] text-center">Rotate</span>
+                </button>
+                <button type="button" onClick={handleFlip} className="bg-[#0f1422] hover:bg-black text-white min-h-11 min-w-0 px-2 py-2 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]">
+                  <FlipHorizontal className="w-4 h-4 text-white" />
+                  <span className="text-[13px] font-normal tracking-[-0.266px] text-center">Flip</span>
+                </button>
+                <button type="button" onClick={handleReset} className="bg-[#0f1422] hover:bg-black text-white min-h-11 min-w-0 px-2 py-2 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]">
+                  <RotateCcw className="w-4 h-4 text-white" />
+                  <span className="text-[13px] font-normal tracking-[-0.266px] text-center">Reset</span>
+                </button>
+                <button type="button" onClick={handleRemove} className="bg-[#c50000] hover:bg-[#a30000] text-white min-h-11 min-w-0 px-2 py-2 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">
+                  <Trash2 className="w-4 h-4 text-white" />
+                  <span className="text-[13px] font-normal tracking-[-0.266px] text-center">Remove</span>
+                </button>
+              </div>
+            )}
+            {!shouldLockMobileEditor && selectedProduct && isEditingProduct && perspectiveCorners && (
+              <div
+                className="grid w-full max-w-[600px] grid-cols-2 gap-2 select-none sm:grid-cols-5"
+              >
+                <button
+                  type="button"
+                  onClick={() => setShowPerspectivePicker(true)}
+                  className="bg-[#0f1422] hover:bg-black text-white min-h-11 min-w-0 px-2 py-2 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]"
+                >
+                  <Maximize className="w-4 h-4 text-white" />
+                  <span className="text-[13px] font-normal tracking-[-0.266px] text-center">Edit Corners</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMeasurementCorners(null);
+                    setPerspectiveCorners(null);
+                    setModelRevision((prev) => prev + 1);
+                  }}
+                  className="bg-[#0f1422] hover:bg-black text-white min-h-11 min-w-0 px-2 py-2 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]"
+                >
+                  <Move className="w-4 h-4 text-white" />
+                  <span className="text-[13px] font-normal tracking-[-0.266px] text-center">Free Place</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleFlip}
+                  className="bg-[#0f1422] hover:bg-black text-white min-h-11 min-w-0 px-2 py-2 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]"
+                >
+                  <FlipHorizontal className="w-4 h-4 text-white" />
+                  <span className="text-[13px] font-normal tracking-[-0.266px] text-center">Flip</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleReset}
+                  className="bg-[#0f1422] hover:bg-black text-white min-h-11 min-w-0 px-2 py-2 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]"
+                >
+                  <RotateCcw className="w-4 h-4 text-white" />
+                  <span className="text-[13px] font-normal tracking-[-0.266px] text-center">Reset</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRemove}
+                  className="bg-[#c50000] hover:bg-[#a30000] text-white min-h-11 min-w-0 px-2 py-2 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]"
+                >
+                  <Trash2 className="w-4 h-4 text-white" />
+                  <span className="text-[13px] font-normal tracking-[-0.266px] text-center">Remove</span>
+                </button>
+              </div>
+            )}
+
           </div>
+
+          {!shouldLockMobileEditor && priceCard}
 
           {/* Action Instructions Bar */}
           <div className={shouldLockMobileEditor ? "hidden" : "bg-[#f5f5f5] rounded-[20px] px-5 py-3 flex flex-wrap justify-center items-center gap-2 sm:gap-3 text-sm sm:text-base md:text-lg text-[#0f1422] font-normal tracking-[-0.38px] text-center select-none"}>
@@ -3761,12 +5212,13 @@ export function ProductModelWorkspace({
             ? `${isMobileControlsOpen ? "flex" : "hidden"} absolute z-50 flex-col gap-4 overflow-x-hidden overflow-y-auto overscroll-contain bg-white p-4 shadow-2xl [touch-action:pan-y] ${compactOrientation === "portrait" ? "inset-x-0 bottom-0 max-h-[45dvh] rounded-t-[20px]" : "inset-y-0 right-0 w-[min(320px,88vw)] rounded-l-[20px]"}`
             : "w-full lg:w-[422px] shrink-0 flex flex-col gap-6 items-end"}
         >
-          {/* Status Badge */}
-          <div className="bg-white rounded-[20px] px-4 py-2 text-black text-sm font-normal tracking-[-0.266px] shadow-xs border border-neutral-100">
-            {selectedProduct
-              ? structuralDefinition?.product.productName ?? "1 product on Canvas"
-              : "No product selected"}
-          </div>
+          {(!selectedProduct || shouldLockMobileEditor) && (
+            <div className="bg-white rounded-[20px] px-4 py-2 text-black text-sm font-normal tracking-[-0.266px] shadow-xs border border-neutral-100">
+              {selectedProduct
+                ? structuralDefinition?.product.productName ?? "1 product on Canvas"
+                : "No product selected"}
+            </div>
+          )}
           {productBuildError && (
             <p className="w-full rounded-[10px] border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
               {productBuildError}
@@ -3775,25 +5227,7 @@ export function ProductModelWorkspace({
 
           {selectedProduct ? (
             <>
-              {/* Price Card */}
-              <div className="bg-grad-light rounded-[20px] p-6 sm:p-7 flex flex-col gap-2.5 w-full text-white shadow-md">
-                <div className="flex items-center justify-between">
-                  <span className="text-xl sm:text-2xl font-normal text-white/90 tracking-[-0.456px]">
-                    {displayPriceData.title}
-                  </span>
-                  {displayPriceData.badgeText && (
-                    <span className="text-xs font-medium bg-white/20 px-2.5 py-1 rounded-full text-white">
-                      {displayPriceData.badgeText}
-                    </span>
-                  )}
-                </div>
-                <span className="text-3xl sm:text-4xl font-medium tracking-[-0.608px] text-white">
-                  {displayPriceData.formattedPrice}
-                </span>
-                <div className="flex flex-col gap-0.5 text-xs font-normal text-white/80 tracking-[-0.228px]">
-                  <span>{displayPriceData.subtext}</span>
-                </div>
-              </div>
+              {shouldLockMobileEditor && priceCard}
 
               {/* Workspace Accordions with Motion Animation */}
               <div className="w-full flex flex-col gap-4">
@@ -3915,6 +5349,23 @@ export function ProductModelWorkspace({
                         className="overflow-hidden"
                       >
                         <div className="px-6 pb-6 flex flex-col gap-5">
+                          {perspectiveCorners && (
+                            <fieldset className="flex flex-col gap-2">
+                              <legend className="text-[#0f1422] text-sm font-medium">Product Facing</legend>
+                              <p id="product-facing-hint" className="text-xs text-neutral-600">Choose the side of the product visible in your photo.</p>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 p-1 bg-neutral-100 rounded-[12px]" aria-describedby="product-facing-hint">
+                                {(["front", "back"] as const).map((face) => (
+                                  <label key={face} className={cn(
+                                    "min-h-11 flex items-center justify-center gap-2 py-2 px-3 text-xs rounded-[10px] font-medium transition-all cursor-pointer focus-within:ring-2 focus-within:ring-[#07b6d3]",
+                                    productFacing === face ? "bg-[#0f1422] text-white shadow-xs" : "text-neutral-600 hover:text-black",
+                                  )}>
+                                    <input type="radio" name="product-facing" value={face} checked={productFacing === face} onChange={() => setProductFacing(face)} className="sr-only" />
+                                    {face === "front" ? "Front (Exterior)" : "Back (Interior)"}
+                                  </label>
+                                ))}
+                              </div>
+                            </fieldset>
+                          )}
                           <div className="flex flex-col gap-2">
                             <span className="text-[#c3c3c3] text-base font-normal">Turn Left / Right</span>
                             <div className="flex items-center gap-2">
@@ -3998,7 +5449,7 @@ export function ProductModelWorkspace({
                         className="overflow-hidden"
                       >
                         <div className="px-6 pb-6 flex flex-col gap-6">
-                          {/* Aluminum Finish */}
+                          {/* Aluminum Finish (IMP-MS70) */}
                           <div className="flex flex-col gap-2">
                             <span className="text-[#c3c3c3] text-base font-normal">Aluminum Finish</span>
                             <div className="grid max-h-72 grid-cols-1 gap-1 overflow-y-auto pr-1">
@@ -4006,7 +5457,7 @@ export function ProductModelWorkspace({
                                 <button
                                   key={option.id}
                                   type="button"
-                                  onClick={() => setAlumFinish(option.id)}
+                                  onClick={() => handleBaseFinishSelect(option.id)}
                                   aria-pressed={alumFinish === option.id}
                                   className={`flex items-center gap-2 rounded-[8px] border px-2 py-2 text-left text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3] ${alumFinish === option.id ? "border-[#07b6d3] bg-white" : "border-transparent hover:bg-neutral-50"}`}
                                 >
@@ -4039,7 +5490,7 @@ export function ProductModelWorkspace({
                                 <legend className="text-[#c3c3c3] text-base font-normal">Glass Color</legend>
                                 <div className="mt-2 flex flex-wrap gap-2">
                                   {GLASS_COLOR_OPTIONS.map((option) => (
-                                    <button key={option.id} type="button" onClick={() => setGlassColor(option.id)} aria-pressed={glassColor === option.id} className={`flex items-center gap-1.5 rounded-[20px] border border-[#c3c3c3] px-3 py-1.5 text-base transition-colors ${glassColor === option.id ? "bg-[#0f1422] text-white" : "text-[#0f1422]"}`}><span className="size-3.5 rounded-full border border-black/15" style={{ backgroundColor: option.previewHex }} aria-hidden="true" />{option.label}</button>
+                                    <button key={option.id} type="button" onClick={() => handleGlassColorChange(option.id)} aria-pressed={glassColor === option.id} className={`flex items-center gap-1.5 rounded-[20px] border border-[#c3c3c3] px-3 py-1.5 text-base transition-colors ${glassColor === option.id ? "bg-[#0f1422] text-white" : "text-[#0f1422]"}`}><span className="size-3.5 rounded-full border border-black/15" style={{ backgroundColor: option.previewHex }} aria-hidden="true" />{option.label}</button>
                                   ))}
                                 </div>
                               </fieldset>
@@ -4047,7 +5498,7 @@ export function ProductModelWorkspace({
                                 <legend className="text-[#c3c3c3] text-base font-normal">Glass Thickness</legend>
                                 <div className="mt-2 flex flex-wrap gap-2">
                                   {GLASS_THICKNESS_OPTIONS.map((option) => (
-                                    <button key={option.value} type="button" onClick={() => setGlassThicknessMm(option.value)} aria-pressed={glassThicknessMm === option.value} className={`rounded-[20px] border border-[#c3c3c3] px-3 py-1.5 text-base transition-colors ${glassThicknessMm === option.value ? "bg-[#0f1422] text-white" : "text-[#0f1422]"}`}>{option.label}</button>
+                                    <button key={option.value} type="button" onClick={() => handleGlassThicknessChange(option.value)} aria-pressed={glassThicknessMm === option.value} className={`rounded-[20px] border border-[#c3c3c3] px-3 py-1.5 text-base transition-colors ${glassThicknessMm === option.value ? "bg-[#0f1422] text-white" : "text-[#0f1422]"}`}>{option.label}</button>
                                   ))}
                                 </div>
                               </fieldset>
@@ -4058,7 +5509,7 @@ export function ProductModelWorkspace({
                               <span className="text-[#c3c3c3] text-base font-normal">Glass Appearance</span>
                               <div className="grid grid-cols-2 gap-2.5">
                                 {(["clear", "frosted", "opaque", "reflective", "outdoor"] as GlassAppearanceMode[]).map((mode) => (
-                                  <button key={mode} type="button" onClick={() => { setGlassAppearance(mode); setGlassType(deriveGlassTypeFromAppearance(mode)); }} aria-pressed={glassAppearance === mode} className={`rounded-[20px] border border-[#c3c3c3] px-3 py-1.5 text-base capitalize transition-colors ${glassAppearance === mode ? "bg-[#0f1422] text-white" : "text-[#0f1422]"}`}>{mode}</button>
+                                  <button key={mode} type="button" onClick={() => handleFallbackGlassAppearanceChange(mode)} aria-pressed={glassAppearance === mode} className={`rounded-[20px] border border-[#c3c3c3] px-3 py-1.5 text-base capitalize transition-colors ${glassAppearance === mode ? "bg-[#0f1422] text-white" : "text-[#0f1422]"}`}>{mode}</button>
                                 ))}
                               </div>
                             </div>
@@ -4080,17 +5531,47 @@ export function ProductModelWorkspace({
                             </label>
                           )}
 
+                          {materialCustomizationGroups.some((group) => group.options.length > 1) && (
+                            <div className="hidden lg:block">
+                              <MaterialCustomizerPanel
+                                groups={materialCustomizationGroups}
+                                selectedMaterials={selectedMaterials}
+                                onSelectOption={handleSelectMaterialOption}
+                                onResetDefaults={handleResetMaterialsToDefaults}
+                              />
+                            </div>
+                          )}
+
+                          {/* Choose Raw Materials for Each Part (IMP-MS70) */}
+                          {customizableComponents.length > 0 && (
+                            <div className="pt-1">
+                              <PartMaterialsPicker
+                                components={customizableComponents}
+                                selectedMaterials={selectedMaterials}
+                                candidateMaterialsMap={candidateMaterialsMap}
+                                allRawMaterials={allRawMaterials}
+                                onSelectPartMaterial={handleSelectPartMaterial}
+                                onResetToDefaults={handleResetMaterialsToDefaults}
+                                dimensionsMm={{
+                                  widthMm: (parseFloat(widthCm) || 180) * 10,
+                                  heightMm: (parseFloat(heightCm) || 150) * 10,
+                                  panelCount,
+                                }}
+                              />
+                            </div>
+                          )}
+
                           {/* Dimension */}
                           <div className="flex flex-col gap-2">
                             <span className="text-[#0f1422] text-base font-medium">Dimension</span>
-                            <div className="grid grid-cols-3 gap-3">
+                            <div className={`grid grid-cols-1 gap-3 ${shouldLockMobileEditor && compactOrientation === "landscape" ? "" : "sm:grid-cols-3"}`}>
                               <div className="flex flex-col gap-1">
                                 <span className="flex min-h-10 items-end text-[#c3c3c3] text-sm leading-tight">Width (cm)</span>
                                 <input
                                   type="text"
                                   value={widthCm}
                                   onChange={(e) => handleWidthCmChange(e.target.value)}
-                                  className="w-full bg-white border border-[#c3c3c3] rounded-[10px] px-3 py-1.5 text-center text-[#0f1422] text-base shadow-[0px_0px_7px_rgba(0,0,0,0.1)] focus:outline-none"
+                                  className="min-h-11 w-full bg-white border border-[#c3c3c3] rounded-[10px] px-3 py-1.5 text-center text-[#0f1422] text-base shadow-[0px_0px_7px_rgba(0,0,0,0.1)] focus:outline-none"
                                 />
                               </div>
                               <div className="flex flex-col gap-1">
@@ -4099,7 +5580,7 @@ export function ProductModelWorkspace({
                                   type="text"
                                   value={heightCm}
                                   onChange={(e) => handleHeightCmChange(e.target.value)}
-                                  className="w-full bg-white border border-[#c3c3c3] rounded-[10px] px-3 py-1.5 text-center text-[#0f1422] text-base shadow-[0px_0px_7px_rgba(0,0,0,0.1)] focus:outline-none"
+                                  className="min-h-11 w-full bg-white border border-[#c3c3c3] rounded-[10px] px-3 py-1.5 text-center text-[#0f1422] text-base shadow-[0px_0px_7px_rgba(0,0,0,0.1)] focus:outline-none"
                                 />
                               </div>
                               <div className="flex flex-col gap-1">
@@ -4108,7 +5589,7 @@ export function ProductModelWorkspace({
                                   type="text"
                                   value={thicknessMm}
                                   onChange={(e) => setThicknessMm(e.target.value)}
-                                  className="w-full bg-white border border-[#c3c3c3] rounded-[10px] px-3 py-1.5 text-center text-[#0f1422] text-base shadow-[0px_0px_7px_rgba(0,0,0,0.1)] focus:outline-none"
+                                  className="min-h-11 w-full bg-white border border-[#c3c3c3] rounded-[10px] px-3 py-1.5 text-center text-[#0f1422] text-base shadow-[0px_0px_7px_rgba(0,0,0,0.1)] focus:outline-none"
                                 />
                               </div>
                             </div>
@@ -4119,11 +5600,13 @@ export function ProductModelWorkspace({
                             <span className="text-[#0f1422] text-base font-medium">Quantity</span>
                             <div className="flex flex-col gap-1">
                               <span className="text-[#c3c3c3] text-sm">Qty</span>
-                              <div className="bg-white border border-[#c3c3c3] rounded-[10px] px-3 py-1.5 flex items-center justify-between w-28 shadow-[0px_0px_7px_rgba(0,0,0,0.1)]">
+                              <div className="bg-white border border-[#c3c3c3] rounded-[10px] flex items-center justify-between w-36 shadow-[0px_0px_7px_rgba(0,0,0,0.1)]">
                                 <button
                                   type="button"
                                   onClick={() => setQuantity((q) => Math.max(1, q - 1))}
-                                  className="p-1 hover:opacity-75 transition-opacity cursor-pointer"
+                                  disabled={quantity <= 1}
+                                  aria-label="Decrease quantity"
+                                  className="flex min-h-11 min-w-11 items-center justify-center hover:opacity-75 transition-opacity cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-[#07b6d3]"
                                 >
                                   <Image
                                     src="/visualization/minus-solid-full 1.svg"
@@ -4136,7 +5619,8 @@ export function ProductModelWorkspace({
                                 <button
                                   type="button"
                                   onClick={() => setQuantity((q) => q + 1)}
-                                  className="p-1 hover:opacity-75 transition-opacity cursor-pointer"
+                                  aria-label="Increase quantity"
+                                  className="flex min-h-11 min-w-11 items-center justify-center hover:opacity-75 transition-opacity cursor-pointer focus-visible:outline-2 focus-visible:outline-[#07b6d3]"
                                 >
                                   <Image
                                     src="/visualization/plus-solid-full 1.svg"
@@ -4153,6 +5637,784 @@ export function ProductModelWorkspace({
                     )}
                   </AnimatePresence>
                 </div>
+
+                {/* 4. Add-on Options Accordion (IMP-MS70) */}
+                {hasCompatibleAddons && (
+                  <div className="bg-[#f5f5f5]/30 border border-white rounded-[20px] shadow-[0px_0px_5px_0px_rgba(0,0,0,0.25)] overflow-hidden transition-colors">
+                    <button
+                      type="button"
+                      onClick={() => toggleAccordion("Add-on Options")}
+                      className="w-full p-6 flex justify-between items-center text-left cursor-pointer"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="text-[#0f1422] text-[18px] font-medium tracking-[-0.342px]">
+                          Add-on Options
+                        </span>
+                        {selectedAddon !== "none" && (
+                          <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-cyan-50 text-[#07b6d3] border border-cyan-200">
+                            +₱{addonPrice.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        )}
+                      </div>
+                      <motion.div
+                        animate={{ rotate: openAccordions.includes("Add-on Options") ? 180 : 0 }}
+                        transition={{ duration: 0.25, ease: "easeInOut" }}
+                      >
+                        <Image
+                          src="/visualization/dropdown-btn.svg"
+                          alt="Toggle"
+                          width={20}
+                          height={20}
+                        />
+                      </motion.div>
+                    </button>
+
+                    <AnimatePresence initial={false}>
+                      {openAccordions.includes("Add-on Options") && (
+                        <motion.div
+                          key="addon-content"
+                          initial={{ height: 0 }}
+                          animate={{ height: "auto" }}
+                          exit={{ height: 0 }}
+                          transition={{ duration: 0.3, ease: [0.04, 0.62, 0.23, 0.98] }}
+                          className="overflow-hidden"
+                        >
+                          <div className="px-6 pb-6 flex flex-col gap-5">
+                            {/* Attachment Segmented Toggle */}
+                            <div className="flex flex-col gap-2">
+                              <span className="text-[#0f1422] text-sm font-medium">Modular Attachment</span>
+                              <div className={`grid ${hasScreenConfigured && hasGrillConfigured ? "grid-cols-3" : "grid-cols-2"} gap-1.5 p-1 bg-neutral-100 rounded-[12px]`}>
+                                <button
+                                  type="button"
+                                  onClick={() => handleAddonSelect("none")}
+                                  aria-pressed={selectedAddon === "none"}
+                                  className={`py-2 px-3 text-sm rounded-[10px] font-medium transition-all cursor-pointer ${selectedAddon === "none"
+                                    ? "bg-[#0f1422] text-white shadow-xs"
+                                    : "text-neutral-600 hover:text-black"
+                                    }`}
+                                >
+                                  None
+                                </button>
+
+                                {hasScreenConfigured && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleAddonSelect("screen")}
+                                    aria-pressed={selectedAddon === "screen"}
+                                    className={`py-2 px-3 text-sm rounded-[10px] font-medium transition-all cursor-pointer ${selectedAddon === "screen"
+                                      ? "bg-[#0f1422] text-white shadow-xs"
+                                      : "text-neutral-600 hover:text-black"
+                                      }`}
+                                  >
+                                    Screen
+                                  </button>
+                                )}
+
+                                {hasGrillConfigured && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleAddonSelect("grill")}
+                                    aria-pressed={selectedAddon === "grill"}
+                                    className={`py-2 px-3 text-sm rounded-[10px] font-medium transition-all cursor-pointer ${selectedAddon === "grill"
+                                      ? "bg-[#0f1422] text-white shadow-xs"
+                                      : "text-neutral-600 hover:text-black"
+                                      }`}
+                                  >
+                                    Grille
+                                  </button>
+                                )}
+                              </div>
+                              <p className="text-[11px] text-neutral-500">
+                                Choose an optional secondary addition. Only one attachment can be mounted at a time.
+                              </p>
+                            </div>
+
+                            {/* Multiple Screen / Mesh Option Selection */}
+                            {effectiveSelectedAddon === "screen" && screenAddons.length > 1 && (
+                              <div className="flex flex-col gap-2 pt-3 border-t border-neutral-200/60">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[#0f1422] text-sm font-medium">Screen / Mesh Option</span>
+                                  <span className="text-[11px] text-neutral-500">{screenAddons.length} available</span>
+                                </div>
+                                <div className="flex flex-col gap-1.5">
+                                  {screenAddons.map((addon) => {
+                                    const isSelected = activeCompatibleAddon?.addonProductId === addon.addonProductId;
+                                    return (
+                                      <button
+                                        key={addon.addonProductId}
+                                        type="button"
+                                        onClick={() => setSelectedAddonProductId(addon.addonProductId)}
+                                        aria-pressed={isSelected}
+                                        className={cn(
+                                          "flex items-center justify-between p-3 rounded-[10px] border text-left transition-all cursor-pointer",
+                                          isSelected
+                                            ? "border-[#07b6d3] bg-[#07b6d3]/5 ring-1 ring-[#07b6d3]/30"
+                                            : "border-neutral-200 bg-white hover:border-neutral-300"
+                                        )}
+                                      >
+                                        <div className="flex flex-col gap-0.5">
+                                          <span className="text-xs font-semibold text-[#0f1422]">
+                                            {addon.addonProduct?.productName ?? "Insect Screen Attachment"}
+                                          </span>
+                                          {addon.template?.templateName && (
+                                            <span className="text-[11px] text-neutral-500">
+                                              Template: {addon.template.templateName}
+                                            </span>
+                                          )}
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                          {addon.addonProduct?.basePrice ? (
+                                            <span className="text-xs font-medium text-neutral-700">
+                                              ₱{addon.addonProduct.basePrice.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                                            </span>
+                                          ) : null}
+                                          <div
+                                            className={cn(
+                                              "size-4 rounded-full border flex items-center justify-center",
+                                              isSelected ? "border-[#07b6d3] bg-[#07b6d3]" : "border-neutral-300"
+                                            )}
+                                          >
+                                            {isSelected && <div className="size-1.5 rounded-full bg-white" />}
+                                          </div>
+                                        </div>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Multiple Grille Option Selection */}
+                            {effectiveSelectedAddon === "grill" && grillAddons.length > 1 && (
+                              <div className="flex flex-col gap-2 pt-3 border-t border-neutral-200/60">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[#0f1422] text-sm font-medium">Grille Style Option</span>
+                                  <span className="text-[11px] text-neutral-500">{grillAddons.length} available</span>
+                                </div>
+                                <div className="flex flex-col gap-1.5">
+                                  {grillAddons.map((addon) => {
+                                    const isSelected = activeCompatibleAddon?.addonProductId === addon.addonProductId;
+                                    return (
+                                      <button
+                                        key={addon.addonProductId}
+                                        type="button"
+                                        onClick={() => setSelectedAddonProductId(addon.addonProductId)}
+                                        aria-pressed={isSelected}
+                                        className={cn(
+                                          "flex items-center justify-between p-3 rounded-[10px] border text-left transition-all cursor-pointer",
+                                          isSelected
+                                            ? "border-[#07b6d3] bg-[#07b6d3]/5 ring-1 ring-[#07b6d3]/30"
+                                            : "border-neutral-200 bg-white hover:border-neutral-300"
+                                        )}
+                                      >
+                                        <div className="flex flex-col gap-0.5">
+                                          <span className="text-xs font-semibold text-[#0f1422]">
+                                            {addon.addonProduct?.productName ?? "Security Grille Attachment"}
+                                          </span>
+                                          {addon.template?.templateName && (
+                                            <span className="text-[11px] text-neutral-500">
+                                              Template: {addon.template.templateName}
+                                            </span>
+                                          )}
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                          {addon.addonProduct?.basePrice ? (
+                                            <span className="text-xs font-medium text-neutral-700">
+                                              ₱{addon.addonProduct.basePrice.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                                            </span>
+                                          ) : null}
+                                          <div
+                                            className={cn(
+                                              "size-4 rounded-full border flex items-center justify-center",
+                                              isSelected ? "border-[#07b6d3] bg-[#07b6d3]" : "border-neutral-300"
+                                            )}
+                                          >
+                                            {isSelected && <div className="size-1.5 rounded-full bg-white" />}
+                                          </div>
+                                        </div>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Single configured addon label feedback */}
+                            {effectiveSelectedAddon === "screen" && screenAddons.length === 1 && activeCompatibleAddon?.addonProduct?.productName && (
+                              <div className="flex items-center justify-between text-xs text-neutral-600 bg-neutral-50 px-3 py-2 rounded-[8px] border border-neutral-200">
+                                <span className="font-medium text-neutral-800">Attachment:</span>
+                                <span>{activeCompatibleAddon.addonProduct.productName}</span>
+                              </div>
+                            )}
+                            {effectiveSelectedAddon === "grill" && grillAddons.length === 1 && activeCompatibleAddon?.addonProduct?.productName && (
+                              <div className="flex items-center justify-between text-xs text-neutral-600 bg-neutral-50 px-3 py-2 rounded-[8px] border border-neutral-200">
+                                <span className="font-medium text-neutral-800">Attachment:</span>
+                                <span>{activeCompatibleAddon.addonProduct.productName}</span>
+                              </div>
+                            )}
+
+                            {/* Directional Add-on Mounting Placement (IMP-MS80) */}
+                            {effectiveSelectedAddon !== "none" && (
+                              <div className="flex flex-col gap-2 pt-3 border-t border-neutral-200/60">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[#0f1422] text-sm font-medium">Mounting Placement</span>
+                                  {effectiveHatchCount > 0 ? (
+                                    <span className="text-[11px] text-[#07b6d3] bg-[#07b6d3]/10 font-semibold px-2 py-0.5 rounded-md">
+                                      {effectiveHatchCount}x Aligned {effectiveHatchCount === 1 ? "Hatch" : "Hatches"}
+                                    </span>
+                                  ) : addonMountingSide === "front" ? (
+                                    <span className="text-[11px] text-neutral-600 bg-neutral-100 font-semibold px-2 py-0.5 rounded-md">
+                                      Exterior Mounting
+                                    </span>
+                                  ) : null}
+                                </div>
+                                {activeCompatibleAddon?.allowedSides === "back" ? (
+                                  <div className="flex items-center gap-2 p-2.5 rounded-[10px] bg-amber-50/80 border border-amber-200 text-xs text-amber-900">
+                                    <ShieldCheck className="size-4 text-amber-600 shrink-0" />
+                                    <span>Interior Mount (Back) - Prevents Sash Collision</span>
+                                  </div>
+                                ) : activeCompatibleAddon?.allowedSides === "front" ? (
+                                  <div className="flex items-center gap-2 p-2.5 rounded-[10px] bg-neutral-100 border border-neutral-200 text-xs text-neutral-800">
+                                    <ShieldCheck className="size-4 text-neutral-600 shrink-0" />
+                                    <span>Exterior Mount (Front)</span>
+                                  </div>
+                                ) : (
+                                  <div className="grid grid-cols-2 gap-1.5 p-1 bg-neutral-100 rounded-[12px]">
+                                    <button
+                                      type="button"
+                                      onClick={() => setAddonMountingSide("front")}
+                                      aria-pressed={addonMountingSide === "front"}
+                                      className={cn(
+                                        "py-2 px-3 text-xs rounded-[10px] font-medium transition-all cursor-pointer",
+                                        addonMountingSide === "front"
+                                          ? "bg-[#0f1422] text-white shadow-xs"
+                                          : "text-neutral-600 hover:text-black"
+                                      )}
+                                    >
+                                      Exterior (Front)
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setAddonMountingSide("back")}
+                                      aria-pressed={addonMountingSide === "back"}
+                                      className={cn(
+                                        "py-2 px-3 text-xs rounded-[10px] font-medium transition-all cursor-pointer",
+                                        addonMountingSide === "back"
+                                          ? "bg-[#0f1422] text-white shadow-xs"
+                                          : "text-neutral-600 hover:text-black"
+                                      )}
+                                    >
+                                      Interior (Back)
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Operator Access Hatch Toggle Switch (IMP-MS80) */}
+                            {effectiveSelectedAddon === "screen" && effectiveHatchTargetKeys.length > 0 && (
+                              <div className="flex flex-col gap-2 pt-3 border-t border-neutral-200/60">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-xs font-semibold text-[#0f1422]">
+                                      Operator Access Hatch
+                                    </span>
+                                    <span
+                                      className={cn(
+                                        "text-[10px] px-1.5 py-0.5 rounded-full font-semibold border",
+                                        includeHatch
+                                          ? "bg-cyan-100/70 text-[#088395] border-cyan-200/80"
+                                          : "bg-neutral-100 text-neutral-500 border-neutral-200"
+                                      )}
+                                    >
+                                      {includeHatch
+                                        ? `${dynamicOperatorCount}x Aligned ${dynamicOperatorCount === 1 ? "Hatch" : "Hatches"}`
+                                        : "Disabled"}
+                                    </span>
+                                  </div>
+                                  <label className="relative inline-flex items-center cursor-pointer shrink-0 ml-2">
+                                    <input
+                                      type="checkbox"
+                                      checked={includeHatch}
+                                      onChange={(e) => handleHatchToggle(e.target.checked)}
+                                      className="sr-only peer"
+                                    />
+                                    <div className="w-9 h-5 bg-neutral-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#07b6d3]"></div>
+                                  </label>
+                                </div>
+                                <p className="text-[11px] text-neutral-500">
+                                  Wicket door opening allows direct reach-through to operate window hardware without removing the insect screen frame.
+                                </p>
+                              </div>
+                            )}
+
+                            {/* Security Grille Handle Access Disclosure Badge (IMP-MS86, QAD-TC101.11) */}
+                            {effectiveSelectedAddon === "grill" && effectiveGrilleOpeningCount > 0 && (
+                              <div className="flex flex-col gap-2 pt-3 border-t border-neutral-200/60">
+                                <div className="flex items-center gap-2 p-2.5 rounded-[10px] bg-teal-50/90 border border-teal-200 text-xs text-teal-900">
+                                  <ShieldCheck className="size-4 text-teal-600 shrink-0" />
+                                  <span className="font-medium">
+                                    Includes {effectiveGrilleOpeningCount}x Framed Handle Access {effectiveGrilleOpeningCount === 1 ? "Opening" : "Openings"} for Window Operation
+                                  </span>
+                                </div>
+                                <p className="text-[11px] text-neutral-500">
+                                  Clearance cutout allows direct hand reach through the security grille to operate window hardware.
+                                </p>
+                              </div>
+                            )}
+
+                            {/* Screen Mesh Density & Aperture Selection */}
+                            {effectiveSelectedAddon === "screen" && (
+                              <div className="flex flex-col gap-2 pt-3 border-t border-neutral-200/60">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-xs font-semibold text-[#0f1422]">
+                                    Screen Mesh Aperture
+                                  </span>
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold border bg-cyan-100/70 text-[#088395] border-cyan-200/80">
+                                    {screenMeshDensity === "fine"
+                                      ? "1.8mm Fine Weave"
+                                      : screenMeshDensity === "micro"
+                                        ? "1.2mm Micro-Mesh"
+                                        : "12mm Heavy Mesh"}
+                                  </span>
+                                </div>
+                                <div className="grid grid-cols-3 gap-1.5 p-1 bg-neutral-100 rounded-lg">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleMeshDensityChange("fine")}
+                                    className={cn(
+                                      "py-1 px-2 text-[11px] font-medium rounded-md transition-all text-center",
+                                      screenMeshDensity === "fine"
+                                        ? "bg-white text-[#0f1422] shadow-sm font-semibold"
+                                        : "text-neutral-600 hover:text-neutral-900"
+                                    )}
+                                  >
+                                    Fine (1.8mm)
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleMeshDensityChange("micro")}
+                                    className={cn(
+                                      "py-1 px-2 text-[11px] font-medium rounded-md transition-all text-center",
+                                      screenMeshDensity === "micro"
+                                        ? "bg-white text-[#0f1422] shadow-sm font-semibold"
+                                        : "text-neutral-600 hover:text-neutral-900"
+                                    )}
+                                  >
+                                    Micro (1.2mm)
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleMeshDensityChange("coarse")}
+                                    className={cn(
+                                      "py-1 px-2 text-[11px] font-medium rounded-md transition-all text-center",
+                                      screenMeshDensity === "coarse"
+                                        ? "bg-white text-[#0f1422] shadow-sm font-semibold"
+                                        : "text-neutral-600 hover:text-neutral-900"
+                                    )}
+                                  >
+                                    Heavy (12mm)
+                                  </button>
+                                </div>
+                                <p className="text-[11px] text-neutral-500">
+                                  {screenMeshDensity === "fine"
+                                    ? "Standard architectural insect screen: delicate weave stops mosquitoes while maximizing outdoor view clarity."
+                                    : screenMeshDensity === "micro"
+                                      ? "Ultra-fine anti-midge micro-mesh: enhanced insect barrier with subtle privacy screening."
+                                      : "Heavy-duty wire mesh with wide 12mm aperture for security barrier ventilation."}
+                                </p>
+                              </div>
+                            )}
+
+                            {/* Additional Removable Add-on Components */}
+                            {otherRemovableAddonParts.length > 0 && (
+                              <div className="flex flex-col gap-2 pt-3 border-t border-neutral-200/60">
+                                <span className="text-xs font-semibold text-[#0f1422]">
+                                  Optional Add-on Parts
+                                </span>
+                                {otherRemovableAddonParts.map((comp) => {
+                                  const isIncluded = removableStates[comp.componentId] ?? removableStates[comp.componentKey] ?? true;
+                                  return (
+                                    <div key={comp.componentId} className="flex items-center justify-between py-1">
+                                      <span className="text-xs text-neutral-700">{comp.componentName}</span>
+                                      <label className="relative inline-flex items-center cursor-pointer shrink-0 ml-2">
+                                        <input
+                                          type="checkbox"
+                                          checked={isIncluded}
+                                          onChange={(e) => handleRemovableToggle(comp.componentId, comp.componentKey, e.target.checked)}
+                                          className="sr-only peer"
+                                        />
+                                        <div className="w-8 h-4.5 bg-neutral-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-[#07b6d3]"></div>
+                                      </label>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+
+                            {/* Independent Add-on Frame Finish */}
+                            {selectedAddon !== "none" && (
+                              <div className="flex flex-col gap-2 pt-3 border-t border-neutral-200/60">
+                                <span className="text-[#0f1422] text-sm font-medium">
+                                  {selectedAddon === "screen" ? "Screen Frame Finish" : "Grille Bar Finish"}
+                                </span>
+                                <div className="grid grid-cols-2 gap-2">
+                                  {workspaceFinishOptions.map((option) => {
+                                    const isSelected = addonAlumFinish === option.id;
+                                    return (
+                                      <button
+                                        key={option.id}
+                                        type="button"
+                                        onClick={() => handleAddonFinishSelect(option.id)}
+                                        aria-pressed={isSelected}
+                                        className={`flex items-center gap-2 rounded-[10px] border p-2 text-left transition-all cursor-pointer ${isSelected
+                                          ? "border-[#07b6d3] bg-[#07b6d3]/5 ring-1 ring-[#07b6d3]/30"
+                                          : "border-neutral-200 bg-white hover:border-neutral-300"
+                                          }`}
+                                      >
+                                        <span
+                                          className="size-4 shrink-0 rounded-full border border-black/15"
+                                          style={{ backgroundColor: option.previewHex }}
+                                          aria-hidden="true"
+                                        />
+                                        <span className="truncate text-xs font-medium text-[#0f1422]">
+                                          {option.label}
+                                        </span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Dynamic Grille Extrusion Specifications Card (IMP-MS73 / QAD-TC88.1, QAD-TC88.2) */}
+                            {effectiveSelectedAddon === "grill" && activeGrilleBOM && (
+                              <div className="mt-3 p-3 rounded-[16px] bg-neutral-900/80 border border-neutral-700 text-xs text-white">
+                                <div className="flex items-center justify-between mb-2">
+                                  <span className="font-semibold text-teal-300">
+                                    Grille Extrusion Specifications
+                                  </span>
+                                  <span className="font-mono text-teal-400 font-bold">
+                                    {activeGrilleBOM.totalLinearMeters.toFixed(2)} m Total
+                                  </span>
+                                </div>
+
+                                <div className="space-y-1 text-neutral-300 text-[11px]">
+                                  <div className="flex justify-between">
+                                    <span>Vertical Bars:</span>
+                                    <span className="font-mono text-white">
+                                      {activeGrilleBOM.verticalBars.barCount} pcs @ {activeGrilleBOM.verticalBars.cutLengthMm}mm ({activeGrilleBOM.verticalBars.totalLinearM.toFixed(2)}m)
+                                    </span>
+                                  </div>
+
+                                  <div className="flex justify-between">
+                                    <span>Horizontal Bars:</span>
+                                    <span className="font-mono text-white">
+                                      {activeGrilleBOM.horizontalBars.barCount} pcs @ {activeGrilleBOM.horizontalBars.cutLengthMm}mm ({activeGrilleBOM.horizontalBars.totalLinearM.toFixed(2)}m)
+                                    </span>
+                                  </div>
+
+                                  {activeGrilleBOM.perimeterRails && (
+                                    <div className="flex justify-between">
+                                      <span>Perimeter Rails:</span>
+                                      <span className="font-mono text-white">
+                                        4 rails ({activeGrilleBOM.perimeterRails.totalLinearM.toFixed(2)}m)
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                )}
+
+                {/* Hardware & Accessories Accordion (IMP-MS76) */}
+                {accessorySlots.length > 0 && (
+                  <div className="bg-[#f5f5f5]/30 border border-white rounded-[20px] shadow-[0px_0px_5px_0px_rgba(0,0,0,0.25)] overflow-hidden transition-colors">
+                    <button
+                      type="button"
+                      onClick={() => toggleAccordion("Hardware & Accessories")}
+                      className="w-full p-6 flex justify-between items-center text-left cursor-pointer"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="text-[#0f1422] text-[18px] font-medium tracking-[-0.342px]">
+                          Hardware & Accessories
+                        </span>
+                        {totalAccessoryPriceDelta !== 0 && (
+                          <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-cyan-50 text-[#07b6d3] border border-cyan-200">
+                            {totalAccessoryPriceDelta > 0
+                              ? `+₱${totalAccessoryPriceDelta.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                              : `-₱${Math.abs(totalAccessoryPriceDelta).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                          </span>
+                        )}
+                      </div>
+                      <motion.div
+                        animate={{ rotate: openAccordions.includes("Hardware & Accessories") ? 180 : 0 }}
+                        transition={{ duration: 0.25, ease: "easeInOut" }}
+                      >
+                        <Image
+                          src="/visualization/dropdown-btn.svg"
+                          alt="Toggle"
+                          width={20}
+                          height={20}
+                        />
+                      </motion.div>
+                    </button>
+
+                    <AnimatePresence initial={false}>
+                      {openAccordions.includes("Hardware & Accessories") && (
+                        <motion.div
+                          key="hardware-content"
+                          initial={{ height: 0 }}
+                          animate={{ height: "auto" }}
+                          exit={{ height: 0 }}
+                          transition={{ duration: 0.3, ease: [0.04, 0.62, 0.23, 0.98] }}
+                          className="overflow-hidden"
+                        >
+                          <div className="px-6 pb-6 flex flex-col gap-6">
+                            {accessorySlots.map((slot) => {
+                              const slotId = slot.componentId || slot.componentKey;
+                              const currentSelected = selectedAccessories[slotId];
+                              const slotCategory = slot.accessoryCategory || "handle";
+                              const slotAllowedIds = slot.allowedAccessoryIds ?? ((slot as Record<string, unknown>).allowed_accessory_ids as string[] | undefined);
+                              const posOptions = slot.positionOptions ?? ((slot as Record<string, unknown>).position_options as AccessoryPositionOptions | undefined);
+
+                              const matchingAccessories = structuralDefinition?.template.modelStrategy === "Fixed" ? [] : availableAccessories.filter((acc) =>
+                                (slotAllowedIds ?? []).includes(acc.productId) && acc.accessoryCategory === slotCategory && Boolean(acc.previewGlbUrl)
+                              );
+
+                              const selectedAccessoryId = currentSelected?.accessoryId ?? "default";
+                              const selectedFinish = currentSelected?.finish ?? (alumFinish === "white" ? "Brushed Chrome" : "Matte Black");
+                              const currentHoriz = currentSelected?.horizontalPosition ?? posOptions?.defaultHorizontal ?? "right";
+                              const currentVert = currentSelected?.verticalPosition ?? posOptions?.defaultVertical ?? "up";
+
+                              return (
+                                <div key={slotId} className="flex flex-col gap-4 p-4 rounded-[16px] bg-white border border-neutral-200/80 shadow-xs">
+                                  <div className="flex items-center justify-between border-b border-neutral-100 pb-2">
+                                    <div className="flex flex-col">
+                                      <span className="text-sm font-semibold text-[#0f1422]">
+                                        {slot.componentName || "Hardware Slot"}
+                                      </span>
+                                      <span className="text-[11px] text-neutral-500 capitalize">
+                                        Category: {slotCategory}
+                                      </span>
+                                    </div>
+                                    {currentSelected && currentSelected.accessoryId !== "default" && currentSelected.price > 0 && (
+                                      <span className="text-xs font-semibold text-[#07b6d3]">
+                                        +₱{currentSelected.price.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <div className="flex flex-col gap-2">
+                                    <span className="text-xs font-medium text-neutral-700">Model Selection</span>
+                                    {structuralDefinition?.template.modelStrategy === "Fixed" && (
+                                      <p className="text-xs text-neutral-600">Accessory replacement is unavailable for this fixed model preview.</p>
+                                    )}
+                                    {pendingAccessoryIds[slotId] && (
+                                      <p role="status" className="text-xs text-neutral-600">Loading accessory model before applying selection...</p>
+                                    )}
+                                    {accessoryErrors[slotId] && (
+                                      <p role="alert" className="text-xs text-red-600">{accessoryErrors[slotId]}</p>
+                                    )}
+                                    <div className="grid grid-cols-1 gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleSelectAccessory(slotId, slotCategory, {
+                                          id: "default",
+                                          name: slot.componentName || "Standard Hardware",
+                                          price: 0,
+                                        })}
+                                        aria-pressed={selectedAccessoryId === "default"}
+                                        className={cn(
+                                          "flex items-center justify-between p-3 rounded-[10px] border text-left transition-all cursor-pointer",
+                                          selectedAccessoryId === "default"
+                                            ? "border-[#07b6d3] bg-[#07b6d3]/5 ring-1 ring-[#07b6d3]/30"
+                                            : "border-neutral-200 bg-white hover:border-neutral-300"
+                                        )}
+                                      >
+                                        <div className="flex flex-col">
+                                          <span className="text-xs font-semibold text-[#0f1422]">
+                                            Standard Hardware (Included)
+                                          </span>
+                                          <span className="text-[11px] text-neutral-500">
+                                            Default catalog component
+                                          </span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                          <span className="text-xs font-medium text-neutral-600">Included</span>
+                                          <div
+                                            className={cn(
+                                              "size-4 rounded-full border flex items-center justify-center",
+                                              selectedAccessoryId === "default" ? "border-[#07b6d3] bg-[#07b6d3]" : "border-neutral-300"
+                                            )}
+                                          >
+                                            {selectedAccessoryId === "default" && <div className="size-1.5 rounded-full bg-white" />}
+                                          </div>
+                                        </div>
+                                      </button>
+
+                                      {matchingAccessories.map((acc) => {
+                                        const isSelected = selectedAccessoryId === acc.productId;
+                                        return (
+                                          <button
+                                            key={acc.productId}
+                                            type="button"
+                                            onClick={() => handleSelectAccessory(slotId, slotCategory, {
+                                              id: acc.productId,
+                                              name: acc.productName,
+                                              price: acc.basePrice,
+                                              glbUrl: acc.previewGlbUrl,
+                                            })}
+                                            aria-pressed={isSelected}
+                                            className={cn(
+                                              "flex items-center justify-between p-3 rounded-[10px] border text-left transition-all cursor-pointer",
+                                              isSelected
+                                                ? "border-[#07b6d3] bg-[#07b6d3]/5 ring-1 ring-[#07b6d3]/30"
+                                                : "border-neutral-200 bg-white hover:border-neutral-300"
+                                            )}
+                                          >
+                                            <div className="flex flex-col">
+                                              <span className="text-xs font-semibold text-[#0f1422]">
+                                                {acc.productName}
+                                              </span>
+                                              <span className="text-[11px] text-neutral-500">
+                                                {acc.description || "Modular upgrade"}
+                                              </span>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                              <span className="text-xs font-medium text-neutral-800">
+                                                +₱{acc.basePrice.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                                              </span>
+                                              <div
+                                                className={cn(
+                                                  "size-4 rounded-full border flex items-center justify-center",
+                                                  isSelected ? "border-[#07b6d3] bg-[#07b6d3]" : "border-neutral-300"
+                                                )}
+                                              >
+                                                {isSelected && <div className="size-1.5 rounded-full bg-white" />}
+                                              </div>
+                                            </div>
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+
+                                  {posOptions?.allowHorizontalToggle && (
+                                    <div className="flex items-center justify-between pt-2 border-t border-neutral-100">
+                                      <span className="text-xs font-medium text-neutral-700">
+                                        Handing / Side:
+                                      </span>
+                                      <div className="flex rounded-[8px] border border-neutral-200 overflow-hidden bg-neutral-100 p-0.5">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleToggleAccessoryHanding(slotId, "left")}
+                                          className={cn(
+                                            "px-3 py-1 text-xs font-medium rounded-[6px] transition-all cursor-pointer",
+                                            currentHoriz === "left"
+                                              ? "bg-[#0f1422] text-white shadow-xs"
+                                              : "text-neutral-600 hover:text-black"
+                                          )}
+                                        >
+                                          Left Side
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleToggleAccessoryHanding(slotId, "right")}
+                                          className={cn(
+                                            "px-3 py-1 text-xs font-medium rounded-[6px] transition-all cursor-pointer",
+                                            currentHoriz === "right"
+                                              ? "bg-[#0f1422] text-white shadow-xs"
+                                              : "text-neutral-600 hover:text-black"
+                                          )}
+                                        >
+                                          Right Side
+                                        </button>
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {posOptions?.allowVerticalToggle && (
+                                    <div className="flex items-center justify-between pt-2 border-t border-neutral-100">
+                                      <span className="text-xs font-medium text-neutral-700">
+                                        Mounting Height:
+                                      </span>
+                                      <div className="flex rounded-[8px] border border-neutral-200 overflow-hidden bg-neutral-100 p-0.5">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleToggleAccessoryElevation(slotId, "bottom")}
+                                          className={cn(
+                                            "px-3 py-1 text-xs font-medium rounded-[6px] transition-all cursor-pointer",
+                                            currentVert === "bottom"
+                                              ? "bg-[#0f1422] text-white shadow-xs"
+                                              : "text-neutral-600 hover:text-black"
+                                          )}
+                                        >
+                                          Bottom
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleToggleAccessoryElevation(slotId, "up")}
+                                          className={cn(
+                                            "px-3 py-1 text-xs font-medium rounded-[6px] transition-all cursor-pointer",
+                                            currentVert === "up"
+                                              ? "bg-[#0f1422] text-white shadow-xs"
+                                              : "text-neutral-600 hover:text-black"
+                                          )}
+                                        >
+                                          Up / Mid
+                                        </button>
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  <div className="flex flex-col gap-2 pt-2 border-t border-neutral-100">
+                                    <span className="text-xs font-medium text-neutral-700">
+                                      Hardware Finish
+                                    </span>
+                                    <div className="grid grid-cols-2 gap-2">
+                                      {HARDWARE_FINISH_OPTIONS.map((fOption) => {
+                                        const isSelected = selectedFinish === fOption.id;
+                                        return (
+                                          <button
+                                            key={fOption.id}
+                                            type="button"
+                                            onClick={() => handleChangeAccessoryFinish(slotId, fOption.id)}
+                                            aria-pressed={isSelected}
+                                            className={cn(
+                                              "flex items-center gap-2 rounded-[10px] border p-2 text-left transition-all cursor-pointer",
+                                              isSelected
+                                                ? "border-[#07b6d3] bg-[#07b6d3]/5 ring-1 ring-[#07b6d3]/30"
+                                                : "border-neutral-200 bg-white hover:border-neutral-300"
+                                            )}
+                                          >
+                                            <span
+                                              className="size-4 shrink-0 rounded-full border border-black/15 shadow-2xs"
+                                              style={{ backgroundColor: fOption.previewHex }}
+                                              aria-hidden="true"
+                                            />
+                                            <span className="truncate text-xs font-medium text-[#0f1422]">
+                                              {fOption.label}
+                                            </span>
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                )}
 
                 {/* 4. Object Aware Occlusion Accordion */}
                 <div className="bg-[#f5f5f5]/30 border border-white rounded-[20px] shadow-[0px_0px_5px_0px_rgba(0,0,0,0.25)] overflow-hidden transition-colors">
@@ -4302,6 +6564,15 @@ export function ProductModelWorkspace({
           <button type="button" onClick={handleFlip} className="min-h-11 rounded-[14px] bg-white/10 px-3 text-xs text-white focus-visible:outline-2 focus-visible:outline-[#07b6d3]">Flip</button>
           <button type="button" onClick={handleReset} className="min-h-11 rounded-[14px] bg-white/10 px-3 text-xs text-white focus-visible:outline-2 focus-visible:outline-[#07b6d3]">Reset</button>
           <button type="button" onClick={handleRemove} className="min-h-11 rounded-[14px] bg-[#c50000] px-3 text-xs text-white focus-visible:outline-2 focus-visible:outline-white">Remove</button>
+          {materialCustomizationGroups.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setIsMobileFinishesSheetOpen(true)}
+              className="min-h-11 rounded-[14px] bg-[#07b6d3] px-3 text-xs font-medium text-white focus-visible:outline-2 focus-visible:outline-white"
+            >
+              Finishes
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setIsMobileControlsOpen((open) => !open)}
@@ -4315,43 +6586,57 @@ export function ProductModelWorkspace({
       )}
 
       {/* ── Bottom Step Navigation Bar ── */}
-      <div className={shouldLockMobileEditor ? "hidden" : "bg-[#f5f5f5] w-full rounded-[20px] p-5 flex flex-col sm:flex-row items-center justify-between gap-4 select-none shadow-sm mt-4"}>
-        {/* Back Button */}
-        <button
-          type="button"
-          onClick={onBack}
-          className="w-full sm:w-auto bg-[#0f1422] hover:bg-black text-white font-normal text-base sm:text-[20px] tracking-[-0.38px] leading-[1.4] px-6 py-3.5 rounded-[25px] transition-colors cursor-pointer text-center"
-        >
-          Back
-        </button>
-
-        {/* Action Buttons Right */}
-        <div className="w-full sm:w-auto flex flex-col sm:flex-row items-center gap-3 sm:gap-5">
+      <div className={shouldLockMobileEditor ? "hidden" : "flex flex-col gap-2 mt-4 select-none"}>
+        {productBuildError && (
+          <div className="w-full rounded-[14px] border border-red-200 bg-red-50 p-4 text-sm text-red-700 flex items-center justify-between shadow-xs">
+            <span>{productBuildError}</span>
+            <button
+              type="button"
+              onClick={() => setProductBuildError(null)}
+              className="ml-3 text-red-500 hover:text-red-800 font-semibold text-xs cursor-pointer"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+        <div className="bg-[#f5f5f5] w-full rounded-[20px] p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm">
+          {/* Back Button */}
           <button
             type="button"
-            disabled={isCapturingSnapshot || !selectedProduct}
-            onClick={handleSaveSnapshot}
-            className="w-full sm:w-auto bg-transparent border border-[#0f1422] hover:bg-neutral-100 text-[#0f1422] font-normal text-base sm:text-[20px] tracking-[-0.38px] leading-[1.4] px-6 py-3.5 rounded-[25px] transition-colors cursor-pointer text-center"
+            onClick={onBack}
+            className="w-full sm:w-auto bg-[#0f1422] hover:bg-black text-white font-normal text-base sm:text-[20px] tracking-[-0.38px] leading-[1.4] px-6 py-3.5 rounded-[25px] transition-colors cursor-pointer text-center"
           >
-            Save Snapshot
+            Back
           </button>
-          <Button
-            type="button"
-            disabled={isCapturingSnapshot || !selectedProduct}
-            onClick={handleContinueToComparison}
-            variant="lightGradWhiteText"
-            value="Continue to Comparison"
-            leftIcon={null}
-            rightIcon={
-              <Image
-                src="/right_arrow.svg"
-                width={25}
-                height={25}
-                alt="Arrow right"
-              />
-            }
-            className="w-full sm:w-auto justify-center"
-          />
+
+          {/* Action Buttons Right */}
+          <div className="w-full sm:w-auto flex flex-col sm:flex-row items-center gap-3 sm:gap-5">
+            <button
+              type="button"
+              disabled={isCapturingSnapshot || (!selectedProduct && placedOverlays.length === 0)}
+              onClick={handleSaveSnapshot}
+              className="w-full sm:w-auto bg-transparent border border-[#0f1422] hover:bg-neutral-100 disabled:opacity-50 disabled:cursor-not-allowed text-[#0f1422] font-normal text-base sm:text-[20px] tracking-[-0.38px] leading-[1.4] px-6 py-3.5 rounded-[25px] transition-colors cursor-pointer text-center"
+            >
+              {isCapturingSnapshot ? "Saving Snapshot..." : "Save Snapshot"}
+            </button>
+            <Button
+              type="button"
+              disabled={isCapturingSnapshot || (!selectedProduct && placedOverlays.length === 0)}
+              onClick={handleContinueToComparison}
+              variant="lightGradWhiteText"
+              value={isCapturingSnapshot ? "Preparing Comparison..." : "Continue to Comparison"}
+              leftIcon={null}
+              rightIcon={
+                <Image
+                  src="/right_arrow.svg"
+                  width={25}
+                  height={25}
+                  alt="Arrow right"
+                />
+              }
+              className="w-full sm:w-auto justify-center"
+            />
+          </div>
         </div>
       </div>
 
@@ -4363,6 +6648,42 @@ export function ProductModelWorkspace({
         onAcknowledgeAndProceed={handleAcknowledgeAndProceed}
         onClose={() => setIsGuardrailModalOpen(false)}
       />
+
+      {/* ── Mobile Finishes and Materials Bottom Sheet (IMP-MS66, DSD-UI4) ── */}
+      {isMobileFinishesSheetOpen && materialCustomizationGroups.length > 0 && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:p-4">
+          <div className="w-full max-w-lg rounded-t-[20px] bg-white p-5 shadow-2xl max-h-[85vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-neutral-200">
+              <h3 className="text-base font-semibold text-[#0f1422]">Finishes and Materials</h3>
+              <button
+                type="button"
+                onClick={() => setIsMobileFinishesSheetOpen(false)}
+                className="rounded-full p-1 text-neutral-500 hover:bg-neutral-100"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="pt-4">
+              <MaterialCustomizerPanel
+                groups={materialCustomizationGroups}
+                selectedMaterials={selectedMaterials}
+                onSelectOption={handleSelectMaterialOption}
+                onResetDefaults={handleResetMaterialsToDefaults}
+                isMobile={true}
+              />
+            </div>
+            <div className="mt-4 pt-3 border-t border-neutral-100">
+              <button
+                type="button"
+                onClick={() => setIsMobileFinishesSheetOpen(false)}
+                className="w-full rounded-[14px] bg-[#0f1422] py-3 text-sm font-medium text-white"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Measurement Confirmation Modal (MS-08, IMP-MS47, IMP-MS50) ── */}
       {isMeasurementModalOpen && (
@@ -4411,12 +6732,12 @@ export function ProductModelWorkspace({
             (activeCalibrationMeta?.detectedCorners
               ? activeCalibrationMeta.detectedCorners.map((c) => ({ x: c[0], y: c[1] }))
               : spaceImageSession?.calibrationMeta?.verified_corners ??
-                (spaceImageSession?.calibrationMeta?.detectedCorners
-                  ? spaceImageSession.calibrationMeta.detectedCorners.map((c) => ({ x: c[0], y: c[1] }))
-                  : sessionContext?.spaceImageSession?.calibrationMeta?.verified_corners ??
-                    (sessionContext?.spaceImageSession?.calibrationMeta?.detectedCorners
-                      ? sessionContext.spaceImageSession.calibrationMeta.detectedCorners.map((c) => ({ x: c[0], y: c[1] }))
-                      : null)))
+              (spaceImageSession?.calibrationMeta?.detectedCorners
+                ? spaceImageSession.calibrationMeta.detectedCorners.map((c) => ({ x: c[0], y: c[1] }))
+                : sessionContext?.spaceImageSession?.calibrationMeta?.verified_corners ??
+                (sessionContext?.spaceImageSession?.calibrationMeta?.detectedCorners
+                  ? sessionContext.spaceImageSession.calibrationMeta.detectedCorners.map((c) => ({ x: c[0], y: c[1] }))
+                  : null)))
           }
           onConfirm={(corners, scaleResult, paperStandard) =>
             handlePaperPinConfirm(corners, scaleResult, paperStandard)
@@ -4501,6 +6822,7 @@ export function ProductModelWorkspace({
               setOverlaySize(getOverlaySizeFromDimensions(String(estimate.widthCm), String(estimate.heightCm)));
             }
 
+            setMeasurementCorners(corners);
             setPerspectiveCorners(corners);
             setYaw(0);
             setPitch(0);
@@ -4557,11 +6879,13 @@ type WorkspaceSnapshotOptions = {
   activeOcclusionObjects: SnapshotOcclusionObject[];
   manualMaskDataUrl?: string | null;
   perspectiveCorners?: QuadrilateralCorners | null;
+  planarFitRect?: { x: number; y: number; width: number; height: number } | null;
   rotateAngle: number;
   isFlipped: boolean;
   modelFilter: React.CSSProperties["filter"];
   generatedCanvasOverride?: HTMLCanvasElement | null;
   structuralDefinition: ProductStructuralDefinition | null;
+  productFacing: ProductFacing;
   yaw: number;
   pitch: number;
   lighting: LightingAnalysis | null;
@@ -4588,6 +6912,7 @@ async function captureWorkspaceCanvas({
   activeOcclusionObjects,
   manualMaskDataUrl,
   perspectiveCorners,
+  planarFitRect,
   rotateAngle,
   isFlipped,
   modelFilter,
@@ -4611,14 +6936,23 @@ async function captureWorkspaceCanvas({
     // is still the geometric center of the element for any rotation angle.
     const width = overlayElement.offsetWidth || overlayBounds.width;
     const height = overlayElement.offsetHeight || overlayBounds.height;
+    const liveCanvas = generatedCanvasOverride ?? overlayElement.querySelector("canvas");
+    let capturedCanvas: HTMLCanvasElement | null = null;
+    if (liveCanvas) {
+      capturedCanvas = document.createElement("canvas");
+      capturedCanvas.width = liveCanvas.width;
+      capturedCanvas.height = liveCanvas.height;
+      const captureContext = capturedCanvas.getContext("2d");
+      if (!captureContext) throw new Error("Snapshot rendering is not available in this browser.");
+      captureContext.drawImage(liveCanvas, 0, 0);
+    }
     overlayCapture = {
       centerX: overlayBounds.left - canvasBounds.left + overlayBounds.width / 2,
       centerY: overlayBounds.top - canvasBounds.top + overlayBounds.height / 2,
       width,
       height,
-      // querySelector is synchronous - grab the Three.js WebGL canvas now.
-      generatedCanvas:
-        generatedCanvasOverride ?? overlayElement.querySelector("canvas"),
+      // Freeze the chosen face before asynchronous background/mask loading.
+      generatedCanvas: capturedCanvas,
     };
   }
   // End synchronous DOM capture
@@ -4671,6 +7005,7 @@ async function captureWorkspaceCanvas({
       fallbackProductImageUrl,
       hasGeneratedProduct,
       perspectiveCorners,
+      planarFitRect,
       canvasBounds,
       rotateAngle,
       isFlipped,
@@ -4680,23 +7015,31 @@ async function captureWorkspaceCanvas({
 
   if (backgroundImage) {
     for (const object of activeOcclusionObjects) {
-      await drawMaskedBackgroundLayer({
-        outputWidth: canvasBounds.width,
-        outputHeight: canvasBounds.height,
-        context,
-        backgroundImage,
-        maskUrl: object.mask_url,
-      });
+      try {
+        await drawMaskedBackgroundLayer({
+          outputWidth: canvasBounds.width,
+          outputHeight: canvasBounds.height,
+          context,
+          backgroundImage,
+          maskUrl: object.mask_url,
+        });
+      } catch (occlusionErr) {
+        console.warn("[Snapshot] Occlusion layer failed to load, skipping:", occlusionErr);
+      }
     }
 
     if (manualMaskDataUrl) {
-      await drawMaskedBackgroundLayer({
-        outputWidth: canvasBounds.width,
-        outputHeight: canvasBounds.height,
-        context,
-        backgroundImage,
-        maskUrl: manualMaskDataUrl,
-      });
+      try {
+        await drawMaskedBackgroundLayer({
+          outputWidth: canvasBounds.width,
+          outputHeight: canvasBounds.height,
+          context,
+          backgroundImage,
+          maskUrl: manualMaskDataUrl,
+        });
+      } catch (manualMaskErr) {
+        console.warn("[Snapshot] Manual occlusion mask failed to load:", manualMaskErr);
+      }
     }
   }
 
@@ -4709,6 +7052,7 @@ async function drawSnapshotOverlay({
   fallbackProductImageUrl,
   hasGeneratedProduct,
   perspectiveCorners,
+  planarFitRect,
   canvasBounds,
   rotateAngle,
   isFlipped,
@@ -4721,6 +7065,7 @@ async function drawSnapshotOverlay({
   fallbackProductImageUrl: string;
   hasGeneratedProduct: boolean;
   perspectiveCorners?: QuadrilateralCorners | null;
+  planarFitRect?: { x: number; y: number; width: number; height: number } | null;
   canvasBounds?: { width: number; height: number };
   rotateAngle: number;
   isFlipped: boolean;
@@ -4735,9 +7080,18 @@ async function drawSnapshotOverlay({
       canvasBounds.height,
     );
 
+    const sourceWidth =
+      hasGeneratedProduct && generatedCanvas
+        ? generatedCanvas.width
+        : Math.max(1, Math.round(width));
+    const sourceHeight =
+      hasGeneratedProduct && generatedCanvas
+        ? generatedCanvas.height
+        : Math.max(1, Math.round(height));
+
     const offscreen = document.createElement("canvas");
-    offscreen.width = Math.max(1, Math.round(width));
-    offscreen.height = Math.max(1, Math.round(height));
+    offscreen.width = sourceWidth;
+    offscreen.height = sourceHeight;
     const offCtx = offscreen.getContext("2d");
 
     if (offCtx) {
@@ -4753,20 +7107,27 @@ async function drawSnapshotOverlay({
       if (hasGeneratedProduct && generatedCanvas) {
         offCtx.drawImage(generatedCanvas, 0, 0, offscreen.width, offscreen.height);
       } else {
-        const fallbackProductImage = await loadSnapshotImage(fallbackProductImageUrl);
-        drawObjectCoverImage(
-          offCtx,
-          fallbackProductImage,
-          0,
-          0,
-          offscreen.width,
-          offscreen.height,
-        );
+        try {
+          const fallbackProductImage = await loadSnapshotImage(fallbackProductImageUrl);
+          drawObjectCoverImage(
+            offCtx,
+            fallbackProductImage,
+            0,
+            0,
+            offscreen.width,
+            offscreen.height,
+          );
+        } catch (fallbackErr) {
+          console.warn("[Snapshot] Could not draw fallback warped product image:", fallbackErr);
+        }
       }
       offCtx.restore();
 
       context.save();
-      drawPerspectiveWarpedImage(context, offscreen, pixelCorners);
+      drawPerspectiveWarpedImage(
+        context, offscreen, pixelCorners, 16,
+        planarFitRect ? getPlanarFitImageBounds(planarFitRect, isFlipped) : null,
+      );
       context.restore();
       return;
     }
@@ -4795,15 +7156,19 @@ async function drawSnapshotOverlay({
       height,
     );
   } else {
-    const fallbackProductImage = await loadSnapshotImage(fallbackProductImageUrl);
-    drawObjectCoverImage(
-      context,
-      fallbackProductImage,
-      -width / 2,
-      -height / 2,
-      width,
-      height,
-    );
+    try {
+      const fallbackProductImage = await loadSnapshotImage(fallbackProductImageUrl);
+      drawObjectCoverImage(
+        context,
+        fallbackProductImage,
+        -width / 2,
+        -height / 2,
+        width,
+        height,
+      );
+    } catch (fallbackErr) {
+      console.warn("[Snapshot] Could not draw fallback product image:", fallbackErr);
+    }
   }
 
   context.restore();
@@ -4943,17 +7308,96 @@ function getCanvasImageSourceSize(image: CanvasImageSource) {
   };
 }
 
-function loadSnapshotImage(src: string) {
+function generateSafeUUID(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
+function loadSnapshotImage(src: string, timeoutMs: number = 9000): Promise<HTMLImageElement> {
   return new Promise<HTMLImageElement>((resolve, reject) => {
+    if (!src) {
+      reject(new Error("Unable to load an empty image source for the snapshot."));
+      return;
+    }
+
     const image = new window.Image();
+    let isSettled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const cleanup = () => {
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      image.onload = null;
+      image.onerror = null;
+    };
+
+    const attemptFetchFallback = async () => {
+      try {
+        const response = await fetch(src, { mode: "cors" });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const blob = await response.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        const fallbackImg = new window.Image();
+        fallbackImg.onload = () => {
+          cleanup();
+          resolve(fallbackImg);
+        };
+        fallbackImg.onerror = () => {
+          cleanup();
+          URL.revokeObjectURL(objectUrl);
+          reject(new Error("Unable to load an image for the snapshot."));
+        };
+        fallbackImg.src = objectUrl;
+      } catch {
+        cleanup();
+        reject(new Error("Unable to load an image for the snapshot."));
+      }
+    };
 
     if (/^https?:\/\//i.test(src)) {
       image.crossOrigin = "anonymous";
     }
 
-    image.onload = () => resolve(image);
-    image.onerror = () => reject(new Error("Unable to load an image for the snapshot."));
+    timer = setTimeout(() => {
+      if (!isSettled) {
+        isSettled = true;
+        cleanup();
+        reject(new Error("Image loading timed out for snapshot."));
+      }
+    }, timeoutMs);
+
+    image.onload = () => {
+      if (isSettled) return;
+      isSettled = true;
+      cleanup();
+      resolve(image);
+    };
+
+    image.onerror = () => {
+      if (isSettled) return;
+      if (/^https?:\/\//i.test(src)) {
+        void attemptFetchFallback();
+      } else {
+        isSettled = true;
+        cleanup();
+        reject(new Error("Unable to load an image for the snapshot."));
+      }
+    };
+
     image.src = src;
+    if (image.complete && image.naturalWidth > 0) {
+      isSettled = true;
+      cleanup();
+      resolve(image);
+    }
   });
 }
 
@@ -5098,23 +7542,6 @@ function getOutlineControlsStyle(
     top: `${resolvedBounds.top * 100}%`,
     width: `${resolvedBounds.width * 100}%`,
     height: `${resolvedBounds.height * 100}%`,
-  };
-}
-
-function getToolbarControlsStyle(
-  bounds: ProjectedModelBounds | null,
-): React.CSSProperties {
-  const resolvedBounds = bounds ?? {
-    left: 0.08,
-    top: 0.08,
-    width: 0.84,
-    height: 0.84,
-  };
-
-  return {
-    left: `${(resolvedBounds.left + resolvedBounds.width / 2) * 100}%`,
-    top: `${resolvedBounds.top * 100}%`,
-    transform: "translate(-50%, calc(-100% - 12px))",
   };
 }
 

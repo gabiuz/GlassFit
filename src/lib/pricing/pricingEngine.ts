@@ -14,7 +14,14 @@ import type {
   QuotationBOMGroupItem,
   QuotationBOMSummary,
   RawMaterial,
+  ComponentMaterialBinding,
+  DimensionBinding,
+  JalousieConfig,
 } from "./types";
+import { calculateGrilleLinearBOM } from "./grillePricingEngine";
+import { computeLouverBladeCount, computeLouverOperatorCount } from "@/lib/visualization/jalousieGeometryAnalyzer";
+import { computeDynamicBayCount, computeMullionCount } from "@/lib/visualization/bayReplicationEngine";
+import type { DynamicBayConfig, DynamicBayRole, ExpansionAnchorMode } from "@/lib/pricing/types";
 import type { PlacedOverlay, ProductStructuralDefinition } from "@/lib/visualization/types";
 
 export type {
@@ -24,15 +31,25 @@ export type {
 };
 
 export interface ComponentPricingInput {
+  componentId?: string;
   componentKey: string;
   componentName: string;
-  dimensionBinding: "WIDTH" | "HEIGHT" | "AREA" | "FIXED";
+  dimensionBinding: DimensionBinding;
   spanRatio: number;
   baseQuantity: number;
   isRemovable: boolean;
   togglePropertyKey?: string | null;
-  presentationCategory: "Framing" | "Glazing" | "Hardware" | "Consumable" | "Other";
+  presentationCategory: "Framing" | "Glazing" | "Hardware" | "Consumable" | "Other" | string;
   rawMaterial?: RawMaterial | null;
+  unitPrice?: number;
+  pricingMethod?: string;
+  jalousieConfig?: JalousieConfig | null;
+  bayRole?: DynamicBayRole | null;
+  bay_role?: DynamicBayRole | null;
+  componentType?: string;
+  component_key?: string;
+  component_id?: string;
+  [key: string]: unknown;
 }
 
 export interface CalculateBOMOptions {
@@ -40,12 +57,19 @@ export interface CalculateBOMOptions {
   heightMm: number;
   panelCount?: number;
   hasSill?: boolean;
+  removableStates?: Record<string, boolean>;
+  hatchCount?: number;
+  hatchTargetKeys?: string[];
+  addonMountingSide?: "front" | "back";
   aluminumScrapRate?: number; // default 0.12 (12%)
   glassScrapRate?: number; // default 0.10 (10%)
   laborFloor?: number; // default 750.00 PHP
   laborRate?: number; // default 0.25 (25%)
   contractorMarginRate?: number; // default 0.25 (25%)
   structuralWaiver?: boolean;
+  dynamicBayConfig?: DynamicBayConfig | null;
+  bayCount?: number;
+  expansionAnchorMode?: ExpansionAnchorMode;
 }
 
 export const DEFAULT_AL_SCRAP = 0.12;
@@ -53,6 +77,80 @@ export const DEFAULT_GL_SCRAP = 0.10;
 export const DEFAULT_LABOR_FLOOR = 0.00;
 export const DEFAULT_LABOR_RATE = 0.00;
 export const DEFAULT_MARGIN_RATE = 0.00;
+
+/** IMP-MS85 / PRD-F10 / SDD-C7: preserve material and fabrication attribution. */
+export interface ConsolidatedBOMItemDetail {
+  materialCode: string;
+  description: string;
+  category: "Framing" | "Glazing" | "Hardware" | "Consumable";
+  finishType: string;
+  totalQuantity: number;
+  unit: string;
+  unitPrice: number;
+  wasteFactor?: number;
+  subtotal: number;
+  contributingComponents: NonNullable<BOMItemDetail["componentTrace"]>[];
+}
+
+export function consolidateBOMItems(
+  items: BOMItemDetail[],
+  category: ConsolidatedBOMItemDetail["category"],
+): ConsolidatedBOMItemDetail[] {
+  const grouped = new Map<string, ConsolidatedBOMItemDetail>();
+  for (const item of items) {
+    // Different finishes, rates and waste policies must never silently merge.
+    const key = JSON.stringify([item.code, item.finish_type ?? "Standard", item.unit, item.unit_price, item.waste_factor]);
+    const existing = grouped.get(key);
+    if (existing) {
+      existing.totalQuantity = round4(existing.totalQuantity + item.quantity);
+      existing.subtotal = round2(existing.subtotal + item.subtotal);
+      if (item.componentTrace) existing.contributingComponents.push(item.componentTrace);
+    } else {
+      grouped.set(key, {
+        materialCode: item.code,
+        description: item.description,
+        category,
+        finishType: item.finish_type ?? "Standard",
+        totalQuantity: item.quantity,
+        unit: item.unit,
+        unitPrice: item.unit_price,
+        wasteFactor: item.waste_factor,
+        subtotal: item.subtotal,
+        contributingComponents: item.componentTrace ? [item.componentTrace] : [],
+      });
+    }
+  }
+  return [...grouped.values()];
+}
+
+/** IMP-MS85 / QAD-TC100.1, .3, .8-.10: isolate physical cuts from discrete counts. */
+export function computeExtrusionLinearMeters(params: {
+  dimensionBinding: "WIDTH" | "HEIGHT" | "PERIMETER";
+  apertureWidthM: number;
+  apertureHeightM: number;
+  spanRatio: number;
+  baseQuantity: number;
+  bayRole?: DynamicBayRole | null;
+  effectiveBayCount?: number;
+  effectiveMullionCount?: number;
+}): { linearMeters: number; pieceCount: number } {
+  const span = Number.isFinite(params.spanRatio) && params.spanRatio > 0 ? params.spanRatio : 1;
+  const role = params.bayRole;
+  const continuous = role === "OUTER_HEAD" || role === "OUTER_SILL" || role === "REMOVABLE_SILL" ||
+    role === "OUTER_JAMB_LEFT" || role === "OUTER_JAMB_RIGHT";
+  // Only an explicit valid dual-profile count is accepted; contaminated counts reset to one.
+  const count = continuous ? (params.baseQuantity === 2 ? 2 : 1)
+    : role === "BAY_DIVIDER" ? (params.effectiveMullionCount ?? 1)
+    : Number.isFinite(params.baseQuantity) && params.baseQuantity > 0 ? params.baseQuantity : 1;
+  const length = role === "OUTER_HEAD" || role === "OUTER_SILL" || role === "REMOVABLE_SILL"
+    ? params.apertureWidthM
+    : role === "OUTER_JAMB_LEFT" || role === "OUTER_JAMB_RIGHT" || role === "BAY_DIVIDER"
+      ? params.apertureHeightM
+      : params.dimensionBinding === "WIDTH" ? params.apertureWidthM
+        : params.dimensionBinding === "HEIGHT" ? params.apertureHeightM
+          : 2 * (params.apertureWidthM + params.apertureHeightM);
+  return { linearMeters: round4(length * span * count), pieceCount: count };
+}
 
 /**
  * Pure parametric Bill-of-Materials calculation engine.
@@ -82,6 +180,13 @@ export function calculateParametricBOM(
   const isCrabbingRisk = aspectRatio > 1.2;
   const isSpanLimitExceeded = panelCount === 2 && options.widthMm >= 2400;
 
+  const isBayReplicationActive = Boolean(options.dynamicBayConfig?.enabled);
+  const nominalPitch = options.dynamicBayConfig?.nominal_bay_pitch_mm ?? options.dynamicBayConfig?.nominalBayPitchMm ?? 600;
+  const effectiveBayCount = isBayReplicationActive
+    ? Math.max(1, options.bayCount ?? computeDynamicBayCount(options.widthMm, nominalPitch))
+    : 1;
+  const effectiveMullionCount = isBayReplicationActive ? computeMullionCount(effectiveBayCount) : 0;
+
   const framingItems: BOMItemDetail[] = [];
   const glazingItems: BOMItemDetail[] = [];
   const hardwareItems: BOMItemDetail[] = [];
@@ -97,68 +202,216 @@ export function calculateParametricBOM(
 
   // Process explicitly mapped components if provided
   for (const comp of components) {
-    if (comp.isRemovable && comp.togglePropertyKey === "has_sill" && !hasSill) {
-      // Component is omitted (e.g., bottom sill removed)
+    const rawComp = comp as Record<string, unknown>;
+    const compKey: string =
+      (typeof comp.componentKey === "string" && comp.componentKey) ||
+      (typeof rawComp.component_key === "string" && rawComp.component_key) ||
+      (typeof comp.componentId === "string" && comp.componentId) ||
+      (typeof rawComp.component_id === "string" && rawComp.component_id) ||
+      "";
+    const toggleKey = comp.togglePropertyKey || `has_${compKey.replace(/-/g, "_")}`;
+    const legacyLabel = `${compKey} ${comp.componentName}`.toLowerCase().replace(/[_-]+/g, " ");
+    const isSashPart = /sash|leaf|panel|interlock|lockstile|cabinet|plinth/.test(legacyLabel);
+    const legacyRole: DynamicBayRole | null = isSashPart ? null
+      : /window sill|projecting.*sill|removable.*sill/.test(legacyLabel) ? "REMOVABLE_SILL"
+        : /frame.*bottom|bottom.*frame/.test(legacyLabel) ? "OUTER_SILL"
+          : /head|frame.*top|top.*frame/.test(legacyLabel) ? "OUTER_HEAD"
+            : /left.*jamb|jamb.*left|frame.*left/.test(legacyLabel) ? "OUTER_JAMB_LEFT"
+              : /right.*jamb|jamb.*right|frame.*right/.test(legacyLabel) ? "OUTER_JAMB_RIGHT"
+                : /center.*mullion|frame.*center/.test(legacyLabel) ? "BAY_DIVIDER" : null;
+    const compRole = comp.bayRole || comp.bay_role || legacyRole;
+    const isSillComponent = compRole !== "OUTER_SILL" && (
+      compRole === "REMOVABLE_SILL" ||
+      comp.togglePropertyKey === "has_sill" ||
+      toggleKey.includes("sill") ||
+      compKey.includes("sill") ||
+      String(comp.componentName || "").toLowerCase().includes("sill"));
+
+    const isExcluded =
+      (isSillComponent && hasSill === false) ||
+      (compRole !== "OUTER_SILL" && comp.isRemovable && options.removableStates && (
+        options.removableStates[comp.componentKey] === false ||
+        (comp.componentId && options.removableStates[comp.componentId] === false) ||
+        (comp.togglePropertyKey && options.removableStates[comp.togglePropertyKey] === false)
+      ));
+
+    if (isExcluded) {
+      // Component is omitted (e.g. bottom sill or custom configured removable part)
+      continue;
+    }
+
+    const isInterior = options.addonMountingSide !== "front";
+    const isHatchPart = compKey.toLowerCase().includes("hatch") ||
+      Boolean(comp.componentName && comp.componentName.toLowerCase().includes("hatch"));
+
+    if (isHatchPart && !isInterior) {
+      // Access hatches are strictly suppressed when mounted on the exterior (IMP-MS87)
       continue;
     }
 
     const mat = comp.rawMaterial;
-    const unitPrice = mat ? mat.unit_price : 0;
-    const wasteFactor = mat ? mat.waste_allowance : 0;
+    const isFixedComponent = comp.pricingMethod === "Fixed" || (typeof comp.unitPrice === "number" && comp.unitPrice > 0);
 
-    let computedQty = 0;
-    let unitLabel = mat ? mat.billing_unit : "pc";
+    // Use direct component unit price if specified as fixed; otherwise use linked raw material rate
+    const unitPrice = isFixedComponent && typeof comp.unitPrice === "number"
+      ? comp.unitPrice
+      : (mat ? mat.unit_price : 0);
 
-    if (mat && mat.category === "Glass" && mat.billing_unit === "pc") {
-      computedQty = comp.baseQuantity;
-      unitLabel = "pc";
-    } else {
-      switch (comp.dimensionBinding) {
-        case "WIDTH":
-          computedQty = widthM * comp.spanRatio * comp.baseQuantity;
-          unitLabel = "m";
-          break;
-        case "HEIGHT":
-          computedQty = heightM * comp.spanRatio * comp.baseQuantity;
-          unitLabel = "m";
-          break;
-        case "AREA":
-          computedQty = widthM * heightM * comp.spanRatio * comp.baseQuantity;
-          unitLabel = "sqm";
-          break;
-        case "FIXED":
-        default:
-          computedQty = comp.baseQuantity;
-          unitLabel = mat ? mat.billing_unit : "pc";
-          break;
+    const wasteFactor = isFixedComponent ? 0 : (mat ? mat.waste_allowance : 0);
+    let computedQty = comp.baseQuantity;
+    let unitLabel = "pc";
+    let pieceCount = comp.baseQuantity;
+
+    const compKeyLower = compKey.toLowerCase();
+    const spanRatio = typeof comp.spanRatio === "number" && comp.spanRatio > 0 ? comp.spanRatio : 1;
+    const isMullion = isBayReplicationActive && (
+      compRole === "BAY_DIVIDER" ||
+      compKeyLower.includes("center") ||
+      compKeyLower.includes("mullion")
+    );
+
+    if (isMullion) {
+      if (comp.dimensionBinding === "HEIGHT" || comp.pricingMethod === "Per Length") {
+        computedQty = heightM * spanRatio * effectiveMullionCount;
+        pieceCount = effectiveMullionCount;
+        unitLabel = "m";
+      } else {
+        computedQty = effectiveMullionCount * (comp.baseQuantity || 1);
+        unitLabel = "pc";
       }
+    } else if (comp.dimensionBinding === "LOUVER_BLADE") {
+      const pitchMm = comp.jalousieConfig?.pitch_mm ?? comp.jalousieConfig?.pitchMm ?? 175;
+      computedQty = computeLouverBladeCount(options.heightMm, pitchMm) * spanRatio * effectiveBayCount;
+      unitLabel = "pc";
+    } else if (comp.dimensionBinding === "LOUVER_OPERATOR") {
+      const pitchMm = comp.jalousieConfig?.pitch_mm ?? comp.jalousieConfig?.pitchMm ?? 175;
+      const bladesPerOp = comp.jalousieConfig?.blades_per_operator ?? comp.jalousieConfig?.bladesPerOperator ?? 4;
+      const louverCount = computeLouverBladeCount(options.heightMm, pitchMm);
+      computedQty = computeLouverOperatorCount(louverCount, bladesPerOp) * spanRatio * effectiveBayCount;
+      unitLabel = "pc";
+    } else if (isBayReplicationActive && (compRole === "BAY_INFILL" || compRole === "BAY_HARDWARE")) {
+      computedQty = comp.baseQuantity * effectiveBayCount;
+      unitLabel = mat?.billing_unit || "pc";
+    } else if (!isFixedComponent && mat) {
+      if (mat.category === "Glass" && mat.billing_unit === "pc") {
+        computedQty = comp.baseQuantity;
+        unitLabel = "pc";
+      } else {
+        switch (comp.dimensionBinding) {
+          case "WIDTH":
+          case "HEIGHT":
+          case "PERIMETER": {
+            const cut = computeExtrusionLinearMeters({
+              dimensionBinding: comp.dimensionBinding,
+              apertureWidthM: widthM,
+              apertureHeightM: heightM,
+              spanRatio,
+              baseQuantity: comp.baseQuantity,
+              bayRole: compRole,
+              effectiveMullionCount: isBayReplicationActive ? effectiveMullionCount : undefined,
+            });
+            computedQty = cut.linearMeters;
+            pieceCount = cut.pieceCount;
+            unitLabel = "m";
+            break;
+          }
+          case "AREA":
+            computedQty = widthM * heightM * comp.spanRatio * comp.baseQuantity;
+            unitLabel = "sqm";
+            break;
+          case "GRILLE_LINEAR": {
+            const grilleBOM = calculateGrilleLinearBOM({
+              widthMm: options.widthMm,
+              heightMm: options.heightMm,
+              includePerimeterFrame: false,
+              grilleRawMaterial: {
+                id: mat?.id || "grille-mat",
+                material_code: mat?.material_code || "GRILLE-EXT",
+                description: mat?.description || "Grille Bar",
+                unit_price: unitPrice,
+                waste_allowance: wasteFactor,
+              },
+            });
+            computedQty = round2(grilleBOM.verticalBars.totalLinearM + grilleBOM.horizontalBars.totalLinearM) * comp.spanRatio * comp.baseQuantity;
+            unitLabel = "m";
+            break;
+          }
+          case "FIXED":
+          default: {
+            const isHatchPart = comp.componentKey.toLowerCase().includes("hatch") ||
+              Boolean(comp.componentName && comp.componentName.toLowerCase().includes("hatch"));
+            const effectiveHatchCount = isInterior ? (options.hatchCount ?? 0) : 0;
+            const hatchMultiplier = (comp.dimensionBinding === "FIXED" && isHatchPart && effectiveHatchCount > 0)
+              ? effectiveHatchCount
+              : (isHatchPart && !isInterior ? 0 : 1);
+            computedQty = comp.baseQuantity * hatchMultiplier;
+            unitLabel = mat.billing_unit || "pc";
+            break;
+          }
+        }
+      }
+    } else if (isFixedComponent) {
+      const isHatchPart = comp.componentKey.toLowerCase().includes("hatch") ||
+        Boolean(comp.componentName && comp.componentName.toLowerCase().includes("hatch"));
+      const effectiveHatchCount = isInterior ? (options.hatchCount ?? 0) : 0;
+      const hatchMultiplier = (comp.dimensionBinding === "FIXED" && isHatchPart && effectiveHatchCount > 0)
+        ? effectiveHatchCount
+        : (isHatchPart && !isInterior ? 0 : 1);
+      computedQty = comp.baseQuantity * hatchMultiplier;
+      unitLabel = "pc";
     }
 
     const itemSubtotal = round2(computedQty * unitPrice);
 
+    let itemDesc = (isFixedComponent && comp.componentName) ? comp.componentName : (mat ? mat.description : comp.componentName);
+    if (isMullion) {
+      itemDesc = `${effectiveMullionCount}x Center Mullions`;
+    } else if (comp.dimensionBinding === "LOUVER_BLADE") {
+      itemDesc = `${computedQty}x Glass Louver Blades`;
+    } else if (comp.dimensionBinding === "LOUVER_OPERATOR") {
+      itemDesc = `${computedQty}x Window Operators`;
+    }
+
     const itemDetail: BOMItemDetail = {
       code: mat ? mat.material_code : comp.componentKey,
-      description: mat ? mat.description : comp.componentName,
+      description: itemDesc,
       quantity: round4(computedQty),
       unit: unitLabel,
       unit_price: unitPrice,
       waste_factor: wasteFactor,
       subtotal: itemSubtotal,
+      finish_type: mat?.finish_type,
+      componentTrace: {
+        componentKey: compKey,
+        componentName: compRole === "OUTER_SILL" ? "Bottom Frame Rail"
+          : compRole === "REMOVABLE_SILL" ? "Projecting Exterior Sill" : comp.componentName,
+        pieceCount: unitLabel === "m" ? pieceCount : computedQty,
+        ...(unitLabel === "m" && pieceCount > 0 ? { unitCutLength: round4(computedQty / pieceCount) } : {}),
+        subtotalQuantity: round4(computedQty),
+      },
     };
 
-    if (comp.presentationCategory === "Framing") {
+    // FIX-UI11-V4: A bound material is authoritative when an imported component's
+    // presentation category disagrees with the material actually being charged.
+    const pricingCategory = mat?.category === "Glass" ? "Glazing"
+      : mat?.category === "Aluminum" ? "Framing"
+      : mat?.category === "Hardware" ? "Hardware"
+      : mat?.category === "Consumable" ? "Consumable"
+      : comp.presentationCategory;
+
+    if (pricingCategory === "Framing") {
       framingItems.push(itemDetail);
       rawFramingSubtotal += itemSubtotal;
       if (unitLabel === "m") {
         totalLinearMetersFraming += computedQty;
       }
-    } else if (comp.presentationCategory === "Glazing") {
+    } else if (pricingCategory === "Glazing") {
       glazingItems.push(itemDetail);
       rawGlazingSubtotal += itemSubtotal;
       if (unitLabel === "sqm") {
         glazingAreaSqm += computedQty;
       }
-    } else if (comp.presentationCategory === "Hardware") {
+    } else if (pricingCategory === "Hardware") {
       hardwareItems.push(itemDetail);
       hardwareSubtotal += itemSubtotal;
     } else {
@@ -209,7 +462,7 @@ export function calculateParametricBOM(
   ];
 
   const finishType = components.find(c => c.presentationCategory === "Framing" && c.rawMaterial)?.rawMaterial?.finish_type || "Analok";
-  const glassDesc = glazingItems[0]?.description || "6mm Tinted Bronze Float Glass";
+  const glassDesc = glazingItems[0]?.description || "None";
 
   const frozenDetails: FrozenPricingDetails = {
     width_m: widthM,
@@ -228,7 +481,7 @@ export function calculateParametricBOM(
     total_estimate: finalQuotation,
   };
 
-  const totalGlazingQty = glazingAreaSqm > 0 ? round2(glazingAreaSqm) : (glazingItems.reduce((sum, g) => sum + g.quantity, 0) || 1);
+  const totalGlazingQty = glazingAreaSqm > 0 ? round2(glazingAreaSqm) : glazingItems.reduce((sum, g) => sum + g.quantity, 0);
   const glazingUnit = glazingAreaSqm > 0 ? "sqm" : "pc";
 
   const groups: QuotationBOMGroupItem[] = [
@@ -323,7 +576,7 @@ export function generateQuotationSnapshot(
   options?: { structuralWaiver?: boolean }
 ): QuotationBOMSummary {
   const isWaiver = options?.structuralWaiver ?? result.bomSummary.structural_waiver;
-  
+
   const groups: QuotationBOMGroupItem[] = result.bomSummary.groups.map(group => ({
     ...group,
     structural_waiver: isWaiver,
@@ -393,7 +646,7 @@ export function calculateStandardSeries798(params: {
 
   // Fixed hardware rates
   const pHardware = rollerQty * 25.0 + lockQty * 65.0 + (isThreePanel ? 70.0 : 50.0);
-  
+
   // Consumables (silicone + gaskets)
   let pConsumables = 220.0;
   if (params.widthMm === 1800 && hasSill) pConsumables = 260.0;
@@ -587,13 +840,17 @@ export function calculateBOMFromStructuralDefinition(
     heightMm: number;
     panelCount?: number;
     hasSill?: boolean;
-    finishType?: "Analok" | "PowderCoatedWhite";
-    glassType?: "6mm_bronze" | "6mm_clear" | "6mm_tempered";
+    finishType?: "Analok" | "PowderCoatedWhite" | string;
+    glassType?: "6mm_bronze" | "6mm_clear" | "6mm_tempered" | string;
     structuralWaiver?: boolean;
+    selectedMaterials?: Record<string, string>;
+    rawMaterials?: RawMaterial[] | Map<string, RawMaterial> | Record<string, RawMaterial>;
+    dynamicBayConfig?: DynamicBayConfig | null;
+    bayCount?: number;
   }
 ): CalculatedBOMResult {
   if (!definition || !definition.components || definition.components.length === 0) {
-    return calculateStandardSeries798(params);
+    return calculateStandardSeries798(params as Parameters<typeof calculateStandardSeries798>[0]);
   }
 
   const isPCW = params.finishType === "PowderCoatedWhite";
@@ -625,11 +882,56 @@ export function calculateBOMFromStructuralDefinition(
   }
 
   const pricingInputs: ComponentPricingInput[] = definition.components.map((comp) => {
-    let mat = comp.rawMaterial || null;
+    let mat: RawMaterial | null = null;
+    const selectedMatId = params.selectedMaterials?.[comp.componentKey];
 
-    if (!mat) {
-      const key = comp.componentKey.toLowerCase();
-      const name = comp.componentName.toLowerCase();
+    const getRawMaterialById = (id: string): RawMaterial | null => {
+      if (!id || !params.rawMaterials) return null;
+      if (params.rawMaterials instanceof Map) {
+        return params.rawMaterials.get(id) ?? null;
+      }
+      if (Array.isArray(params.rawMaterials)) {
+        return params.rawMaterials.find((m) => m.id === id) ?? null;
+      }
+      if (typeof params.rawMaterials === "object") {
+        return (params.rawMaterials as Record<string, RawMaterial>)[id] ?? null;
+      }
+      return null;
+    };
+
+    const compMaterials = comp.allowedMaterials ?? definition.componentMaterials?.filter((cm: ComponentMaterialBinding) => cm.componentKey === comp.componentKey) ?? [];
+
+    if (selectedMatId) {
+      const bindingMatch = compMaterials.find((b: ComponentMaterialBinding) => b.rawMaterialId === selectedMatId)?.rawMaterial;
+      const lookupMatch = getRawMaterialById(selectedMatId);
+      if (bindingMatch) {
+        mat = bindingMatch;
+      } else if (lookupMatch) {
+        mat = lookupMatch;
+      } else if (comp.rawMaterial?.id === selectedMatId) {
+        mat = comp.rawMaterial;
+      }
+    }
+
+    if (!mat && compMaterials.length > 0) {
+      const defaultBinding = compMaterials.find((b: ComponentMaterialBinding) => b.isDefault) || compMaterials[0];
+      if (defaultBinding.rawMaterial) {
+        mat = defaultBinding.rawMaterial;
+      } else {
+        const found = getRawMaterialById(defaultBinding.rawMaterialId);
+        if (found) mat = found;
+      }
+    }
+
+    if (!mat && comp.rawMaterial) {
+      mat = comp.rawMaterial;
+    }
+
+    const isFixedComp = comp.pricingMethod === "Fixed" || (typeof comp.unitPrice === "number" && comp.unitPrice > 0);
+
+    if (!mat && !isFixedComp) {
+      const key = (comp.componentKey || "").toLowerCase();
+      const name = (comp.componentName || comp.partName || "").toLowerCase();
 
       if (key.includes("head") || name.includes("head") || key.includes("top") || name.includes("top")) {
         mat = {
@@ -691,6 +993,30 @@ export function calculateBOMFromStructuralDefinition(
           waste_allowance: DEFAULT_AL_SCRAP,
           is_active: true,
         };
+      } else if (comp.dimensionBinding === "LOUVER_BLADE" || key.includes("louver") || name.includes("louver")) {
+        mat = {
+          id: `fallback-${comp.componentKey}`,
+          material_code: "mat_gl_jalousie_blade_4x24",
+          description: "Jalousie Glass Louver Blade (4\" x 24\")",
+          category: "Glass",
+          finish_type: params.glassType === "6mm_clear" ? "Clear" : "Bronze",
+          billing_unit: "pc",
+          unit_price: 45.0,
+          waste_allowance: 0,
+          is_active: true,
+        };
+      } else if (comp.dimensionBinding === "LOUVER_OPERATOR" || key.includes("operator") || name.includes("operator")) {
+        mat = {
+          id: `fallback-${comp.componentKey}`,
+          material_code: "mat_hw_jalousie_operator",
+          description: "Jalousie Window Operator Mechanism",
+          category: "Hardware",
+          finish_type: "Standard",
+          billing_unit: "pc",
+          unit_price: 450.0,
+          waste_allowance: 0,
+          is_active: true,
+        };
       } else if (comp.presentationCategory === "Glazing" || key.includes("glass") || key.includes("pane") || name.includes("glass") || name.includes("pane")) {
         mat = {
           id: `fallback-${comp.componentKey}`,
@@ -708,7 +1034,7 @@ export function calculateBOMFromStructuralDefinition(
 
     return {
       componentKey: comp.componentKey,
-      componentName: comp.componentName,
+      componentName: comp.componentName || comp.partName || comp.componentKey,
       dimensionBinding: comp.dimensionBinding || "FIXED",
       spanRatio: typeof comp.spanRatio === "number" ? comp.spanRatio : 1.0,
       baseQuantity: typeof comp.baseQuantity === "number" ? comp.baseQuantity : 1,
@@ -716,12 +1042,18 @@ export function calculateBOMFromStructuralDefinition(
       togglePropertyKey: comp.togglePropertyKey || null,
       presentationCategory: comp.presentationCategory || "Framing",
       rawMaterial: mat,
+      unitPrice: comp.unitPrice,
+      pricingMethod: comp.pricingMethod,
+      jalousieConfig: comp.jalousieConfig || (comp.componentData?.jalousie_config as JalousieConfig) || null,
+      bayRole: comp.bayRole || (comp.componentData?.bay_role as DynamicBayRole) || null,
     };
   });
 
+  const isFixedModel = definition.template?.modelStrategy === "Fixed";
+
   // If hardware is not explicitly defined in 3D parts, include standard hardware set
   const hasHardware = pricingInputs.some((c) => c.presentationCategory === "Hardware");
-  if (!hasHardware) {
+  if (!hasHardware && !isFixedModel) {
     const rollerQty = 2 * panelCount;
     const lockQty = isThreePanel ? 2 : 1;
     const pHardware = rollerQty * 25.0 + lockQty * 65.0 + (isThreePanel ? 70.0 : 50.0);
@@ -750,7 +1082,7 @@ export function calculateBOMFromStructuralDefinition(
 
   // If consumables are not explicitly defined in 3D parts, include standard consumables set
   const hasConsumables = pricingInputs.some((c) => c.presentationCategory === "Consumable");
-  if (!hasConsumables) {
+  if (!hasConsumables && !isFixedModel) {
     let pConsumables = 220.0;
     if (params.widthMm === 1800 && hasSill) pConsumables = 260.0;
     else if (params.widthMm === 1800 && !hasSill) pConsumables = 235.0;
@@ -778,11 +1110,21 @@ export function calculateBOMFromStructuralDefinition(
     });
   }
 
+  const dynamicBayConfig =
+    params.dynamicBayConfig ??
+    (definition.template as Record<string, unknown>)?.dynamic_bay_config ??
+    (definition.template as Record<string, unknown>)?.dynamicBayConfig ??
+    (definition.product as Record<string, unknown>)?.dynamic_bay_config ??
+    (definition.product as Record<string, unknown>)?.dynamicBayConfig ??
+    null;
+
   return calculateParametricBOM(pricingInputs, {
     widthMm: params.widthMm,
     heightMm: params.heightMm,
     panelCount,
     hasSill,
+    dynamicBayConfig: dynamicBayConfig as DynamicBayConfig | null,
+    bayCount: params.bayCount,
     structuralWaiver: params.structuralWaiver ?? false,
   });
 }
@@ -864,8 +1206,8 @@ export function calculateOverlayPricing(overlay: PlacedOverlay): {
   const widthMm = (Number(overlay.configuration.widthCm) || 120) * 10;
   const heightMm = (Number(overlay.configuration.heightCm) || 120) * 10;
   if (overlay.bomResult && overlay.unitPrice !== undefined && overlay.totalPrice !== undefined &&
-      Math.abs(overlay.bomResult.widthM * 1000 - widthMm) < 1e-6 &&
-      Math.abs(overlay.bomResult.heightM * 1000 - heightMm) < 1e-6) {
+    Math.abs(overlay.bomResult.widthM * 1000 - widthMm) < 1e-6 &&
+    Math.abs(overlay.bomResult.heightM * 1000 - heightMm) < 1e-6) {
     return {
       bomResult: overlay.bomResult,
       unitPrice: overlay.unitPrice,
@@ -875,13 +1217,13 @@ export function calculateOverlayPricing(overlay: PlacedOverlay): {
 
   const panelCount = overlay.configuration.panelCount ?? (widthMm >= 2400 ? 3 : 2);
   const hasSill = overlay.configuration.includeSill ?? true;
-  const finishType = overlay.configuration.aluminumFinish === "white" ? "PowderCoatedWhite" : "Analok";
-  const glassType = (overlay.configuration.thicknessMm ?? 6) >= 6 && overlay.configuration.glassAppearance === "clear"
+  const finishType: "PowderCoatedWhite" | "Analok" = overlay.configuration.aluminumFinish === "white" ? "PowderCoatedWhite" : "Analok";
+  const glassType: "6mm_clear" | "6mm_bronze" = (overlay.configuration.thicknessMm ?? 6) >= 6 && overlay.configuration.glassAppearance === "clear"
     ? "6mm_clear"
     : "6mm_bronze";
   const structuralWaiver = overlay.configuration.structuralWaiver ?? false;
 
-  const options: Parameters<typeof calculateStandardSeries798>[0] = {
+  const options = {
     widthMm,
     heightMm,
     panelCount,
@@ -889,13 +1231,16 @@ export function calculateOverlayPricing(overlay: PlacedOverlay): {
     finishType,
     glassType,
     structuralWaiver,
+    selectedMaterials: overlay.configuration.selectedMaterials,
   };
   const definition = overlay.variationRenderRecipe?.structuralDefinition;
   const bomResult = definition
     ? calculateBOMFromStructuralDefinition(definition, options)
     : calculateStandardSeries798(options);
 
-  const unitPrice = bomResult.finalQuotation;
+  const addonPrice = Number(overlay.configuration.addonPrice) || 0;
+  const accessoryDelta = Number(overlay.configuration.accessoryPriceDelta) || 0;
+  const unitPrice = bomResult.finalQuotation + addonPrice + accessoryDelta;
   const totalPrice = unitPrice * quantity;
 
   return {
@@ -904,3 +1249,40 @@ export function calculateOverlayPricing(overlay: PlacedOverlay): {
     totalPrice,
   };
 }
+
+export interface AccessoryBOMAdjustment {
+  slotComponentId: string;
+  defaultComponentCost: number;
+  selectedAccessoryPrice: number;
+  finishRateDelta: number;
+}
+
+/**
+ * Calculates hardware bill-of-materials adjustments for customer accessory substitutions.
+ * Deducts baseline hardware cost, applies chosen accessory unit price with finish delta,
+ * and incorporates scrap allowance and contractor margin.
+ * Traceability: PRD-F10, SDD-C7, BRD-M5, IMP-MS76, QAD-TC91.6
+ */
+export function applyAccessoryBOMAdjustments(
+  baseHardwareCost: number,
+  adjustments: AccessoryBOMAdjustment[],
+  scrapAllowance: number = 0.10,
+  contractorMargin: number = 0.25,
+): { netHardwareCost: number; priceDelta: number } {
+  let netCost = baseHardwareCost;
+
+  for (const adj of adjustments) {
+    // Deduct default hardware allowance
+    netCost -= adj.defaultComponentCost;
+    // Add chosen accessory base price and finish delta
+    const accessoryTotal = adj.selectedAccessoryPrice + adj.finishRateDelta;
+    netCost += accessoryTotal * (1 + scrapAllowance);
+  }
+
+  const finalHardwarePrice = netCost * (1 + contractorMargin);
+  return {
+    netHardwareCost: netCost,
+    priceDelta: finalHardwarePrice - (baseHardwareCost * (1 + contractorMargin)),
+  };
+}
+

@@ -6,6 +6,7 @@ import { SearchBar } from "@/components/shared/SearchBar";
 import {
   type AdminProductItem,
   type AdminProductStatus,
+  type ProductScopeFilter,
   type ProductStatusFilter,
   type ProductTypeFilter,
 } from "./productData";
@@ -19,7 +20,7 @@ import { Select } from "radix-ui";
 import { deleteProduct } from "@/lib/admin/products/productMutations";
 import { duplicateProductPreset } from "@/lib/admin/products/presetDuplication";
 import { DeleteProductModal } from "./DeleteProductModal";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 const statusBg: Record<AdminProductStatus, string> = {
   Published: "bg-[#05b64b]",
@@ -76,7 +77,7 @@ function ColHeader({
   return (
     <div
       className={cn(
-        "flex-1 min-w-0 p-[5px] flex items-center",
+        "min-w-0 p-[5px] flex items-center",
         align === "left" && "justify-start text-left",
         align === "center" && "justify-center text-center",
         align === "right" && "justify-end text-right",
@@ -109,7 +110,7 @@ function ColCell({
   return (
     <div
       className={cn(
-        "flex-1 min-w-0 p-[5px] flex items-center",
+        "min-w-0 p-[5px] flex items-center",
         align === "left" && "justify-start text-left",
         align === "center" && "justify-center text-center",
         align === "right" && "justify-end text-right",
@@ -188,6 +189,15 @@ function ActionButtons({
 }
 
 const ALL_FILTER_VALUE = "__glassfit_all__";
+const productColumns = [
+  "w-[120px] shrink-0",
+  "w-[190px] shrink-0",
+  "w-[120px] shrink-0",
+  "w-[170px] shrink-0",
+  "w-[110px] shrink-0",
+  "w-[105px] shrink-0",
+  "w-[270px] shrink-0",
+] as const;
 
 function ProductFilterSelect({
   accessibleName,
@@ -276,6 +286,13 @@ export function ProductsContent({ initialProducts }: { initialProducts: AdminPro
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedType, setSelectedType] = useState<ProductTypeFilter>(null);
   const [selectedStatus, setSelectedStatus] = useState<ProductStatusFilter>(null);
+  const searchParams = useSearchParams();
+  const initialScopeFromQuery = searchParams.get("tab") as ProductScopeFilter | null;
+  const [selectedScope, setSelectedScope] = useState<ProductScopeFilter>(
+    initialScopeFromQuery === "accessory" || initialScopeFromQuery === "addon" || initialScopeFromQuery === "all"
+      ? initialScopeFromQuery
+      : "standard"
+  );
   const [productToDelete, setProductToDelete] = useState<AdminProductItem | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
@@ -290,14 +307,25 @@ export function ProductsContent({ initialProducts }: { initialProducts: AdminPro
         searchQuery,
         selectedType,
         selectedStatus,
+        selectedScope,
       }),
-    [products, searchQuery, selectedStatus, selectedType],
+    [products, searchQuery, selectedStatus, selectedType, selectedScope],
+  );
+  const scopeTotal = useMemo(
+    () => filterAdminProducts(products, {
+      searchQuery: "",
+      selectedType: null,
+      selectedStatus: null,
+      selectedScope,
+    }).length,
+    [products, selectedScope],
   );
 
   const resetFilters = () => {
     setSearchQuery("");
     setSelectedType(null);
     setSelectedStatus(null);
+    setSelectedScope("standard");
   };
 
   const handleDuplicateProduct = async (product: AdminProductItem) => {
@@ -346,25 +374,97 @@ export function ProductsContent({ initialProducts }: { initialProducts: AdminPro
           </p>
         </div>
 
-        <div className="w-full xl:w-auto flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-          <div className="flex-1 sm:w-auto">
-            <SearchBar
-              value={searchQuery}
-              onChange={setSearchQuery}
-              placeholder="Search for products"
-              inputClassName="w-full sm:w-[300px] md:w-[340px]"
-            />
-          </div>
-
+        <div className="flex w-full flex-wrap items-center gap-2 xl:w-auto xl:justify-end">
           <Link
             href="/admin/products/new"
-            className="bg-[#0f1422] text-white rounded-[25px] px-5 py-2.5 sm:py-3 flex items-center justify-center gap-2 cursor-pointer hover:bg-black transition-colors shrink-0 shadow-xs"
+            className="bg-[#0f1422] text-white rounded-[25px] px-4 sm:px-5 py-2.5 sm:py-3 flex items-center justify-center gap-2 cursor-pointer hover:bg-black transition-colors shrink-0 shadow-xs"
           >
             <Plus className="size-4" />
             <span className="text-sm sm:text-base font-medium whitespace-nowrap">
               Add Product
             </span>
           </Link>
+          <Link
+            href="/admin/products/draft/setup?role=addon"
+            className="border border-[#0f1422] text-[#0f1422] bg-white rounded-[25px] px-3.5 sm:px-4 py-2.5 sm:py-3 flex items-center justify-center gap-1.5 cursor-pointer hover:bg-neutral-50 transition-colors shrink-0 shadow-xs"
+          >
+            <Plus className="size-3.5 text-[#07b6d3]" />
+            <span className="text-xs sm:text-sm font-medium whitespace-nowrap">
+              Add-on Accessory
+            </span>
+          </Link>
+          <Link
+            href="/admin/products/draft/setup?role=accessory"
+            className="border border-[#0f1422] text-[#0f1422] bg-white rounded-[25px] px-3.5 sm:px-4 py-2.5 sm:py-3 flex items-center justify-center gap-1.5 cursor-pointer hover:bg-neutral-50 transition-colors shrink-0 shadow-xs"
+          >
+            <Plus className="size-3.5 text-[#07b6d3]" />
+            <span className="text-xs sm:text-sm font-medium whitespace-nowrap">
+              Add Accessory
+            </span>
+          </Link>
+        </div>
+      </div>
+
+      <div className="flex w-full flex-wrap items-center gap-3">
+        <SearchBar
+          compact
+          value={searchQuery}
+          onChange={setSearchQuery}
+          placeholder="Search for products"
+          className="w-full sm:w-[280px] sm:shrink-0"
+          inputClassName="w-full"
+        />
+
+        {/* Scope Filter Tabs */}
+        <div className="flex max-w-full items-center gap-2 overflow-x-auto rounded-[25px] border border-neutral-200 bg-neutral-100 p-1 sm:ml-auto">
+          <button
+            type="button"
+            onClick={() => setSelectedScope("all")}
+            className={cn(
+              "shrink-0 px-4 py-1.5 rounded-[20px] text-xs sm:text-sm font-medium transition-colors cursor-pointer",
+              selectedScope === "all"
+                ? "bg-[#0f1422] text-white shadow-xs"
+                : "text-neutral-600 hover:text-black"
+            )}
+          >
+            All Catalog Items
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedScope("standard")}
+            className={cn(
+              "shrink-0 px-4 py-1.5 rounded-[20px] text-xs sm:text-sm font-medium transition-colors cursor-pointer",
+              selectedScope === "standard"
+                ? "bg-[#0f1422] text-white shadow-xs"
+                : "text-neutral-600 hover:text-black"
+            )}
+          >
+            Standard Products
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedScope("addon")}
+            className={cn(
+              "shrink-0 px-4 py-1.5 rounded-[20px] text-xs sm:text-sm font-medium transition-colors cursor-pointer",
+              selectedScope === "addon"
+                ? "bg-[#0f1422] text-white shadow-xs"
+                : "text-neutral-600 hover:text-black"
+            )}
+          >
+            Add-on Accessories
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedScope("accessory")}
+            className={cn(
+              "shrink-0 px-4 py-1.5 rounded-[20px] text-xs sm:text-sm font-medium transition-colors cursor-pointer",
+              selectedScope === "accessory"
+                ? "bg-[#0f1422] text-white shadow-xs"
+                : "text-neutral-600 hover:text-black"
+            )}
+          >
+            Hardware Accessories
+          </button>
         </div>
       </div>
 
@@ -387,46 +487,28 @@ export function ProductsContent({ initialProducts }: { initialProducts: AdminPro
         </div>
         <p
           aria-live="polite"
-          className="text-[#c3c3c3] text-xs sm:text-sm font-normal leading-snug whitespace-nowrap"
+          className="text-neutral-600 text-xs sm:text-sm font-normal leading-snug"
         >
-          Showing {filtered.length} of {products.length} products
+          Showing {filtered.length} of {scopeTotal} products in this scope
         </p>
       </div>
 
       <div className="bg-white rounded-[20px] p-4 sm:p-6 lg:p-[30px] flex flex-col items-start w-full shadow-xs overflow-hidden">
         <div className="w-full overflow-x-auto pb-2">
-          <div className="w-full min-w-[760px] flex flex-col gap-2.5 items-start">
+          <div className="w-[1181px] flex flex-col gap-2.5 items-start">
             <div className="w-full flex items-center gap-4">
-              <ColHeader align="left">Product ID</ColHeader>
-              <ColHeader align="left">Product Name</ColHeader>
-              <ColHeader align="left">Product Type</ColHeader>
-              <ColHeader align="left">Description</ColHeader>
-              <ColHeader align="right">Base Price</ColHeader>
-              <ColHeader align="center">Status</ColHeader>
-              <ColHeader align="center">Actions</ColHeader>
+              <ColHeader align="left" className={productColumns[0]}>Product ID</ColHeader>
+              <ColHeader align="left" className={productColumns[1]}>Product Name</ColHeader>
+              <ColHeader align="left" className={productColumns[2]}>Product Type</ColHeader>
+              <ColHeader align="left" className={productColumns[3]}>Description</ColHeader>
+              <ColHeader align="right" className={productColumns[4]}>Base Price</ColHeader>
+              <ColHeader align="center" className={productColumns[5]}>Status</ColHeader>
+              <ColHeader align="center" className={productColumns[6]}>Actions</ColHeader>
             </div>
 
             <div className="w-full border-t border-[#e5e5e5]" />
 
-            {products.length === 0 ? (
-              <div className="w-full py-12 text-center text-sm text-neutral-500">
-                No products are currently available.
-              </div>
-            ) : filtered.length === 0 ? (
-              <div className="flex w-full flex-col items-center gap-4 py-12 text-center">
-                <p className="text-sm text-neutral-600">
-                  No products match the current search and filters.
-                </p>
-                <button
-                  type="button"
-                  onClick={resetFilters}
-                  className="min-h-11 rounded-[25px] bg-[#0f1422] px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-600 focus-visible:ring-offset-2"
-                >
-                  Reset filters
-                </button>
-              </div>
-            ) : (
-              filtered.map((product) => (
+            {filtered.map((product) => (
                 <ProductRow
                   key={product.id}
                   product={product}
@@ -434,10 +516,27 @@ export function ProductsContent({ initialProducts }: { initialProducts: AdminPro
                   onDuplicate={() => handleDuplicateProduct(product)}
                   isDuplicating={duplicatingId === product.id}
                 />
-              ))
-            )}
+              ))}
           </div>
         </div>
+        {products.length === 0 ? (
+          <div className="w-full py-12 text-center text-sm text-neutral-500">
+            No products are currently available.
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="flex w-full flex-col items-center gap-4 py-12 text-center">
+            <p className="text-sm text-neutral-600">
+              No products match the current search and filters.
+            </p>
+            <button
+              type="button"
+              onClick={resetFilters}
+              className="min-h-11 rounded-[25px] bg-[#0f1422] px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-600 focus-visible:ring-offset-2"
+            >
+              Reset filters
+            </button>
+          </div>
+        ) : null}
       </div>
 
       {/* Delete Product Confirmation Modal */}
@@ -467,27 +566,48 @@ function ProductRow({
 }) {
   return (
     <div className="w-full flex items-center gap-4 py-2 hover:bg-neutral-50/70 rounded-lg transition-colors">
-      <ColCell align="left">
+      <ColCell align="left" className={productColumns[0]}>
         <ProductIdBadge id={product.id} />
       </ColCell>
-      <ColCell align="left" className="font-medium text-[#0f1422]">
-        {product.name}
+      <ColCell align="left" className={cn(productColumns[1], "font-medium text-[#0f1422]")}>
+        <div className="flex items-center gap-2 flex-wrap">
+          <span>{product.name}</span>
+          {product.isAddon && (
+            <span
+              className={cn(
+                "inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border",
+                product.addonType === "screen"
+                  ? "bg-teal-50 text-teal-700 border-teal-200"
+                  : "bg-amber-50 text-amber-700 border-amber-200"
+              )}
+            >
+              {product.addonType === "screen" ? "Add-on: Screen" : "Add-on: Grille"}
+            </span>
+          )}
+          {product.isAccessory && (
+            <span
+              className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border bg-purple-50 text-purple-700 border-purple-200 capitalize"
+            >
+              Accessory: {product.accessoryCategory || "Hardware"}
+            </span>
+          )}
+        </div>
       </ColCell>
-      <ColCell align="left">{product.type}</ColCell>
-      <ColCell align="left" className="truncate text-neutral-600">
+      <ColCell align="left" className={productColumns[2]}>{product.type}</ColCell>
+      <ColCell align="left" className={cn(productColumns[3], "truncate text-neutral-600")}>
         {product.description?.trim() ? (
           <span className="truncate">{product.description}</span>
         ) : (
-          <span className="text-neutral-300 font-light">—</span>
+          <span className="text-neutral-300 font-light">-</span>
         )}
       </ColCell>
-      <ColCell align="right" className="font-medium text-[#0f1422]">
+      <ColCell align="right" className={cn(productColumns[4], "font-medium text-[#0f1422]")}>
         {product.basePrice}
       </ColCell>
-      <ColCell align="center">
+      <ColCell align="center" className={productColumns[5]}>
         <StatusBadge status={product.status} />
       </ColCell>
-      <ColCell align="center">
+      <ColCell align="center" className={productColumns[6]}>
         <ActionButtons
           productId={product.id}
           onDelete={onDelete}

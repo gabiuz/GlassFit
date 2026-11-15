@@ -70,6 +70,7 @@ source venv/bin/activate        # macOS / Linux
 pip install -r requirements.txt
 
 # Start the server
+source .venv312/bin/activate
 uvicorn main:app --reload --port 8000
 ```
 

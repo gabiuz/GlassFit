@@ -3,6 +3,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { BackgroundNavbar } from "@/components/shared/BackgroundNavbar";
 import { getPublicBookingReference } from "@/lib/booking/bookingActions";
+import { SILL_OMISSION_NOTICE } from "@/lib/pricing/quotationDocument";
+import type { SwappedAccessoryDocument } from "@/lib/pricing/quotationDocument";
 import { SnapshotViewer } from "./SnapshotViewer";
 import { CheckCircle2, ShieldAlert, ArrowLeft, AlertTriangle } from "lucide-react";
 
@@ -10,6 +12,15 @@ interface PublicQuotationPageProps {
   params: Promise<{
     code: string;
   }>;
+}
+
+function hardwareLabel(selection: SwappedAccessoryDocument): string {
+  const side = selection.horizontalPosition === "left" ? "Left Side" : selection.horizontalPosition === "right" ? "Right Side" : null;
+  const height = selection.verticalPosition === "bottom" ? "Bottom Rail" : selection.verticalPosition === "up" ? "Mid-Height" : null;
+  const price = (selection.priceDelta ?? 0) > 0
+    ? ` (+₱${(selection.priceDelta ?? 0).toLocaleString("en-PH", { minimumFractionDigits: 2 })})`
+    : "";
+  return [selection.accessoryName, side && height ? `${side} (${height})` : side ?? height, selection.finish ?? "Standard"].filter(Boolean).join(" | ") + price;
 }
 
 export const metadata = {
@@ -121,6 +132,13 @@ export default async function PublicQuotationPage({ params }: PublicQuotationPag
             <h1 className="text-3xl sm:text-4xl font-semibold text-[#0f1422]">
               {data.productName}
             </h1>
+            {data.addonName && data.selectedAddon && data.selectedAddon !== "none" && !data.isMultiProduct && (
+              <div className="flex items-center gap-2 mt-1">
+                <span className="text-xs font-semibold text-sky-800 bg-sky-100/90 border border-sky-300 px-3 py-1 rounded-full">
+                  Included Add-on: {data.addonName} {data.addonAluminumFinish ? `(${data.addonAluminumFinish})` : ""} {typeof data.addonPrice === "number" && data.addonPrice > 0 ? `(+₱${data.addonPrice.toLocaleString("en-PH", { minimumFractionDigits: 2 })})` : ""}
+                </span>
+              </div>
+            )}
             <p className="text-neutral-600 text-sm">
               Prepared for <span className="font-medium text-[#0f1422]">{data.customerName}</span> · Created on {data.createdAtFormatted}
             </p>
@@ -199,8 +217,22 @@ export default async function PublicQuotationPage({ params }: PublicQuotationPag
 
                       <span className="text-neutral-500">Sill:</span>
                       <span className="text-[#0f1422] font-medium text-right">
-                        {item.hasSill ? "Standard" : "Flush (No Sill)"}
+                        {item.hasSill ? "Standard" : `✓ ${SILL_OMISSION_NOTICE}`}
                       </span>
+
+                      <span className="text-neutral-500">Add-on:</span>
+                      <span className="text-[#0f1422] font-medium text-right">
+                        {item.selectedAddon && item.selectedAddon !== "none"
+                          ? `${item.addonName || (item.selectedAddon === "screen" ? "Insect Screen" : "Security Grille")}${item.addonAluminumFinish ? ` (${item.addonAluminumFinish})` : ""}${typeof item.addonPrice === "number" && item.addonPrice > 0 ? ` (+₱${item.addonPrice.toLocaleString("en-PH", { minimumFractionDigits: 2 })})` : ""}`
+                          : "None"}
+                      </span>
+
+                      {(item.swappedAccessories ?? []).filter((selection) => selection.accessoryId !== "default").map((selection, selectionIndex) => (
+                        <React.Fragment key={`${selection.slotComponentId ?? selection.accessoryId}-${selectionIndex}`}>
+                          <span className="text-neutral-500">Hardware:</span>
+                          <span className="text-[#0f1422] font-medium text-right">{hardwareLabel(selection)}</span>
+                        </React.Fragment>
+                      ))}
                     </div>
 
                     {item.structuralWaiver && (
@@ -212,7 +244,16 @@ export default async function PublicQuotationPage({ params }: PublicQuotationPag
                   </div>
 
                   <div className="flex items-baseline justify-between border-t border-neutral-200/70 pt-3 mt-1 bg-white/70 -mx-5 -mb-5 p-4 rounded-b-[20px]">
-                    <span className="text-xs text-neutral-500">Unit Price: ₱{item.unitPrice.toLocaleString("en-PH", { minimumFractionDigits: 2 })}</span>
+                    <div className="flex flex-col">
+                      <span className="text-xs text-neutral-500">Unit Price: ₱{item.unitPrice.toLocaleString("en-PH", { minimumFractionDigits: 2 })}</span>
+                      {((item.selectedAddon && item.selectedAddon !== "none" && typeof item.addonPrice === "number" && item.addonPrice > 0) || (item.accessoryPriceDelta ?? 0) > 0) && (
+                        <span className="text-[11px] text-neutral-400">
+                          Base: ₱{(item.baseUnitPrice ?? (item.unitPrice - (item.addonPrice ?? 0) - (item.accessoryPriceDelta ?? 0))).toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                          {(item.addonPrice ?? 0) > 0 ? ` + Add-on: ₱${item.addonPrice!.toLocaleString("en-PH", { minimumFractionDigits: 2 })}` : ""}
+                          {(item.accessoryPriceDelta ?? 0) > 0 ? ` + Hardware: ₱${item.accessoryPriceDelta!.toLocaleString("en-PH", { minimumFractionDigits: 2 })}` : ""}
+                        </span>
+                      )}
+                    </div>
                     <span className="font-bold text-sm text-emerald-800">
                       ₱{item.totalPrice.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
                     </span>
@@ -289,8 +330,36 @@ export default async function PublicQuotationPage({ params }: PublicQuotationPag
 
                   <span className="text-neutral-500">Bottom Sill:</span>
                   <span className="text-[#0f1422] font-medium text-right">
-                    {data.hasSill ? "Standard Sill Track" : "Flush Base (No Sill)"}
+                    {data.hasSill ? "Standard Sill Track" : `✓ ${SILL_OMISSION_NOTICE}`}
                   </span>
+
+                  <span className="text-neutral-500">Add-on Attachment:</span>
+                  <span className="text-[#0f1422] font-medium text-right">
+                    {data.selectedAddon && data.selectedAddon !== "none"
+                      ? `${data.addonName || (data.selectedAddon === "screen" ? "Insect Screen" : "Security Grille")}${data.addonAluminumFinish ? ` (${data.addonAluminumFinish})` : ""}${typeof data.addonPrice === "number" && data.addonPrice > 0 ? ` (+₱${data.addonPrice.toLocaleString("en-PH", { minimumFractionDigits: 2 })})` : ""}`
+                      : "None"}
+                  </span>
+
+                  {(data.swappedAccessories ?? []).filter((selection) => selection.accessoryId !== "default").map((selection, selectionIndex) => (
+                    <React.Fragment key={`${selection.slotComponentId ?? selection.accessoryId}-${selectionIndex}`}>
+                      <span className="text-neutral-500">Hardware:</span>
+                      <span className="text-[#0f1422] font-medium text-right">{hardwareLabel(selection)}</span>
+                    </React.Fragment>
+                  ))}
+
+                  {data.selectedAddon && data.selectedAddon !== "none" && typeof data.addonPrice === "number" && data.addonPrice > 0 && (
+                    <>
+                      <span className="text-neutral-500">Base Fixture Price:</span>
+                      <span className="text-[#0f1422] font-medium text-right">
+                        ₱{(data.baseUnitPrice ?? (data.totalEstimatedAmount - data.addonPrice)).toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                      </span>
+
+                      <span className="text-neutral-500">Add-on Price:</span>
+                      <span className="text-emerald-700 font-medium text-right">
+                        +₱{data.addonPrice.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                      </span>
+                    </>
+                  )}
                 </>
               )}
             </div>
@@ -330,37 +399,41 @@ export default async function PublicQuotationPage({ params }: PublicQuotationPag
         </div>
 
         {/* Itemized 4-Group BOM Table */}
-        <div className="bg-[#f5f5f5] rounded-[24px] p-6 md:p-8 flex flex-col gap-4">
+        <div className="min-w-0 bg-[#f5f5f5] rounded-[24px] p-4 md:p-8 flex flex-col gap-4">
           <h2 className="font-semibold text-xl text-[#0f1422]">Itemized Cost Breakdown</h2>
-          <div className="w-full overflow-x-auto bg-white rounded-[16px] shadow-xs">
-            <table className="w-full text-left border-collapse text-sm">
+          <div className="min-w-0 w-full overflow-x-auto bg-white rounded-[16px] shadow-xs">
+            <div className="min-w-max p-3 md:p-0">
+            <table className="w-full min-w-[640px] text-left border-collapse text-sm">
               <thead>
                 <tr className="border-b border-neutral-200 bg-neutral-50 text-neutral-600">
                   <th className="py-3.5 px-4 font-semibold">Item Group</th>
-                  <th className="py-3.5 px-4 font-semibold text-right">Quantity</th>
-                  <th className="py-3.5 px-4 font-semibold text-right">Unit Price</th>
-                  <th className="py-3.5 px-4 font-semibold text-right">Subtotal</th>
+                  <th className="py-3.5 px-4 font-semibold text-right whitespace-nowrap">Quantity</th>
+                  <th className="py-3.5 px-4 font-semibold text-right whitespace-nowrap">Unit Price</th>
+                  <th className="py-3.5 px-4 font-semibold text-right whitespace-nowrap">Subtotal</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100">
                 {data.groups.map((group, idx) => (
                   <tr key={idx} className="hover:bg-neutral-50/50">
-                    <td className="py-3.5 px-4 font-medium text-[#0f1422]">
+                    <td className="max-w-[240px] py-3.5 px-4 font-medium text-[#0f1422] [overflow-wrap:anywhere]">
                       {group.item_group_name}
+                      {group.finish_type && <span className="block text-xs font-normal text-neutral-500">{group.finish_type}</span>}
+                      {group.component_summary && <span className="block text-xs font-normal text-neutral-500">Contributing Parts: {group.component_summary}</span>}
                     </td>
-                    <td className="py-3.5 px-4 text-neutral-600 text-right">
+                    <td className="py-3.5 px-4 text-neutral-600 text-right whitespace-nowrap">
                       {group.quantity} {group.unit_label}
                     </td>
-                    <td className="py-3.5 px-4 text-neutral-600 text-right">
+                    <td className="py-3.5 px-4 text-neutral-600 text-right whitespace-nowrap">
                       ₱{group.unit_price.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
                     </td>
-                    <td className="py-3.5 px-4 font-semibold text-[#0f1422] text-right">
+                    <td className="py-3.5 px-4 font-semibold text-[#0f1422] text-right whitespace-nowrap">
                       ₱{group.estimated_subtotal.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
       </div>

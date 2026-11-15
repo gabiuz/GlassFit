@@ -15,13 +15,15 @@ describe("IMP-MS16 canonical quotation document", () => {
     assert.equal(deriveQuotationPricing(100.1, 100.1).negotiatedFinalPrice, null);
   });
 
-  it("renders simplified final item prices without internal cost disclosure", () => {
+  it("renders MS85 material details while keeping negotiation metadata private", () => {
     const view = createQuotationDocumentViewModel(snapshot, { brandLogoUrl: "https://glassfit.test/Logo.svg", shareableUrl: "https://glassfit.test/q/CF-2026-1000", snapshotImageUrl: null, allowedImageOrigins: ["https://glassfit.test"], negotiatedAmount: snapshot.pricing.calculatedFinalPrice - 100 });
     const html = generateQuotationPdfHtml(view);
     assert.match(html, /Final item price/);
     assert.match(html, /Grand total/);
     assert.doesNotMatch(html, /Original system-calculated estimate|Final price adjusted|Component group|Unit rate/);
-    assert.ok(!html.includes(bom.framingItems[0].description));
+    assert.ok(html.includes(bom.framingItems[0].description));
+    assert.match(html, /Itemized Cost Breakdown/);
+    assert.match(html, /Aluminum offcut allowance/);
   });
 
   it("renders canonical multi-fixture specifications only inside each compact fixture card", () => {
@@ -105,5 +107,35 @@ describe("IMP-MS16 canonical quotation document", () => {
       rows: [],
     });
     assert.equal(invalid, null);
+  });
+
+  it("retains registered hardware when reconstructing saved quotation rows", () => {
+    const recovered = reconstructLegacyQuotationDocument({
+      quotationNumber: "Q-2026-5330",
+      referenceCode: "CF-2026-5330",
+      createdAt: "2026-11-01T00:00:00.000Z",
+      customer: { name: "Client", phone: null, email: null, siteLocation: null },
+      totalEstimatedAmount: 1300,
+      snapshotObjectKey: null,
+      rows: [{
+        item_name: "Screen Door (Hardware)", item_group_name: "Hardware & Accessories",
+        quantity: 1, unit: "set", unit_price: 1300, estimated_subtotal: 1300,
+        pricing_details: {
+          product_name: "Screen Door", product_id: "door-id", item_id: "door-item",
+          item_quantity: 1, item_total_price: 1300, width_mm: 900, height_mm: 2100,
+          swapped_accessories: [{
+            slotComponentId: "handle-slot", accessoryId: "pull-bar-id", accessoryName: "Pull Bar",
+            finish: "Matte Black", horizontalPosition: "left", verticalPosition: "up",
+            unitPrice: 300, priceDelta: 300,
+          }],
+          accessory_price_delta: 300,
+        },
+      }],
+    });
+    assert.ok(recovered);
+    assert.equal(recovered.items[0].swappedAccessories?.[0]?.accessoryName, "Pull Bar");
+    assert.equal(recovered.items[0].swappedAccessories?.[0]?.horizontalPosition, "left");
+    assert.equal(recovered.items[0].swappedAccessories?.[0]?.finish, "Matte Black");
+    assert.equal(recovered.items[0].accessoryPriceDelta, 300);
   });
 });

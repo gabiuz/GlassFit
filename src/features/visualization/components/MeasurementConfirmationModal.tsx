@@ -26,6 +26,13 @@ import {
 } from "@/lib/visualization/measurementConfirmation";
 import { currentPhotoMeasurement, readMeasurementRecord } from "@/lib/visualization/measurementRecord";
 import { calculateBOMFromStructuralDefinition } from "@/lib/pricing/pricingEngine";
+import {
+  calculateAddonBOM,
+  getAddonDisplayName,
+  type AddonBOMResult,
+} from "@/lib/pricing/addonPricingEngine";
+import { calculateGrilleLinearBOM } from "@/lib/pricing/grillePricingEngine";
+import type { GrilleLinearBOMResult } from "@/lib/pricing/types";
 
 const ProductModel3D = dynamic(
   () =>
@@ -94,6 +101,7 @@ export function MeasurementConfirmationModal({
   const [heightInputStr, setHeightInputStr] = useState<string>(() =>
     String(entries[0]?.override.heightIn ?? ""),
   );
+  const [showGrilleCutList, setShowGrilleCutList] = useState(false);
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const acknowledgementCheckboxId = useId();
 
@@ -155,6 +163,143 @@ export function MeasurementConfirmationModal({
       ? currentEntry.recalculatedTotalPrice
       : currentEntry.systemTotalPrice;
 
+  const currentBomCalc = currentEntry?.structuralDefinition
+    ? calculateBOMFromStructuralDefinition(
+        currentEntry.structuralDefinition,
+        {
+          widthMm: currentWidthMm,
+          heightMm: currentHeightMm,
+          panelCount: currentEntry.overlayConfiguration.panelCount,
+          hasSill: currentEntry.overlayConfiguration.includeSill,
+          finishType:
+            currentEntry.overlayConfiguration.aluminumFinish === "white"
+              ? "PowderCoatedWhite"
+              : "Analok",
+          glassType:
+            (currentEntry.overlayConfiguration.thicknessMm ?? 6) >= 6 &&
+            currentEntry.overlayConfiguration.glassAppearance === "clear"
+              ? "6mm_clear"
+              : "6mm_bronze",
+          structuralWaiver: currentEntry.overlayConfiguration.structuralWaiver,
+          selectedMaterials: currentEntry.overlayConfiguration.selectedMaterials,
+        },
+      )
+    : null;
+
+  const currentSelectedAddon =
+    currentEntry.overlayConfiguration.selectedAddon ??
+    ((currentEntry.overlayConfiguration.visualParameterValues?.selected_addon as Record<string, unknown> | undefined)?.type as "screen" | "grill" | undefined) ??
+    "none";
+
+  const currentAddonBOM: AddonBOMResult | null =
+    currentSelectedAddon !== "none"
+      ? calculateAddonBOM({
+          addonType: currentSelectedAddon,
+          widthMm: currentWidthMm,
+          heightMm: currentHeightMm,
+        })
+      : null;
+
+  const currentAddonFinish =
+    currentEntry.overlayConfiguration.addonAluminumFinish ??
+    ((currentEntry.overlayConfiguration.visualParameterValues?.selected_addon as Record<string, unknown> | undefined)?.finish as string | undefined) ??
+    "";
+  const currentAddonFinishLabel = currentAddonFinish
+    ? currentAddonFinish.charAt(0).toUpperCase() + currentAddonFinish.slice(1)
+    : "";
+
+  const currentSelectedAddonVal = (currentEntry.overlayConfiguration.visualParameterValues?.selected_addon as Record<string, unknown> | undefined);
+  const currentGrilleOpeningCount = currentEntry.overlayConfiguration.grilleOpeningCount ??
+    (currentSelectedAddonVal?.grille_opening_count as number | undefined) ??
+    (currentSelectedAddon === "grill" ? (currentEntry.overlayConfiguration.hatchCount ?? (currentSelectedAddonVal?.hatch_count as number | undefined) ?? 0) : 0);
+  const currentGrilleOpeningConfig = (currentEntry.overlayConfiguration.grilleOpeningConfig ??
+    currentSelectedAddonVal?.grille_opening_config) as Record<string, unknown> | undefined;
+
+  const currentGrilleBOM: GrilleLinearBOMResult | null =
+    currentSelectedAddon === "grill"
+      ? (() => {
+          const isWhite = currentAddonFinish.toLowerCase().includes("white");
+          const isBlack = currentAddonFinish.toLowerCase().includes("black") || currentAddonFinish.toLowerCase() === "al1009";
+          const unitPrice = isWhite ? 180 : isBlack ? 175 : 160;
+
+          return calculateGrilleLinearBOM({
+            widthMm: Math.round(currentWidthMm),
+            heightMm: Math.round(currentHeightMm),
+            patternType: "staggered_brick",
+            openingCount: currentGrilleOpeningCount,
+            openingWidthMm: (currentGrilleOpeningConfig?.cutoutWidthMm as number | undefined) ?? 150,
+            openingHeightMm: (currentGrilleOpeningConfig?.cutoutHeightMm as number | undefined) ?? 180,
+            openingConfig: {
+              enabled: currentGrilleOpeningCount > 0,
+              cutoutWidthMm: (currentGrilleOpeningConfig?.cutoutWidthMm as number | undefined) ?? 150,
+              cutoutHeightMm: (currentGrilleOpeningConfig?.cutoutHeightMm as number | undefined) ?? 180,
+              cornerCleatCountPerOpening: 4,
+            },
+            grilleRawMaterial: {
+              id: "00000000-0000-4000-8000-000000000001",
+              material_code: "AL-GRILLE-TUBE-16MM",
+              description: "16mm Square Tube Aluminum",
+              unit_price: unitPrice,
+              waste_allowance: 0.12,
+            },
+            includePerimeterFrame: true,
+          });
+        })()
+      : null;
+
+  const currentAddonPrice = currentSelectedAddon === "grill"
+    ? (currentGrilleBOM?.finalPrice ?? 0)
+    : (currentAddonBOM?.finalAddonPrice ?? 0);
+
+  interface SwappedAccessoryViewItem {
+    slotComponentId: string;
+    accessoryId: string;
+    accessoryName: string;
+    category: string;
+    price: number;
+    finish: string;
+    horizontalPosition: "left" | "right";
+    verticalPosition: "bottom" | "up";
+    priceDelta?: number;
+  }
+
+  const currentSwappedAccessories: SwappedAccessoryViewItem[] = (() => {
+    if (!currentEntry) return [];
+    if (currentEntry.overlayConfiguration.swappedAccessories) {
+      return Object.values(currentEntry.overlayConfiguration.swappedAccessories).map((acc) => ({
+        slotComponentId: acc.slotComponentId,
+        accessoryId: acc.accessoryId,
+        accessoryName: acc.accessoryName,
+        category: acc.category,
+        price: acc.price,
+        finish: acc.finish,
+        horizontalPosition: acc.horizontalPosition,
+        verticalPosition: acc.verticalPosition,
+        priceDelta: acc.priceDelta ?? 0,
+      }));
+    }
+    const fromParams = currentEntry.overlayConfiguration.visualParameterValues?.swapped_accessories as Array<Record<string, unknown>> | undefined;
+    if (Array.isArray(fromParams)) {
+      return fromParams.map((acc) => ({
+        slotComponentId: String(acc.slot_component_id ?? ""),
+        accessoryId: String(acc.accessory_id ?? ""),
+        accessoryName: String(acc.accessory_name ?? ""),
+        category: String(acc.slot_category ?? "handle"),
+        price: Number(acc.unit_price ?? 0),
+        finish: String(acc.finish ?? "Standard"),
+        horizontalPosition: ((acc.horizontal_position as "left" | "right") ?? "right"),
+        verticalPosition: ((acc.vertical_position as "bottom" | "up") ?? "up"),
+        priceDelta: Number(acc.price_delta ?? 0),
+      }));
+    }
+    return [];
+  })();
+
+  const currentTotalAccessoryDelta = currentSwappedAccessories.reduce(
+    (sum: number, acc: SwappedAccessoryViewItem) => sum + (acc.priceDelta ?? (acc.accessoryId !== "default" ? acc.price : 0)),
+    0
+  );
+
   const recalculatePrice = (
     entry: MeasurementConfirmationEntry,
     override: MeasurementOverride,
@@ -188,13 +333,77 @@ export function MeasurementConfirmationModal({
         finishType,
         glassType,
         structuralWaiver: entry.overlayConfiguration.structuralWaiver,
+        selectedMaterials: entry.overlayConfiguration.selectedMaterials,
       },
     );
 
-    const unitPrice =
+    const baseUnitPrice =
       bomCalc.finalQuotation > 0
         ? bomCalc.finalQuotation
         : (entry.structuralDefinition.product.basePrice ?? 0);
+
+    const entryAddonType =
+      entry.overlayConfiguration.selectedAddon ??
+      ((entry.overlayConfiguration.visualParameterValues?.selected_addon as Record<string, unknown> | undefined)?.type as "screen" | "grill" | undefined) ??
+      "none";
+
+    let addonPrice = 0;
+    if (entryAddonType === "grill") {
+      const isWhite = (entry.overlayConfiguration.addonAluminumFinish ?? "").toLowerCase().includes("white");
+      const isBlack = (entry.overlayConfiguration.addonAluminumFinish ?? "").toLowerCase().includes("black");
+      const unitRate = isWhite ? 180 : isBlack ? 175 : 160;
+      const selAddon = (entry.overlayConfiguration.visualParameterValues?.selected_addon as Record<string, unknown> | undefined);
+      const openingCount = entry.overlayConfiguration.grilleOpeningCount ??
+        (selAddon?.grille_opening_count as number | undefined) ??
+        (selAddon?.hatch_count as number | undefined) ?? 0;
+      const openingConfig = (entry.overlayConfiguration.grilleOpeningConfig ?? selAddon?.grille_opening_config) as Record<string, unknown> | undefined;
+
+      const grilleBom = calculateGrilleLinearBOM({
+        widthMm: Math.round(widthMmVal),
+        heightMm: Math.round(heightMmVal),
+        patternType: "staggered_brick",
+        openingCount,
+        openingWidthMm: (openingConfig?.cutoutWidthMm as number | undefined) ?? 150,
+        openingHeightMm: (openingConfig?.cutoutHeightMm as number | undefined) ?? 180,
+        openingConfig: {
+          enabled: openingCount > 0,
+          cutoutWidthMm: (openingConfig?.cutoutWidthMm as number | undefined) ?? 150,
+          cutoutHeightMm: (openingConfig?.cutoutHeightMm as number | undefined) ?? 180,
+          cornerCleatCountPerOpening: 4,
+        },
+        grilleRawMaterial: {
+          id: "recalc-grille-mat",
+          material_code: "AL-GRILLE-TUBE-16MM",
+          description: "16mm Square Tube Aluminum",
+          unit_price: unitRate,
+          waste_allowance: 0.12,
+        },
+        includePerimeterFrame: true,
+      });
+      addonPrice = grilleBom.finalPrice;
+    } else if (entryAddonType !== "none") {
+      const addonBom = calculateAddonBOM({
+        addonType: entryAddonType,
+        widthMm: widthMmVal,
+        heightMm: heightMmVal,
+      });
+      addonPrice = addonBom.finalAddonPrice;
+    }
+
+    const swappedAccessoriesList = entry.overlayConfiguration.swappedAccessories
+      ? Object.values(entry.overlayConfiguration.swappedAccessories)
+      : ((entry.overlayConfiguration.visualParameterValues?.swapped_accessories as Array<Record<string, unknown>> | undefined)?.map((acc) => ({
+          accessoryId: String(acc.accessory_id ?? ""),
+          priceDelta: Number(acc.price_delta ?? 0),
+          price: Number(acc.unit_price ?? 0),
+        })) ?? []);
+
+    const accessoryPriceDelta = swappedAccessoriesList.reduce(
+      (sum, acc) => sum + (acc.priceDelta ?? (acc.accessoryId !== "default" ? (acc.price ?? 0) : 0)),
+      0
+    );
+
+    const unitPrice = baseUnitPrice + addonPrice + accessoryPriceDelta;
 
     const quantity = Math.max(1, entry.overlayConfiguration.quantity ?? 1);
     return unitPrice * quantity;
@@ -720,9 +929,247 @@ export function MeasurementConfirmationModal({
             </span>
           </div>
           <div className="text-xl font-semibold text-[#07b6d3]">
-            ₱{Math.round(displayedPrice).toLocaleString()}
+            ₱{displayedPrice.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </div>
         </div>
+
+        {/* Selected Specification Summary Card (DSD-UI7 / IMP-MS66) */}
+        <div className="mb-5 rounded-[16px] border border-neutral-200/80 bg-neutral-50 p-4 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold uppercase tracking-wider text-neutral-600">
+              Selected Specifications
+            </span>
+            <span className="text-[10px] font-semibold text-[#07b6d3] bg-[#07b6d3]/10 px-2 py-0.5 rounded-full">
+              Verified
+            </span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+            <div>
+              <span className="text-neutral-500 block text-[11px]">Frame Finish:</span>
+              <strong className="text-[#0f1422] font-medium">
+                {currentBomCalc?.finishType ? formatFinishName(currentBomCalc.finishType) : formatFinishName(currentEntry.aluminumFinish)}
+              </strong>
+            </div>
+            <div>
+              <span className="text-neutral-500 block text-[11px]">Glass Infill:</span>
+              <strong className="text-[#0f1422] font-medium">
+                {currentBomCalc?.glassType || "6mm Standard Architectural Glass"}
+              </strong>
+            </div>
+            <div className="sm:col-span-2">
+              <span className="text-neutral-500 block text-[11px]">Dimensions:</span>
+              <span className="font-mono text-[#0f1422] font-medium">
+                {Math.round(currentWidthMm).toLocaleString()} mm (W) x {Math.round(currentHeightMm).toLocaleString()} mm (H)
+              </span>
+            </div>
+            <div className="sm:col-span-2">
+              <span className="text-neutral-500 block text-[11px]">Attachment:</span>
+              <strong className="text-[#0f1422] font-medium">
+                {currentSelectedAddon !== "none"
+                  ? `${getAddonDisplayName(currentSelectedAddon)} (+₱${currentAddonPrice.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`
+                  : "None (Standard Opening)"}
+              </strong>
+            </div>
+          </div>
+        </div>
+
+        {/* Dedicated Grille Attachment Line Card with Expandable Cut List Accordion (IMP-MS73 / QAD-TC88.4) */}
+        {currentSelectedAddon === "grill" && currentGrilleBOM && (
+          <div className="mb-5 rounded-[16px] border border-cyan-200 bg-cyan-50/40 p-4 space-y-3">
+            <div className="flex items-center justify-between border-b border-cyan-100 pb-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold uppercase tracking-wider text-[#0f1422]">
+                  Modular Attachment
+                </span>
+                <span className="text-[10px] font-semibold text-[#07b6d3] bg-[#07b6d3]/15 px-2 py-0.5 rounded-full">
+                  Security Grille{currentAddonFinishLabel ? ` (${currentAddonFinishLabel})` : ""}
+                </span>
+              </div>
+              <span className="font-mono font-semibold text-[#07b6d3]">
+                +₱{currentGrilleBOM.finalPrice.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
+            <div className="space-y-1.5 text-xs">
+              <div className="flex justify-between items-center text-[#0f1422]">
+                <span className="font-medium">
+                  Architectural Security Window Grille
+                  {currentAddonFinishLabel ? ` (${currentAddonFinishLabel})` : ""}
+                </span>
+                <span className="text-neutral-500 font-mono">{currentGrilleBOM.totalLinearMeters.toFixed(2)}m profile</span>
+              </div>
+              <div className="space-y-1 pl-2 border-l-2 border-cyan-200 text-[11px] text-neutral-600">
+                <div className="flex justify-between items-center">
+                  <span>Vertical Pickets ({currentGrilleBOM.verticalBars.barCount} pcs @ {currentGrilleBOM.verticalBars.cutLengthMm}mm)</span>
+                  <span className="font-mono">{currentGrilleBOM.verticalBars.totalLinearM.toFixed(2)}m</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span>Horizontal Bars ({currentGrilleBOM.horizontalBars.barCount} pcs @ {currentGrilleBOM.horizontalBars.cutLengthMm}mm)</span>
+                  <span className="font-mono">{currentGrilleBOM.horizontalBars.totalLinearM.toFixed(2)}m</span>
+                </div>
+                {currentGrilleBOM.perimeterRails && (
+                  <div className="flex justify-between items-center">
+                    <span>Perimeter Frame (4 rails)</span>
+                    <span className="font-mono">{currentGrilleBOM.perimeterRails.totalLinearM.toFixed(2)}m</span>
+                  </div>
+                )}
+                {currentGrilleBOM.openings && (
+                  <div className="flex justify-between items-center text-teal-700 font-medium">
+                    <span>Handle Openings ({currentGrilleBOM.openings.openingCount}x @ {currentGrilleBOM.openings.collarLinearMeters}m collar framing)</span>
+                    <span className="font-mono">{currentGrilleBOM.openings.cornerCleatQuantity} cleats</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Expandable Grille Fabrication Cut List Accordion (QAD-TC88.4) */}
+            <div className="mt-4 rounded-[16px] border border-neutral-700 bg-neutral-900/60 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setShowGrilleCutList(!showGrilleCutList)}
+                className="w-full flex items-center justify-between p-3.5 text-left text-xs font-semibold text-white hover:bg-neutral-800/60 transition-colors cursor-pointer"
+                aria-expanded={showGrilleCutList}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-teal-400" />
+                  <span>Security Grille Extrusion Cut List ({currentGrilleBOM.totalPieces} Pieces)</span>
+                </div>
+                <span className="text-neutral-400 font-mono">
+                  {showGrilleCutList ? "Hide Details" : "View Breakdown"}
+                </span>
+              </button>
+
+              {showGrilleCutList && (
+                <div className="p-3.5 border-t border-neutral-700 bg-neutral-950/80">
+                  <table className="w-full text-left text-[11px] text-neutral-300">
+                    <thead className="text-neutral-400 uppercase text-[9px] border-b border-neutral-700">
+                      <tr>
+                        <th className="py-1.5 px-2">Member</th>
+                        <th className="py-1.5 px-2 text-right">Count</th>
+                        <th className="py-1.5 px-2 text-right">Length</th>
+                        <th className="py-1.5 px-2 text-right">Total (m)</th>
+                        <th className="py-1.5 px-2 text-right">Cost</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-neutral-800">
+                      {currentGrilleBOM.itemizedBreakdown.map((item, idx) => (
+                        <tr key={idx}>
+                          <td className="py-1.5 px-2 text-white">{item.item}</td>
+                          <td className="py-1.5 px-2 text-right font-mono">{item.pieces}</td>
+                          <td className="py-1.5 px-2 text-right font-mono">{item.lengthMm}mm</td>
+                          <td className="py-1.5 px-2 text-right font-mono">{item.totalMeters.toFixed(2)}m</td>
+                          <td className="py-1.5 px-2 text-right font-mono text-teal-300 font-semibold">
+                            ₱{item.subtotal.toFixed(2)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Itemized Hardware & Accessories Line Card (IMP-MS76 / QAD-TC91.7) */}
+        {currentSwappedAccessories.length > 0 && (
+          <div className="mb-5 rounded-[16px] border border-amber-200 bg-amber-50/40 p-4 space-y-3">
+            <div className="flex items-center justify-between border-b border-amber-100 pb-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold uppercase tracking-wider text-[#0f1422]">
+                  Hardware & Accessories
+                </span>
+                <span className="text-[10px] font-semibold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full">
+                  Custom Hardware Spec
+                </span>
+              </div>
+              <span className="font-mono font-semibold text-amber-800">
+                {currentTotalAccessoryDelta > 0
+                  ? `+₱${currentTotalAccessoryDelta.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                  : "Included"}
+              </span>
+            </div>
+            <div className="space-y-1.5 text-xs">
+              {currentSwappedAccessories.map((acc: SwappedAccessoryViewItem, aIdx: number) => (
+                <div key={aIdx} className="flex justify-between items-center text-[#0f1422]">
+                  <div>
+                    <span className="font-medium block">{acc.accessoryName}</span>
+                    <span className="text-[11px] text-neutral-500">
+                      Handing: {acc.horizontalPosition === "left" ? "Left Side" : "Right Side"} ({acc.verticalPosition === "bottom" ? "Bottom" : "Mid-Height"}) | Finish: {acc.finish}
+                    </span>
+                  </div>
+                  <span className="font-mono text-neutral-600">
+                    {acc.priceDelta && acc.priceDelta > 0 ? `+₱${acc.priceDelta.toFixed(2)}` : "₱0.00"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Dedicated Screen Add-on Attachment Line Card */}
+        {currentSelectedAddon === "screen" && currentAddonBOM && (
+          <div className="mb-5 rounded-[16px] border border-cyan-200 bg-cyan-50/40 p-4 space-y-3">
+            <div className="flex items-center justify-between border-b border-cyan-100 pb-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold uppercase tracking-wider text-[#0f1422]">
+                  Modular Attachment
+                </span>
+                <span className="text-[10px] font-semibold text-[#07b6d3] bg-[#07b6d3]/15 px-2 py-0.5 rounded-full">
+                  Insect Screen{currentAddonFinishLabel ? ` (${currentAddonFinishLabel})` : ""}
+                </span>
+              </div>
+              <span className="font-mono font-semibold text-[#07b6d3]">
+                +₱{currentAddonBOM.finalAddonPrice.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
+            <div className="space-y-1.5 text-xs">
+              <div className="flex justify-between items-center text-[#0f1422]">
+                <span className="font-medium">
+                  {currentAddonBOM.addonName}
+                  {currentAddonFinishLabel ? ` (${currentAddonFinishLabel})` : ""}
+                </span>
+                <span className="text-neutral-500">1 unit</span>
+              </div>
+              <div className="space-y-1 pl-2 border-l-2 border-cyan-200 text-[11px] text-neutral-600">
+                {currentAddonBOM.breakdown.map((item, bIdx) => (
+                  <div key={bIdx} className="flex justify-between items-center">
+                    <span>{item.item} ({item.quantity} {item.unit})</span>
+                    <span className="font-mono">₱{item.subtotal.toFixed(2)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Itemized BOM Summary Table (IMP-MS66 / QAD-TC81.6) */}
+        {currentBomCalc && currentBomCalc.bomSummary && (
+          <div className="mb-5 rounded-[16px] border border-neutral-200/80 bg-white p-4 space-y-3">
+            <div className="flex items-center justify-between border-b border-neutral-100 pb-2">
+              <span className="text-xs font-semibold uppercase tracking-wider text-neutral-700">
+                Itemized BOM Summary
+              </span>
+              <span className="text-[11px] text-neutral-500 font-mono">
+                {currentBomCalc.bomSummary.currency}
+              </span>
+            </div>
+            <div className="space-y-2 text-xs">
+              {currentBomCalc.bomSummary.groups.map((group, gIdx) => (
+                <div key={gIdx} className="flex justify-between items-center py-1 border-b border-neutral-50 last:border-0">
+                  <div>
+                    <span className="font-medium text-[#0f1422] block">{group.item_group_name}</span>
+                    <span className="text-[11px] text-neutral-500">
+                      Qty: {group.quantity} {group.unit_label} @ ₱{group.unit_price.toFixed(2)}
+                    </span>
+                  </div>
+                  <span className="font-mono font-semibold text-[#0f1422]">
+                    ₱{group.estimated_subtotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Override Acknowledgement Agreement (Conditional) */}
         {isOverridden && (

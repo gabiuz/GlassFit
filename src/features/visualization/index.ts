@@ -13,4 +13,5 @@ export { DirectVisualizationPage } from "./components/DirectVisualizationPage";
 export { CalibrationModeSelector } from "./components/CalibrationModeSelector";
 export { FiducialPaperPickerModal } from "./components/FiducialPaperPickerModal";
 export { PaperDetectionConfirmationModal } from "./components/PaperDetectionConfirmationModal";
-
+export { MaterialCustomizerPanel } from "./components/MaterialCustomizerPanel";
+export { PartMaterialsPicker } from "./components/PartMaterialsPicker";

@@ -1,3 +1,4 @@
+import { getConfigurationProductFacing } from "./productFacing";
 import type { AluminumFinishKey } from "./colorVariations";
 import type { PlacedOverlay, VariationRenderRecipe } from "./types";
 
@@ -41,6 +42,7 @@ export function createVariationRenderFingerprint(
       thicknessMm: configuration.thicknessMm,
       panelCount: configuration.panelCount,
       includeSill: configuration.includeSill,
+      productFacing: getConfigurationProductFacing(configuration),
       yaw: configuration.yaw,
       pitch: configuration.pitch,
       rotateAngle: configuration.rotateAngle,
@@ -57,6 +59,7 @@ export function createVariationRenderFingerprint(
       positionY: configuration.positionY,
       visualParameterValues: configuration.visualParameterValues,
       perspectiveFitCorners: configuration.perspectiveFitCorners,
+      visualPoseCorners: configuration.visualPoseCorners,
       activeOcclusionIds: configuration.activeOcclusionIds,
       manualOcclusionMaskDataUrl: configuration.manualOcclusionMaskDataUrl,
       manualOcclusionPolygons: configuration.manualOcclusionPolygons,

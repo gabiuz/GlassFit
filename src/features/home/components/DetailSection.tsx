@@ -419,25 +419,43 @@ export function DetailSection() {
             </div>
           </div>
         </div>
-      </div>
+        <div className="mt-6 flex items-center justify-center gap-4">
+          <button
+            type="button"
+            aria-label="Previous card"
+            onClick={handlePreviousClick}
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black/10 text-black transition-colors hover:bg-black/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
+          >
+            <ChevronLeft className="h-5 w-5" aria-hidden="true" />
+          </button>
 
-      <div className="hidden items-center justify-center gap-6 lg:flex">
-        <div className="flex items-center gap-3">
-          {detailCards.map((card, index) => {
-            const isActiveDot = index === activeFeatureIndex;
+          <div className="flex items-center gap-3">
+            {detailCards.map((card, index) => {
+              const isActiveDot = index === activeFeatureIndex;
 
-            return (
-              <button
-                type="button"
-                key={card.title}
-                aria-label={`Show ${card.title}`}
-                onClick={() => handlePaginationClick(index)}
-                className={`h-2.5 rounded-full transition-all duration-200 ${
-                  isActiveDot ? "w-5 bg-green" : "w-2.5 bg-black/30"
-                }`}
-              />
-            );
-          })}
+              return (
+                <button
+                  type="button"
+                  key={card.title}
+                  aria-label={`Show ${card.title}`}
+                  aria-current={isActiveDot ? "step" : undefined}
+                  onClick={() => handlePaginationClick(index)}
+                  className={`h-2.5 rounded-full transition-all duration-200 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-green ${
+                    isActiveDot ? "w-5 bg-green" : "w-2.5 bg-black/30"
+                  }`}
+                />
+              );
+            })}
+          </div>
+
+          <button
+            type="button"
+            aria-label="Next card"
+            onClick={handleNextClick}
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black/10 text-black transition-colors hover:bg-black/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
+          >
+            <ChevronRight className="h-5 w-5" aria-hidden="true" />
+          </button>
         </div>
       </div>
     </section>

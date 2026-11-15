@@ -12,6 +12,7 @@ interface Step1ViewPdfProps {
   totalEstimatePhp?: number;
   quotationNumber?: string;
   dateFormatted?: string;
+  productName?: string;
 }
 
 const listItems = [
@@ -31,15 +32,17 @@ export function Step1ViewPdf({
   totalEstimatePhp = 4362.93,
   quotationNumber = "Q-2026-0482",
   dateFormatted = "May 21, 2026 · 3:42 PM",
+  productName = "Custom Architectural Fenestration",
 }: Step1ViewPdfProps) {
   const formattedEstimate = new Intl.NumberFormat("en-PH", {
     style: "currency",
     currency: "PHP",
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(totalEstimatePhp).replace("PHP", "Php");
 
   const tags = [
-    "Parametric Series 798",
+    productName,
     formattedEstimate,
     !hasSill ? "No Sill (Flush)" : "Standard Sill",
     structuralWaiver ? "Structural Waiver Attached" : "NSCP 2015 Compliant",
@@ -91,25 +94,25 @@ export function Step1ViewPdf({
           </div>
 
           {/* PDF info details */}
-          <div className="flex flex-col gap-5 items-start relative select-none text-center md:text-left">
+          <div className="flex flex-col gap-5 items-center md:items-start relative min-w-0 w-full select-none text-center md:text-left">
             <p className="font-normal text-[#0f1422] text-base md:text-[20px] tracking-[-0.38px] leading-[1.4]">
               Prepared {dateFormatted}
             </p>
-            <p className="font-medium text-[#0f1422] text-xl sm:text-[32px] tracking-[-0.608px] leading-[1.2]">
+            <p className="font-medium text-[#0f1422] text-xl sm:text-[32px] tracking-[-0.608px] leading-[1.2] break-all">
               Quotation {quotationNumber}
             </p>
             {/* Tags row */}
-            <div className="flex flex-wrap gap-3.5 items-center justify-center md:justify-start">
+            <div className="flex flex-wrap gap-3 items-center justify-center md:justify-start min-w-0 max-w-full">
               {tags.map((tag) => (
                 <div
                   key={tag}
-                  className={`border px-2.5 py-1.25 rounded-[20px] ${
+                  className={`border max-w-full px-3 py-1.5 rounded-[20px] ${
                     tag.includes("Waiver")
                       ? "bg-amber-100 border-amber-300 text-amber-900"
-                      : "bg-[#c3c3c3] border-[#c3c3c3] text-white"
+                      : "bg-white border-[#c3c3c3] text-[#0f1422]"
                   }`}
                 >
-                  <p className="text-base font-normal tracking-[-0.304px] leading-[1.4] whitespace-nowrap">
+                  <p className="text-sm sm:text-base font-normal tracking-[-0.304px] leading-[1.4] break-words">
                     {tag}
                   </p>
                 </div>

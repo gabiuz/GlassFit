@@ -3,10 +3,12 @@
 import { useState } from "react";
 import { upsertProductTemplate } from "@/lib/admin/products/productMutations";
 
+import type { ProductTemplateSummary } from "./ProductSetupWizard";
+
 export type VisualizationStrategySectionProps = {
     productId: string;
-    initialData: any;
-    onSave: (data: any) => void;
+    initialData: ProductTemplateSummary | null;
+    onSave: (data: Record<string, unknown>) => void;
 };
 
 const BUILDER_PROFILES = [
@@ -18,8 +20,12 @@ const BUILDER_PROFILES = [
 ];
 
 export function VisualizationStrategySection({ productId, initialData, onSave }: VisualizationStrategySectionProps) {
-    const [strategy, setStrategy] = useState<"Fixed" | "Parametric">(initialData?.model_strategy || "Fixed");
-    const [builderKey, setBuilderKey] = useState(initialData?.base_configuration?.builder_key || "fixed_model_v1");
+    const [strategy, setStrategy] = useState<"Fixed" | "Parametric">(
+        (initialData?.model_strategy as "Fixed" | "Parametric") || "Fixed"
+    );
+    const [builderKey, setBuilderKey] = useState(
+        (initialData?.base_configuration?.builder_key as string) || "fixed_model_v1"
+    );
     
     const [isSaving, setIsSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -45,8 +51,8 @@ export function VisualizationStrategySection({ productId, initialData, onSave }:
             };
 
             onSave(savedData);
-        } catch (err: any) {
-            setError(err.message || "An error occurred while saving.");
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : "An error occurred while saving.");
         } finally {
             setIsSaving(false);
         }
@@ -143,7 +149,7 @@ export function VisualizationStrategySection({ productId, initialData, onSave }:
             <div className="flex justify-between pt-4 border-t border-neutral-200">
                 <button
                     type="button"
-                    onClick={() => onSave(initialData)} // Allow skipping/continuing if valid
+                    onClick={() => onSave((initialData as Record<string, unknown>) ?? {})} // Allow skipping/continuing if valid
                     className="text-neutral-500 hover:text-black text-sm font-medium transition-colors px-4 py-2"
                 >
                     Back to Edit Basic Info (Not fully hooked up yet)

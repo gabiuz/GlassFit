@@ -541,3 +541,78 @@ This target supersedes the default paper-localization intake behavior described 
 
 Resolve network-induced HEIC photo upload failures under unstable cellular internet conditions. Eliminate full-resolution computer vision processing bottleneck by constraining OpenCV fiducial search and bilateral filtering to workspace-normalized resolutions (max 1920px), reducing CV execution latency from over 15 seconds to under 150 milliseconds. Introduce resilient client-side transport with exponential backoff retry and request timeouts. Decouple click-guided paper snapping by providing dedicated session-bound snapping (`/snap-paper`), eliminating redundant multi-megabyte image downloads and re-uploads over unstable connections. Preserve local file references and buffer converted workspace blobs on the client to ensure instant, network-resilient modal rendering.
 
+## MS71: Parametric Grille Linear-Meter Pricing Engine, Automated 3D Sub-Bar Geometry Analyzer, and Pattern Repetition Metric Engine
+
+**Status:** Implemented (October 26, 2026); automated unit test suite passing (`npm run test:ms71`). **Specification:** [IMP-MS71](implementation/ms71.md). **Traceability:** BRD-M2, BRD-M3, BRD-M5; PRD-F2, PRD-F5, PRD-F6, PRD-F10, PRD-F11, PRD-F14; SDD-C4, SDD-C7, SDD-C9; DSD-UI4, DSD-UI7, DSD-UI10; ERD-E6, ERD-E13, ERD-E14, ERD-E17; QAD-TC86.1 through QAD-TC86.10.
+
+Replaces area-based approximations with precise per-piece and per-meter measurement of individual horizontal and vertical bars under dynamic pattern repetition for window security grilles. Provides `grilleGeometryAnalyzer.ts` for automated 3D sub-bar geometry inspection of uploaded GLB files or procedural patterns without manual per-bar selection. Implements `grillePricingEngine.ts` calculating exact linear meters and piece counts for perimeter rails, vertical pickets, and horizontal divider/tie bars across Grid, Louver, and Staggered Brick topologies with 12% aluminum scrap allowance, PHP 650.00 fabrication labor floor, and 25% contractor margin. All 10 acceptance scenarios in QAD-TC86 verified.
+
+## MS72: Admin Product Setup Wizard Center-Grille Part Inspector, Single-Click Material Binding, and Linear Calculation Preview
+
+**Status:** Implemented (October 26, 2026); automated unit test suite passing (`npm run test:ms72`). **Specification:** [IMP-MS72](implementation/ms72.md). **Traceability:** BRD-M2, BRD-M4, BRD-M5; PRD-F14, PRD-F19; SDD-C4, SDD-C9; DSD-UI10; ERD-E6, ERD-E17; QAD-TC87.1 through QAD-TC87.10.
+
+Streamlines administrative grille authoring in the Product Setup Wizard by introducing the `GRILLE_LINEAR` dimension binding across database check constraints, TypeScript schemas, and automated filename classification (`window_center_grille`, `grill_bars`, `grille_infill`, `middle_bars`, `picket_lattice`). Enables single-click material assignment per linear meter for the entire center grille assembly without manual one-by-one bar selection. Filters candidate materials to linear extrusion profiles (`/m`) and validates against non-linear material assignment. Renders live 3D bar breakdown summary card in Part Inspector with discrete vertical/horizontal piece counts and cut lengths. Embeds real-time Grille Linear Extrusion Cut List table in Validation Workspace Section updating in under 16ms during width and height slider manipulation. All 10 acceptance scenarios in QAD-TC87 verified.
+
+## MS73: Customer Visualization Workspace Dynamic Grille Sizing, Real-Time Linear BOM Recalculation, and Itemized Quotation/PDF Handoff
+
+**Status:** Implemented (October 26, 2026); automated unit test suite passing (`npm run test:ms73`). **Specification:** [IMP-MS73](implementation/ms73.md). **Traceability:** BRD-M2, BRD-M3, BRD-M4, BRD-M5; PRD-F2, PRD-F5, PRD-F6, PRD-F10, PRD-F11; SDD-C4, SDD-C5, SDD-C7, SDD-C8; DSD-UI4, DSD-UI7, DSD-UI16; ERD-E13, ERD-E14; QAD-TC88.1 through QAD-TC88.10.
+
+Integrates dynamic procedural security grille attachments into customer 3D visualization, interactive dimensional resizing, sub-50ms linear extrusion BOM recalculation, and Philippine fabricator consultation PDF exports. Dynamically generates parametric 3D grille assemblies with adaptive pattern repetition and independent frame finish swatches in under 16ms. Updates real-time pricing factoring linear meters, pickets, divider rails, scrap allowance, and contractor margins. Itemizes grille extrusion specifications in customer quotation modals and consultation PDFs.
+
+## MS74: Admin Accessory Product Role and 5-Step Authoring Workflow
+
+**Status:** Implemented (October 26, 2026); automated unit test suite passing (`npm run test:ms74`). **Specification:** [IMP-MS74](implementation/ms74.md). **Traceability:** BRD-M2, BRD-M4, BRD-M5; PRD-F14, PRD-F19; SDD-C4, SDD-C9; DSD-UI10; ERD-E3, ERD-E6; QAD-TC89.1 through QAD-TC89.10.
+
+Introduces the dedicated Accessory Product Role in admin product authoring, separating standalone modular hardware (handles, locks, doorknobs, rollers, and hinges) from primary architectural fixtures and add-on attachments. Condenses the 7-step wizard into a focused 5-step workflow (Basic Info, Visualization Strategy, Structural Components, Validation Workspace, Review & Publish) omitting irrelevant dimensional parameters and asset uploads. Enforces mutual role exclusivity, provides category-scoped administrative catalog filtering, and enables direct publishing for modular accessories.
+
+## MS75: Admin Part Inspector Swappable Accessory Binding and Position Configuration
+
+**Status:** Implemented (October 26, 2026); automated unit test suite passing (`npm run test:ms75`). **Specification:** [IMP-MS75](implementation/ms75.md). **Traceability:** BRD-M2, BRD-M4, BRD-M5; PRD-F14, PRD-F19; SDD-C4, SDD-C9; DSD-UI10; ERD-E6; QAD-TC90.1 through QAD-TC90.10.
+
+Extends the admin Part Inspector drawer to designate decomposed 3D sub-components as swappable accessory slots. Enables administrators to select accessory categories (handle, lock, roller, hinge), whitelist compatible accessory products, and configure spatial position constraints including horizontal Left/Right and vertical Bottom/Up elevation toggles with millimeter offsets. Automatically maps component classifications to accessory slots and validates configuration before publishing.
+
+## MS76: Customer Visualization Workspace Dynamic Accessory Swapping, Positional Matrix Alignment, and Real-Time Quotation/PDF BOM Handoff
+
+**Status:** Implemented (October 26, 2026); automated unit test suite passing (`npm run test:ms76`). **Specification:** [IMP-MS76](implementation/ms76.md). **Traceability:** BRD-M2, BRD-M3, BRD-M4, BRD-M5; PRD-F2, PRD-F5, PRD-F6, PRD-F10, PRD-F11; SDD-C4, SDD-C5, SDD-C7, SDD-C8; DSD-UI4, DSD-UI7, DSD-UI16; ERD-E3, ERD-E6, ERD-E13, ERD-E14; QAD-TC91.1 through QAD-TC91.10.
+
+Enables customer dynamic hardware accessory swapping inside the 3D visualization workspace (`ProductModelWorkspace.tsx`). Features an interactive Hardware & Accessories dock displaying compatible handles, knobs, and smart digital locks with price deltas and PBR finish swatches (Matte Black, Brushed Chrome, Satin Brass, Stainless Steel). Executes sub-16ms runtime 3D mesh replacement with strict lateral X-axis translation for Left vs Right handings and strict vertical Y-axis translation for Bottom vs Up elevations. Recalculates hardware BOM pricing in under 50ms, itemizes hardware selections in quotation confirmation modals, and prints exact accessory model, finish, and handing in consultation PDF exports for Philippine fabricators. All 10 acceptance scenarios in QAD-TC91 verified.
+
+## MS77: Admin Part Replacement Binding to Registered Accessories
+
+**Status:** Implemented (October 27, 2026); browser acceptance pending. **Specification:** [IMP-MS77](implementation/ms77.md). **Traceability:** BRD-M2, BRD-M4, BRD-M5; PRD-F5, PRD-F14; SDD-C4, SDD-C9; DSD-UI10; ERD-E3, ERD-E6; QAD-TC92.1 through QAD-TC92.10.
+
+Administrators explicitly approve published, renderable Accessories products for each replaceable part. Empty allowlists keep the original part only. Save, publication, customer preview, and new quotation submission enforce current catalog eligibility and the approved part binding. Migration 021 normalizes legacy null allowlists for review.
+
+## MS79: Admin Components Workspace Usability, Material Assignment, Selection Clarity, and Save Integrity
+
+**Status:** Ready for Implementation (plan only, October 28, 2026). **Specification:** [IMP-MS79](implementation/ms79.md). **Traceability:** BRD-M2, BRD-M4, BRD-M5; PRD-F5, PRD-F10, PRD-F14, PRD-F19; SDD-C4, SDD-C7, SDD-C9; DSD-UI10; ERD-E6, ERD-E17; planned QAD-TC94.1 through QAD-TC94.18.
+
+Plans a bounded 60/40 admin Components workbench that keeps the model visible while browsing many materials, a focused allowed/default material chooser, exact part navigation, glass-safe selection outline, and responsive review layout. Also plans explicit save and removal persistence, truthful readiness and upload feedback, accessible controls, and browser acceptance using the existing 18-part Jalousie product. No application code is implemented by this milestone document.
+
+## MS80: Directional Add-on Placement Side Compatibility and Operator-Targeted Multi-Hatch Alignment
+
+**Status:** Implemented (October 29, 2026); automated unit test suite passing (`npm run test:ms80`). **Specification:** [IMP-MS80](implementation/ms80.md). **Traceability:** BRD-M2, BRD-M4, BRD-M5; PRD-F5, PRD-F10, PRD-F14, PRD-F19; SDD-C4, SDD-C5, SDD-C7, SDD-C9; DSD-UI4, DSD-UI7, DSD-UI10; ERD-E3, ERD-E6, ERD-E14; QAD-TC95.1 through QAD-TC95.12.
+
+Enforces directional mounting side compatibility (Front exterior, Back interior, or Both customer selectable) for add-on attachments (insect screens and security grilles) to prevent physical projection collisions on outward-projecting fixtures (awning and casement windows). Dynamically binds screen access hatches directly to host product operating mechanisms (jalousie window operators), automatically cloning and positioning N distinct hatches centered at target operator centroids in 3D space, mirroring handing laterally for left-side operators, and scaling parametric BOM hardware quantities by N. All 12 acceptance scenarios in QAD-TC95 verified.
+
+## MS81: Parametric Jalousie Dynamic Louver and Operator Generation, Automated Pitch Counting, and Per-Piece BOM Pricing Engine
+
+**Status:** Implemented (October 29, 2026); automated unit test suite passing (`npm run test:ms81`). **Specification:** [IMP-MS81](implementation/ms81.md). **Traceability:** BRD-M2, BRD-M4, BRD-M5; PRD-F5, PRD-F10, PRD-F14, PRD-F19; SDD-C4, SDD-C5, SDD-C7, SDD-C9; DSD-UI4, DSD-UI7, DSD-UI10; ERD-E3, ERD-E6, ERD-E14, ERD-E17; QAD-TC96.1 through QAD-TC96.12.
+
+Introduces automated 3D geometry analysis for uploaded jalousie louver and operator meshes (`JW_Louver_Clips_And_Glass.glb` detecting 7 blades at 175mm pitch; `JW_Operators.glb` detecting 2 operators). Dynamically adds or deletes discrete louver glass blades at 175mm pitch intervals during height adjustment without vertical mesh stretching ($scaleY = 1.0$). Automatically scales operator hardware count proportionally ($N_{operators} = \lceil N_{louvers} / 4 \rceil$) and distributes operators along window jamb centroids. Evaluates parametric bill-of-materials costs on a discrete per-piece (`pc`) billing basis for both glass blades and operating mechanisms, feeding into real-time quotation snapshots and consultation PDF handoffs.
+
+## MS82: Smart Dynamic Modular Bay Replication, Directional Aperture Expansion, and Automated Infill and Hardware Generation
+
+**Status:** Implemented (October 29, 2026); automated unit test suite passing (`npm run test:ms82`). **Specification:** [IMP-MS82](implementation/ms82.md). **Traceability:** PRD-F5, PRD-F10, PRD-F14, PRD-F19; SDD-C4, SDD-C5, SDD-C7, SDD-C9; DSD-UI4, DSD-UI7, DSD-UI10; ERD-E3, ERD-E4, ERD-E6, ERD-E7, ERD-E14, ERD-E17; QAD-TC97.1 through QAD-TC97.14.
+
+Introduces automated parameter and geometric replication logic for modular fenestration bays without manual step-loop structural rules. Automatically analyzes uploaded multi-part window assemblies to classify constituent parts into semantic roles (`OUTER_JAMB_LEFT`, `OUTER_JAMB_RIGHT`, `OUTER_HEAD`, `OUTER_SILL`, `REMOVABLE_SILL`, `BAY_DIVIDER`, `BAY_INFILL`, `BAY_HARDWARE`, `GLOBAL_ACCESSORY`) and extracts canonical single-bay prototypes. Dynamically calculates modular bay count ($N_{bays} = \max(1, \text{round}(W / P_{nominal}))$) and intermediate mullion count ($N_{mullions} = N_{bays} - 1$) across width adjustments, distributing clear bay openings and intermediate divider mullions along metric coordinates according to the configured expansion anchor mode (symmetric, rightward/left-anchored, leftward/right-anchored). Replicates infill glass louver blade arrays and operator mechanism hardware across all bays at 1:1 metric scale, while preserving legacy continuous stretching behavior when dynamic bay replication is inactive. Integrates orthogonally with MS81 vertical pitch counting ($N_{bays} \times N_{louvers}$ and $N_{bays} \times N_{operators}$) and MS80 screen access hatch alignment (1:1 alignment across all bays). Dynamically scales the parametric bill-of-materials for intermediate mullion linear extrusion lengths ($N_{mullions} \times H_{mullion}$) and discrete per-piece infill and hardware quantities, disclosing multi-bay specifications in customer quotation summaries and Philippine fabricator consultation PDFs. All 14 acceptance test suites (17 test cases) in QAD-TC97 verified.
+
+
+## MS85: Universal BOM Pricing Integrity
+
+Implemented November 2, 2026 under PRD-F10, PRD-F14, PRD-F19, SDD-C7, SDD-C9 and QAD-TC100.1 through QAD-TC100.14. See [implementation and verification record](implementation/ms85.md#8-implementation-and-verification-record). No schema migration or deployment performed. Local browser and exported PDF visual acceptance completed with synthetic fixtures; see the verification record for evidence scope.
+
+
+## MS88: Post-Fit Product Facing
+
+**Status:** Implemented (November 3, 2026); production asset and full-scene acceptance pending. **Specification:** [IMP-MS88](implementation/ms88.md). **Traceability:** PRD-F5, PRD-F6, PRD-F9; SDD-C4, SDD-C5, SDD-C6; DSD-UI4; ERD-E10, ERD-E11; QAD-TC103.1 through QAD-TC103.12. Implementation and verification evidence is maintained in the specification.

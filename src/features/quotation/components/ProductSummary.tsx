@@ -13,7 +13,10 @@ import {
   calculateOverlayPricing,
   aggregateMultiProductBOM,
 } from "@/lib/pricing/pricingEngine";
-import type { ItemizedProductQuotation } from "@/lib/pricing/types";
+import { computeLouverBladeCount, computeLouverOperatorCount } from "@/lib/visualization/jalousieGeometryAnalyzer";
+import { computeDynamicBayCount, computeMullionCount } from "@/lib/visualization/bayReplicationEngine";
+import type { ItemizedProductQuotation, DynamicBayConfig } from "@/lib/pricing/types";
+import { groupsFromBom } from "@/lib/pricing/quotationDocument";
 import { PriceCard, ProductDetailsData } from "./PriceCard";
 
 interface ProductItem {
@@ -81,7 +84,8 @@ export function ProductSummary() {
   const formattedTotal = new Intl.NumberFormat("en-PH", {
     style: "currency",
     currency: "PHP",
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   })
     .format(consolidatedSummary.finalGrandTotal)
     .replace("PHP", "Php");
@@ -150,8 +154,8 @@ export function ProductSummary() {
           </div>
         )}
 
-        <div className="flex flex-col md:flex-row gap-4 items-center justify-between w-full">
-          <div className="flex flex-col items-start">
+        <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between w-full min-w-0">
+          <div className="flex flex-col items-start min-w-0">
             <span className="text-xl sm:text-2xl font-medium leading-7">
               {productsData.length > 1
                 ? "Final Estimated Quotation (Overall Total)"
@@ -161,7 +165,7 @@ export function ProductSummary() {
               Includes material offcuts, hardware, workshop labor, and contractor margin
             </span>
           </div>
-          <span className="text-3xl md:text-5xl font-medium leading-tight md:leading-[57.60px]">
+          <span className="max-w-full min-w-0 text-3xl md:text-5xl font-medium leading-tight md:leading-[57.60px] [overflow-wrap:anywhere]">
             {formattedTotal}
           </span>
         </div>
@@ -203,6 +207,53 @@ function createProductSummaryItemFromOverlay(
       : "6mm_bronze";
 
   const itemId = overlay.overlayId || `overlay-${index}`;
+  const addonPrice = config.addonPrice ?? 0;
+  const accessoryPriceDelta = config.accessoryPriceDelta ?? 0;
+  const swappedAccessories = Object.values(config.swappedAccessories ?? {});
+  const addonName = config.addonName ?? null;
+  const selectedAddon = (config.selectedAddon as "none" | "screen" | "grill") ?? (config.addonProductId ? "screen" : undefined);
+  const addonProductId = config.addonProductId ?? null;
+  const addonAluminumFinish = config.addonAluminumFinish;
+  const addonMountingSide = (config.addonMountingSide as "front" | "back") ?? undefined;
+  const isInterior = addonMountingSide === "back";
+  const hatchCount = isInterior ? (Number(config.hatchCount) || 0) : 0;
+  const hatchTargetKeys = isInterior && Array.isArray(config.hatchTargetKeys) ? (config.hatchTargetKeys as string[]) : undefined;
+
+  const sideLabel = addonMountingSide === "back"
+    ? "Interior Mount / Back"
+    : addonMountingSide === "front"
+      ? "Exterior Mount / Front"
+      : null;
+  const hatchLabel = (isInterior && hatchCount > 0)
+    ? `with ${hatchCount}x Operator Access ${hatchCount === 1 ? "Hatch" : "Hatches"}`
+    : null;
+  const sideHatchClause = [sideLabel, hatchLabel].filter(Boolean).length > 0
+    ? ` (${[sideLabel, hatchLabel].filter(Boolean).join(", ")})`
+    : "";
+
+  const formattedAddonName = addonName
+    ? `${addonName}${sideHatchClause}`
+    : selectedAddon === "screen"
+      ? `Insect Screen${sideHatchClause}`
+      : selectedAddon === "grill"
+        ? `Security Grille${sideHatchClause}`
+        : null;
+
+  const baseUnitPrice = config.baseUnitPrice ?? (unitPrice - addonPrice - accessoryPriceDelta);
+
+  const isJalousieOverlay = (overlay.productName || "").toLowerCase().includes("jalousie");
+  const isDynamicBayActiveOverlay = Boolean(overlay.configuration?.dynamicBayConfig?.enabled);
+  const nominalPitchMmOverlay = overlay.configuration?.dynamicBayConfig?.nominal_bay_pitch_mm ?? 600;
+  const bayCountOverlay = isDynamicBayActiveOverlay ? computeDynamicBayCount(widthMm, nominalPitchMmOverlay) : 1;
+  const mullionCountOverlay = isDynamicBayActiveOverlay ? computeMullionCount(bayCountOverlay) : 0;
+  const louverCountPerBayOverlay = computeLouverBladeCount(heightMm, 175);
+  const opCountPerBayOverlay = computeLouverOperatorCount(louverCountPerBayOverlay, 4);
+  const totalLouversOverlay = bayCountOverlay * louverCountPerBayOverlay;
+  const totalOpsOverlay = bayCountOverlay * opCountPerBayOverlay;
+
+  const jalousieOverlaySpec = isJalousieOverlay
+    ? `${bayCountOverlay > 1 ? `${bayCountOverlay}-Sided Jalousie Window | ` : ""}${totalLouversOverlay}x Glass Louver Blades | ${totalOpsOverlay}x Window Operators${mullionCountOverlay > 0 ? ` | ${mullionCountOverlay}x Center Mullions` : ""}`
+    : null;
 
   const item: ProductItem = {
     itemId,
@@ -213,6 +264,9 @@ function createProductSummaryItemFromOverlay(
       dimension,
       !hasSill ? "Flush Base (No Sill)" : null,
       panelCount > 2 ? `${panelCount}-Panel` : null,
+      jalousieOverlaySpec,
+      formattedAddonName && selectedAddon && selectedAddon !== "none" ? `Add-on: ${formattedAddonName}` : null,
+      ...swappedAccessories.filter((selection) => selection.accessoryId !== "default").map((selection) => `Hardware: ${selection.accessoryName}`),
     ]
       .filter(Boolean)
       .join(" | "),
@@ -226,15 +280,27 @@ function createProductSummaryItemFromOverlay(
       category: "Window & Door",
       variant:
         panelCount > 2 ? `${panelCount}-Panel Configuration` : "2-Panel Standard",
-      material: "Aluminum/Glass",
+      material: bomCalc.glazingItems.length > 0 ? "Aluminum/Glass" : "Aluminum",
       aluminumFinish,
-      glassFinish,
-      glassType: glassFinish,
+      glassFinish: bomCalc.glazingItems.length > 0 ? glassFinish : "None",
+      glassType: bomCalc.glazingItems.length > 0 ? glassFinish : "None",
       thickness: `${thicknessMm}mm`,
       profileGrade: "Series 798",
       dimension,
       hasSill,
       structuralWaiver,
+      selectedAddon,
+      addonProductId,
+      addonName,
+      addonPrice: addonPrice > 0 ? addonPrice : undefined,
+      addonAluminumFinish,
+      addonMountingSide,
+      hatchCount: hatchCount > 0 ? hatchCount : undefined,
+      hatchTargetKeys,
+      baseUnitPrice,
+      swappedAccessories,
+      accessoryPriceDelta,
+      materialItems: groupsFromBom(bomCalc),
       bomGroups: {
         framingAmount: bomCalc.effectiveFramingCost,
         glazingAmount: bomCalc.effectiveGlazingCost,
@@ -267,6 +333,15 @@ function createProductSummaryItemFromOverlay(
     totalPrice,
     imageUrl: item.imageUrl,
     bomResult: bomCalc,
+    selectedAddon,
+    addonProductId,
+    addonName,
+    addonPrice: addonPrice > 0 ? addonPrice : undefined,
+    baseUnitPrice,
+    swappedAccessories: config.swappedAccessories,
+    accessoryPriceDelta,
+    addonAluminumFinish,
+    grilleBOM: overlay.configuration?.grilleBOM ?? overlay.grilleBOM ?? null,
     ...quotationMeasurement(overlay.configuration),
   };
 
@@ -313,13 +388,68 @@ function createProductSummaryItem(
     structuralWaiver,
   });
 
-  const unitPrice =
+  const addonPrice = configuration?.addonPrice ?? 0;
+  const accessoryPriceDelta = configuration?.accessoryPriceDelta ?? 0;
+  const swappedAccessories = Object.values(configuration?.swappedAccessories ?? {});
+  const addonName = configuration?.addonName ?? null;
+  const selectedAddon = (configuration?.selectedAddon as "none" | "screen" | "grill") ?? (configuration?.addonProductId ? "screen" : undefined);
+  const addonProductId = configuration?.addonProductId ?? null;
+  const addonAluminumFinish = configuration?.addonAluminumFinish;
+  const addonMountingSide = (configuration?.addonMountingSide as "front" | "back") ?? undefined;
+  const isInterior = addonMountingSide === "back";
+  const hatchCount = isInterior ? (Number(configuration?.hatchCount) || 0) : 0;
+  const hatchTargetKeys = isInterior && Array.isArray(configuration?.hatchTargetKeys) ? (configuration?.hatchTargetKeys as string[]) : undefined;
+
+  const sideLabel = addonMountingSide === "back"
+    ? "Interior Mount / Back"
+    : addonMountingSide === "front"
+      ? "Exterior Mount / Front"
+      : null;
+  const hatchLabel = (isInterior && hatchCount > 0)
+    ? `with ${hatchCount}x Operator Access ${hatchCount === 1 ? "Hatch" : "Hatches"}`
+    : null;
+  const sideHatchClause = [sideLabel, hatchLabel].filter(Boolean).length > 0
+    ? ` (${[sideLabel, hatchLabel].filter(Boolean).join(", ")})`
+    : "";
+
+  const formattedAddonName = addonName
+    ? `${addonName}${sideHatchClause}`
+    : selectedAddon === "screen"
+      ? `Insect Screen${sideHatchClause}`
+      : selectedAddon === "grill"
+        ? `Security Grille${sideHatchClause}`
+        : null;
+
+  const baseUnitPrice =
     bomCalc.finalQuotation > 0
       ? bomCalc.finalQuotation
       : definition.product.basePrice ?? 0;
+  const unitPrice = baseUnitPrice + addonPrice + accessoryPriceDelta;
   const qty = configuration?.quantity ?? 1;
   const totalPrice = unitPrice * qty;
   const itemId = definition.product.productId;
+
+  const isJalousie = (definition.product.productType || "").toLowerCase().includes("jalousie") ||
+    definition.components.some((c) => c.dimensionBinding === "LOUVER_BLADE" || (c as Record<string, unknown>).dimension_binding === "LOUVER_BLADE");
+
+  const dynamicBayConfig = definition.product.dynamicBayConfig ?? (definition.template as Record<string, unknown> | undefined)?.dynamic_bay_config as DynamicBayConfig | undefined;
+  const isDynamicBayActive = Boolean(dynamicBayConfig?.enabled);
+  const nominalPitchMm = dynamicBayConfig?.nominal_bay_pitch_mm ?? 600;
+  const bayCount = isDynamicBayActive ? computeDynamicBayCount(widthMm, nominalPitchMm) : 1;
+  const mullionCount = isDynamicBayActive ? computeMullionCount(bayCount) : 0;
+
+  let jalousieSpec: string | null = null;
+  if (isJalousie) {
+    const louverComp = definition.components.find((c) => c.dimensionBinding === "LOUVER_BLADE" || (c as Record<string, unknown>).dimension_binding === "LOUVER_BLADE");
+    const opComp = definition.components.find((c) => c.dimensionBinding === "LOUVER_OPERATOR" || (c as Record<string, unknown>).dimension_binding === "LOUVER_OPERATOR");
+    const pitchMm = louverComp?.jalousieConfig?.pitch_mm ?? louverComp?.jalousieConfig?.pitchMm ?? 175;
+    const louverCountPerBay = computeLouverBladeCount(heightMm, pitchMm);
+    const bladesPerOp = opComp?.jalousieConfig?.blades_per_operator ?? opComp?.jalousieConfig?.bladesPerOperator ?? 4;
+    const opCountPerBay = computeLouverOperatorCount(louverCountPerBay, bladesPerOp);
+    const totalLouvers = bayCount * louverCountPerBay;
+    const totalOps = bayCount * opCountPerBay;
+    jalousieSpec = `${bayCount > 1 ? `${bayCount}-Sided Jalousie Window | ` : ""}${totalLouvers}x Glass Louver Blades | ${totalOps}x Window Operators${mullionCount > 0 ? ` | ${mullionCount}x Center Mullions` : ""}`;
+  }
 
   const item: ProductItem = {
     itemId,
@@ -331,6 +461,9 @@ function createProductSummaryItem(
       dimension,
       !hasSill ? "Flush Base (No Sill)" : null,
       panelCount > 2 ? `${panelCount}-Panel` : null,
+      jalousieSpec,
+      formattedAddonName && selectedAddon && selectedAddon !== "none" ? `Add-on: ${formattedAddonName}` : null,
+      ...swappedAccessories.filter((selection) => selection.accessoryId !== "default").map((selection) => `Hardware: ${selection.accessoryName}`),
     ]
       .filter(Boolean)
       .join(" | "),
@@ -345,13 +478,25 @@ function createProductSummaryItem(
       variant: definition.template.templateName,
       material,
       aluminumFinish,
-      glassFinish,
-      glassType: glassFinish,
+      glassFinish: bomCalc.glazingItems.length > 0 ? glassFinish : "None",
+      glassType: bomCalc.glazingItems.length > 0 ? glassFinish : "None",
       thickness: `${thicknessMm}mm`,
       profileGrade: definition.template.modelStrategy,
       dimension,
       hasSill,
       structuralWaiver,
+      selectedAddon,
+      addonProductId,
+      addonName,
+      addonPrice: addonPrice > 0 ? addonPrice : undefined,
+      addonAluminumFinish,
+      addonMountingSide,
+      hatchCount: hatchCount > 0 ? hatchCount : undefined,
+      hatchTargetKeys,
+      baseUnitPrice,
+      swappedAccessories,
+      accessoryPriceDelta,
+      materialItems: groupsFromBom(bomCalc),
       bomGroups: {
         framingAmount: bomCalc.effectiveFramingCost,
         glazingAmount: bomCalc.effectiveGlazingCost,
@@ -383,6 +528,18 @@ function createProductSummaryItem(
     totalPrice,
     imageUrl: item.imageUrl,
     bomResult: bomCalc,
+    selectedAddon,
+    addonProductId,
+    addonName,
+    addonPrice: addonPrice > 0 ? addonPrice : undefined,
+    baseUnitPrice,
+    swappedAccessories: configuration?.swappedAccessories,
+    accessoryPriceDelta,
+    addonAluminumFinish,
+    addonMountingSide,
+    hatchCount: hatchCount > 0 ? hatchCount : undefined,
+    hatchTargetKeys,
+    grilleBOM: configuration?.grilleBOM ?? null,
     ...quotationMeasurement(configuration),
   };
 

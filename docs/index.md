@@ -5,7 +5,7 @@
 **Version:** 1.0 (Capstone Production Release)  
 **Owner:** Reynard John B. Rabanal (Lead Product / Systems Architect) & GlassFit Capstone Team (PUP CCIS)  
 **Status:** Locked  
-**Last reconciled:** October 21, 2026 (Implemented IMP-MS63 resilient HEIC ingestion, downscaled paper detection, and /snap-paper; QAD-TC78 verification)
+**Last reconciled:** October 28, 2026 (Registered planned IMP-MS79 admin Components workspace usability milestone)
 
 ---
 
@@ -60,6 +60,12 @@ GlassFit is a responsive, web-based photo-simulation and consultation-support pl
 | IMP-MS61 | Empirical Real-World Accuracy Benchmark and Comparative Release Protocol | `docs/implementation/ms61.md` | Implemented | October 19, 2026 | GlassFit Capstone Team |
 | IMP-MS62 | Separate Automatic Detection from Paper Reference Calibration | `docs/implementation/ms62.md` | Implemented; browser acceptance pending | October 21, 2026 | GlassFit Capstone Team |
 | IMP-MS63 | Resilient HEIC Space Image Ingestion, Network-Tolerant Conversion, and Low-Latency Paper Detection Pipeline | `docs/implementation/ms63.md` | Implemented | October 21, 2026 | GlassFit Capstone Team |
+| IMP-MS79 | Admin Components Workspace Usability, Material Assignment, Selection Clarity, and Save Integrity | `docs/implementation/ms79.md` | Ready for Implementation (plan only) | October 28, 2026 | GlassFit Capstone Team |
+| IMP-MS80 | Directional Add-on Placement Side Compatibility and Operator-Targeted Multi-Hatch Alignment | `docs/implementation/ms80.md` | Implemented | October 29, 2026 | GlassFit Capstone Team |
+| IMP-MS81 | Parametric Jalousie Dynamic Louver and Operator Generation, Automated Pitch Counting, and Per-Piece BOM Pricing Engine | `docs/implementation/ms81.md` | Implemented | October 29, 2026 | GlassFit Capstone Team |
+| IMP-MS82 | Smart Dynamic Modular Bay Replication, Directional Aperture Expansion, and Automated Infill and Hardware Generation | `docs/implementation/ms82.md` | Implemented | October 29, 2026 | GlassFit Capstone Team |
+
+| IMP-MS88 | Post-Fit Front (Exterior) and Back (Interior) Product Facing | `docs/implementation/ms88.md` | Implemented; production asset acceptance pending | November 3, 2026 | GlassFit Capstone Team |
 
 ---
 
@@ -88,6 +94,7 @@ GlassFit is a responsive, web-based photo-simulation and consultation-support pl
 | BRD-M2, BRD-M4 (Parametric Scalability & Catalog Flexibility) | PRD-F5, PRD-F14 | SDD-C4, SDD-C9 | ERD-E4, ERD-E5, ERD-E6, ERD-E7 | QAD-TC58 | Implemented |
 | BRD-M2, BRD-M4 (Cross-Product Workspace Continuity) | PRD-F6 | SDD-C4, SDD-C5, SDD-C6 | ERD-E4, ERD-E5, ERD-E6, ERD-E7 | QAD-TC59 | Implemented, pending manual QA |
 | BRD-M1, BRD-M5, BRD-M6 (Precision Scale & Quotation Grounding) | PRD-F3, PRD-F4, PRD-F6, PRD-F10 | SDD-C2, SDD-C3, SDD-C5, SDD-C7 | ERD-E10, ERD-E14 | QAD-TC60, QAD-TC61, QAD-TC62, QAD-TC63, QAD-TC64 | Implemented |
+| BRD-M2, BRD-M4, BRD-M5 (Smart Dynamic Modular Bay Replication) | PRD-F5, PRD-F10, PRD-F14, PRD-F19 | SDD-C4, SDD-C5, SDD-C7, SDD-C9 | ERD-E3, ERD-E4, ERD-E6, ERD-E7, ERD-E14, ERD-E17 | QAD-TC97.1 through QAD-TC97.14 | Implemented |
 
 ---
 
@@ -112,6 +119,16 @@ MS57 traceability: BRD-M1, BRD-M5, BRD-M6 -> PRD-F3, PRD-F4, PRD-F5, PRD-F6, PRD
 
 | Revision Date | Target Document | Author | Nature of Revision | Pull Request Ref |
 |---|---|---|---|---|
+| October 29, 2026 | `docs/implementation/ms81.md`, `docs/milestone.md`, `docs/index.md`, `docs/qad-glassfit.md` | GlassFit Capstone Team | Planned Parametric Jalousie Dynamic Louver and Operator Generation, Automated Pitch Counting, and Per-Piece BOM Pricing Engine (QAD-TC96); specification only | Pending |
+| October 29, 2026 | `docs/implementation/ms80.md`, `src/features/admin/products/setup/`, `src/features/visualization/`, `src/lib/visualization/`, `src/lib/pricing/`, `supabase/migrations/026_addon_mounting_side_and_hatch_alignment.sql` | GlassFit Capstone Team | Implemented Directional Add-on Placement Side Compatibility and Operator-Targeted Multi-Hatch Alignment (QAD-TC95) | Pending |
+| October 28, 2026 | `docs/implementation/ms79.md`, `docs/milestone.md`, `docs/index.md` | GlassFit Capstone Team | Planned admin Components workspace usability, material assignment, selection clarity, and save integrity with proposed QAD-TC94 acceptance; no implementation | Pending |
+| October 26, 2026 | `docs/implementation/ms76.md`, `src/features/visualization/`, `src/lib/visualization/`, `src/lib/pricing/` | GlassFit Capstone Team | Implemented Customer Visualization Workspace Dynamic Accessory Swapping, Positional Matrix Alignment, Real-Time BOM Recalculation, and Itemized Quotation/PDF Handoff (QAD-TC91) | Pending |
+| October 27, 2026 | `docs/implementation/ms77.md`, admin component actions and inspector, visualization workspace, booking validation, migration 021 | GlassFit Capstone Team | Implemented explicit registered accessory allowlists and current eligibility checks (QAD-TC92); browser acceptance pending | Pending |
+| October 26, 2026 | `docs/implementation/ms75.md`, `src/features/admin/products/setup/` | GlassFit Capstone Team | Implemented Admin Part Inspector Swappable Accessory Binding and Position Configuration (QAD-TC90) | Pending |
+| October 26, 2026 | `docs/implementation/ms74.md`, `src/features/admin/products/` | GlassFit Capstone Team | Implemented Admin Accessory Product Role and 5-Step Authoring Workflow (QAD-TC89) | Pending |
+| October 26, 2026 | `docs/implementation/ms73.md`, `src/features/visualization/`, `src/lib/pricing/` | GlassFit Capstone Team | Implemented Customer Visualization Workspace Dynamic Grille Sizing, Real-Time Linear BOM Recalculation, and Itemized Quotation/PDF Handoff (QAD-TC88) | Pending |
+| October 26, 2026 | `docs/implementation/ms72.md`, `src/features/admin/products/setup/`, `supabase/migrations/` | GlassFit Capstone Team | Implemented Admin Product Setup Wizard Center-Grille Part Inspector, GRILLE_LINEAR dimension binding, single-click material assignment, and Validation Workspace dynamic cut list preview (QAD-TC87) | Pending |
+| October 26, 2026 | `docs/implementation/ms71.md`, `src/lib/pricing/` | GlassFit Capstone Team | Implemented Parametric Grille Linear-Meter Pricing Engine, Automated 3D Sub-Bar Geometry Analyzer, and Pattern Repetition Metric Engine (QAD-TC86) | Pending |
 | October 21, 2026 | `docs/implementation/ms63.md`, `src/lib/imageApi.ts`, `fastapi-service/main.py`, `src/features/visualization/` | GlassFit Capstone Team | Implemented resilient HEIC space image ingestion, exponential backoff retry, early WebP downscaled paper detection, session-bound /snap-paper endpoint, local blob buffering, and registered QAD-TC78 | Pending |
 | October 21, 2026 | MS62 implementation and tests | GlassFit Capstone Team | Implemented mode isolation, legacy restoration, and paper skip recovery; automated evidence in MS62 section 9, browser acceptance pending | Pending |
 | October 21, 2026 | `docs/implementation/ms62.md`, PRD, SDD, DSD, QAD, milestones, and index | GlassFit Capstone Team | Specified paper-free Automatic Detection, exclusive paper-mode localization/review, request-authoritative mapping, legacy session policy, and QAD-TC77; documentation only | Pending |
@@ -169,3 +186,14 @@ MS56 traceability: IMP-MS56 / BRD-M2, BRD-M5, BRD-M6 -> PRD-F5, PRD-F6, PRD-F10,
 MS58 traceability: BRD-M1, BRD-M5, BRD-M6 -> PRD-F3, PRD-F4 -> SDD-C2, SDD-C3 -> DSD-UI3 -> QAD-TC73. Single-click paper seed localization constrains candidate selection and extracts localized paper boundaries on tap; integrates with confirmation gateway and manual loupe fallbacks. See [MS58](implementation/ms58.md).
  
 MS63 traceability: BRD-M1, BRD-M4, BRD-M6 -> PRD-F3, PRD-F4, PRD-F10 -> SDD-C2, SDD-C3 -> QAD-TC78.1 through QAD-TC78.8. Implemented client-side exponential backoff retry across network drops, early WebP downscaled paper detection, session-bound /snap-paper endpoint, and local blob URL buffering. See [MS63](implementation/ms63.md).
+
+MS71 traceability: IMP-MS71 / BRD-M2, BRD-M3, BRD-M5 -> PRD-F2, PRD-F5, PRD-F6, PRD-F10, PRD-F11, PRD-F14 -> SDD-C4, SDD-C7, SDD-C9 -> DSD-UI4, DSD-UI7, DSD-UI10 -> ERD-E6, ERD-E13, ERD-E14, ERD-E17 -> QAD-TC86.1 through QAD-TC86.10. Implemented on October 26, 2026. Parametric linear-meter security grille pricing engine, automated 3D sub-bar geometry analyzer, and dynamic pattern repetition metric engine. See [MS71](implementation/ms71.md).
+
+
+fix-14 traceability: PRD-F3, PRD-F4, PRD-F6 -> SDD-C2, SDD-C3, SDD-C5 -> DSD-UI3, DSD-UI4 -> QAD-TC3, QAD-TC4, QAD-TC50, QAD-TC77, QAD-TC78. The service now gates visualization sessions on space-photo suitability and the upload screens show recoverable rejection or verification errors. The supplied portrait was validated locally in both modes and both upload routes. Broader consented-scene accuracy, format parity, and performance release evidence remains pending.
+
+
+MS85 traceability: IMP-MS85 / BRD-M2, BRD-M4, BRD-M5 -> PRD-F10, PRD-F14, PRD-F19 -> SDD-C7, SDD-C9 -> DSD-UI7, DSD-UI10 -> ERD-E6, ERD-E14, ERD-E17 -> QAD-TC100.1 through QAD-TC100.14. See [MS85](implementation/ms85.md) for BOM consolidation, extrusion count isolation, fixture profile suitability and sill omission disclosure. No database migration is required.
+
+
+IMP-MS88 traceability: BRD-M2, BRD-M4 -> PRD-F5, PRD-F6, PRD-F9 -> SDD-C4, SDD-C5, SDD-C6 -> DSD-UI4 -> ERD-E10, ERD-E11 -> QAD-TC103.1 through QAD-TC103.12. See [Post-Fit Product Facing](implementation/ms88.md).

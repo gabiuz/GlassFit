@@ -12,7 +12,10 @@ import { ParametersAndRulesSection } from "./ParametersAndRulesSection";
 import { ValidationWorkspaceSection } from "./ValidationWorkspaceSection";
 import { ReviewAndPublishSection } from "./ReviewAndPublishSection";
 import type { UpsertParameterInput, UpsertRuleInput } from "@/lib/admin/products/parameterMutations";
-import { buildProductSetupUrl, type StepKey } from "@/lib/admin/products/wizardSteps";
+import { buildProductSetupUrl, getStepsForProduct, type StepKey } from "@/lib/admin/products/wizardSteps";
+
+import type { AccessoryCategory, AccessoryMountingType } from "@/lib/admin/products/types";
+import type { DynamicBayConfig } from "@/lib/pricing/types";
 
 export interface ProductAssetSummary {
     asset_id?: string;
@@ -32,7 +35,7 @@ export interface ProductAssetSummary {
 
 export interface ProductTemplateSummary {
     template_id?: string;
-    model_strategy?: "PARAMETRIC_GLTF" | "PARAMETRIC_BOX_PROCEDURAL" | "HYBRID_DYNAMIC";
+    model_strategy?: "PARAMETRIC_GLTF" | "PARAMETRIC_BOX_PROCEDURAL" | "HYBRID_DYNAMIC" | "Parametric" | "Fixed";
     base_configuration?: Record<string, unknown>;
     product_components?: unknown[];
     product_parameters?: unknown[];
@@ -47,6 +50,11 @@ export interface ProductSetupData {
     description?: string | null;
     base_price?: number;
     status?: string;
+    is_addon?: boolean;
+    addon_type?: "screen" | "grill" | null;
+    is_accessory?: boolean;
+    accessory_category?: AccessoryCategory | null;
+    accessory_mounting_type?: AccessoryMountingType | null;
     product_templates?: ProductTemplateSummary[] | ProductTemplateSummary;
     product_assets?: ProductAssetSummary[];
     [key: string]: unknown;
@@ -58,16 +66,6 @@ export type ProductSetupWizardProps = {
     initialStep: StepKey;
 };
 
-const steps: { key: StepKey; label: string; number: number }[] = [
-    { key: "basic", label: "Basic Info", number: 1 },
-    { key: "strategy", label: "Visualization", number: 2 },
-    { key: "assets", label: "Assets", number: 3 },
-    { key: "components", label: "Components", number: 4 },
-    { key: "parameters", label: "Parameters", number: 5 },
-    { key: "validation", label: "Validation", number: 6 },
-    { key: "review", label: "Review", number: 7 },
-];
-
 export function ProductSetupWizard({ productId, initialData, initialStep }: ProductSetupWizardProps) {
     const router = useRouter();
     const [draftId, setDraftId] = useState<string>(productId === "draft" ? "" : productId);
@@ -78,6 +76,9 @@ export function ProductSetupWizard({ productId, initialData, initialStep }: Prod
 
     const isDraft = !draftId;
     const currentProductId = draftId || productId;
+    const isAddon = Boolean(productData?.is_addon);
+    const isAccessory = Boolean(productData?.is_accessory);
+    const steps = getStepsForProduct(isAddon, isAccessory);
 
     useEffect(() => {
         // Route state is authoritative when the server provides a new validated step.
@@ -107,10 +108,14 @@ export function ProductSetupWizard({ productId, initialData, initialStep }: Prod
     };
 
     const handleProductCreated = (newId: string, data: Record<string, unknown>) => {
+        const isAddonProduct = Boolean(data.is_addon ?? productData?.is_addon);
+        const isAccessoryProduct = Boolean(data.is_accessory ?? productData?.is_accessory);
         setDraftId(newId);
         setProductData({ ...productData, ...data, product_id: newId });
-        setActiveStep("strategy");
-        router.replace(buildProductSetupUrl(newId, "strategy"));
+        const nextStep = (isAddonProduct || isAccessoryProduct) ? "components" : "strategy";
+        setActiveStep(nextStep);
+        router.replace(buildProductSetupUrl(newId, nextStep));
+        refreshDraft(newId);
     };
 
     const handleStrategySaved = (data: Record<string, unknown>) => {
@@ -125,8 +130,9 @@ export function ProductSetupWizard({ productId, initialData, initialStep }: Prod
             ...productData,
             product_templates: Array.isArray(productData?.product_templates) ? [mergedTemplate] : mergedTemplate,
         });
-        setActiveStep("assets");
-        router.replace(buildProductSetupUrl(currentProductId, "assets"), { scroll: false });
+        const nextStep = isAccessory ? "components" : "assets";
+        setActiveStep(nextStep);
+        router.replace(buildProductSetupUrl(currentProductId, nextStep), { scroll: false });
         if (draftId) refreshDraft(draftId);
     };
 
@@ -142,9 +148,11 @@ export function ProductSetupWizard({ productId, initialData, initialStep }: Prod
             </div>
 
             {/* Stepper / Tabs */}
-            <div className="flex items-center gap-1.5 sm:gap-3 w-full overflow-x-auto pb-2">
+            <nav aria-label="Product setup steps" className="flex items-center gap-1.5 sm:gap-3 w-full overflow-x-auto pb-2">
                 {steps.map((step) => {
                     const isActive = activeStep === step.key;
+                    const activeIndex = steps.findIndex(item => item.key === activeStep);
+                    const isComplete = step.number - 1 < activeIndex;
                     // Disable future steps if we are a draft
                     const isDisabled = isDraft && step.number > 1;
 
@@ -153,14 +161,15 @@ export function ProductSetupWizard({ productId, initialData, initialStep }: Prod
                             key={step.key}
                             type="button"
                             disabled={isDisabled}
+                            aria-current={isActive ? "step" : undefined}
                             onClick={() => !isDisabled && handleStepChange(step.key)}
                             className={cn(
-                                "flex-1 sm:flex-none h-9 sm:h-[45px] px-2 sm:px-5 py-1.5 sm:py-2.5 rounded-[25px] flex items-center justify-center gap-1.5 sm:gap-3 transition-colors min-w-0",
+                                "shrink-0 h-9 sm:h-[45px] px-3 sm:px-5 py-1.5 sm:py-2.5 rounded-[25px] flex items-center justify-center gap-1.5 sm:gap-3 transition-colors whitespace-nowrap",
                                 isActive
                                     ? "bg-[#07b6d3] text-white shadow-xs"
                                     : isDisabled 
                                         ? "bg-neutral-100 text-neutral-400 cursor-not-allowed opacity-60"
-                                        : "bg-[#c3c3c3] text-white hover:bg-stone-400 cursor-pointer"
+                                        : isComplete ? "bg-[#0f1422] text-white hover:bg-neutral-800 cursor-pointer" : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200 cursor-pointer"
                             )}
                         >
                             <div className={cn(
@@ -169,13 +178,13 @@ export function ProductSetupWizard({ productId, initialData, initialStep }: Prod
                             )}>
                                 {step.number}
                             </div>
-                            <span className="text-xs sm:text-base lg:text-lg font-normal leading-tight truncate">
+                            <span className="text-xs sm:text-base lg:text-lg font-normal leading-tight">
                                 {step.label}
                             </span>
                         </button>
                     );
                 })}
-            </div>
+            </nav>
 
             {/* Step Content Area */}
             <div className="w-full bg-white rounded-[20px] p-4 sm:p-6 lg:p-[30px] shadow-xs">
@@ -209,22 +218,30 @@ export function ProductSetupWizard({ productId, initialData, initialStep }: Prod
                     <StructuralComponentsSection
                         productId={draftId}
                         templateId={(Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.template_id : productData?.product_templates?.template_id) || ""}
-                        modelStrategy={(Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.model_strategy : productData?.product_templates?.model_strategy) || null}
+                        modelStrategy={isAccessory ? "Fixed" : ((Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.model_strategy : productData?.product_templates?.model_strategy) || (isAddon ? "Parametric" : null))}
                         productType={productData?.product_type || "Window"}
+                        productName={productData?.product_name}
                         initialData={Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.product_components : productData?.product_templates?.product_components}
-                        wholeModelAsset={productData?.product_assets?.find?.((a: ProductAssetSummary) => a.asset_type === "Catalog 3D Preview" && a.is_primary !== false) || null}
-                        onSave={() => handleStepChange("parameters")}
+                        wholeModelAsset={productData?.product_assets?.find?.((a: ProductAssetSummary) => (a.asset_type === "Whole Model" || a.asset_type === "Catalog 3D Preview") && a.status === "Active" && Boolean(a.file_url)) || null}
+                        isAccessory={isAccessory}
+                        isAddon={isAddon}
+                        initialAccessoryCategory={(productData?.accessory_category as AccessoryCategory) || null}
+                        productBasePrice={typeof productData?.base_price === "number" ? productData.base_price : undefined}
+                        onSave={() => handleStepChange(isAccessory ? "validation" : "parameters")}
                     />
                 )}
                 {activeStep === "parameters" && (
                     <ParametersAndRulesSection
+                        productId={currentProductId}
+                        isAddon={isAddon}
                         templateId={(Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.template_id : productData?.product_templates?.template_id) || null}
-                        modelStrategy={(Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.model_strategy : productData?.product_templates?.model_strategy) || null}
+                        modelStrategy={(Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.model_strategy : productData?.product_templates?.model_strategy) || (isAddon ? "Parametric" : null)}
                         productType={productData?.product_type || "Window"}
                         initialData={{
                             parameters: (Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.product_parameters : productData?.product_templates?.product_parameters) as UpsertParameterInput[] | undefined,
                             rules: (Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.structural_rules : productData?.product_templates?.structural_rules) as UpsertRuleInput[] | undefined,
-                            components: ((Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.product_components : productData?.product_templates?.product_components) as Record<string, unknown>[]) || []
+                            components: ((Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.product_components : productData?.product_templates?.product_components) as Record<string, unknown>[]) || [],
+                            dynamicBayConfig: ((productData?.dynamic_bay_config || (Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.dynamic_bay_config : productData?.product_templates?.dynamic_bay_config)) as DynamicBayConfig | null) || null,
                         }}
                         onSave={() => handleStepChange("validation")}
                     />
@@ -239,7 +256,7 @@ export function ProductSetupWizard({ productId, initialData, initialStep }: Prod
                     <ReviewAndPublishSection productId={currentProductId} />
                 )}
             </div>
-
         </div>
     );
 }
+

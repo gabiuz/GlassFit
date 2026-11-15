@@ -1,4 +1,6 @@
 import * as THREE from "three";
+import { applyProductFacing } from "./productFacing";
+import type { ProductFacing } from "./types";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { ProductStructuralDefinition } from "@/lib/visualization/types";
 import type { LightingAnalysis } from "@/lib/imageApi";
@@ -10,13 +12,19 @@ import {
 
 import { buildParametricProduct } from "@/lib/visualization/parametricProductBuilder";
 import { resolveProductStructure } from "@/lib/visualization/structuralResolver";
-import { preloadComponentModels } from "@/lib/visualization/componentModelCache";
+import { getAccessoryModelSource, preloadComponentModels } from "@/lib/visualization/componentModelCache";
 import {
+  applyPBRToMesh,
   applyPresentationMaterials,
   detectProductMaterialCapabilities,
+  isAddonObject,
+  isAddonFrameMesh,
   type ProductMaterialCapabilities,
 } from "@/lib/visualization/materialClassifier";
-import type { RrdAluminumFinishKey } from "@/lib/visualization/colorVariations";
+import { findFinishOption } from "@/lib/products/materialMapping";
+import type { RawMaterial } from "@/lib/pricing/types";
+import { normalizeAluminumFinish, type RrdAluminumFinishKey } from "@/lib/visualization/colorVariations";
+import type { AddonGeometryConfig } from "@/lib/visualization/addonGeometryBuilder";
 
 export type ModelPresentationOptions = {
   aluminumFinish: RrdAluminumFinishKey;
@@ -24,6 +32,17 @@ export type ModelPresentationOptions = {
   glassColor: GlassColorKey;
   glassThicknessMm: GlassThicknessMm;
   includeSill: boolean;
+  activeAddon?: "screen" | "grill" | "none" | null;
+  addonProductId?: string | null;
+  addonAluminumFinish?: string;
+  addonMountingSide?: "front" | "back";
+  screenMeshDensity?: "fine" | "micro" | "coarse";
+  hatchTargetComponentKeys?: string[];
+  grilleOpeningTargetComponentKeys?: string[];
+  grilleOpeningConfig?: import("@/lib/admin/products/types").GrilleOpeningConfig | Record<string, unknown> | null;
+  addonConfig?: AddonGeometryConfig;
+  swappedAccessories?: Record<string, import("./types").SelectedAccessoryState>;
+  removableStates?: Record<string, boolean>;
 };
 
 export type LoadedModelResult = {
@@ -33,6 +52,7 @@ export type LoadedModelResult = {
 export type PreparedProductModel = LoadedModelResult & {
   group: THREE.Group;
   sharedGeometry: boolean;
+  exteriorYaw: number;
 };
 
 // Cache the environment map globally so we only download the HDR once
@@ -92,8 +112,13 @@ export class ProductModelRenderer {
   private camera: THREE.PerspectiveCamera;
   private orthoCamera: THREE.OrthographicCamera;
   private canvas: HTMLCanvasElement;
+  private fittedCanvas: HTMLCanvasElement;
+  private baseWidth: number;
+  private baseHeight: number;
+  private planarFitRect: { x: number; y: number; width: number; height: number } | null = null;
   private modelGroup: THREE.Group;
   private modelLoadVersion = 0;
+  private exteriorYaw = 0;
   private materialCapabilities: ProductMaterialCapabilities = {
     hasAluminum: false,
     hasGlass: false,
@@ -106,9 +131,14 @@ export class ProductModelRenderer {
   private bevelLight: THREE.DirectionalLight;
 
   constructor(width: number, height: number) {
+    this.baseWidth = width;
+    this.baseHeight = height;
     this.canvas = document.createElement("canvas");
     this.canvas.width = width;
     this.canvas.height = height;
+    this.fittedCanvas = document.createElement("canvas");
+    this.fittedCanvas.width = width;
+    this.fittedCanvas.height = height;
 
     this.renderer = new THREE.WebGLRenderer({
       canvas: this.canvas,
@@ -174,8 +204,13 @@ export class ProductModelRenderer {
   }
 
   setSize(width: number, height: number) {
+    this.baseWidth = width;
+    this.baseHeight = height;
+    this.planarFitRect = null;
     this.canvas.width = width;
     this.canvas.height = height;
+    this.fittedCanvas.width = width;
+    this.fittedCanvas.height = height;
     this.renderer.setSize(width, height, false);
 
     const aspect = Math.max(width / Math.max(height, 1), 0.01);
@@ -194,6 +229,10 @@ export class ProductModelRenderer {
     this.camera.updateProjectionMatrix();
   }
 
+  getPlanarFitRect() {
+    return this.planarFitRect;
+  }
+
   getCameraFraming() {
     return this.lockedHorizontalFovRadians;
   }
@@ -208,6 +247,11 @@ export class ProductModelRenderer {
     definition: ProductStructuralDefinition,
     values: Record<string, unknown>,
     presentation: ModelPresentationOptions,
+    customMaterials?: {
+      selectedMaterials: Record<string, string>;
+      rawMaterialsMap: Map<string, RawMaterial>;
+      hasExplicitOverrides?: boolean;
+    },
   ): Promise<LoadedModelResult | undefined> {
     const loadVersion = (this.modelLoadVersion += 1);
     const prepared = await this.prepareModel(definition, values, presentation);
@@ -216,6 +260,13 @@ export class ProductModelRenderer {
       return;
     }
     this.commitPreparedModel(prepared);
+    if (
+      customMaterials?.hasExplicitOverrides &&
+      customMaterials?.selectedMaterials &&
+      Object.keys(customMaterials.selectedMaterials).length > 0
+    ) {
+      this.updateCustomMaterials(customMaterials.selectedMaterials, customMaterials.rawMaterialsMap);
+    }
     return { capabilities: prepared.capabilities };
   }
 
@@ -224,6 +275,10 @@ export class ProductModelRenderer {
     values: Record<string, unknown>,
     presentation: ModelPresentationOptions,
   ): Promise<PreparedProductModel> {
+    if (definition.template.modelStrategy === "Fixed" &&
+        Object.values(presentation.swappedAccessories ?? {}).some((selected) => selected.accessoryId !== "default")) {
+      throw new Error("Accessory replacement is unavailable for this fixed model.");
+    }
     const group =
       definition.template.modelStrategy === "Fixed"
         ? await this.loadFixedModel(definition, presentation)
@@ -244,7 +299,10 @@ export class ProductModelRenderer {
       console.warn("Failed to load environment map", e);
     }
 
-    return { group, capabilities, sharedGeometry: definition.template.modelStrategy !== "Fixed" };
+    // MS80 defines parametric exterior at -Z, interior at +Z. Fixed assets
+    // retain their authored +Z presentation as the exterior baseline.
+    return { group, capabilities, sharedGeometry: definition.template.modelStrategy !== "Fixed",
+      exteriorYaw: definition.template.modelStrategy === "Fixed" ? 0 : Math.PI };
   }
 
   commitPreparedModel(prepared: PreparedProductModel) {
@@ -257,6 +315,7 @@ export class ProductModelRenderer {
     prepared.group.userData.sharedGeometry = prepared.sharedGeometry;
     this.modelGroup.add(prepared.group);
     this.materialCapabilities = prepared.capabilities;
+    this.exteriorYaw = prepared.exteriorYaw;
   }
 
   releasePreparedModel(prepared: PreparedProductModel) {
@@ -276,7 +335,117 @@ export class ProductModelRenderer {
       glassColor: presentation.glassColor,
       glassThicknessMm: presentation.glassThicknessMm,
     });
+
+    if (presentation.addonConfig?.finishColor || presentation.addonAluminumFinish) {
+      const finishKey = presentation.addonAluminumFinish ? normalizeAluminumFinish(presentation.addonAluminumFinish) : null;
+      const finishOpt = finishKey ? findFinishOption(finishKey) : null;
+
+      const finishColor = presentation.addonConfig?.finishColor ?? (
+        finishOpt ? finishOpt.previewHex : (
+          presentation.addonAluminumFinish === "white"
+            ? "#f5f6f8"
+            : presentation.addonAluminumFinish === "black"
+              ? "#1a1a1a"
+              : presentation.addonAluminumFinish === "mill" || presentation.addonAluminumFinish === "al_1001"
+                ? "#d4d8dc"
+                : "#221d1a"
+        )
+      );
+
+      this.modelGroup.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          if (isAddonFrameMesh(child)) {
+            if (child.material instanceof THREE.MeshPhysicalMaterial) {
+              child.material.color.set(finishColor);
+              if (finishOpt) {
+                child.material.metalness = finishOpt.metalness;
+                child.material.roughness = finishOpt.roughness;
+                child.material.clearcoat = finishOpt.clearcoat;
+                child.material.clearcoatRoughness = finishOpt.clearcoatRoughness;
+              }
+              child.material.needsUpdate = true;
+            } else if (child.material instanceof THREE.MeshStandardMaterial) {
+              if (finishOpt && finishOpt.clearcoat !== undefined) {
+                const oldMat = child.material;
+                child.material = new THREE.MeshPhysicalMaterial({
+                  color: finishColor,
+                  metalness: finishOpt.metalness,
+                  roughness: finishOpt.roughness,
+                  clearcoat: finishOpt.clearcoat,
+                  clearcoatRoughness: finishOpt.clearcoatRoughness,
+                  side: oldMat.side,
+                  depthWrite: oldMat.depthWrite,
+                  depthTest: oldMat.depthTest,
+                });
+                oldMat.dispose();
+              } else {
+                child.material.color.set(finishColor);
+                if (finishOpt) {
+                  child.material.metalness = finishOpt.metalness;
+                  child.material.roughness = finishOpt.roughness;
+                }
+                child.material.needsUpdate = true;
+              }
+            }
+          }
+        }
+      });
+    }
+
+    if (presentation.removableStates) {
+      const states = presentation.removableStates;
+      this.modelGroup.traverse((child) => {
+        const compId = child.userData?.componentId as string | undefined;
+        const compKey = child.userData?.componentKey as string | undefined;
+        const toggleKey = child.userData?.togglePropertyKey as string | undefined;
+        const isHatch = child.userData?.isHatchClone || child.name?.toLowerCase().includes("hatch");
+        if (compId && states[compId] !== undefined) {
+          child.visible = states[compId];
+        } else if (compKey && states[compKey] !== undefined) {
+          child.visible = states[compKey];
+        } else if (toggleKey && states[toggleKey] !== undefined) {
+          child.visible = states[toggleKey];
+        } else if (isHatch && (states.screen_access_hatch !== undefined || states.has_screen_access_hatch !== undefined || states.has_hatch !== undefined)) {
+          child.visible = (states.screen_access_hatch ?? states.has_screen_access_hatch ?? states.has_hatch) !== false;
+        }
+      });
+    }
+
     return this.materialCapabilities;
+  }
+
+
+  updateCustomMaterials(
+    selectedMaterials: Record<string, string>,
+    rawMaterialsMap: Map<string, RawMaterial>,
+  ): void {
+    if (this.modelGroup.children.length === 0) return;
+    this.modelGroup.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        let compKey: string | undefined =
+          typeof child.userData?.componentKey === "string"
+            ? child.userData.componentKey
+            : undefined;
+        let curr: THREE.Object3D | null = child.parent;
+        while (!compKey && curr && curr !== this.modelGroup) {
+          if (typeof curr.userData?.componentKey === "string") {
+            compKey = curr.userData.componentKey;
+          }
+          curr = curr.parent;
+        }
+
+        const targetKey =
+          compKey ||
+          (child.name && selectedMaterials[child.name] ? child.name : undefined);
+
+        if (targetKey && selectedMaterials[targetKey]) {
+          const rawMat = rawMaterialsMap.get(selectedMaterials[targetKey]);
+          if (rawMat) {
+            applyPBRToMesh(child, rawMat);
+          }
+        }
+      }
+    });
   }
 
   private async loadParametricModel(
@@ -285,13 +454,35 @@ export class ProductModelRenderer {
     presentation: ModelPresentationOptions,
   ) {
     const resolved = resolveProductStructure({ definition, values });
-    const cache = await preloadComponentModels(definition.components);
+    const allComponents = [
+      ...definition.components,
+      ...(definition.compatibleAddons?.flatMap((a) => a.components ?? []) ?? []),
+    ];
+    const cache = await preloadComponentModels(allComponents);
+    const accessoryModels = new Map<string, THREE.Object3D>();
+    await Promise.all(Object.values(presentation.swappedAccessories ?? {}).map(async (selected) => {
+      if (!selected || selected.accessoryId === "default") return;
+      if (!selected.glbUrl) throw new Error(`Selected accessory ${selected.accessoryName} has no active model.`);
+      accessoryModels.set(selected.accessoryId, await getAccessoryModelSource(selected.accessoryId, selected.glbUrl));
+    }));
     const { group } = buildParametricProduct(definition, resolved, cache, {
       glassAppearance: presentation.glassAppearance,
       glassColor: presentation.glassColor,
       glassThicknessMm: presentation.glassThicknessMm,
       includeSill: presentation.includeSill,
       alumFinish: presentation.aluminumFinish,
+      activeAddon: presentation.activeAddon,
+      addonProductId: presentation.addonProductId,
+      addonAluminumFinish: presentation.addonAluminumFinish,
+      addonMountingSide: presentation.addonMountingSide,
+      hatchTargetComponentKeys: presentation.hatchTargetComponentKeys,
+      grilleOpeningTargetComponentKeys: presentation.grilleOpeningTargetComponentKeys,
+      grilleOpeningConfig: presentation.grilleOpeningConfig,
+      screenMeshDensity: presentation.screenMeshDensity,
+      addonConfig: presentation.addonConfig,
+      swappedAccessories: presentation.swappedAccessories,
+      accessoryModels,
+      removableStates: presentation.removableStates,
     });
 
     return group;
@@ -402,77 +593,132 @@ export class ProductModelRenderer {
     this.bevelLight.position.set(direction.x * 2.2 || 2.2, 3.8, 3.0);
   }
 
-  render(yaw: number, pitch: number, isPlanarFit = false) {
+  render(yaw: number, pitch: number, isPlanarFit = false, productFacing?: ProductFacing) {
     if (this.modelGroup.children.length === 0) {
       return null;
     }
 
-    if (isPlanarFit) {
-      // 1. Establish the reference base bounds of the unrotated model at (0, 0, 0)
-      this.modelGroup.rotation.set(0, 0, 0);
-      this.modelGroup.updateMatrixWorld(true);
+    // Derive one installation pivot in authored coordinates, excluding projections.
+    this.modelGroup.position.set(0, 0, 0);
+    this.modelGroup.rotation.set(0, 0, 0);
+    this.modelGroup.updateMatrixWorld(true);
+    const installation = computeFitFrameBounds(this.modelGroup) ?? computeInstallationProductBounds(this.modelGroup);
+    const pivot = (installation ?? computeHostProductBounds(this.modelGroup)).getCenter(new THREE.Vector3());
+    // Callers without a facing argument retain the historical catalog view.
+    const exteriorYaw = productFacing === undefined ? 0 : this.exteriorYaw;
+    const facing = productFacing ?? "front";
+    applyProductFacing(this.modelGroup, pivot, 0, 0, facing, exteriorYaw);
 
-      const baseBounds = new THREE.Box3().setFromObject(this.modelGroup);
+    if (isPlanarFit) {
+      // 1. Establish reference bounds for the selected face at zero manual angles.
+      // Exclude add-on attachments so planar perspective camera framing never shifts or resizes host product
+      const fitBounds = computeFitFrameBounds(this.modelGroup) ?? computeInstallationProductBounds(this.modelGroup);
+      if (!fitBounds) {
+        console.error("[MS83] Cannot fit product: no structural installation perimeter is available. Check component roles and frame metadata.");
+        return null;
+      }
+      const verticalBounds = computeLegacyFitFrameBounds(this.modelGroup) ?? computeHostProductBounds(this.modelGroup);
+      fitBounds.min.y = verticalBounds.min.y;
+      fitBounds.max.y = verticalBounds.max.y;
       const baseSize = new THREE.Vector3();
       const baseCenter = new THREE.Vector3();
-      baseBounds.getSize(baseSize);
-      baseBounds.getCenter(baseCenter);
+      fitBounds.getSize(baseSize);
+      fitBounds.getCenter(baseCenter);
 
       if (baseSize.x > 0 && baseSize.y > 0) {
-        // Edge-to-edge 3D perspective camera projection:
-        // Position camera directly in front of the model at distance d so that
-        // the unrotated front of the model (baseBounds.max.z) exactly fits the canvas boundaries.
-        // Rays diverge toward the edges, rendering frame reveals, jamb thickness, and glass parallax.
+        // PRD-F6: fit the installation frame to the chosen opening corners.
+        // Keep a perspective camera so frame depth and glass parallax remain visible.
         const fovDegrees = CAMERA_BASE_VERTICAL_FOV_DEGREES;
         const fovRad = THREE.MathUtils.degToRad(fovDegrees);
         const distance = (baseSize.y / 2) / Math.tan(fovRad / 2);
 
         this.camera.fov = fovDegrees;
-        this.camera.aspect = this.canvas.width / this.canvas.height;
-        this.camera.position.set(baseCenter.x, baseCenter.y, baseBounds.max.z + distance);
-        this.camera.lookAt(baseCenter.x, baseCenter.y, baseBounds.max.z);
+        this.camera.aspect = this.baseWidth / this.baseHeight;
+        const cameraZ = fitBounds.max.z + distance;
+        this.camera.position.set(baseCenter.x, baseCenter.y, cameraZ);
+        this.camera.lookAt(baseCenter.x, baseCenter.y, fitBounds.max.z);
 
         const near = this.camera.near;
         const far = this.camera.far;
-        const scale = near / distance;
+        // Fit the visible installation frame, even when handles or other host
+        // parts protrude in front of it. The entire 3D model still renders.
+        const scale = near / (cameraZ - fitBounds.max.z);
         const halfWidth = (baseSize.x / 2) * scale;
         const halfHeight = (baseSize.y / 2) * scale;
 
+        // Keep the installation perimeter fixed while giving projecting parts
+        // room to render outside it. The workspace maps planarFitRect to the
+        // selected opening, so an optional sill never changes host scale.
+        const visible = new THREE.Box3().setFromObject(this.modelGroup);
+        const padding = 0.04;
+        const left = Math.max(padding, (fitBounds.min.x - visible.min.x) / baseSize.x + padding);
+        const right = Math.max(padding, (visible.max.x - fitBounds.max.x) / baseSize.x + padding);
+        const top = Math.max(padding, (visible.max.y - fitBounds.max.y) / baseSize.y + padding);
+        const bottom = Math.max(padding, (fitBounds.min.y - visible.min.y) / baseSize.y + padding);
+        const spanX = 1 + left + right;
+        const spanY = 1 + top + bottom;
+        const renderWidth = Math.max(1, Math.ceil(this.baseWidth * spanX));
+        const renderHeight = Math.max(1, Math.ceil(this.baseHeight * spanY));
+        this.renderer.setSize(renderWidth, renderHeight, false);
+        this.planarFitRect = {
+          x: left / spanX,
+          y: top / spanY,
+          width: 1 / spanX,
+          height: 1 / spanY,
+        };
+
         this.camera.projectionMatrix.makePerspective(
-          -halfWidth,
-          halfWidth,
-          halfHeight,
-          -halfHeight,
+          -halfWidth * (1 + 2 * left),
+          halfWidth * (1 + 2 * right),
+          halfHeight * (1 + 2 * top),
+          -halfHeight * (1 + 2 * bottom),
           near,
           far,
         );
         this.camera.projectionMatrixInverse.copy(this.camera.projectionMatrix).invert();
         this.camera.updateMatrixWorld(true);
 
-        // 2. Apply the user's yaw and pitch rotations to the 3D model
-        this.modelGroup.rotation.set(
-          THREE.MathUtils.degToRad(pitch),
-          THREE.MathUtils.degToRad(yaw),
-          0
-        );
-        this.modelGroup.updateMatrixWorld(true);
+        // 2. Compose relative yaw/pitch after the physical face transform.
+        applyProductFacing(this.modelGroup, pivot, yaw, pitch, facing, exteriorYaw);
 
         this.renderer.render(this.scene, this.camera);
+        // Retain the pre-MS83 vertical visible-alpha normalization. Only the
+        // horizontal installation reference is exempt from the alpha crop.
+        if (yaw === 0 && pitch === 0) {
+          const context = this.fittedCanvas.getContext("2d", { willReadFrequently: true });
+          if (context) {
+            const { width, height } = this.canvas;
+            this.fittedCanvas.width = width;
+            this.fittedCanvas.height = height;
+            context.drawImage(this.canvas, 0, 0);
+            const bounds = getVisibleAlphaBounds(context.getImageData(0, 0, width, height));
+            if (bounds && bounds.height > 0) {
+              context.clearRect(0, 0, width, height);
+              context.drawImage(this.canvas, 0, bounds.y, width, bounds.height, 0, 0, width, height);
+              this.planarFitRect = {
+                ...this.planarFitRect!,
+                y: (this.planarFitRect!.y * height - bounds.y) / bounds.height,
+                height: this.planarFitRect!.height * height / bounds.height,
+              };
+              return this.fittedCanvas;
+            }
+          }
+        }
         return this.canvas;
       }
     }
 
     // Default free-placement rendering
+    this.planarFitRect = null;
+    if (this.canvas.width !== this.baseWidth || this.canvas.height !== this.baseHeight) {
+      this.renderer.setSize(this.baseWidth, this.baseHeight, false);
+    }
     this.camera.fov = CAMERA_BASE_VERTICAL_FOV_DEGREES;
     this.camera.aspect = this.canvas.width / this.canvas.height;
     this.camera.updateProjectionMatrix();
     this.camera.position.copy(CAMERA_DIRECTION).multiplyScalar(CAMERA_BASE_DISTANCE);
     this.camera.lookAt(0, 0, 0);
-    this.modelGroup.rotation.set(
-      THREE.MathUtils.degToRad(pitch),
-      THREE.MathUtils.degToRad(yaw),
-      0
-    );
+    applyProductFacing(this.modelGroup, pivot, yaw, pitch, facing, exteriorYaw);
 
     this.modelGroup.updateMatrixWorld(true);
     this.camera.updateMatrixWorld(true);
@@ -489,6 +735,24 @@ export class ProductModelRenderer {
   }
 }
 
+export function getVisibleAlphaBounds(image: ImageData): { x: number; y: number; width: number; height: number } | null {
+  const { width, height, data } = image;
+  let minX = width;
+  let minY = height;
+  let maxX = -1;
+  let maxY = -1;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      if (data[(y * width + x) * 4 + 3] < 16) continue;
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
+    }
+  }
+  return maxX < minX ? null : { x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 };
+}
+
 function releaseModelGroup(root: THREE.Object3D, sharedGeometry: boolean) {
   root.traverse((object) => {
     if (!(object instanceof THREE.Mesh)) return;
@@ -501,9 +765,112 @@ function releaseModelGroup(root: THREE.Object3D, sharedGeometry: boolean) {
 function disposeOwnedModelMaterials(root: THREE.Object3D) {
   root.traverse((object) => {
     if (!(object instanceof THREE.Mesh)) return;
+    if (object.userData?.preserveMaterial || object.userData?.isScreenMesh || isAddonObject(object)) return;
     const materials = Array.isArray(object.material) ? object.material : [object.material];
     for (const material of materials) material.dispose();
   });
+}
+
+export { isAddonObject, isAddonFrameMesh };
+
+export function computeHostProductBounds(modelGroup: THREE.Group): THREE.Box3 {
+  const hostBounds = new THREE.Box3();
+  let hasHostMesh = false;
+
+  modelGroup.traverse((child) => {
+    if (child instanceof THREE.Mesh) {
+      if (!isAddonObject(child)) {
+        if (!child.geometry.boundingBox) {
+          child.geometry.computeBoundingBox();
+        }
+        child.updateMatrixWorld(true);
+        hostBounds.expandByObject(child);
+        hasHostMesh = true;
+      }
+    }
+  });
+
+  if (!hasHostMesh) {
+    return new THREE.Box3().setFromObject(modelGroup);
+  }
+
+  return hostBounds;
+}
+
+export function computeFitFrameBounds(modelGroup: THREE.Group): THREE.Box3 | null {
+  return computeFrameBounds(modelGroup, true);
+}
+
+function computeLegacyFitFrameBounds(modelGroup: THREE.Group): THREE.Box3 | null {
+  return computeFrameBounds(modelGroup, false);
+}
+
+function computeFrameBounds(modelGroup: THREE.Group, horizontalReference: boolean): THREE.Box3 | null {
+  const frameBounds = new THREE.Box3();
+  let hasFrameMesh = false;
+
+  modelGroup.traverse((child) => {
+    if (!(child instanceof THREE.Mesh) || isAddonObject(child) ||
+      (horizontalReference && (isOptionalProjection(child) || isHardware(child)))) return;
+    let ancestor: THREE.Object3D | null = child;
+    let isFrame = false;
+    while (ancestor && ancestor !== modelGroup) {
+      const key = String(ancestor.userData.componentKey ?? "").toLowerCase();
+      const type = String(ancestor.userData.componentType ?? "").toLowerCase();
+      const category = String(ancestor.userData.presentationCategory ?? "").toLowerCase();
+      if (ancestor.name === "Frame" || type === "frame" || category === "framing" || key.includes("frame")) {
+        isFrame = true;
+        break;
+      }
+      ancestor = ancestor.parent;
+    }
+    if (!isFrame) return;
+    child.updateMatrixWorld(true);
+    frameBounds.expandByObject(child);
+    hasFrameMesh = true;
+  });
+
+  return hasFrameMesh && !frameBounds.isEmpty() ? frameBounds : null;
+}
+
+function isOptionalProjection(object: THREE.Object3D): boolean {
+  let ancestor: THREE.Object3D | null = object;
+  while (ancestor) {
+    const role = String(ancestor.userData.bayRole ?? "").toUpperCase();
+    const key = String(ancestor.userData.componentKey ?? "").toLowerCase().replaceAll("_", "-");
+    const toggle = String(ancestor.userData.togglePropertyKey ?? "").toLowerCase();
+    if (role === "OUTER_SILL") return false;
+    const isStructuralRail = key.includes("bottom") || key.includes("rail") || key.includes("outer-sill");
+    if (role === "REMOVABLE_SILL" ||
+        (key.includes("sill") && !isStructuralRail) ||
+        toggle.includes("sill") || ancestor.name === "Window_Sill") return true;
+    ancestor = ancestor.parent;
+  }
+  return false;
+}
+
+function isHardware(object: THREE.Object3D): boolean {
+  let ancestor: THREE.Object3D | null = object;
+  while (ancestor) {
+    const type = String(ancestor.userData.componentType ?? "").toLowerCase();
+    const category = String(ancestor.userData.presentationCategory ?? "").toLowerCase();
+    if (type === "hardware" || category === "hardware" || category === "accessories") return true;
+    ancestor = ancestor.parent;
+  }
+  return false;
+}
+
+function computeInstallationProductBounds(modelGroup: THREE.Group): THREE.Box3 | null {
+  const bounds = new THREE.Box3();
+  modelGroup.traverse((child) => {
+    if (!(child instanceof THREE.Mesh) || isAddonObject(child) || isOptionalProjection(child) || isHardware(child)) return;
+    child.updateMatrixWorld(true);
+    bounds.expandByObject(child);
+  });
+  if (bounds.isEmpty()) {
+    return null;
+  }
+  return bounds;
 }
 
 function normalizeModelForViewer(container: THREE.Group, source: THREE.Object3D) {

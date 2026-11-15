@@ -11,8 +11,8 @@ export function BookingInfo() {
         </h2>
       </div>
       {/* info card */}
-      <div className="bg-white drop-shadow-[0px_0px_2.5px_rgba(0,0,0,0.25)] flex flex-col lg:flex-row gap-8 lg:gap-12 xl:gap-42 items-start px-6 md:px-12.5 py-7.5 relative rounded-[20px] w-full">
-        <div className="flex flex-col gap-2.5 items-start relative w-full lg:w-auto xl:shrink-0">
+      <div className="bg-white drop-shadow-[0px_0px_2.5px_rgba(0,0,0,0.25)] grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12 items-start px-6 md:px-12.5 py-7.5 relative rounded-[20px] w-full min-w-0">
+        <div className="flex flex-col gap-2.5 items-start relative w-full min-w-0">
           <div className="flex flex-col gap-2.5 items-start relative w-full">
             <div className="flex items-center justify-start py-2.5 relative shrink-0">
               <h3 className="font-medium text-green text-lg whitespace-nowrap leading-4">
@@ -64,7 +64,7 @@ export function BookingInfo() {
             </div>
           </div>
         </div>
-        <div className="flex flex-col gap-5 items-start relative w-full lg:w-auto xl:shrink-0">
+        <div className="flex flex-col gap-5 items-start relative w-full min-w-0">
           <div className="flex flex-col gap-2.5 items-start relative w-full">
             <div className="flex items-center justify-start py-2.5 relative shrink-0">
               <h3 className="font-medium leading-4 text-green text-lg whitespace-nowrap">

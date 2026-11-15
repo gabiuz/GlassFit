@@ -6,6 +6,7 @@
  */
 
 import { z } from "zod";
+import type { AccessoryCategory, AccessoryPositionOptions } from "@/lib/admin/products/types";
 
 // ----------------------------------------------------------------------------
 // 1. Raw Materials Master Catalog Enums & Schemas (ERD-E17)
@@ -169,8 +170,70 @@ export const DimensionBindingSchema = z.enum([
   "HEIGHT",
   "AREA",
   "FIXED",
+  "GRILLE_LINEAR",
+  "PERIMETER",
+  "LOUVER_BLADE",
+  "LOUVER_OPERATOR",
 ]);
 export type DimensionBinding = z.infer<typeof DimensionBindingSchema>;
+
+export const JalousieConfigSchema = z.object({
+  pitch_mm: z.number().positive().optional(),
+  blade_height_mm: z.number().positive().optional(),
+  blades_per_operator: z.number().int().positive().optional(),
+  base_blade_count: z.number().int().positive().optional(),
+  base_operator_count: z.number().int().positive().optional(),
+  pitchMm: z.number().positive().optional(),
+  bladeHeightMm: z.number().positive().optional(),
+  bladesPerOperator: z.number().int().positive().optional(),
+  baseBladeCount: z.number().int().positive().optional(),
+  baseOperatorCount: z.number().int().positive().optional(),
+}).passthrough();
+export type JalousieConfig = z.infer<typeof JalousieConfigSchema>;
+
+export const DynamicBayRoleSchema = z.enum([
+  "OUTER_JAMB_LEFT",
+  "OUTER_JAMB_RIGHT",
+  "OUTER_HEAD",
+  "OUTER_SILL",
+  "REMOVABLE_SILL",
+  "BAY_DIVIDER",
+  "BAY_INFILL",
+  "BAY_HARDWARE",
+  "GLOBAL_ACCESSORY",
+]);
+export type DynamicBayRole = z.infer<typeof DynamicBayRoleSchema>;
+
+export const ExpansionAnchorModeSchema = z.enum([
+  "symmetric",
+  "rightward",
+  "leftward",
+]);
+export type ExpansionAnchorMode = z.infer<typeof ExpansionAnchorModeSchema>;
+
+export const DynamicBayConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  primary_dimension: z.string().default("width"),
+  primaryDimension: z.string().optional(),
+  default_bay_count: z.number().int().positive().default(2),
+  defaultBayCount: z.number().int().positive().optional(),
+  nominal_bay_pitch_mm: z.number().positive().default(600),
+  nominalBayPitchMm: z.number().positive().optional(),
+  min_bay_width_mm: z.number().positive().optional(),
+  minBayWidthMm: z.number().positive().optional(),
+  max_bay_width_mm: z.number().positive().optional(),
+  maxBayWidthMm: z.number().positive().optional(),
+  expansion_anchor: ExpansionAnchorModeSchema.optional(),
+  expansion_anchor_mode: ExpansionAnchorModeSchema.default("symmetric"),
+  expansionAnchorMode: ExpansionAnchorModeSchema.optional(),
+  divider_component_key: z.string().nullable().optional(),
+  dividerComponentKey: z.string().nullable().optional(),
+  bay_infill_component_keys: z.array(z.string()).default([]),
+  bayInfillComponentKeys: z.array(z.string()).optional(),
+  bay_hardware_component_keys: z.array(z.string()).default([]),
+  bayHardwareComponentKeys: z.array(z.string()).optional(),
+}).passthrough();
+export type DynamicBayConfig = z.infer<typeof DynamicBayConfigSchema>;
 
 export const PresentationCategorySchema = z.enum([
   "Framing",
@@ -180,6 +243,56 @@ export const PresentationCategorySchema = z.enum([
   "Other",
 ]);
 export type PresentationCategory = z.infer<typeof PresentationCategorySchema>;
+
+export const ComponentMaterialBindingSchema = z.object({
+  id: z.string().uuid().optional(),
+  componentId: z.string().uuid().optional(),
+  rawMaterialId: z.string().uuid(),
+  isDefault: z.boolean().default(false),
+  displayOrder: z.number().int().default(0),
+  rawMaterial: RawMaterialSchema.optional(),
+});
+
+export interface ComponentMaterialBinding {
+  id?: string;
+  bindingId?: string;
+  componentId?: string;
+  componentKey?: string;
+  rawMaterialId: string;
+  isDefault: boolean;
+  displayOrder?: number;
+  rawMaterial?: RawMaterial;
+}
+
+export interface ProductComponent {
+  id: string;
+  productId: string;
+  componentKey: string;
+  componentName: string;
+  componentType: string;
+  assemblyGroup: string;
+  baseQuantity: number;
+  rawMaterialId: string | null;
+  dimensionBinding: DimensionBinding;
+  spanRatio: number;
+  isRemovable: boolean;
+  togglePropertyKey: string | null;
+  presentationCategory: PresentationCategory;
+  glbFileUrl?: string | null;
+  allowedMaterials?: ComponentMaterialBinding[];
+  defaultRawMaterialId?: string | null;
+  isAccessorySlot?: boolean;
+  accessoryCategory?: AccessoryCategory | null;
+  allowedAccessoryIds?: string[] | null;
+  positionOptions?: AccessoryPositionOptions;
+  unitPrice?: number;
+  pricingMethod?: string;
+  handingMetadata?: import("@/lib/admin/products/types").ComponentHandingMetadata | null;
+  jalousieConfig?: JalousieConfig | null;
+  bayRole?: DynamicBayRole | null;
+  bay_role?: DynamicBayRole | null;
+  componentData?: Record<string, unknown>;
+}
 
 export const ProductComponentBindingSchema = z.object({
   component_id: z.string().uuid().optional(),
@@ -196,6 +309,12 @@ export const ProductComponentBindingSchema = z.object({
   presentation_category: PresentationCategorySchema.default("Framing"),
   glb_file_url: z.string().nullable().optional(),
   status: z.enum(["Active", "Inactive"]).default("Active"),
+  is_accessory_slot: z.boolean().default(false).optional(),
+  accessory_category: z.enum(["handle", "lock", "hinge", "roller", "other"]).nullable().optional(),
+  allowed_accessory_ids: z.array(z.string().uuid()).nullable().optional(),
+  position_options: z.record(z.string(), z.unknown()).optional(),
+  jalousie_config: JalousieConfigSchema.nullable().optional(),
+  bay_role: DynamicBayRoleSchema.nullable().optional(),
 });
 export type ProductComponentBinding = z.infer<typeof ProductComponentBindingSchema>;
 
@@ -252,6 +371,14 @@ export const BOMItemDetailSchema = z.object({
   unit_price: z.number(),
   waste_factor: z.number().optional(),
   subtotal: z.number(),
+  finish_type: z.string().optional(),
+  componentTrace: z.object({
+    componentKey: z.string(),
+    componentName: z.string(),
+    pieceCount: z.number(),
+    unitCutLength: z.number().optional(),
+    subtotalQuantity: z.number(),
+  }).optional(),
 });
 export type BOMItemDetail = z.infer<typeof BOMItemDetailSchema>;
 
@@ -374,6 +501,20 @@ export interface ItemizedProductQuotation {
   userVerified?: boolean | null;
   calibrationMethod?: string | null;
   calibrationConfidence?: number | null;
+  selectedMaterials?: Record<string, string>;
+  selectedAddon?: "none" | "screen" | "grill";
+  addonProductId?: string | null;
+  addonName?: string | null;
+  addonPrice?: number;
+  baseUnitPrice?: number;
+  addonAluminumFinish?: string;
+  addonMountingSide?: "front" | "back";
+  hatchCount?: number;
+  hatchTargetKeys?: string[];
+  addonBOM?: import("./addonPricingEngine").AddonBOMResult | null;
+  grilleBOM?: GrilleLinearBOMResult | null;
+  swappedAccessories?: Record<string, import("../visualization/types").SelectedAccessoryState>;
+  accessoryPriceDelta?: number;
 }
 
 export interface ConsolidatedQuotationSummary {
@@ -391,3 +532,131 @@ export interface ConsolidatedQuotationSummary {
   totalContractorMargin: number;
   finalGrandTotal: number;
 }
+
+// ----------------------------------------------------------------------------
+// 6. Parametric Linear Grille Pricing & Bar Metrics (IMP-MS71)
+// ----------------------------------------------------------------------------
+
+export type GrilleBarOrientation = "HORIZONTAL" | "VERTICAL";
+
+export type GrillePatternType =
+  | "grid" // Full-height vertical pickets + continuous horizontal rails
+  | "louvers" // Continuous horizontal slats + vertical center mullion(s)
+  | "staggered_brick" // Vertical pickets + alternating staggered horizontal tie bars
+  | "custom_uploaded"; // Extracted from uploaded 3D GLB mesh
+
+export interface GrilleBarMetric {
+  id: string;
+  name: string;
+  orientation: GrilleBarOrientation;
+  lengthMm: number; // Cut length of a single piece in millimeters
+  lengthM: number; // Cut length in meters
+  count: number; // Number of identical pieces
+  totalLinearM: number; // lengthM * count
+  rawMaterialId?: string | null;
+  materialCode?: string;
+  unitPricePerMeter: number;
+  subtotalCost: number;
+}
+
+export interface GrilleOpeningBOMImpact {
+  openingCount: number;
+  collarLinearMeters: number; // 2 * (W + H) * N
+  collarPieceCount: number; // 4 * N pieces
+  interruptedPicketCount: number; // Number of pickets split by cutouts
+  netPicketLengthDeduction: number; // Total length of omitted bar sections
+  cornerCleatQuantity: number; // 4 * N corner connecting brackets
+}
+
+export interface GrilleLinearPricingInput {
+  widthMm: number; // Aperture opening width
+  heightMm: number; // Aperture opening height
+  patternType?: GrillePatternType;
+  nominalPitchColMm?: number; // Target vertical bar pitch (default: 140mm)
+  nominalPitchRowMm?: number; // Target horizontal bar pitch (default: 191mm)
+  horizontalBarCount?: number; // Optional explicit or geometry-detected horizontal bar count
+  verticalBarCount?: number; // Optional explicit or geometry-detected vertical bar count
+  frameProfileWidthMm?: number; // Perimeter frame face width (default: 20mm)
+  includePerimeterFrame?: boolean; // True if grille includes outer frame rails (default: true)
+  openingCount?: number;
+  openingWidthMm?: number;
+  openingHeightMm?: number;
+  openingTargetKeys?: string[];
+  openingConfig?: {
+    enabled?: boolean;
+    cutoutWidthMm?: number;
+    cutoutHeightMm?: number;
+    collarExtrusionCode?: string;
+    cornerCleatCountPerOpening?: number;
+    targetComponentKeys?: string[];
+  } | null;
+  grilleRawMaterial: {
+    id: string;
+    material_code: string;
+    description: string;
+    unit_price: number; // PHP per linear meter
+    waste_allowance?: number; // e.g. 0.12 (12%)
+  };
+  frameRawMaterial?: {
+    id: string;
+    material_code: string;
+    description: string;
+    unit_price: number; // PHP per linear meter
+    waste_allowance?: number;
+  } | null;
+  laborRate?: number; // Default 0.25 (25% of material)
+  laborFloor?: number; // Default PHP 650.00
+  contractorMarginRate?: number; // Default 0.25 (25%)
+}
+
+export interface GrilleLinearBOMResult {
+  patternType: GrillePatternType;
+  totalPieces: number;
+  totalLinearMeters: number;
+  directMaterialCost: number;
+  wasteAllowanceCost: number;
+  laborCost: number;
+  contractorMargin: number;
+  finalPrice: number;
+  perimeterRails: {
+    topRail: GrilleBarMetric;
+    bottomRail: GrilleBarMetric;
+    leftJamb: GrilleBarMetric;
+    rightJamb: GrilleBarMetric;
+    totalLinearM: number;
+    subtotalCost: number;
+  } | null;
+  verticalBars: {
+    barCount: number;
+    cutLengthMm: number;
+    totalLinearM: number;
+    subtotalCost: number;
+    details: GrilleBarMetric[];
+  };
+  horizontalBars: {
+    barCount: number;
+    cutLengthMm: number;
+    totalLinearM: number;
+    subtotalCost: number;
+    details: GrilleBarMetric[];
+  };
+  openings?: GrilleOpeningBOMImpact | null;
+  openingDetails?: {
+    count: number;
+    cutoutWidthMm: number;
+    cutoutHeightMm: number;
+    collarRailsMetric: GrilleBarMetric;
+    collarStilesMetric: GrilleBarMetric;
+    cornerCleatCount: number;
+  } | null;
+  itemizedBreakdown: Array<{
+    item: string;
+    orientation: GrilleBarOrientation | "PERIMETER" | "COLLAR" | "HARDWARE";
+    pieces: number;
+    lengthMm: number;
+    totalMeters: number;
+    unitRate: number;
+    subtotal: number;
+  }>;
+}
+

@@ -4,7 +4,10 @@ import type { CalculatedBOMResult } from "@/lib/pricing/pricingEngine";
 import { QUOTATION_TERMS_CONTENT } from "@/lib/pricing/quotationPdfContent";
 import type { ConsolidatedQuotationSummary, ItemizedProductQuotation } from "@/lib/pricing/types";
 import { SNAPSHOT_FALLBACK_DATA_URL } from "@/lib/pricing/pdfAssets";
+import { groupsFromBom, SILL_OMISSION_NOTICE } from "@/lib/pricing/quotationDocument";
 import type { QuotationDocumentViewModel } from "@/lib/pricing/quotationDocument";
+import { calculateGrilleLinearBOM } from "@/lib/pricing/grillePricingEngine";
+import type { GrilleLinearBOMResult } from "@/lib/pricing/types";
 
 export interface QuotationPdfMetadata {
   quotationNumber: string;
@@ -42,8 +45,9 @@ export interface GeneratedPdfDocument {
   totalEstimatedAmount: number;
 }
 
-export function escapeHtml(value: string): string {
-  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;").replace(/'/g, "&#39;");
+export function escapeHtml(value: string | null | undefined): string {
+  if (!value) return "";
+  return String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
 export function sanitizeImageSource(value: string | null | undefined, allowedOrigins: readonly string[]): string | null {
@@ -59,8 +63,16 @@ export function sanitizeImageSource(value: string | null | undefined, allowedOri
 
 const money = (value: number) => new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", minimumFractionDigits: 2 }).format(value);
 
-function bomTable(result: CalculatedBOMResult, hasSill: boolean): string {
-  return `<section class="item-card item-card--legacy"><header><h3>Legacy quotation</h3><span class="numeric-value">Qty: 1</span></header><div class="fixture-specs"><span><b>Dimensions:</b> <span class="dimension-value">${Math.round(result.widthM * 1000)}mm × ${Math.round(result.heightM * 1000)}mm</span></span><span><b>Panels:</b> ${result.panelCount}</span><span><b>Finish:</b> ${escapeHtml(result.finishType)}</span><span><b>Glass:</b> ${escapeHtml(result.glassType)}</span><span><b>Sill:</b> ${hasSill ? "Standard sill" : "Flush sill omitted"}</span></div><div class="item-subtotal"><span>Final item price</span><strong class="currency">${money(result.finalQuotation)}</strong></div></section>`;
+/** IMP-MS85 / QAD-TC100.12: preserve trace attribution in print and preview. */
+function materialGroupsTable(groups: QuotationDocumentViewModel["items"][number]["groups"]): string {
+  const rows = groups;
+  if (rows.length === 0) return "";
+  return `<table class="items-table"><caption>Itemized Cost Breakdown (per unit)</caption><colgroup><col style="width:55%"><col style="width:15%"><col style="width:15%"><col style="width:15%"></colgroup><thead><tr><th>Material</th><th>Quantity</th><th>Unit Price</th><th>Subtotal</th></tr></thead><tbody>${rows.map((row) => `<tr><td>${escapeHtml(row.description)}${row.finishType ? `<br><small>${escapeHtml(row.finishType)}</small>` : ""}${row.componentSummary ? `<br><small>Contributing Parts: ${escapeHtml(row.componentSummary)}</small>` : ""}</td><td>${row.quantity} ${escapeHtml(row.unit)}</td><td>${money(row.unitPrice)}</td><td>${money(row.subtotal)}</td></tr>`).join("")}</tbody></table>`;
+}
+
+function bomTable(result: CalculatedBOMResult | undefined | null, hasSill: boolean): string {
+  if (!result || !result.widthM) return "";
+  return `<section class="item-card item-card--legacy"><header><h3>Legacy quotation</h3><span class="numeric-value">Qty: 1</span></header><div class="fixture-specs"><span><b>Dimensions:</b> <span class="dimension-value">${Math.round(result.widthM * 1000)}mm × ${Math.round(result.heightM * 1000)}mm</span></span><span><b>Panels:</b> ${result.panelCount}</span><span><b>Finish:</b> ${escapeHtml(result.finishType)}</span><span><b>Glass:</b> ${escapeHtml(result.glassType)}</span><span><b>Sill:</b> ${hasSill ? "Standard sill" : SILL_OMISSION_NOTICE}</span></div><div class="item-subtotal"><span>Final item price</span><strong class="currency">${money(result.finalQuotation)}</strong></div>${materialGroupsTable(groupsFromBom(result))}</section>`;
 }
 
 function snapshot(source: string | null, alt: string): string {
@@ -75,7 +87,139 @@ function termsAppendix(): string {
 }
 
 function canonicalGroupsTable(item: QuotationDocumentViewModel["items"][number], finalPrice: number): string {
-  return `<section class="item-card item-card--compact"><header><h3>${escapeHtml(item.productName)}</h3><span class="numeric-value">Qty: ${item.quantity}</span></header><div class="fixture-specs"><span><b>Dimensions:</b> <span class="dimension-value">${escapeHtml(item.dimensionsFormatted)}</span></span><span><b>Measurement:</b> ${escapeHtml(dimensionSourceLabel(item.dimensionSource))}</span><span><b>Panels:</b> ${item.panelCount}</span><span><b>Finish:</b> ${escapeHtml(item.finishLabel)}</span><span><b>Glass:</b> ${escapeHtml(item.glassLabel)}</span><span><b>Sill:</b> ${item.hasSill ? "Standard sill" : "Flush sill omitted"}</span></div>${item.structuralWaiver ? `<p class="item-waiver">Structural waiver attached for this fixture.</p>` : ""}<div class="item-subtotal"><span>Final item price</span><strong class="currency">${money(finalPrice)}</strong></div></section>`;
+  const isLegacyDimensionSpec = Boolean(
+    !item.specificationSummary ||
+    item.specificationSummary === "Legacy quotation item" ||
+    /\d+cm\s*×\s*\d+cm/i.test(item.specificationSummary)
+  );
+  const customSpecs = !isLegacyDimensionSpec
+    ? `<span><b>Specifications:</b> ${escapeHtml(item.specificationSummary!)}</span>`
+    : "";
+
+  const addonFinishSuffix = item.addonAluminumFinish
+    ? ` (${item.addonAluminumFinish.charAt(0).toUpperCase() + item.addonAluminumFinish.slice(1)})`
+    : "";
+  const hasAddon = Boolean(
+    (item.selectedAddon && item.selectedAddon !== "none") ||
+    (item.addonPrice ?? 0) > 0 ||
+    Boolean(item.addonName)
+  );
+
+  const isInterior = item.addonMountingSide === "back";
+  const mountingSideLabel = item.addonMountingSide === "back"
+    ? "Interior Mount / Back"
+    : item.addonMountingSide === "front"
+      ? "Exterior Mount / Front"
+      : null;
+  const hatchCount = isInterior ? (item.hatchCount ?? 0) : 0;
+  const isGrille = item.selectedAddon === "grill" || (item.addonName || "").toLowerCase().includes("grill");
+  const hatchDisclosure = (isInterior && hatchCount > 0)
+    ? (isGrille
+      ? `with ${hatchCount}x Operator Access ${hatchCount === 1 ? "Opening" : "Openings"}`
+      : `with ${hatchCount}x Operator Access ${hatchCount === 1 ? "Hatch" : "Hatches"}`)
+    : null;
+  const sideHatchParts = [mountingSideLabel, hatchDisclosure].filter(Boolean);
+  const sideHatchSuffix = sideHatchParts.length > 0 ? ` (${sideHatchParts.join(", ")})` : "";
+
+  const addonBaseName = item.addonName
+    ? item.addonName
+    : item.selectedAddon && item.selectedAddon !== "none"
+      ? (item.selectedAddon === "screen" ? "Insect Screen" : "Architectural Security Window Grille")
+      : "Custom Add-on Attachment";
+
+  const addonLabel = hasAddon
+    ? `${addonBaseName}${sideHatchSuffix}${addonFinishSuffix}`
+    : "None";
+
+  const addonPriceFormatted = hasAddon && (item.addonPrice ?? 0) > 0 ? (item.addonPrice ?? 0) : 0;
+  const addonSpec = hasAddon
+    ? `<span><b>Add-on Attachment:</b> ${escapeHtml(addonLabel)}${addonPriceFormatted > 0 ? ` (+${money(addonPriceFormatted)})` : ""}</span>`
+    : `<span><b>Add-on Attachment:</b> None</span>`;
+
+  const hardwareSpecs = item.swappedAccessories && item.swappedAccessories.length > 0
+    ? item.swappedAccessories.map((acc) => {
+      const handingLabel = acc.horizontalPosition === "left" ? "Left-Hand Side" : "Right-Hand Side";
+      const verticalLabel = acc.verticalPosition === "bottom" ? "Bottom Rail" : "Mid-Height";
+      const deltaFormatted = (acc.priceDelta ?? 0) > 0 ? ` (+${money(acc.priceDelta!)})` : "";
+      return `<span><b>Hardware / Handle:</b> ${escapeHtml(acc.accessoryName)} | <b>Handing:</b> ${handingLabel} (${verticalLabel}) | <b>Finish:</b> ${escapeHtml(acc.finish ?? "Standard")}${deltaFormatted}</span>`;
+    }).join("")
+    : "";
+
+  const accessoryPriceFormatted = (item.accessoryPriceDelta ?? 0) > 0 ? (item.accessoryPriceDelta ?? 0) : 0;
+  const basePrice = item.baseUnitPrice ?? (item.unitPrice - addonPriceFormatted - accessoryPriceFormatted);
+  const addonNameShort = item.selectedAddon === "screen"
+    ? `Insect Screen${addonFinishSuffix}`
+    : item.selectedAddon === "grill"
+      ? `Security Grille${addonFinishSuffix}`
+      : (item.addonName ? `${item.addonName}${addonFinishSuffix}` : "Add-on");
+
+  const hasUpgrades = (addonPriceFormatted > 0) || (accessoryPriceFormatted > 0);
+  const subtotalContent = hasUpgrades
+    ? `<div class="item-pricing-breakdown" style="display:flex;flex-direction:column;gap:3px;font-size:11px;color:#475569;">
+        <span>${item.productType === "Door" ? "Base Door Fixture" : "Base Window Fixture"}: ${money(basePrice)}</span>
+        ${addonPriceFormatted > 0 ? `<span>Add-on (${escapeHtml(addonNameShort)}): ${money(addonPriceFormatted)}</span>` : ""}
+        ${accessoryPriceFormatted > 0 ? `<span>Hardware Upgrades: ${money(accessoryPriceFormatted)}</span>` : ""}
+      </div>
+      <div style="text-align:right;">
+        <span>Fixture Total</span>
+        <strong class="currency">${money(finalPrice)}</strong>
+      </div>`
+    : `<span>Final item price</span><strong class="currency">${money(finalPrice)}</strong>`;
+
+  const grilleCutListHtml = renderGrilleCutListSummaryHtml({
+    selectedAddon: item.selectedAddon,
+    widthMm: item.widthMm,
+    heightMm: item.heightMm,
+    grilleBOM: item.grilleBOM,
+    addonAluminumFinish: item.addonAluminumFinish,
+  });
+
+  return `<section class="item-card item-card--compact"><header><h3>${escapeHtml(item.productName)}</h3><span class="numeric-value">Qty: ${item.quantity}</span></header><div class="fixture-specs"><span><b>Dimensions:</b> <span class="dimension-value">${escapeHtml(item.dimensionsFormatted)}</span></span><span><b>Measurement:</b> ${escapeHtml(dimensionSourceLabel(item.dimensionSource))}</span><span><b>Panels:</b> ${item.panelCount}</span><span><b>Finish:</b> ${escapeHtml(item.finishLabel)}</span><span><b>Glass:</b> ${escapeHtml(item.glassLabel)}</span><span><b>Sill:</b> ${item.hasSill ? "Standard sill" : SILL_OMISSION_NOTICE}</span>${addonSpec}${customSpecs}${hardwareSpecs}${grilleCutListHtml}</div>${item.structuralWaiver ? `<p class="item-waiver">Structural waiver attached for this fixture.</p>` : ""}${materialGroupsTable(item.groups)}<div class="item-subtotal">${subtotalContent}</div></section>`;
+}
+
+function renderGrilleCutListSummaryHtml(item: {
+  selectedAddon?: string;
+  widthMm: number;
+  heightMm: number;
+  grilleBOM?: GrilleLinearBOMResult | null;
+  addonAluminumFinish?: string;
+  hatchCount?: number;
+}): string {
+  if (item.selectedAddon !== "grill") return "";
+
+  const bom = item.grilleBOM ?? calculateGrilleLinearBOM({
+    widthMm: item.widthMm,
+    heightMm: item.heightMm,
+    patternType: "staggered_brick",
+    openingCount: item.hatchCount,
+    grilleRawMaterial: {
+      id: "pdf-grille-mat",
+      material_code: "AL-GRILLE-TUBE-16MM",
+      description: "16mm Square Tube Aluminum",
+      unit_price: (item.addonAluminumFinish || "").toLowerCase().includes("white") ? 180 : 160,
+      waste_allowance: 0.12,
+    },
+    includePerimeterFrame: true,
+  });
+
+  const finishName = item.addonAluminumFinish
+    ? item.addonAluminumFinish.charAt(0).toUpperCase() + item.addonAluminumFinish.slice(1)
+    : "Standard";
+
+  const openingSummary = bom.openings
+    ? `<span>• Openings: ${bom.openings.openingCount}x collar frames (${bom.openings.collarLinearMeters.toFixed(2)}m framing, ${bom.openings.cornerCleatQuantity} cleats)</span>`
+    : "";
+
+  return `<div class="grille-cut-list-spec" style="grid-column:1 / -1;margin-top:6px;padding:8px 12px;background:#f8fafc;border:1px solid #cbd5e1;border-radius:6px;font-size:11px;color:#334155;">
+    <strong style="color:#0f1422;display:block;margin-bottom:3px;">Security Grille Extrusion Cut List (${finishName} Finish - ${bom.totalPieces} Pieces):</strong>
+    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px;">
+      <span>• Vertical: ${bom.verticalBars.barCount} bars @ ${bom.verticalBars.cutLengthMm}mm (${bom.verticalBars.totalLinearM.toFixed(2)}m)</span>
+      <span>• Horizontal: ${bom.horizontalBars.barCount} bars @ ${bom.horizontalBars.cutLengthMm}mm (${bom.horizontalBars.totalLinearM.toFixed(2)}m)</span>
+      <span>• Perimeter: 4 rails (${bom.perimeterRails?.totalLinearM.toFixed(2) ?? "0.00"}m)</span>
+      ${openingSummary}
+      <span style="font-weight:600;color:#0f1422;">• Total Extrusion: ${bom.totalLinearMeters.toFixed(2)} linear meters</span>
+    </div>
+  </div>`;
 }
 
 interface QuotationRenderContext {
@@ -98,14 +242,16 @@ function canonicalToLegacy(view: QuotationDocumentViewModel): QuotationPdfMetada
     bomSummary: { total_estimated_amount: view.effectiveFinalPrice, currency: "PHP" as const, has_sill: item.hasSill, structural_waiver: item.structuralWaiver, groups: [] },
   } satisfies CalculatedBOMResult;
   return {
-    quotationNumber: view.quotationNumber,
-    referenceCode: view.referenceCode,
-    shareableUrl: view.shareableUrl,
+    quotationNumber: view.quotationNumber || "DRAFT",
+    referenceCode: view.referenceCode || "DRAFT",
+    shareableUrl: view.shareableUrl || "",
     customerName: view.customer.name,
     customerPhone: view.customer.phone,
     customerEmail: view.customer.email,
     siteLocation: view.customer.siteLocation,
-    createdAtFormatted: new Intl.DateTimeFormat("en-US", { dateStyle: "long" }).format(new Date(view.createdAt)),
+    createdAtFormatted: !view.createdAt || Number.isNaN(new Date(view.createdAt).getTime())
+      ? new Intl.DateTimeFormat("en-US", { dateStyle: "long" }).format(new Date())
+      : new Intl.DateTimeFormat("en-US", { dateStyle: "long" }).format(new Date(view.createdAt)),
     projectName: view.projectName,
     snapshotImageUrl: view.snapshotImageUrl,
     brandLogoUrl: view.brandLogoUrl,
@@ -113,6 +259,37 @@ function canonicalToLegacy(view: QuotationDocumentViewModel): QuotationPdfMetada
     hasSill: view.hasSill,
     structuralWaiver: view.structuralWaiver,
     bomResult: placeholder,
+    items: view.items.map((it) => ({
+      itemId: it.itemId,
+      productId: it.productId ?? "",
+      productName: it.productName,
+      productType: it.productType,
+      variantName: it.variantName,
+      specSummary: it.specificationSummary,
+      dimensionsFormatted: it.dimensionsFormatted,
+      widthMm: it.widthMm,
+      heightMm: it.heightMm,
+      panelCount: it.panelCount,
+      hasSill: it.hasSill,
+      structuralWaiver: it.structuralWaiver,
+      finishType: it.finishLabel,
+      glassType: it.glassLabel,
+      quantity: it.quantity,
+      unitPrice: it.unitPrice,
+      totalPrice: it.calculatedSubtotal,
+      imageUrl: it.imageSource ?? "",
+      bomResult: placeholder,
+      selectedAddon: it.selectedAddon,
+      addonProductId: it.addonProductId,
+      addonName: it.addonName,
+      addonPrice: it.addonPrice,
+      baseUnitPrice: it.baseUnitPrice,
+      addonAluminumFinish: it.addonAluminumFinish,
+      addonMountingSide: it.addonMountingSide,
+      hatchCount: it.hatchCount,
+      hatchTargetKeys: it.hatchTargetKeys,
+      grilleBOM: it.grilleBOM,
+    })),
     operatingDays: view.operatingDays,
     operatingHours: view.operatingHours,
     operatingScheduleFormatted: view.operatingScheduleFormatted,
@@ -155,15 +332,118 @@ function generateLegacyQuotationPdfHtml(metadata: QuotationPdfMetadata, context:
   const summary = metadata.consolidatedSummary;
   const origins = metadata.allowedImageOrigins ?? [];
   const anyWaiver = isMulti ? items.some((item) => item.structuralWaiver) : metadata.structuralWaiver;
-  const total = isMulti && summary ? summary.finalGrandTotal : metadata.bomResult.finalQuotation;
+  const total = isMulti && summary
+    ? summary.finalGrandTotal
+    : (metadata.bomResult?.finalQuotation ?? (metadata.items?.[0]?.bomResult as CalculatedBOMResult | undefined)?.finalQuotation ?? (metadata.items?.[0]?.totalPrice ?? 0));
   const field = (label: string, value?: string | null) => value ? `<div><span>${label}</span><strong${label === "Email" ? ' class="long-string"' : ""}>${escapeHtml(value)}</strong></div>` : "";
   const reference = metadata.referenceCode ? `<div>Reference: ${escapeHtml(metadata.referenceCode)}${metadata.shareableUrl ? ` · <a class="long-string" href="${escapeHtml(metadata.shareableUrl)}">${escapeHtml(metadata.shareableUrl)}</a>` : ""}</div>` : "";
   const waiver = anyWaiver ? `<aside class="waiver-banner"><strong>Notice: NSCP 2015 Structural Span Waiver Attached</strong><p>This configuration exceeds standard Series 798 2-panel structural width recommendations (W &gt;= 2400mm). The customer has acknowledged potential operational stiffness and wind-load deflection risks.</p></aside>` : "";
   const estimatorName = metadata.estimatorName?.trim() || "R.R.D. Aluminum & Glass Works";
+  const singleItem = metadata.items?.[0];
+  const singleHasAddon = Boolean(
+    (singleItem?.selectedAddon && singleItem.selectedAddon !== "none") ||
+    (singleItem?.addonPrice ?? 0) > 0 ||
+    Boolean(singleItem?.addonName)
+  );
+  const singleAddonFinishSuffix = singleItem?.addonAluminumFinish
+    ? ` (${singleItem.addonAluminumFinish.charAt(0).toUpperCase() + singleItem.addonAluminumFinish.slice(1)})`
+    : "";
+  const singleAddonPriceFormatted = singleHasAddon && (singleItem?.addonPrice ?? 0) > 0 ? (singleItem?.addonPrice ?? 0) : 0;
+  const singleIsInterior = singleItem?.addonMountingSide === "back";
+  const singleSide = singleItem?.addonMountingSide === "back"
+    ? "Interior Mount / Back"
+    : singleItem?.addonMountingSide === "front"
+      ? "Exterior Mount / Front"
+      : null;
+  const singleHatchCount = singleIsInterior ? (singleItem?.hatchCount ?? 0) : 0;
+  const isSingleGrille = singleItem?.selectedAddon === "grill" || (singleItem?.addonName || "").toLowerCase().includes("grill");
+  const singleHatchDisc = (singleIsInterior && singleHatchCount > 0)
+    ? (isSingleGrille
+      ? `with ${singleHatchCount}x Operator Access ${singleHatchCount === 1 ? "Opening" : "Openings"}`
+      : `with ${singleHatchCount}x Operator Access ${singleHatchCount === 1 ? "Hatch" : "Hatches"}`)
+    : null;
+  const singleSideHatch = [singleSide, singleHatchDisc].filter(Boolean);
+  const singleSideHatchSuffix = singleSideHatch.length > 0 ? ` (${singleSideHatch.join(", ")})` : "";
+
+  const singleBaseName = singleItem?.addonName || (singleItem?.selectedAddon === "screen" ? "Insect Screen" : "Architectural Security Window Grille");
+  const singleAddonLabel = singleHasAddon
+    ? `${singleBaseName}${singleSideHatchSuffix}${singleAddonFinishSuffix}${singleAddonPriceFormatted > 0 ? ` (+${money(singleAddonPriceFormatted)})` : ""}`
+    : null;
+
+  const singleCustomSpec = singleItem?.specSummary && !/\d+cm\s*×\s*\d+cm/i.test(singleItem.specSummary) && singleItem.specSummary !== "Legacy quotation item"
+    ? `<span><b>Specifications:</b> ${escapeHtml(singleItem.specSummary)}</span>`
+    : "";
+
   const fixtures = isMulti ? items.map((item, index) => {
     const itemImage = sanitizeImageSource(item.imageUrl, origins);
-    return `<section class="item-card"><header><h3>Fixture ${index + 1}: ${escapeHtml(item.productName)}</h3><span class="numeric-value">Qty: ${item.quantity}</span></header>${itemImage ? snapshot(itemImage, `${item.productName} visualization preview`) : ""}<div class="fixture-specs"><span><b>Dimensions:</b> <span class="dimension-value">${item.widthMm}mm × ${item.heightMm}mm</span></span><span><b>Measurement:</b> ${escapeHtml(dimensionSourceLabel(item.dimensionSource))}</span><span><b>Panels:</b> ${item.panelCount}</span><span><b>Finish:</b> ${escapeHtml(item.finishType)}</span><span><b>Glass:</b> ${escapeHtml(item.glassType)}</span><span><b>Sill:</b> ${item.hasSill ? "Standard sill" : "Flush sill omitted"}</span></div>${item.structuralWaiver ? `<p class="item-waiver">Structural waiver attached for this fixture.</p>` : ""}${bomTable(item.bomResult, item.hasSill)}<div class="item-subtotal"><span class="quantity-price">Unit price: ${money(item.unitPrice)} × ${item.quantity}</span><strong class="currency">Fixture subtotal: ${money(item.totalPrice)}</strong></div></section>`;
+    const hasAddon = Boolean(
+      (item.selectedAddon && item.selectedAddon !== "none") ||
+      (item.addonPrice ?? 0) > 0 ||
+      Boolean(item.addonName)
+    );
+    const addonFinishSuffix = item.addonAluminumFinish
+      ? ` (${item.addonAluminumFinish.charAt(0).toUpperCase() + item.addonAluminumFinish.slice(1)})`
+      : "";
+    const itemIsInterior = item.addonMountingSide === "back";
+    const itemSide = item.addonMountingSide === "back"
+      ? "Interior Mount / Back"
+      : item.addonMountingSide === "front"
+        ? "Exterior Mount / Front"
+        : null;
+    const itemHatchCount = itemIsInterior ? (item.hatchCount ?? 0) : 0;
+    const isItemGrille = item.selectedAddon === "grill" || (item.addonName || "").toLowerCase().includes("grill");
+    const itemHatchDisc = (itemIsInterior && itemHatchCount > 0)
+      ? (isItemGrille
+        ? `with ${itemHatchCount}x Operator Access ${itemHatchCount === 1 ? "Opening" : "Openings"}`
+        : `with ${itemHatchCount}x Operator Access ${itemHatchCount === 1 ? "Hatch" : "Hatches"}`)
+      : null;
+    const itemSideHatch = [itemSide, itemHatchDisc].filter(Boolean);
+    const itemSideHatchSuffix = itemSideHatch.length > 0 ? ` (${itemSideHatch.join(", ")})` : "";
+
+    const itemBaseName = item.addonName
+      ? item.addonName
+      : item.selectedAddon && item.selectedAddon !== "none"
+        ? (item.selectedAddon === "screen" ? "Insect Screen" : "Architectural Security Window Grille")
+        : "Custom Add-on Attachment";
+    const addonLabel = hasAddon
+      ? `${itemBaseName}${itemSideHatchSuffix}${addonFinishSuffix}`
+      : "None";
+    const addonPriceFormatted = hasAddon && (item.addonPrice ?? 0) > 0 ? (item.addonPrice ?? 0) : 0;
+    const addonSpec = hasAddon
+      ? `<span><b>Add-on Attachment:</b> ${escapeHtml(addonLabel)}${addonPriceFormatted > 0 ? ` (+${money(addonPriceFormatted)})` : ""}</span>`
+      : `<span><b>Add-on Attachment:</b> None</span>`;
+    const basePrice = item.baseUnitPrice ?? (item.unitPrice - addonPriceFormatted);
+    const addonNameShort = item.selectedAddon === "screen"
+      ? `Insect Screen${addonFinishSuffix}`
+      : item.selectedAddon === "grill"
+        ? `Security Grille${addonFinishSuffix}`
+        : (item.addonName ? `${item.addonName}${addonFinishSuffix}` : "Add-on");
+    const subtotalBreakdown = hasAddon && addonPriceFormatted > 0
+      ? `<div class="item-pricing-breakdown" style="display:flex;flex-direction:column;gap:2px;font-size:11px;color:#475569;margin-bottom:4px;"><span>Base Window Fixture: ${money(basePrice)}</span><span>Add-on (${escapeHtml(addonNameShort)}): ${money(addonPriceFormatted)}</span></div>`
+      : "";
+
+    const itemSpec = item.specSummary && !/\d+cm\s*×\s*\d+cm/i.test(item.specSummary) && item.specSummary !== "Legacy quotation item"
+      ? `<span><b>Specifications:</b> ${escapeHtml(item.specSummary)}</span>`
+      : "";
+
+    const grilleCutListHtml = renderGrilleCutListSummaryHtml({
+      selectedAddon: item.selectedAddon,
+      widthMm: item.widthMm,
+      heightMm: item.heightMm,
+      grilleBOM: item.grilleBOM,
+      addonAluminumFinish: item.addonAluminumFinish,
+    });
+
+    return `<section class="item-card"><header><h3>Fixture ${index + 1}: ${escapeHtml(item.productName)}</h3><span class="numeric-value">Qty: ${item.quantity}</span></header>${itemImage ? snapshot(itemImage, `${item.productName} visualization preview`) : ""}<div class="fixture-specs"><span><b>Dimensions:</b> <span class="dimension-value">${item.widthMm}mm × ${item.heightMm}mm</span></span><span><b>Measurement:</b> ${escapeHtml(dimensionSourceLabel(item.dimensionSource))}</span><span><b>Panels:</b> ${item.panelCount}</span><span><b>Finish:</b> ${escapeHtml(item.finishType)}</span><span><b>Glass:</b> ${escapeHtml(item.glassType)}</span><span><b>Sill:</b> ${item.hasSill ? "Standard sill" : SILL_OMISSION_NOTICE}</span>${addonSpec}${itemSpec}${grilleCutListHtml}</div>${item.structuralWaiver ? `<p class="item-waiver">Structural waiver attached for this fixture.</p>` : ""}${bomTable(item.bomResult, item.hasSill)}<div class="item-subtotal">${subtotalBreakdown}<span class="quantity-price">Unit price: ${money(item.unitPrice)} × ${item.quantity}</span><strong class="currency">Fixture subtotal: ${money(item.totalPrice)}</strong></div></section>`;
   }).join("") : bomTable(metadata.bomResult, metadata.hasSill);
+  const singleGrilleCutList = singleItem ? renderGrilleCutListSummaryHtml({
+    selectedAddon: singleItem.selectedAddon,
+    widthMm: singleItem.widthMm,
+    heightMm: singleItem.heightMm,
+    grilleBOM: singleItem.grilleBOM,
+    addonAluminumFinish: singleItem.addonAluminumFinish,
+  }) : "";
+
   return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>GlassFit Quotation ${escapeHtml(metadata.quotationNumber)}</title><style>
 @page { size: A4 portrait; margin: 15mm; } * { box-sizing: border-box; } html,body { min-width:0; } body { margin:0; padding:24px 16px 48px; background:#f1f5f9; color:#0f1422; font:400 13px/1.5 Arial,Helvetica,sans-serif; }
 .preview-toolbar { width:min(210mm, 100%); margin:0 auto 16px; display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; } .toolbar-actions { display:flex; flex-wrap:wrap; gap:8px; } button { border:1px solid #0f1422; border-radius:999px; padding:10px 16px; background:#fff; color:#0f1422; cursor:pointer; font:inherit; font-weight:700; } button.primary { background:#0f1422; color:#fff; } button:focus-visible,a:focus-visible { outline:3px solid #07b6d3; outline-offset:2px; }
@@ -173,7 +453,9 @@ function generateLegacyQuotationPdfHtml(metadata: QuotationPdfMetadata, context:
 .snapshot { margin:18px 0; } .snapshot img { display:block; width:100%; max-height:380px; object-fit:contain; background:#f8fafc; border-radius:8px; } figcaption { margin-top:6px; color:#64748b; } .snapshot-fallback { margin:18px 0; padding:28px; text-align:center; border:1px dashed #94a3b8; border-radius:8px; background:#f8fafc; } .snapshot-fallback img { width:96px; max-width:30%; }
 .summary-card { margin:18px 0; padding:18px; border-radius:8px; background:#0f1422; color:#fff; } .summary-card strong { display:block; color:#67e8f9; font-size:24px; } .waiver-banner,.item-waiver { padding:12px 16px; border:1px solid #f59e0b; border-left:5px solid #d97706; border-radius:6px; background:#fffbeb; color:#78350f; }
 .item-card { margin:18px 0; border:1px solid #cbd5e1; border-radius:8px; overflow:hidden; } .item-card>header { display:flex; justify-content:space-between; gap:12px; padding:10px 14px; background:#0f1422; color:#fff; } .item-card .snapshot,.item-card .fixture-specs,.item-card .items-table,.item-card .item-waiver { margin:12px; } .item-card .snapshot img { max-height:230px; }
-.items-table { width:100%; border-collapse:collapse; margin:12px 0 20px; } .items-table th,.items-table td { padding:8px; border-bottom:1px solid #e2e8f0; text-align:left; vertical-align:top; } .items-table th { background:#f1f5f9; font-size:10px; text-transform:uppercase; } .items-table td:nth-child(n+2),.items-table th:nth-child(n+2) { text-align:right; }
+.item-card .items-table { width:calc(100% - 24px); table-layout:fixed; }
+.items-table thead { display:table-header-group; break-after:avoid; page-break-after:avoid; }
+.items-table { width:100%; border-collapse:collapse; margin:12px 0 20px; } .items-table th,.items-table td { overflow-wrap:anywhere; padding:8px; border-bottom:1px solid #e2e8f0; text-align:left; vertical-align:top; } .items-table th { background:#f1f5f9; font-size:10px; text-transform:uppercase; } .items-table td:nth-child(n+2),.items-table th:nth-child(n+2) { text-align:right; }
 .item-subtotal { display:flex; flex-wrap:wrap; justify-content:space-between; gap:8px; padding:12px; background:#f1f5f9; } .total-table { width:min(100%,390px); margin-left:auto; border-collapse:collapse; } .total-table td { padding:7px; } .total-table td:last-child { text-align:right; font-weight:700; } .grand-total-row { background:#07b6d3; color:#fff; font-size:15px; }
 .ocular-card,.consumer-notice { margin-top:24px; padding:16px; border:1px solid #cbd5e1; border-radius:8px; } .checklist { padding-left:20px; } .checklist li { margin:7px 0; list-style:"☐  "; } .signature-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:28px; margin-top:32px; } .signature-block .line { height:30px; border-bottom:1px solid #64748b; display:flex; align-items:flex-end; justify-content:center; gap:18px; padding-bottom:3px; text-align:center; } .signature-block .line strong { min-width:0; font-size:11px; } .signature-block .line time { flex:none; font-size:10px; } .consumer-notice { background:#f8fafc; color:#475569; font-size:11px; }
 @media screen and (max-width:640px) { body { padding:12px 8px 32px; } .document-header,.preview-toolbar { align-items:flex-start; flex-direction:column; } .meta-grid,.fixture-specs,.signature-grid { grid-template-columns:1fr; } .items-table { font-size:10px; } .items-table th,.items-table td { padding:5px 3px; } }
@@ -187,10 +469,11 @@ function generateLegacyQuotationPdfHtml(metadata: QuotationPdfMetadata, context:
   .meta-grid { margin:4mm 0; padding:4mm; }
   .brand-logo { width:40mm; max-width:none; height:15mm; }
   h1 { font-size:14pt; } h2 { margin:6mm 0 2.5mm; font-size:12pt; } h3 { font-size:10pt; }
-  .items-table { font-size:9pt; margin:3mm 0 5mm; }
+  .items-table { font-size:9pt; break-inside:avoid; page-break-inside:avoid; margin:3mm 0 5mm; }
   .items-table th,.items-table td { padding:2mm; }
   .item-card { overflow:visible; border-radius:0; }
-  .item-card--compact,.total-table,.signature-block { break-inside:avoid; page-break-inside:avoid; }
+  .item-card--compact { break-inside:auto; page-break-inside:auto; }
+  .total-table,.signature-block { break-inside:avoid; page-break-inside:avoid; }
   .item-card>header { break-after:avoid; page-break-after:avoid; }
   .document-header,.meta-grid,.summary-card,.fixture-specs,.ocular-card,.consumer-notice { break-inside:avoid; page-break-inside:avoid; }
   .snapshot { break-inside:avoid; page-break-inside:avoid; }
@@ -208,7 +491,7 @@ function generateLegacyQuotationPdfHtml(metadata: QuotationPdfMetadata, context:
 }
 </style></head><body><nav class="preview-toolbar no-print" aria-label="Quotation preview controls"><div><strong>Quotation preview</strong><div>${escapeHtml(metadata.quotationNumber)}</div><p class="print-guidance">For a clean Save as PDF result, disable Headers and footers in the browser print dialog when that option is available.</p></div><div class="toolbar-actions"><button class="primary" type="button" onclick="window.print()">Print / Save as PDF</button><button type="button" onclick="window.close()">Close preview</button></div></nav>
 <main class="document-sheet"><header class="document-header"><div><img class="brand-logo" src="${escapeHtml(metadata.brandLogoUrl)}" alt="GlassFit"><p>Consultation Partner: R.R.D. Aluminum &amp; Glass Works</p>${metadata.operatingScheduleFormatted ? `<div class="partner-schedule" style="margin-top:4px;font-size:11px;color:#475569;"><span>Operating Schedule: </span><strong style="color:#0f1422;">${escapeHtml(metadata.operatingScheduleFormatted)}</strong></div>` : ""}</div><div><h1>PRELIMINARY CONSULTATION ESTIMATE</h1><strong>No. ${escapeHtml(metadata.quotationNumber)}</strong><div>${escapeHtml(metadata.createdAtFormatted)}</div>${reference}${metadata.quotationValidityText ? `<div>${escapeHtml(metadata.quotationValidityText)}</div>` : ""}</div></header>
-<section class="meta-grid"><div><span>Customer</span><strong>${escapeHtml(metadata.customerName)}</strong></div>${field("Phone",metadata.customerPhone)}${field("Email",metadata.customerEmail)}${field("Site location",metadata.siteLocation)}<div><span>Project</span><strong>${escapeHtml(metadata.projectName)}</strong></div></section>${waiver}${snapshot(sanitizeImageSource(metadata.snapshotImageUrl,origins),"Client-space visualization preview")}${context.showProjectSpecifications && !isMulti ? `<div class="fixture-specs project-specifications"><span><b>Dimensions:</b> <span class="dimension-value">W: ${Math.round(metadata.bomResult.widthM * 1000)} mm × H: ${Math.round(metadata.bomResult.heightM * 1000)} mm</span></span><span><b>Panels:</b> ${metadata.bomResult.panelCount}</span><span><b>Finish:</b> ${escapeHtml(metadata.bomResult.frozenDetails.finish_type)}</span><span><b>Glass:</b> ${escapeHtml(metadata.bomResult.frozenDetails.glass_type)}</span><span><b>Sill:</b> ${metadata.hasSill ? "Standard sill" : "Bottom Sill Omitted. Net material reduction applied."}</span></div>` : ""}
+<section class="meta-grid"><div><span>Customer</span><strong>${escapeHtml(metadata.customerName)}</strong></div>${field("Phone", metadata.customerPhone)}${field("Email", metadata.customerEmail)}${field("Site location", metadata.siteLocation)}<div><span>Project</span><strong>${escapeHtml(metadata.projectName)}</strong></div></section>${waiver}${snapshot(sanitizeImageSource(metadata.snapshotImageUrl, origins), "Client-space visualization preview")}${context.showProjectSpecifications && !isMulti && metadata.bomResult ? `<div class="fixture-specs project-specifications"><span><b>Dimensions:</b> <span class="dimension-value">W: ${Math.round(metadata.bomResult.widthM * 1000)} mm × H: ${Math.round(metadata.bomResult.heightM * 1000)} mm</span></span><span><b>Panels:</b> ${metadata.bomResult.panelCount}</span><span><b>Finish:</b> ${escapeHtml(metadata.bomResult.frozenDetails.finish_type)}</span><span><b>Glass:</b> ${escapeHtml(metadata.bomResult.frozenDetails.glass_type)}</span><span><b>Sill:</b> ${metadata.hasSill ? "Standard sill" : SILL_OMISSION_NOTICE}</span>${singleAddonLabel ? `<span><b>Add-on Attachment:</b> ${escapeHtml(singleAddonLabel)}</span>` : ""}${singleCustomSpec}${singleGrilleCutList}</div>` : ""}
 <section class="summary-card"><span>${escapeHtml(metadata.projectName)}</span><strong class="currency">${money(total)}</strong><span>Preliminary estimated total</span></section><h2>${isMulti ? `ITEMIZED FIXTURE BREAKDOWN (${items.length} FIXTURES)` : "Itemized quotation breakdown"}</h2>${fixtures}
 <table class="total-table"><tr class="grand-total-row"><td>Grand total</td><td>${money(total)}</td></tr></table>
 <section class="ocular-card"><h2>Ocular inspection checklist</h2><ul class="checklist"><li>Aperture dimensions physically measured.</li><li>Opening checked for square, plumb, and level.</li><li>Perimeter substrate inspected.</li><li>Access and work area reviewed.</li><li>Final specifications reviewed with customer.</li></ul>${metadata.operatingDays && metadata.operatingHours ? `<div class="consultation-availability" style="margin-top:14px;padding:10px 14px;background:#f8fafc;border-radius:6px;border-left:3px solid #07b6d3;font-size:11px;color:#334155;"><strong>Consultation &amp; Ocular Measurement Hours:</strong><p style="margin:4px 0 0 0;">Site visits and ocular inspections are scheduled during partner operating days (<strong>${escapeHtml(metadata.operatingDays)}</strong>) between <strong>${escapeHtml(metadata.operatingHours)}</strong>.</p></div>` : ""}<div class="signature-grid"><div class="signature-block"><div class="line"><strong>${escapeHtml(metadata.customerName)}</strong><time>${escapeHtml(metadata.createdAtFormatted)}</time></div><p>Customer signature / Printed name / Date</p></div><div class="signature-block"><div class="line"><strong>${escapeHtml(estimatorName)}</strong><time>${escapeHtml(metadata.createdAtFormatted)}</time></div><p>Estimator signature / Printed name / Date</p></div></div></section>
@@ -217,12 +500,17 @@ function generateLegacyQuotationPdfHtml(metadata: QuotationPdfMetadata, context:
 
 export function createQuotationPdfDocument(metadata: QuotationPdfMetadata): GeneratedPdfDocument {
   const fileName = `GlassFit_Quotation_${metadata.quotationNumber}.pdf`;
-  return { quotationNumber:metadata.quotationNumber, referenceCode:metadata.referenceCode ?? "", fileName, htmlContent:generateQuotationPdfHtml(metadata), documentTitle:`GlassFit Quotation - ${metadata.quotationNumber}`, r2ObjectKey:`quotations/${metadata.quotationNumber}/${fileName}`, hasStructuralWaiver:metadata.items?.some((item)=>item.structuralWaiver) ?? metadata.structuralWaiver, totalEstimatedAmount:metadata.consolidatedSummary?.finalGrandTotal ?? metadata.bomResult.finalQuotation };
+  return { quotationNumber: metadata.quotationNumber, referenceCode: metadata.referenceCode ?? "", fileName, htmlContent: generateQuotationPdfHtml(metadata), documentTitle: `GlassFit Quotation - ${metadata.quotationNumber}`, r2ObjectKey: `quotations/${metadata.quotationNumber}/${fileName}`, hasStructuralWaiver: metadata.items?.some((item) => item.structuralWaiver) ?? metadata.structuralWaiver, totalEstimatedAmount: metadata.consolidatedSummary?.finalGrandTotal ?? metadata.bomResult?.finalQuotation ?? 0 };
 }
 
-export function formatBookingShareMessage(options: { customerName:string; quotationNumber:string; referenceLink:string; productDescription:string; totalEstimatePhp:number; hasStructuralWaiver?:boolean }): { messageText:string; messengerUrl:string; viberUrl:string } {
+export function formatBookingShareMessage(options: { customerName: string; quotationNumber: string; referenceLink: string; productDescription: string; totalEstimatePhp: number; hasStructuralWaiver?: boolean; addonSummary?: string | null }): { messageText: string; messengerUrl: string; viberUrl: string } {
   const waiver = options.hasStructuralWaiver ? "\n(Note: Structural waiver attached for aperture span >= 2400mm)" : "";
-  const price = new Intl.NumberFormat("en-PH",{style:"currency",currency:"PHP",maximumFractionDigits:0}).format(options.totalEstimatePhp).replace("PHP","Php");
-  const messageText = `Hello R.R.D! I would like to inquire about a consultation for my customized glass and aluminum project:\n\nProduct: ${options.productDescription}\nQuotation No: ${options.quotationNumber}\nEstimated Amount: ${price}${waiver}\n\nHere is my saved reference link:\n${options.referenceLink}\n\nCan we schedule an ocular inspection and site measurement? Thank you! - ${options.customerName}`;
-  const encoded = encodeURIComponent(messageText); return { messageText, messengerUrl:`https://m.me/rrdaluminumglass?text=${encoded}`, viberUrl:`viber://forward?text=${encoded}` };
+  const addonLine = options.addonSummary ? `\nAdd-on Attachment: ${options.addonSummary}` : "";
+  const price = new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: 0 }).format(options.totalEstimatePhp);
+  const messageText = `Hello R.R.D! I would like to inquire about a consultation for my customized glass and aluminum project:\n\nProduct: ${options.productDescription}\nQuotation No: ${options.quotationNumber}${addonLine}\nEstimated Amount: ${price}${waiver}\n\nHere is my saved reference link:\n${options.referenceLink}\n\nCan we schedule an ocular inspection and site measurement? Thank you! - ${options.customerName}`;
+  const encoded = encodeURIComponent(messageText);
+  // Viber business chat links use the international number without its plus sign.
+  // The draft is the complete message, including the untruncated signed reference.
+  const viberUrl = `https://viber.me/639053258970?draft=${encoded}`;
+  return { messageText, messengerUrl: `https://m.me/rrdaluminumglass?text=${encoded}`, viberUrl };
 }

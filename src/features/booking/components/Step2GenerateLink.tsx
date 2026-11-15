@@ -18,6 +18,7 @@ interface Step2GenerateLinkProps {
   fileName?: string;
   dateFormatted?: string;
   expiresFormatted?: string;
+  addonSummary?: string | null;
 }
 
 export function Step2GenerateLink({
@@ -34,6 +35,7 @@ export function Step2GenerateLink({
   fileName = "Livingroom.jpeg",
   dateFormatted = "May 21, 2026 · 3:42 PM",
   expiresFormatted = "June 3, 2026",
+  addonSummary = null,
 }: Step2GenerateLinkProps) {
   const [copied, setCopied] = useState(false);
 
@@ -47,7 +49,8 @@ export function Step2GenerateLink({
   const formattedPrice = new Intl.NumberFormat("en-PH", {
     style: "currency",
     currency: "PHP",
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(totalEstimatePhp).replace("PHP", "Php");
 
   const handleCopyLink = () => {
@@ -78,34 +81,29 @@ export function Step2GenerateLink({
       </div>
 
       {/* Main card box */}
-      <div className="bg-[#f5f5f5] flex flex-col gap-[37px] p-6 md:p-[50px] relative rounded-[20px] w-full">
+      <div className="bg-[#f5f5f5] flex flex-col gap-[37px] p-6 md:p-[50px] relative rounded-[20px] w-full min-w-0">
         {/* Reference Summary Card */}
-        <div className="bg-white w-full p-6 md:p-8 rounded-[20px] shadow-sm select-none">
+        <div className="bg-white w-full min-w-0 p-6 md:p-8 rounded-[20px] shadow-sm select-none">
           <h3 className="font-medium text-[#07b6d3] text-lg sm:text-[24px] tracking-[-0.456px] leading-[1.2] mb-6">
             Reference Summary
           </h3>
-          <div className="grid grid-cols-[auto_1fr] md:grid-cols-[auto_auto_auto_auto_auto_auto] gap-x-4 md:gap-x-[67px] gap-y-2.5 md:gap-y-[10px] text-sm font-normal items-baseline">
-            {/* Row 1 / Items 1-6 */}
-            <span className="text-[#c3c3c3] whitespace-nowrap">Configuration No:</span>
-            <span className="text-[#0f1422] whitespace-nowrap">{referenceCode}</span>
-
-            <span className="text-[#c3c3c3] whitespace-nowrap">Selected Product</span>
-            <span className="text-[#0f1422] md:whitespace-nowrap">
-              {productName} {hasStructuralWaiver ? "(Waiver Active)" : ""}
-            </span>
-
-            <span className="text-[#c3c3c3] whitespace-nowrap">Visual Output</span>
-            <span className="text-[#0f1422] whitespace-nowrap">{fileName}</span>
-
-            {/* Row 2 / Items 7-12 */}
-            <span className="text-[#c3c3c3] whitespace-nowrap">Estimated Price</span>
-            <span className="text-[#0f1422] whitespace-nowrap">{formattedPrice}</span>
-
-            <span className="text-[#c3c3c3] whitespace-nowrap">Date Created</span>
-            <span className="text-[#0f1422] md:whitespace-nowrap">{dateFormatted}</span>
-
-            <span className="text-[#c3c3c3] whitespace-nowrap">Customer</span>
-            <span className="text-[#0f1422] whitespace-nowrap">{customerName}</span>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-4 text-sm font-normal">
+            {[
+              ["Configuration No:", referenceCode],
+              ["Selected Product", `${productName}${hasStructuralWaiver ? " (Waiver Active)" : ""}`],
+              ["Visual Output", fileName],
+              ["Estimated Price", formattedPrice],
+              ["Date Created", dateFormatted],
+              ["Customer", customerName],
+              ...(addonSummary ? [["Add-on Attachment", addonSummary]] : []),
+            ].map(([label, value]) => (
+              <div key={label} className="flex min-w-0 flex-col gap-1">
+                <span className="text-[#c3c3c3]">{label}</span>
+                <span className={`min-w-0 [overflow-wrap:anywhere] ${label === "Add-on Attachment" ? "font-medium text-[#07b6d3]" : "text-[#0f1422]"}`}>
+                  {value}
+                </span>
+              </div>
+            ))}
           </div>
         </div>
 
@@ -134,12 +132,12 @@ export function Step2GenerateLink({
             <button
               onClick={onGenerateLink}
               disabled={isGenerating}
-              className={`border border-[#0f1422] bg-white transition-colors px-6 py-3.5 rounded-[25px] flex items-center gap-3.5 text-[#0f1422] font-normal text-[20px] tracking-[-0.38px] leading-[1.4] shadow-sm ${
+              className={`border border-[#0f1422] bg-white transition-colors px-6 py-3.5 rounded-[25px] flex items-center justify-center gap-3.5 max-w-full text-[#0f1422] font-normal text-[20px] tracking-[-0.38px] leading-[1.4] shadow-sm ${
                 isGenerating ? "opacity-60 cursor-not-allowed" : "hover:bg-neutral-50 active:bg-neutral-100 cursor-pointer"
               }`}
             >
               {isGenerating ? (
-                <div className="w-5 h-5 border-2 border-[#0f1422] border-t-transparent rounded-full animate-spin" />
+                <div aria-hidden="true" className="size-5 shrink-0 border-2 border-[#0f1422] border-t-transparent rounded-full animate-spin" />
               ) : (
                 <div className="relative w-[20px] h-[20px]">
                   <Image

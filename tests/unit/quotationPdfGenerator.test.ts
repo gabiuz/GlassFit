@@ -75,7 +75,10 @@ describe("IMP-MS14 quotation preview", () => {
   it("applies MS38 compact pagination, numeric, wrapping, and print guidance contracts", () => {
     const html = generateQuotationPdfHtml({ ...base, customerEmail: "long.customer.address@example.test", shareableUrl: "https://glassfit.test/q/DRAFT" });
     for (const text of [
-      ".item-card--compact,.total-table,.signature-block { break-inside:avoid; page-break-inside:avoid; }",
+      ".item-card--compact { break-inside:auto; page-break-inside:auto; }",
+      ".total-table,.signature-block { break-inside:avoid; page-break-inside:avoid; }",
+      ".items-table thead { display:table-header-group; break-after:avoid; page-break-after:avoid; }",
+      ".item-card .items-table { width:calc(100% - 24px); table-layout:fixed; }",
       ".currency,.numeric-value,.quantity-price,.dimension-value,.total-table td:last-child { white-space:nowrap; font-variant-numeric:tabular-nums; }",
       ".long-string { overflow-wrap:anywhere; word-break:break-word; }",
       'class="long-string"',

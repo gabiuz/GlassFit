@@ -8,7 +8,7 @@
 
 import { z } from "zod";
 import { MeasurementRecordSchema } from "@/lib/visualization/measurementRecord";
-import { QuotationDocumentDraftV1Schema, QuotationDocumentSnapshotV1Schema } from "@/lib/pricing/quotationDocument";
+import { QuotationDocumentDraftV1Schema, QuotationDocumentSnapshotV1Schema, SwappedAccessoryDocumentSchema } from "@/lib/pricing/quotationDocument";
 
 // ----------------------------------------------------------------------------
 // 1. Booking Request Platform & Status Enums
@@ -139,6 +139,14 @@ export const PublicQuotationItemSchema = z.object({
   unitPrice: z.number(),
   totalPrice: z.number(),
   imageUrl: z.string().nullable().optional(),
+  selectedAddon: z.enum(["none", "screen", "grill"]).nullable().optional(),
+  addonProductId: z.string().nullable().optional(),
+  addonName: z.string().nullable().optional(),
+  addonPrice: z.number().nullable().optional(),
+  baseUnitPrice: z.number().nullable().optional(),
+  addonAluminumFinish: z.string().nullable().optional(),
+  swappedAccessories: z.array(SwappedAccessoryDocumentSchema).optional(),
+  accessoryPriceDelta: z.number().nonnegative().optional(),
 });
 export type PublicQuotationItem = z.infer<typeof PublicQuotationItemSchema>;
 
@@ -166,6 +174,14 @@ export const PublicQuotationSummarySchema = z.object({
   snapshotImageUrl: z.string().nullable(),
   status: SignedLinkStatusSchema,
   isMultiProduct: z.boolean().default(false),
+  selectedAddon: z.enum(["none", "screen", "grill"]).nullable().optional(),
+  addonProductId: z.string().nullable().optional(),
+  addonName: z.string().nullable().optional(),
+  addonPrice: z.number().nullable().optional(),
+  baseUnitPrice: z.number().nullable().optional(),
+  addonAluminumFinish: z.string().nullable().optional(),
+  swappedAccessories: z.array(SwappedAccessoryDocumentSchema).optional(),
+  accessoryPriceDelta: z.number().nonnegative().optional(),
   items: z.array(PublicQuotationItemSchema).optional(),
   consolidatedMetrics: z
     .object({
@@ -178,6 +194,8 @@ export const PublicQuotationSummarySchema = z.object({
   groups: z.array(
     z.object({
       item_group_name: z.string(),
+      component_summary: z.string().optional(),
+      finish_type: z.string().optional(),
       quantity: z.number(),
       unit_label: z.string(),
       unit_price: z.number(),

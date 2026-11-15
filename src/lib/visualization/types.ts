@@ -1,6 +1,19 @@
 import type { SpaceImageSession } from "@/lib/imageApi";
-import type { RawMaterial, CalculatedBOMResult } from "@/lib/pricing/types";
+import type { RawMaterial, CalculatedBOMResult, ComponentMaterialBinding, DimensionBinding } from "@/lib/pricing/types";
 import type { AluminumFinishKey, RrdAluminumFinishKey } from "./colorVariations";
+import type {
+  AccessoryCategory,
+  AccessoryPositionOptions,
+  HorizontalPosition,
+  VerticalPosition,
+} from "@/lib/admin/products/types";
+
+export type {
+  AccessoryCategory,
+  AccessoryPositionOptions,
+  HorizontalPosition,
+  VerticalPosition,
+};
 
 export type JsonObject = Record<string, unknown>;
 
@@ -16,6 +29,8 @@ export type GlassAppearanceMode = "clear" | "frosted" | "opaque" | "reflective" 
 export type GlassColorKey = "clear" | "bronze" | "silver" | "blue";
 export type GlassThicknessMm = 6 | 8 | 12;
 export type GlassTypeKey = "regular" | "frosted" | "mirror" | "tempered" | "reflective";
+export type ActiveAddonType = "screen" | "grill" | "none" | null;
+export type { AddonGeometryConfig } from "./addonGeometryBuilder";
 
 export type ProductConfigurationSeed = {
   aluminumFinish: RrdAluminumFinishKey;
@@ -73,18 +88,62 @@ export type ProductComponentDefinition = {
   componentId: string;
   componentKey: string;
   componentName: string;
+  partName?: string;
   componentType: string;
   baseQuantity: number;
   rawMaterialId?: string | null;
   rawMaterial?: RawMaterial | null;
-  dimensionBinding?: "WIDTH" | "HEIGHT" | "AREA" | "FIXED";
+  allowedMaterials?: ComponentMaterialBinding[];
+  defaultRawMaterialId?: string | null;
+  dimensionBinding?: DimensionBinding;
   spanRatio?: number;
   isRemovable?: boolean;
   togglePropertyKey?: string | null;
   presentationCategory?: "Framing" | "Glazing" | "Hardware" | "Consumable" | "Other";
   componentData: JsonObject;
   model: ProductComponentModel;
+  // Step 4 structural metadata extensions
+  role?: string;
+  finishGroup?: string;
+  lengthFormula?: string;
+  quantityFormula?: string;
+  isAccessorySlot?: boolean;
+  accessoryCategory?: AccessoryCategory | null;
+  allowedAccessoryIds?: string[] | null;
+  positionOptions?: AccessoryPositionOptions | null;
+  unitPrice?: number;
+  pricingMethod?: string;
+  handingMetadata?: import("@/lib/admin/products/types").ComponentHandingMetadata | null;
+  jalousieConfig?: import("@/lib/pricing/types").JalousieConfig | null;
+  bayRole?: import("@/lib/pricing/types").DynamicBayRole | null;
+  bay_role?: import("@/lib/pricing/types").DynamicBayRole | null;
 };
+
+export interface AccessorySlotOverride {
+  slotComponentKey?: string;
+  accessoryProductId?: string | null;
+  accessoryProductName?: string | null;
+  accessoryModelUrl?: string | null;
+  accessoryMesh?: unknown; // THREE.Group
+  horizontalPosition?: HorizontalPosition;
+  verticalPosition?: VerticalPosition;
+}
+
+export interface SelectedAccessoryState {
+  slotComponentId: string;
+  slotCategory?: AccessoryCategory | string;
+  accessoryId: string;
+  accessoryName: string;
+  category: AccessoryCategory | string;
+  price: number;
+  finish: string;
+  horizontalPosition: HorizontalPosition;
+  verticalPosition: VerticalPosition;
+  priceDelta?: number;
+  glbUrl?: string | null;
+  imageUrl?: string | null;
+  handingMetadata?: import("@/lib/admin/products/types").ComponentHandingMetadata | null;
+}
 
 export type ProductStructuralAsset = {
   assetId: string;
@@ -113,6 +172,13 @@ export type ProductStructuralDefinition = {
     basePrice?: number;
     catalogImageUrl?: string | null;
     preview_glb_url?: string | null;
+    isAddon?: boolean;
+    addonType?: "screen" | "grill" | null;
+    isAccessory?: boolean;
+    accessoryCategory?: "handle" | "lock" | "hinge" | "roller" | "other" | null;
+    accessoryMountingType?: "surface_mount" | "mortise" | "recessed" | "clamp" | null;
+    dynamicBayConfig?: import("@/lib/pricing/types").DynamicBayConfig | null;
+    dynamic_bay_config?: import("@/lib/pricing/types").DynamicBayConfig | null;
   };
   template: {
     templateId: string;
@@ -120,12 +186,50 @@ export type ProductStructuralDefinition = {
     modelStrategy: ModelStrategy;
     measurementUnit: "mm" | "cm" | "m" | string;
     baseConfiguration: JsonObject;
+    category?: string;
+    parametricRules?: JsonObject;
+    dynamicBayConfig?: import("@/lib/pricing/types").DynamicBayConfig | null;
+    dynamic_bay_config?: import("@/lib/pricing/types").DynamicBayConfig | null;
   };
   parameters: ProductParameter[];
   components: ProductComponentDefinition[];
   rules: StructuralRule[];
   assets?: ProductStructuralAsset[];
+  componentMaterials?: ComponentMaterialBinding[];
+  compatibleAddons?: CompatibleAddon[];
 };
+
+export type CompatibleAddon = {
+  id: string;
+  parentProductId: string;
+  addonProductId: string;
+  addonType: "screen" | "grill";
+  isDefaultEnabled?: boolean;
+  displayOrder?: number;
+  allowedSides?: "front" | "back" | "both";
+  defaultSide?: "front" | "back";
+  hatchTargetComponentKeys?: string[] | null;
+  hatchAlignmentConfig?: Record<string, unknown> | null;
+  grilleOpeningTargetComponentKeys?: string[] | null;
+  grilleOpeningConfig?: import("@/lib/admin/products/types").GrilleOpeningConfig | Record<string, unknown> | null;
+  addonProduct?: {
+    productId: string;
+    productName: string;
+    basePrice: number;
+    status: string;
+  };
+  template?: {
+    templateId: string;
+    templateName: string;
+    modelStrategy: string;
+    measurementUnit: string;
+    baseConfiguration: Record<string, unknown>;
+  };
+  components?: ProductComponentDefinition[];
+  assets?: ProductStructuralAsset[];
+};
+
+export type { RawMaterial as RawMaterialOption } from "@/lib/pricing/types";
 
 export type ResolvedStructure = {
   resolvedValues: Record<string, unknown>;
@@ -179,6 +283,7 @@ export type PlacedOverlay = {
   totalPrice?: number;
   layerNumber?: number;
   previewGlbUrl?: string | null;
+  grilleBOM?: import("@/lib/pricing/types").GrilleLinearBOMResult | null;
 };
 
 export type VariationAssetRef = {
@@ -251,7 +356,11 @@ export type ManualOcclusionMaskResult = {
   maskDataUrl: string | null;
 };
 
+export type ProductFacing = "front" | "back";
+
 export type ProductConfigurationSnapshot = {
+  /** IMP-MS88: visible physical face; absent legacy values default to front. */
+  productFacing?: ProductFacing;
   /** IMP-MS55: explicit opening-plane assignment; absent means approximate. */
   targetPlaneId?: string | null;
   widthCm: number;
@@ -275,11 +384,35 @@ export type ProductConfigurationSnapshot = {
   manualOcclusionMaskDataUrl?: string | null;
   manualOcclusionPolygons?: ManualOcclusionPolygon[];
   perspectiveFitCorners?: QuadrilateralCorners | null;
+  /** Placement pose; perspectiveFitCorners remains the measured opening. */
+  visualPoseCorners?: QuadrilateralCorners | null;
   ambientLight?: boolean;
   autoShadow?: boolean;
   autoRealism?: boolean;
   positionX?: number;
   positionY?: number;
+  selectedMaterials?: Record<string, string>;
+  /** Grouped appearance choices only; per-part fabrication selections are excluded. */
+  visualMaterialOverrides?: Record<string, string>;
+  selectedAddon?: "none" | "screen" | "grill";
+  addonProductId?: string | null;
+  addonName?: string | null;
+  addonPrice?: number;
+  addonAluminumFinish?: string;
+  addonMountingSide?: "front" | "back";
+  screenMeshDensity?: "fine" | "micro" | "coarse";
+  includeHatch?: boolean;
+  removableStates?: Record<string, boolean>;
+  hatchCount?: number;
+  hatchTargetKeys?: string[];
+  grilleOpeningCount?: number;
+  grilleOpeningTargetKeys?: string[];
+  grilleOpeningConfig?: import("@/lib/admin/products/types").GrilleOpeningConfig | Record<string, unknown> | null;
+  baseUnitPrice?: number;
+  grilleBOM?: import("@/lib/pricing/types").GrilleLinearBOMResult | null;
+  swappedAccessories?: Record<string, SelectedAccessoryState>;
+  accessoryPriceDelta?: number;
+  dynamicBayConfig?: import("@/lib/pricing/types").DynamicBayConfig | null;
   visualParameterValues: Record<string, unknown>;
 };
 

@@ -6,7 +6,7 @@
  */
 
 import * as THREE from "three";
-import type { AluminumFinishKey } from "./colorVariations";
+import { normalizeAluminumFinish, type AluminumFinishKey } from "./colorVariations";
 import type { GlassAppearanceMode, GlassColorKey, GlassThicknessMm } from "./types";
 import type { RawMaterial } from "@/lib/pricing/types";
 import {
@@ -334,6 +334,11 @@ function getOutdoorTexture(): THREE.Texture {
     return cachedOutdoorTexture;
   }
 
+  if (typeof document === "undefined") {
+    cachedOutdoorTexture = new THREE.Texture();
+    return cachedOutdoorTexture;
+  }
+
   const loader = new THREE.TextureLoader();
   const texture = loader.load("/textures/outdoor-view.jpg", (loadedTexture) => {
     loadedTexture.colorSpace = THREE.SRGBColorSpace;
@@ -431,18 +436,37 @@ export function createWindowGlassMaterial(
   }
 }
 
+export interface MaterialPaletteResult {
+  frameMaterial: THREE.MeshPhysicalMaterial;
+  glassMaterial: THREE.Material;
+  hardwareMaterial: THREE.MeshStandardMaterial;
+  framing: THREE.MeshPhysicalMaterial;
+  glass: THREE.Material;
+  hardware: THREE.MeshStandardMaterial;
+}
+
 /**
  * Creates decoupled material palettes for Aluminum Framing, Optical Glass, and Mechanical Hardware.
  */
-export function createMaterialPalette(options: MaterialPaletteOptions) {
-  const legacyFinish = options.aluminumFinish === "black"
+export function createMaterialPalette(options: MaterialPaletteOptions | string): MaterialPaletteResult {
+  const opts: MaterialPaletteOptions =
+    typeof options === "string"
+      ? {
+          aluminumFinish: normalizeAluminumFinish(options),
+          glassAppearance: "frosted",
+          glassColor: "clear",
+          glassThicknessMm: 6,
+        }
+      : options;
+
+  const legacyFinish = opts.aluminumFinish === "black"
     ? { previewHex: "#232527", metalness: 0.45, roughness: 0.28, clearcoat: 0.4, clearcoatRoughness: 0.2 }
-    : options.aluminumFinish === "silver"
+    : opts.aluminumFinish === "silver"
       ? { previewHex: "#C8CBCE", metalness: 0.85, roughness: 0.22, clearcoat: 0.6, clearcoatRoughness: 0.15 }
       : null;
-  const finish = findFinishOption(options.aluminumFinish) ?? legacyFinish;
+  const finish = findFinishOption(opts.aluminumFinish) ?? legacyFinish;
   if (!finish) {
-    throw new Error(`Unknown aluminum finish: ${options.aluminumFinish}`);
+    throw new Error(`Unknown aluminum finish: ${opts.aluminumFinish}`);
   }
 
   const frameMaterial = new THREE.MeshPhysicalMaterial({
@@ -455,9 +479,9 @@ export function createMaterialPalette(options: MaterialPaletteOptions) {
 
   // 2. Optical Glass Material (Driven strictly by glassAppearance)
   const glassMaterial = createWindowGlassMaterial(
-    options.glassAppearance,
-    options.glassColor,
-    options.glassThicknessMm,
+    opts.glassAppearance,
+    opts.glassColor,
+    opts.glassThicknessMm,
   );
 
   // 3. Mechanical Hardware Material (Neutral Dark Metallic / Delrin Nylon)
@@ -467,7 +491,110 @@ export function createMaterialPalette(options: MaterialPaletteOptions) {
     roughness: 0.35,
   });
 
-  return { frameMaterial, glassMaterial, hardwareMaterial };
+  return {
+    frameMaterial,
+    glassMaterial,
+    hardwareMaterial,
+    framing: frameMaterial,
+    glass: glassMaterial,
+    hardware: hardwareMaterial,
+  };
+}
+
+/**
+ * Add-on Object Hierarchy Identification (IMP-MS84)
+ * Returns true if the object or any ancestor belongs to an add-on assembly.
+ */
+export function isAddonObject(object: THREE.Object3D): boolean {
+  let curr: THREE.Object3D | null = object;
+  while (curr) {
+    if (
+      curr.userData?.isAddon === true ||
+      curr.userData?.isUploadedAddon === true ||
+      curr.userData?.addonType !== undefined ||
+      (typeof curr.name === "string" && (
+        curr.name.startsWith("Addon_") ||
+        curr.name.startsWith("Screen_") ||
+        curr.name.startsWith("Grill_") ||
+        curr.name.startsWith("Grille_")
+      ))
+    ) {
+      return true;
+    }
+    curr = curr.parent;
+  }
+  return false;
+}
+
+/**
+ * Add-on Frame Mesh Classifier (IMP-MS84)
+ * Returns true if a mesh is an add-on framing member that responds to add-on finish recoloring.
+ */
+export function isAddonFrameMesh(mesh: THREE.Mesh): boolean {
+  // 1. Direct name prefix check (procedural screens and grilles)
+  if (
+    mesh.name.startsWith("Screen_Frame_") ||
+    mesh.name.startsWith("Grill_Frame_") ||
+    mesh.name.startsWith("Grille_Frame_") ||
+    mesh.name.startsWith("Grill_Bar_") ||
+    mesh.name.startsWith("Grille_Bar_") ||
+    mesh.name.startsWith("Grille_Opening_Collar_") ||
+    mesh.name.startsWith("Grill_Opening_Collar_") ||
+    (mesh.name.startsWith("Screen_Access_Hatch_") &&
+     !mesh.name.toLowerCase().includes("latch") &&
+     !mesh.name.toLowerCase().includes("mesh"))
+  ) {
+    return true;
+  }
+
+  // 2. Mesh-level userData check
+  if (
+    mesh.userData?.isAddon === true &&
+    (mesh.userData?.presentationCategory === "Framing" ||
+     mesh.userData?.componentType === "Frame" ||
+     (mesh.userData?.addonType === "grill" && mesh.userData?.presentationCategory !== "Hardware"))
+  ) {
+    return true;
+  }
+
+  // 3. Hierarchy walk: check parent groups and wrappers
+  let curr: THREE.Object3D | null = mesh.parent;
+  while (curr && curr !== curr.parent) {
+    if (
+      curr.userData?.isAddon === true ||
+      curr.userData?.isUploadedAddon === true ||
+      curr.userData?.addonType !== undefined ||
+      (typeof curr.name === "string" && (
+        curr.name.startsWith("Addon_") ||
+        curr.name.startsWith("Screen_") ||
+        curr.name.startsWith("Grill_") ||
+        curr.name.startsWith("Grille_")
+      ))
+    ) {
+      // Must be framing, not wire mesh or hardware
+      const isWire = Boolean(
+        mesh.userData?.isScreenMesh ||
+        curr.userData?.isScreenMesh ||
+        mesh.userData?.presentationCategory === "Mesh" ||
+        curr.userData?.presentationCategory === "Mesh" ||
+        mesh.name.toLowerCase().includes("mesh") ||
+        mesh.name.toLowerCase().includes("wire")
+      );
+      const isHardware = Boolean(
+        mesh.userData?.presentationCategory === "Hardware" ||
+        curr.userData?.presentationCategory === "Hardware" ||
+        mesh.name.toLowerCase().includes("latch") ||
+        mesh.name.toLowerCase().includes("handle")
+      );
+      const category = mesh.userData?.presentationCategory ?? curr.userData?.presentationCategory;
+      if (!isWire && !isHardware && (category === "Framing" || category === undefined)) {
+        return true;
+      }
+    }
+    curr = curr.parent;
+  }
+
+  return false;
 }
 
 export function applyPresentationMaterials(
@@ -481,24 +608,419 @@ export function applyPresentationMaterials(
       return;
     }
 
+    if (object.userData.preserveMaterial || object.userData.isScreenMesh || isAddonObject(object)) {
+      return;
+    }
+
     const classification = classifySceneMesh(object);
     object.userData.materialCategory = classification;
     if (classification === "Glass") {
-      object.material = glassMaterial.clone();
+      const isLouverBlade = Boolean(
+        object.userData?.isLouverBladeInstance ||
+        object.userData?.dimensionBinding === "LOUVER_BLADE" ||
+        object.name?.toLowerCase().includes("louver") ||
+        object.name?.toLowerCase().includes("blade")
+      );
+      if (isLouverBlade && glassMaterial instanceof THREE.MeshPhysicalMaterial) {
+        const louverMat = glassMaterial.clone();
+        louverMat.opacity = Math.min(louverMat.opacity, 0.07);
+        louverMat.transmission = Math.max(louverMat.transmission, 0.96);
+        louverMat.roughness = 0.02;
+        louverMat.clearcoat = 1.0;
+        louverMat.clearcoatRoughness = 0.02;
+        object.material = louverMat;
+      } else {
+        object.material = glassMaterial.clone();
+      }
       object.castShadow = false;
       object.receiveShadow = true;
+      object.renderOrder = 1;
     } else if (classification === "Hardware") {
       object.material = hardwareMaterial.clone();
       object.castShadow = true;
       object.receiveShadow = true;
+      object.renderOrder = 0;
     } else {
       object.material = frameMaterial.clone();
       object.castShadow = true;
       object.receiveShadow = true;
+      object.renderOrder = 0;
     }
+
   });
 
   frameMaterial.dispose();
   glassMaterial.dispose();
   hardwareMaterial.dispose();
 }
+
+export interface InsectScreenMaterialOptions {
+  wirePitchMm?: number;
+  wireColor?: string;
+  wireThicknessRatio?: number;
+  alphaTest?: number;
+}
+
+/**
+ * Specialized PBR shader material for insect wire mesh with dynamic metric-invariant
+ * wire pitch and high-contrast visibility (IMP-MS68, IMP-MS69).
+ */
+export function createInsectScreenMaterial(
+  widthMm?: number,
+  heightMm?: number,
+  config?: InsectScreenMaterialOptions,
+): THREE.MeshStandardMaterial {
+  const wirePitchMm = config?.wirePitchMm ?? 3.2; // 3.2mm realistic architectural spacing between wires
+  const wireColor = config?.wireColor ?? "#181a1d"; // Dark charcoal wire
+  const effectiveWidthMm = widthMm && widthMm > 0 ? widthMm : 1200;
+  const effectiveHeightMm = heightMm && heightMm > 0 ? heightMm : 1200;
+  const alphaTest = config?.alphaTest ?? 0.2;
+
+  const repeatX = Math.max(1, Math.round(effectiveWidthMm / wirePitchMm));
+  const repeatY = Math.max(1, Math.round(effectiveHeightMm / wirePitchMm));
+
+  if (typeof document === "undefined") {
+    const fallback = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(wireColor),
+      transparent: true,
+      alphaTest,
+      depthWrite: true,
+      depthTest: true,
+      roughness: 0.35,
+      metalness: 0.75,
+      side: THREE.DoubleSide,
+    });
+    fallback.userData.repeatX = repeatX;
+    fallback.userData.repeatY = repeatY;
+    fallback.userData.wirePitchMm = wirePitchMm;
+    return fallback;
+  }
+
+  const canvas = document.createElement("canvas");
+  const size = 128; // High-DPI texture resolution
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    const fallback = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(wireColor),
+      transparent: true,
+      alphaTest,
+      depthWrite: true,
+      depthTest: true,
+      roughness: 0.35,
+      metalness: 0.75,
+      side: THREE.DoubleSide,
+    });
+    fallback.userData.repeatX = repeatX;
+    fallback.userData.repeatY = repeatY;
+    fallback.userData.wirePitchMm = wirePitchMm;
+    return fallback;
+  }
+
+  if (typeof ctx.clearRect === "function") {
+    ctx.clearRect(0, 0, size, size);
+  }
+  // Fill aperture background with atmospheric screen veil (subtle ~15% attenuation)
+  if (typeof ctx.fillRect === "function") {
+    ctx.fillStyle = "rgba(22, 26, 32, 0.24)";
+    ctx.fillRect(0, 0, size, size);
+  }
+
+  // Wire thickness: ~24% of cell width for realistic insect screen wire gauge (leaves 76% clear open aperture)
+  const wireWidth = Math.max(4, Math.round(size * (config?.wireThicknessRatio ?? 0.24)));
+
+  // 1. Solid wire grid lines (woven criss-cross pattern)
+  ctx.strokeStyle = wireColor;
+  ctx.lineWidth = wireWidth;
+  ctx.beginPath();
+  ctx.moveTo(size / 2, 0);
+  ctx.lineTo(size / 2, size);
+  ctx.moveTo(0, size / 2);
+  ctx.lineTo(size, size / 2);
+  ctx.stroke();
+
+  // 2. Subtle specular wire crown line for realistic metallic thread luster
+  ctx.strokeStyle = "#828d9e";
+  ctx.lineWidth = Math.max(1, Math.round(wireWidth * 0.30));
+  ctx.beginPath();
+  ctx.moveTo(size / 2, 0);
+  ctx.lineTo(size / 2, size);
+  ctx.moveTo(0, size / 2);
+  ctx.lineTo(size, size / 2);
+  ctx.stroke();
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(repeatX, repeatY);
+  texture.generateMipmaps = true;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.needsUpdate = true;
+
+  const material = new THREE.MeshStandardMaterial({
+    map: texture,
+    transparent: true,
+    alphaTest,
+    depthWrite: true,
+    depthTest: true,
+    opacity: 0.98,
+    roughness: 0.35,
+    metalness: 0.65,
+    side: THREE.DoubleSide,
+  });
+
+  material.userData.repeatX = repeatX;
+  material.userData.repeatY = repeatY;
+  material.userData.wirePitchMm = wirePitchMm;
+
+  return material;
+}
+
+/**
+ * Specialized architectural metal material for security window grills (IMP-MS68).
+ */
+export function createGrillMaterial(finishColor?: string): THREE.MeshStandardMaterial {
+  return new THREE.MeshStandardMaterial({
+    color: finishColor ? new THREE.Color(finishColor) : new THREE.Color(0x221d1a),
+    metalness: 0.4,
+    roughness: 0.5,
+    side: THREE.DoubleSide,
+    depthWrite: true,
+    depthTest: true,
+  });
+}
+
+
+export interface PBRMaterialAttributes {
+  color: THREE.Color;
+  metalness: number;
+  roughness: number;
+  transmission?: number;
+  opacity?: number;
+  transparent?: boolean;
+  ior?: number;
+}
+
+export function resolvePBRProperties(rawMaterial: RawMaterial | null): PBRMaterialAttributes {
+  if (!rawMaterial) {
+    return {
+      color: new THREE.Color(0x888888),
+      metalness: 0.1,
+      roughness: 0.5,
+    };
+  }
+
+  const category = (rawMaterial.category || "").toLowerCase();
+  const finish = (rawMaterial.finish_type || "").toLowerCase().trim();
+
+  if (category === "aluminum") {
+    switch (finish) {
+      case "analok":
+        return {
+          color: new THREE.Color(0x221d1a), // Deep dark bronze / warm black
+          metalness: 0.65,
+          roughness: 0.35,
+        };
+      case "powdercoatedwhite":
+      case "powder coated white":
+      case "white":
+        return {
+          color: new THREE.Color(0xf5f6f8), // Clean architectural white
+          metalness: 0.05,
+          roughness: 0.45,
+        };
+      case "powdercoatedblack":
+      case "powder coated black":
+      case "black":
+        return {
+          color: new THREE.Color(0x1a1a1a),
+          metalness: 0.25,
+          roughness: 0.45,
+        };
+      case "anodized":
+      case "mill":
+      default:
+        return {
+          color: new THREE.Color(0xd4d8dc), // Natural silver aluminum
+          metalness: 0.85,
+          roughness: 0.25,
+        };
+    }
+  }
+
+  if (category === "glass") {
+    switch (finish) {
+      case "bronze":
+      case "tinted bronze":
+        return {
+          color: new THREE.Color(0x4a3b2c),
+          metalness: 0.0,
+          roughness: 0.05,
+          transmission: 0.75,
+          opacity: 0.65,
+          transparent: true,
+          ior: 1.52,
+        };
+      case "blue":
+        return {
+          color: new THREE.Color(0x386b88),
+          metalness: 0.0,
+          roughness: 0.05,
+          transmission: 0.70,
+          opacity: 0.60,
+          transparent: true,
+          ior: 1.52,
+        };
+      case "frosted":
+        return {
+          color: new THREE.Color(0xe6f4f8),
+          metalness: 0.0,
+          roughness: 0.82,
+          transmission: 0.15,
+          opacity: 0.82,
+          transparent: true,
+          ior: 1.45,
+        };
+      case "clear":
+      default:
+        return {
+          color: new THREE.Color(0xe6f4f8),
+          metalness: 0.0,
+          roughness: 0.02,
+          transmission: 0.92,
+          opacity: 0.25,
+          transparent: true,
+          ior: 1.52,
+        };
+    }
+  }
+
+  if (category === "hardware") {
+    return {
+      color: new THREE.Color(0x1f2326),
+      metalness: 0.70,
+      roughness: 0.35,
+    };
+  }
+
+  return {
+    color: new THREE.Color(0x333333),
+    metalness: 0.2,
+    roughness: 0.6,
+  };
+}
+
+export function applyPBRToMesh(mesh: THREE.Mesh, rawMaterial: RawMaterial | null): void {
+  const pbr = resolvePBRProperties(rawMaterial);
+  const isGlass = classifySceneMesh(mesh) === "Glass" || rawMaterial?.category === "Glass";
+
+  if (isGlass) {
+    mesh.castShadow = false;
+    mesh.receiveShadow = true;
+    mesh.renderOrder = 1;
+
+    // Preserve outdoor view texture if assigned
+    if (mesh.material instanceof THREE.MeshStandardMaterial && mesh.material.map) {
+      mesh.material.color.copy(pbr.color);
+      mesh.material.needsUpdate = true;
+      return;
+    }
+
+    const isLouverBlade = Boolean(
+      mesh.userData?.isLouverBladeInstance ||
+      mesh.userData?.dimensionBinding === "LOUVER_BLADE" ||
+      mesh.name?.toLowerCase().includes("louver") ||
+      mesh.name?.toLowerCase().includes("blade")
+    );
+
+    if (mesh.material instanceof THREE.MeshPhysicalMaterial) {
+      mesh.material.color.copy(pbr.color);
+      mesh.material.attenuationColor = pbr.color.clone();
+      mesh.material.transparent = true;
+      mesh.material.transmission = isLouverBlade ? 0.96 : (pbr.transmission ?? (mesh.material.transmission > 0 ? mesh.material.transmission : 0.88));
+      mesh.material.opacity = isLouverBlade ? 0.07 : (pbr.opacity ?? 0.18);
+      if (pbr.roughness !== undefined && rawMaterial?.category === "Glass") {
+        mesh.material.roughness = isLouverBlade ? 0.02 : pbr.roughness;
+      }
+      if (pbr.ior !== undefined) {
+        mesh.material.ior = pbr.ior;
+      }
+      mesh.material.needsUpdate = true;
+      return;
+    }
+
+    const oldMat = mesh.material;
+    mesh.material = new THREE.MeshPhysicalMaterial({
+      color: pbr.color,
+      attenuationColor: pbr.color.clone(),
+      metalness: pbr.metalness ?? 0.02,
+      roughness: isLouverBlade ? 0.02 : (pbr.roughness ?? 0.03),
+      transmission: isLouverBlade ? 0.96 : (pbr.transmission ?? 0.88),
+      opacity: isLouverBlade ? 0.07 : (pbr.opacity ?? 0.18),
+      transparent: true,
+      ior: pbr.ior ?? 1.52,
+      clearcoat: 1.0,
+      clearcoatRoughness: isLouverBlade ? 0.02 : 0.04,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    if (Array.isArray(oldMat)) {
+      oldMat.forEach((m) => m.dispose());
+    } else {
+      oldMat.dispose();
+    }
+    return;
+  }
+
+  if (mesh.material instanceof THREE.MeshPhysicalMaterial) {
+    mesh.material.color.copy(pbr.color);
+    mesh.material.metalness = pbr.metalness;
+    mesh.material.roughness = pbr.roughness;
+    mesh.material.transmission = pbr.transmission ?? 0;
+    mesh.material.opacity = pbr.opacity ?? 1.0;
+    mesh.material.transparent = Boolean(pbr.transparent || (pbr.opacity !== undefined && pbr.opacity < 1.0));
+    mesh.material.ior = pbr.ior ?? 1.5;
+    mesh.material.needsUpdate = true;
+  } else if (mesh.material instanceof THREE.MeshStandardMaterial) {
+    if (pbr.transmission !== undefined && pbr.transmission > 0) {
+      const oldMat = mesh.material;
+      mesh.material = new THREE.MeshPhysicalMaterial({
+        color: pbr.color,
+        metalness: pbr.metalness,
+        roughness: pbr.roughness,
+        transmission: pbr.transmission,
+        opacity: pbr.opacity ?? 1.0,
+        transparent: Boolean(pbr.transparent || (pbr.opacity !== undefined && pbr.opacity < 1.0)),
+        ior: pbr.ior ?? 1.52,
+        side: THREE.DoubleSide,
+        depthWrite: pbr.opacity !== undefined && pbr.opacity < 0.5 ? false : true,
+      });
+      oldMat.dispose();
+    } else {
+      mesh.material.color.copy(pbr.color);
+      mesh.material.metalness = pbr.metalness;
+      mesh.material.roughness = pbr.roughness;
+      mesh.material.opacity = pbr.opacity ?? 1.0;
+      mesh.material.transparent = Boolean(pbr.transparent);
+      mesh.material.needsUpdate = true;
+    }
+  } else {
+    mesh.material = new THREE.MeshPhysicalMaterial({
+      color: pbr.color,
+      metalness: pbr.metalness,
+      roughness: pbr.roughness,
+      transmission: pbr.transmission ?? 0,
+      opacity: pbr.opacity ?? 1.0,
+      transparent: Boolean(pbr.transparent),
+      ior: pbr.ior ?? 1.5,
+      side: THREE.DoubleSide,
+    });
+  }
+
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+}
+

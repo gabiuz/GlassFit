@@ -1082,8 +1082,8 @@ export function Comparison() {
       </div>
 
       {/* Control Panel Section */}
-      <div className="w-full flex flex-col xl:flex-row gap-6 xl:gap-0 justify-between items-center">
-        <div className="flex flex-col md:flex-row gap-8 md:gap-12 xl:gap-25.75 items-center">
+      <div className="w-full min-w-0 flex flex-col xl:flex-row gap-6 justify-between items-center">
+        <div className="flex min-w-0 flex-col md:flex-row gap-8 md:gap-12 xl:gap-25.75 items-center">
           {/* View As Toggle */}
           <div className="flex flex-col gap-2.5 items-center xl:items-start w-full xl:w-auto">
             <span className="text-[#c3c3c3] text-[16px] tracking-[-0.304px] leading-[1.4] font-normal">
@@ -1111,8 +1111,8 @@ export function Comparison() {
           </div>
         </div>
 
-        <div className="bg-[#c3c3c3] border border-[#c3c3c3] border-solid flex items-center justify-center px-5 py-2.5 rounded-[20px] self-center xl:self-auto">
-          <p className="text-base text-white tracking-wide font-medium whitespace-nowrap">
+        <div className="flex min-w-0 max-w-full items-center justify-center self-center rounded-[20px] bg-black px-5 py-2.5 xl:max-w-[40%] xl:self-auto">
+          <p className="min-w-0 text-center text-base font-medium leading-normal tracking-wide text-white wrap-break-word">
             Comparing: {isBeforeAfter ? "Raw and Final Out" : `${getVariantLabel(leftVariant)} and ${getVariantLabel(rightVariant)}`}
           </p>
         </div>

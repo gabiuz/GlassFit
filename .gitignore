@@ -13,6 +13,9 @@
 # testing
 /coverage
 
+# local UI review screenshots
+/artifacts/
+
 # IMP-MS57 private captures, annotations and benchmark evidence
 /tests/private/ms57/
 
@@ -53,6 +56,11 @@ venv/
 **/__pycache__/
 *.py[cod]
 fastapi-service/generated/
+
+.venv312/
+**/venv/
+**/.venv/
+**/.venv312/
 
 # agent skills & local tooling
 .agents/

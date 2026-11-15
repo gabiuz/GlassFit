@@ -19,7 +19,6 @@ export default async function ProductSetupRoute({
   
   const { productId } = await params;
   const resolvedSearchParams = await searchParams;
-  const initialStep = resolveWizardStep(productId, resolvedSearchParams.step);
 
   let initialData = null;
   
@@ -27,6 +26,10 @@ export default async function ProductSetupRoute({
     initialData = await getProductDraft(productId);
     if (!initialData) notFound();
   }
+
+  const isAddon = Boolean(initialData?.is_addon) || resolvedSearchParams.role === "addon";
+  const isAccessory = Boolean(initialData?.is_accessory) || resolvedSearchParams.role === "accessory";
+  const initialStep = resolveWizardStep(productId, resolvedSearchParams.step, isAddon, isAccessory);
 
   return (
     <ProductSetupWizard

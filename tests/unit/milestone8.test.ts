@@ -404,7 +404,8 @@ describe("Milestone 8: Automated Test Suites & Numerical Validation (QA Layer)",
       assert.ok(booking.messageText.includes("Structural waiver attached for aperture span >= 2400mm"));
       assert.ok(booking.messageText.includes("Maria Santos"));
       assert.ok(booking.messengerUrl.includes("m.me/rrdaluminumglass"));
-      assert.ok(booking.viberUrl.includes("viber://forward"));
+      assert.ok(booking.viberUrl.startsWith("https://viber.me/639053258970?draft="));
+      assert.ok((new URL(booking.viberUrl).searchParams.get("draft") ?? "").includes("Structural waiver attached"));
     });
   });
 });

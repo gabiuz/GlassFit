@@ -15,9 +15,11 @@ import {
 function createMockCanvasContext(): {
   ctx: CanvasRenderingContext2D;
   rects: Array<{ x: number; y: number; w: number; h: number }>;
+  operations: string[];
   gradients: Array<{ x0: number; y0: number; x1: number; y1: number; stops: Array<{ offset: number; color: string }> }>;
 } {
   const rects: Array<{ x: number; y: number; w: number; h: number }> = [];
+  const operations: string[] = [];
   const gradients: Array<{ x0: number; y0: number; x1: number; y1: number; stops: Array<{ offset: number; color: string }> }> = [];
 
   const mockCtx = {
@@ -28,6 +30,7 @@ function createMockCanvasContext(): {
     restore() { },
     fillRect(x: number, y: number, w: number, h: number) {
       rects.push({ x, y, w, h });
+      operations.push(this.globalCompositeOperation);
     },
     createLinearGradient(x0: number, y0: number, x1: number, y1: number) {
       const stops: Array<{ offset: number; color: string }> = [];
@@ -50,6 +53,7 @@ function createMockCanvasContext(): {
   return {
     ctx: mockCtx as unknown as CanvasRenderingContext2D,
     rects,
+    operations,
     gradients,
   };
 }
@@ -80,22 +84,23 @@ describe("MS-04: Scene-Adaptive Photorealism Harmonization", () => {
   });
 
   describe("2. Perimeter Ambient Occlusion and Aperture Reveal Shading", () => {
-    it("draws 4 perimeter crevice rectangles along window frame edges", () => {
-      const { ctx, rects, gradients } = createMockCanvasContext();
+    it("draws contact outside the inset installation and shades its visible edge", () => {
+      const { ctx, rects, gradients, operations } = createMockCanvasContext();
+      drawPerimeterAmbientOcclusion(ctx, 400, 300, 0.35, 3, { x: 0.1, y: 0.1, width: 0.8, height: 0.8 });
+
+      assert.strictEqual(rects.length, 8);
+      assert.strictEqual(gradients.length, 8);
+      assert.deepStrictEqual(operations, [...Array(4).fill("source-over"), ...Array(4).fill("source-atop")]);
+      assert.deepStrictEqual(rects[0], { x: 40, y: 27, w: 320, h: 3 });
+      assert.deepStrictEqual(rects[4], { x: 40, y: 30, w: 320, h: 3 });
+      assert.ok(rects.every(({ x, y, w, h }) => x > 0 && y > 0 && x + w < 400 && y + h < 300));
+    });
+
+    it("does not paint an outer canvas edge when installation geometry is unavailable", () => {
+      const { ctx, rects, operations } = createMockCanvasContext();
       drawPerimeterAmbientOcclusion(ctx, 400, 300, 0.35, 3);
-
-      // 4 edges: top, bottom, left, right
       assert.strictEqual(rects.length, 4);
-      assert.strictEqual(gradients.length, 4);
-
-      // Verify top edge: (0, 0, 400, 3)
-      assert.deepStrictEqual(rects[0], { x: 0, y: 0, w: 400, h: 3 });
-      // Verify bottom edge: (0, 297, 400, 3)
-      assert.deepStrictEqual(rects[1], { x: 0, y: 297, w: 400, h: 3 });
-      // Verify left edge: (0, 0, 3, 300)
-      assert.deepStrictEqual(rects[2], { x: 0, y: 0, w: 3, h: 300 });
-      // Verify right edge: (397, 0, 3, 300)
-      assert.deepStrictEqual(rects[3], { x: 397, y: 0, w: 3, h: 300 });
+      assert.deepStrictEqual(operations, Array(4).fill("source-atop"));
     });
 
     it("casts downward aperture reveal shadow when light originates from above (y > 0)", () => {
@@ -122,14 +127,14 @@ describe("MS-04: Scene-Adaptive Photorealism Harmonization", () => {
     });
 
     it("composites perimeter crevice and aperture reveal simultaneously", () => {
-      const { ctx, rects } = createMockCanvasContext();
+      const { ctx, rects, operations } = createMockCanvasContext();
       applyContactOcclusionAndReveals(ctx, 600, 450, {
         lightDirection: { x: 0.4, y: 0.5 },
         shadowOpacity: 0.32,
       });
 
-      // 4 perimeter crevice rects + 1 header reveal + 1 jamb reveal = 6 rects
       assert.strictEqual(rects.length, 6);
+      assert.deepStrictEqual(operations, Array(6).fill("source-atop"));
     });
   });
 

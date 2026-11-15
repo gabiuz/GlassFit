@@ -1,3 +1,4 @@
+import { getConfigurationProductFacing } from "./productFacing";
 import { captureTransparentCanvasBlob } from "./captureSnapshot";
 import { normalizeAluminumFinish, type AluminumFinishKey } from "./colorVariations";
 import {
@@ -6,7 +7,8 @@ import {
   normalizeGlassThickness,
 } from "./configurationPropagation";
 import { ProductModelRenderer } from "./modelRenderer";
-import { denormalizeCorners, drawPerspectiveWarpedImage } from "./perspectiveTransform";
+import { getAllCandidateMaterialsMap } from "./materialCustomization";
+import { denormalizeCorners, drawPerspectiveWarpedImage, getPlanarFitImageBounds } from "./perspectiveTransform";
 import type { VariationRenderRecipe } from "./types";
 
 export class VariationLayerRenderer {
@@ -29,7 +31,26 @@ export class VariationLayerRenderer {
       glassColor: normalizeGlassColor(configuration.glassColor),
       glassThicknessMm: normalizeGlassThickness(configuration.glassThicknessMm),
       includeSill: configuration.includeSill,
+      activeAddon: configuration.selectedAddon,
+      addonProductId: configuration.addonProductId,
+      addonAluminumFinish: configuration.addonAluminumFinish,
+      addonMountingSide: configuration.addonMountingSide,
+      screenMeshDensity: configuration.screenMeshDensity,
+      hatchTargetComponentKeys: configuration.includeHatch ? configuration.hatchTargetKeys : [],
+      grilleOpeningTargetComponentKeys: configuration.grilleOpeningTargetKeys,
+      grilleOpeningConfig: configuration.grilleOpeningConfig,
+      removableStates: configuration.removableStates,
+      swappedAccessories: configuration.swappedAccessories,
     };
+    // The compared aluminum finish owns framing appearance; retain grouped
+    // visual choices on other components without importing fabrication picks.
+    const visualOverrides = Object.fromEntries(
+      Object.entries(configuration.visualMaterialOverrides ?? {}).filter(([componentKey]) =>
+        this.recipe.structuralDefinition.components.find((component) => component.componentKey === componentKey)
+          ?.presentationCategory !== "Framing",
+      ),
+    );
+    const candidateMaterials = getAllCandidateMaterialsMap(this.recipe.structuralDefinition);
     if (!this.loaded) {
       await this.renderer.loadModel(
         this.recipe.structuralDefinition,
@@ -44,15 +65,24 @@ export class VariationLayerRenderer {
             ?? deriveGlassTypeFromAppearance(configuration.glassAppearance),
         },
         presentation,
+        {
+          selectedMaterials: visualOverrides,
+          rawMaterialsMap: candidateMaterials,
+          hasExplicitOverrides: Object.keys(visualOverrides).length > 0,
+        },
       );
       this.loaded = true;
     } else {
       this.renderer.updatePresentation(presentation);
+      if (Object.keys(visualOverrides).length > 0) {
+        this.renderer.updateCustomMaterials(visualOverrides, candidateMaterials);
+      }
     }
     const rendered = this.renderer.render(
       configuration.yaw,
       configuration.pitch,
       Boolean(configuration.perspectiveFitCorners),
+      getConfigurationProductFacing(configuration),
     );
     if (!rendered) throw new Error("The requested finish could not be rendered.");
 
@@ -68,7 +98,7 @@ export class VariationLayerRenderer {
 
     if (configuration.perspectiveFitCorners) {
       const corners = denormalizeCorners(
-        configuration.perspectiveFitCorners,
+        configuration.visualPoseCorners ?? configuration.perspectiveFitCorners,
         this.recipe.sourceCanvasWidth,
         this.recipe.sourceCanvasHeight,
       );
@@ -82,7 +112,11 @@ export class VariationLayerRenderer {
         sourceContext.scale(-1, 1);
       }
       sourceContext.drawImage(rendered, 0, 0);
-      drawPerspectiveWarpedImage(context, source, corners);
+      const fitRect = this.renderer.getPlanarFitRect();
+      drawPerspectiveWarpedImage(
+        context, source, corners, 16,
+        getPlanarFitImageBounds(fitRect, configuration.isFlipped),
+      );
     } else {
       const centerX = this.recipe.sourceCanvasWidth / 2 + (configuration.positionX ?? 0);
       const centerY = this.recipe.sourceCanvasHeight / 2 + (configuration.positionY ?? 0);

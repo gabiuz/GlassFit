@@ -2,27 +2,39 @@
 
 import React, { useState, useEffect, useMemo, Suspense } from "react";
 import { UploadCloud, X, Loader2, CheckCircle, AlertCircle, Eye, CheckSquare, Square, Layers, Sparkles } from "lucide-react";
-import { upsertProductComponent, ComponentType } from "@/lib/admin/products/componentMutations";
-import { generatePresignedUrl, confirmAssetUpload } from "@/lib/admin/products/assetUpload";
-import { autoDetectComponentSettings } from "@/lib/admin/products/autoDetection";
+import { upsertProductComponent, deleteProductComponent } from "@/lib/admin/products/componentMutations";
+import type { ComponentType, AccessoryCategory, AccessoryPositionOptions } from "@/lib/admin/products/types";
+import { generatePresignedUrl, confirmAssetUpload, hasQualifyingProductModelAsset, deleteProductAssets } from "@/lib/admin/products/assetUpload";
+import { getComponentIssues, getProductComponentIssue } from "@/lib/admin/products/componentEligibility";
+import type { UpsertComponentInput } from "@/lib/admin/products/types";
+import { autoDetectComponentSettings, suggestCandidateMaterials, isContinuousPerimeterRole } from "@/lib/admin/products/autoDetection";
 import { decomposeWholeModel, type ExtractedComponentPart } from "@/lib/admin/products/modelDecomposer";
 import { DecompositionPreviewModal } from "./DecompositionPreviewModal";
 import { PartInspectorDrawer, type PartInspectorConfig } from "./PartInspectorDrawer";
+import { analyzeGrilleGeometry, type GrilleGeometryAnalysis } from "@/lib/pricing/grilleGeometryAnalyzer";
+import { analyzeJalousieGeometry } from "@/lib/visualization/jalousieGeometryAnalyzer";
 import { getRawMaterials } from "@/lib/admin/materials/materialActions";
-import type { RawMaterial, DimensionBinding, PresentationCategory } from "@/lib/pricing/types";
-import { Canvas } from "@react-three/fiber";
-import { OrbitControls, Stage } from "@react-three/drei";
+import type { RawMaterial, DimensionBinding, PresentationCategory, ComponentMaterialBinding, JalousieConfig, DynamicBayRole } from "@/lib/pricing/types";
+import { Canvas, type ThreeEvent } from "@react-three/fiber";
+import { useThree } from "@react-three/fiber";
+import { Html, OrbitControls, Stage } from "@react-three/drei";
 import * as THREE from "three";
 import {
     classifySceneMesh,
     createWindowGlassMaterial,
 } from "@/lib/visualization/materialClassifier";
+import { mirrorObjectHierarchyAcrossX, exportMirroredGlb, mirrorPartAcrossCenterline } from "@/lib/admin/products/meshMirroring";
+import { updateProductAccessoryCategory } from "@/lib/admin/products/productMutations";
+import type { ComponentHandingMetadata } from "@/lib/admin/products/types";
+import { getR2AssetUrl } from "@/lib/r2";
+import { getFrontPartIds, getVisiblePartHits } from "@/lib/admin/products/partPicking";
 
 export type StructuralComponentsSectionProps = {
     productId: string;
     templateId: string;
     modelStrategy: string | null;
     productType?: string;
+    productName?: string;
     initialData?: unknown;
     wholeModelAsset?: {
         asset_id?: string;
@@ -30,6 +42,10 @@ export type StructuralComponentsSectionProps = {
         file_url?: string;
         byte_size?: number;
     } | null;
+    isAccessory?: boolean;
+    isAddon?: boolean;
+    initialAccessoryCategory?: AccessoryCategory | null;
+    productBasePrice?: number;
     onSave: () => void;
 };
 
@@ -42,6 +58,7 @@ type MappedFile = {
     assemblyGroup: string;
     baseQuantity: number;
     rawMaterialId: string | null;
+    materialBindings?: ComponentMaterialBinding[];
     dimensionBinding: DimensionBinding;
     spanRatio: number;
     isRemovable: boolean;
@@ -52,6 +69,17 @@ type MappedFile = {
     errorMsg?: string;
     previewMesh?: THREE.Group | null;
     sourceDimensions?: { x: number; y: number; z: number };
+    persisted?: boolean;
+    isAccessorySlot?: boolean;
+    accessoryCategory?: AccessoryCategory | null;
+    allowedAccessoryIds?: string[] | null;
+    positionOptions?: AccessoryPositionOptions | null;
+    unitPrice?: number;
+    pricingMethod?: string;
+    handingMetadata?: ComponentHandingMetadata | null;
+    jalousieConfig?: JalousieConfig | null;
+    bayRole?: DynamicBayRole | null;
+    bay_role?: DynamicBayRole | null;
 };
 
 function formatKeyFromName(name: string) {
@@ -79,6 +107,27 @@ function getPartScale(targetMeters: number, sourceMeters: number) {
     return targetMeters / sourceMeters;
 }
 
+function extractComponentBindings(comp: Record<string, unknown>): ComponentMaterialBinding[] {
+    const rawPcm = Array.isArray(comp.product_component_materials) ? comp.product_component_materials : [];
+    if (rawPcm.length > 0) {
+        return rawPcm.map((b: Record<string, unknown>, idx: number) => ({
+            id: b.id as string | undefined,
+            componentId: (b.product_component_id || comp.component_id) as string | undefined,
+            rawMaterialId: String(b.raw_material_id || ""),
+            isDefault: Boolean(b.is_default),
+            displayOrder: typeof b.display_order === "number" ? b.display_order : idx,
+        }));
+    }
+    if (comp.raw_material_id) {
+        return [{
+            rawMaterialId: String(comp.raw_material_id),
+            isDefault: true,
+            displayOrder: 0,
+        }];
+    }
+    return [];
+}
+
 // 3D Canvas Multi-Part Viewer Component (Assembled Structure Preview)
 function PartViewer3D({
     files,
@@ -95,6 +144,8 @@ function PartViewer3D({
     viewMode?: "assembled" | "exploded";
     onSelectId: (id: string, isShift: boolean) => void;
 }) {
+    const [hoveredId, setHoveredId] = useState<string | null>(null);
+    const [overlapChoice, setOverlapChoice] = useState<{ ids: string[]; point: THREE.Vector3 } | null>(null);
     const group = useMemo(() => {
         const root = new THREE.Group();
         root.name = "AssembledProductRoot";
@@ -160,9 +211,13 @@ function PartViewer3D({
             });
         };
 
-        const highlightPart = (clone: THREE.Object3D, isSelected: boolean) => {
+        const highlightPart = (clone: THREE.Object3D, isSelected: boolean, isHovered: boolean) => {
+            const selectedMeshes: THREE.Mesh[] = [];
             clone.traverse((child) => {
                 if (child instanceof THREE.Mesh) {
+                    if (isSelected || isHovered) {
+                        selectedMeshes.push(child);
+                    }
                     if (isSelected) {
                         const isGlass = classifySceneMesh(child) === "Glass";
                         if (Array.isArray(child.material)) {
@@ -189,6 +244,19 @@ function PartViewer3D({
                     }
                 }
             });
+            for (const mesh of selectedMeshes) {
+                const outline = new THREE.LineSegments(
+                    new THREE.EdgesGeometry(mesh.geometry, 25),
+                    new THREE.LineBasicMaterial({ color: isSelected ? "#0f1422" : "#07b6d3", depthTest: false, transparent: true, opacity: 0.95 }),
+                );
+                // Visual outlines must never become picking targets. Three.js line
+                // raycasts use a broad world-space threshold that can capture a
+                // click over neighboring glass or narrow framing members.
+                outline.raycast = () => {};
+                outline.renderOrder = 100;
+                outline.scale.setScalar(1.004);
+                mesh.add(outline);
+            }
         };
 
         const createPreviewPart = (
@@ -212,13 +280,14 @@ function PartViewer3D({
 
             const sourceSize = file.sourceDimensions || { x: 1, y: 1, z: 1 };
             wrapper.position.set(xM, yM, zM);
+            const isFixed = file.dimensionBinding === "FIXED";
             wrapper.scale.set(
-                getPartScale(targetWidthM ?? 0, sourceSize.x),
-                getPartScale(targetHeightM ?? 0, sourceSize.y),
-                getPartScale(targetDepthM ?? 0, sourceSize.z)
+                isFixed ? 1 : getPartScale(targetWidthM ?? 0, sourceSize.x),
+                isFixed ? 1 : getPartScale(targetHeightM ?? 0, sourceSize.y),
+                isFixed ? 1 : getPartScale(targetDepthM ?? 0, sourceSize.z)
             );
 
-            highlightPart(wrapper, selectedIds.has(file.id));
+            highlightPart(wrapper, selectedIds.has(file.id), hoveredId === file.id);
             return wrapper;
         };
 
@@ -237,7 +306,7 @@ function PartViewer3D({
                 wrapper.add(clone);
                 wrapper.position.set(offsetX, 0, 0);
 
-                highlightPart(wrapper, selectedIds.has(file.id));
+                highlightPart(wrapper, selectedIds.has(file.id), hoveredId === file.id);
                 root.add(wrapper);
 
                 const size = file.sourceDimensions || { x: 0.4, y: 0.4, z: 0.4 };
@@ -344,34 +413,130 @@ function PartViewer3D({
             });
         } else {
             // Assembled (Built) View: Place each component at its modeled natural coordinates
+            // Identify accessory slots and measure host geometry bounds to resolve lateral center
+            const accessorySlotIds = new Set<string>();
+            const hostBox = new THREE.Box3();
+            let hasHostGeom = false;
+
+            files.forEach((f) => {
+                const compIdentity = (
+                    f.componentKey +
+                    " " +
+                    f.componentName +
+                    " " +
+                    (f.componentType || "") +
+                    " " +
+                    (f.presentationCategory || "")
+                ).toLowerCase();
+
+                const isSlot = Boolean(
+                    f.isAccessorySlot ||
+                    Boolean(f.accessoryCategory) ||
+                    compIdentity.includes("handle") ||
+                    compIdentity.includes("knob") ||
+                    compIdentity.includes("lever") ||
+                    compIdentity.includes("smartlock") ||
+                    compIdentity.includes("lock")
+                );
+
+                if (isSlot) {
+                    accessorySlotIds.add(f.id);
+                } else if (f.previewMesh) {
+                    hostBox.expandByObject(f.previewMesh);
+                    hasHostGeom = true;
+                }
+            });
+
+            const hostCenterVec = new THREE.Vector3();
+            if (hasHostGeom) {
+                hostBox.getCenter(hostCenterVec);
+            }
+
             files.forEach((file) => {
                 if (!file.previewMesh) return;
                 const clone = file.previewMesh.clone();
-                applyPreviewMaterials(clone, file);
-                highlightPart(clone, selectedIds.has(file.id));
-                root.add(clone);
+
+                if (accessorySlotIds.has(file.id)) {
+                    // Measure modeled handle bounds to determine natural modeled side
+                    clone.updateMatrixWorld(true);
+                    const origBox = new THREE.Box3().setFromObject(clone);
+                    const origCenter = new THREE.Vector3();
+                    origBox.getCenter(origCenter);
+
+                    const baseCenterX = hasHostGeom ? hostCenterVec.x : 0;
+                    const deltaX = origCenter.x - baseCenterX;
+                    const modeledHanding: "left" | "right" = deltaX >= 0 ? "right" : "left";
+                    const targetHanding: "left" | "right" = file.positionOptions?.defaultHorizontal || modeledHanding;
+
+                    if (targetHanding === modeledHanding) {
+                        applyPreviewMaterials(clone, file);
+                        highlightPart(clone, selectedIds.has(file.id), hoveredId === file.id);
+                        root.add(clone);
+                    } else {
+                        // Mirrored across lateral center: preserves exact same Y axis and Z depth (IMP-MS78)
+                        const mirrored = mirrorPartAcrossCenterline(clone, baseCenterX, targetHanding);
+                        applyPreviewMaterials(mirrored, file);
+                        highlightPart(mirrored, selectedIds.has(file.id), hoveredId === file.id);
+                        root.add(mirrored);
+                    }
+                } else {
+                    applyPreviewMaterials(clone, file);
+                    highlightPart(clone, selectedIds.has(file.id), hoveredId === file.id);
+                    root.add(clone);
+                }
             });
         }
 
         recenterGroup(root);
         return root;
-    }, [files, selectedIds, rawMaterials, productType, viewMode]);
+    }, [files, selectedIds, hoveredId, rawMaterials, productType, viewMode]);
 
     return (
+        <>
         <primitive
             object={group}
-            onClick={(e: { stopPropagation: () => void; object: THREE.Object3D; shiftKey?: boolean }) => {
+            onPointerOver={(e: ThreeEvent<PointerEvent>) => {
+                setHoveredId(getVisiblePartHits(e.intersections)[0]?.id ?? null);
+            }}
+            onPointerOut={() => setHoveredId(null)}
+            onClick={(e: ThreeEvent<MouseEvent>) => {
                 e.stopPropagation();
-                let curr: THREE.Object3D | null = e.object;
-                while (curr && !curr.userData.fileId && curr.parent) {
-                    curr = curr.parent;
-                }
-                if (curr && curr.userData.fileId) {
-                    onSelectId(curr.userData.fileId, Boolean(e.shiftKey));
+                const ids = getFrontPartIds(e.intersections);
+                if (ids.length > 1) {
+                    setOverlapChoice({ ids, point: e.point.clone() });
+                } else if (ids.length === 1) {
+                    setOverlapChoice(null);
+                    onSelectId(ids[0], e.shiftKey);
                 }
             }}
         />
+        {overlapChoice && <Html position={overlapChoice.point} center>
+            <div className="min-w-40 rounded-lg border border-neutral-200 bg-white p-2 text-xs shadow-lg" role="group" aria-label="Choose overlapping part">
+                <p className="mb-1 font-semibold text-[#0f1422]">Choose part</p>
+                {overlapChoice.ids.map(id => <button key={id} type="button" onClick={() => { onSelectId(id, false); setOverlapChoice(null); }} className="block w-full rounded px-2 py-1 text-left text-neutral-700 hover:bg-neutral-100">{files.find(file => file.id === id)?.componentName || id}</button>)}
+            </div>
+        </Html>}
+        </>
     );
+}
+
+function ViewerCameraControls({ action }: { action: { kind: "fit" | "reset" | "front"; serial: number } | null }) {
+    const { camera, scene, controls, invalidate } = useThree();
+    useEffect(() => {
+        if (!action) return;
+        const bounds = new THREE.Box3().setFromObject(scene.getObjectByName("AssembledProductRoot") || scene);
+        if (bounds.isEmpty()) return;
+        const center = bounds.getCenter(new THREE.Vector3());
+        const radius = Math.max(bounds.getSize(new THREE.Vector3()).length() * 0.8, 1.5);
+        camera.position.set(center.x + (action.kind === "front" ? 0 : radius * 0.65), center.y + (action.kind === "front" ? 0 : radius * 0.35), center.z + radius);
+        camera.lookAt(center);
+        camera.updateProjectionMatrix();
+        const orbit = controls as { target?: THREE.Vector3; update?: () => void } | undefined;
+        orbit?.target?.copy(center);
+        orbit?.update?.();
+        invalidate();
+    }, [action, camera, controls, invalidate, scene]);
+    return null;
 }
 
 export function StructuralComponentsSection({
@@ -379,8 +544,13 @@ export function StructuralComponentsSection({
     templateId,
     modelStrategy,
     productType = "Window",
+    productName,
     initialData,
     wholeModelAsset,
+    isAccessory = false,
+    isAddon = false,
+    initialAccessoryCategory = null,
+    productBasePrice,
     onSave,
 }: StructuralComponentsSectionProps) {
     const [uploadMode, setUploadMode] = useState<"individual" | "assembled">("individual");
@@ -393,8 +563,38 @@ export function StructuralComponentsSection({
     const [decompositionWarnings, setDecompositionWarnings] = useState<string[]>([]);
     const [decompositionError, setDecompositionError] = useState<string | null>(null);
 
+    const [selectedHanding, setSelectedHanding] = useState<"right" | "left">(() => {
+        if (Array.isArray(initialData) && initialData.length > 0) {
+            const firstData = (initialData[0] as Record<string, unknown>)?.component_data as Record<string, unknown> | undefined;
+            const meta = firstData?.handing_metadata as ComponentHandingMetadata | undefined;
+            if (meta?.sourceHanding === "left" || meta?.sourceHanding === "right") {
+                return meta.sourceHanding;
+            }
+        }
+        return "right";
+    });
+
     const [rawMaterials, setRawMaterials] = useState<RawMaterial[]>([]);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const [removedFiles, setRemovedFiles] = useState<MappedFile[]>([]);
+    const [saveError, setSaveError] = useState<string | null>(null);
+    const [saveState, setSaveState] = useState<"clean" | "dirty" | "saving" | "saved" | "error">("clean");
+    const [partSearch, setPartSearch] = useState("");
+    const [showIssuesOnly, setShowIssuesOnly] = useState(false);
+    const [cameraAction, setCameraAction] = useState<{ kind: "fit" | "reset" | "front"; serial: number } | null>(null);
+    const [showUpload, setShowUpload] = useState(false);
+    const [uploadErrors, setUploadErrors] = useState<string[]>([]);
+    const eligibilityContext = { modelStrategy, isAccessory, isAddon };
+    const issuesForPart = (part: MappedFile) => getComponentIssues({
+        pricingMethod: part.pricingMethod,
+        unitPrice: part.unitPrice,
+        dimensionBinding: part.dimensionBinding,
+        rawMaterialId: part.rawMaterialId,
+        materialBindings: part.materialBindings,
+        isAccessorySlot: part.isAccessorySlot,
+        hasModelPreview: Boolean(part.glbFileUrl || part.previewMesh),
+    }, eligibilityContext);
+    const hasPartIssue = (part: MappedFile) => part.status !== "success" || issuesForPart(part).length > 0;
 
     // Fetch master raw materials
     useEffect(() => {
@@ -415,6 +615,13 @@ export function StructuralComponentsSection({
         return initialData.map((comp: Record<string, unknown>) => {
             const detected = autoDetectComponentSettings(String(comp.component_name || comp.component_key || ""));
             const compData = (comp.component_data || {}) as Record<string, unknown>;
+            const bindings = extractComponentBindings(comp);
+            const defaultBinding = bindings.find(b => b.isDefault);
+            const rawMaterialId = defaultBinding ? defaultBinding.rawMaterialId : (comp.raw_material_id as string) || null;
+            const existingPrice = typeof comp.unit_price === "number" ? comp.unit_price : (comp.unit_price ? Number(comp.unit_price) : undefined);
+            const resolvedUnitPrice = existingPrice !== undefined ? existingPrice : (isAccessory ? productBasePrice : undefined);
+            const resolvedPricingMethod = (comp.pricing_method as string) || (isAccessory ? "Fixed" : (typeof resolvedUnitPrice === "number" && resolvedUnitPrice > 0 ? "Fixed" : undefined));
+
             return {
                 id: String(comp.component_id || crypto.randomUUID()),
                 file: new File([], `${comp.component_key}.glb`),
@@ -423,13 +630,25 @@ export function StructuralComponentsSection({
                 componentType: (comp.component_type as ComponentType) || detected.componentType,
                 assemblyGroup: String(compData.assembly_group || ""),
                 baseQuantity: typeof comp.base_quantity === "number" ? comp.base_quantity : 1,
-                rawMaterialId: (comp.raw_material_id as string) || null,
-                dimensionBinding: (comp.dimension_binding as DimensionBinding) || detected.dimensionBinding,
+                rawMaterialId,
+                materialBindings: bindings,
+                dimensionBinding: (comp.dimension_binding as DimensionBinding) || (isAccessory ? "FIXED" : detected.dimensionBinding),
                 spanRatio: typeof comp.span_ratio === "number" ? comp.span_ratio : detected.spanRatio,
-                isRemovable: typeof comp.is_removable === "boolean" ? comp.is_removable : detected.isRemovable,
+                isRemovable: isAccessory ? true : (typeof comp.is_removable === "boolean" ? comp.is_removable : detected.isRemovable),
                 togglePropertyKey: (comp.toggle_property_key as string) || detected.togglePropertyKey,
                 presentationCategory: (comp.presentation_category as PresentationCategory) || detected.presentationCategory,
                 glbFileUrl: (comp.glb_file_url as string) || null,
+                isAccessorySlot: isAccessory ? false : (typeof comp.is_accessory_slot === "boolean" ? comp.is_accessory_slot : Boolean(detected.isAccessorySlot)),
+                accessoryCategory: (comp.accessory_category as AccessoryCategory) || (compData.accessory_category as AccessoryCategory) || (initialAccessoryCategory as AccessoryCategory) || detected.accessoryCategory || (isAccessory ? "handle" : null),
+                allowedAccessoryIds: (comp.allowed_accessory_ids as string[]) || [],
+                positionOptions: (comp.position_options as AccessoryPositionOptions) || detected.positionOptions || null,
+                unitPrice: resolvedUnitPrice,
+                pricingMethod: resolvedPricingMethod,
+                handingMetadata: (compData.handing_metadata as ComponentHandingMetadata) || null,
+                jalousieConfig: ((comp.jalousie_config || compData.jalousie_config) as JalousieConfig) || null,
+                bayRole: ((comp.bay_role || compData.bay_role) as DynamicBayRole) || detected.bayRole || null,
+                sourceDimensions: compData.source_dimensions_mm as { x: number; y: number; z: number } | undefined,
+                persisted: true,
                 status: "success" as const,
             };
         });
@@ -444,6 +663,9 @@ export function StructuralComponentsSection({
                     return initialData.map((comp: Record<string, unknown>) => {
                         const detected = autoDetectComponentSettings(String(comp.component_name || comp.component_key || ""));
                         const compData = (comp.component_data || {}) as Record<string, unknown>;
+                        const bindings = extractComponentBindings(comp);
+                        const defaultBinding = bindings.find(b => b.isDefault);
+                        const rawMaterialId = defaultBinding ? defaultBinding.rawMaterialId : (comp.raw_material_id as string) || null;
                         return {
                             id: String(comp.component_id || crypto.randomUUID()),
                             file: new File([], `${comp.component_key}.glb`),
@@ -452,25 +674,55 @@ export function StructuralComponentsSection({
                             componentType: (comp.component_type as ComponentType) || detected.componentType,
                             assemblyGroup: String(compData.assembly_group || ""),
                             baseQuantity: typeof comp.base_quantity === "number" ? comp.base_quantity : 1,
-                            rawMaterialId: (comp.raw_material_id as string) || null,
-                            dimensionBinding: (comp.dimension_binding as DimensionBinding) || detected.dimensionBinding,
+                            rawMaterialId,
+                            materialBindings: bindings,
+                            dimensionBinding: (comp.dimension_binding as DimensionBinding) || (isAccessory ? "FIXED" : detected.dimensionBinding),
                             spanRatio: typeof comp.span_ratio === "number" ? comp.span_ratio : detected.spanRatio,
-                            isRemovable: typeof comp.is_removable === "boolean" ? comp.is_removable : detected.isRemovable,
+                            isRemovable: isAccessory ? true : (typeof comp.is_removable === "boolean" ? comp.is_removable : detected.isRemovable),
                             togglePropertyKey: (comp.toggle_property_key as string) || detected.togglePropertyKey,
                             presentationCategory: (comp.presentation_category as PresentationCategory) || detected.presentationCategory,
                             glbFileUrl: (comp.glb_file_url as string) || null,
+                            isAccessorySlot: isAccessory ? false : (typeof comp.is_accessory_slot === "boolean" ? comp.is_accessory_slot : Boolean(detected.isAccessorySlot)),
+                            accessoryCategory: (comp.accessory_category as AccessoryCategory) || (compData.accessory_category as AccessoryCategory) || (initialAccessoryCategory as AccessoryCategory) || detected.accessoryCategory || (isAccessory ? "handle" : null),
+                            allowedAccessoryIds: (comp.allowed_accessory_ids as string[]) || [],
+                            positionOptions: (comp.position_options as AccessoryPositionOptions) || detected.positionOptions || null,
+                            unitPrice: (() => {
+                                const ep = typeof comp.unit_price === "number" ? comp.unit_price : (comp.unit_price ? Number(comp.unit_price) : undefined);
+                                return ep !== undefined ? ep : (isAccessory ? productBasePrice : undefined);
+                            })(),
+                            pricingMethod: (comp.pricing_method as string) || (isAccessory ? "Fixed" : (typeof comp.unit_price === "number" && comp.unit_price > 0 ? "Fixed" : undefined)),
+                            handingMetadata: (compData.handing_metadata as ComponentHandingMetadata) || null,
+                            jalousieConfig: ((comp.jalousie_config || compData.jalousie_config) as JalousieConfig) || null,
+                            sourceDimensions: compData.source_dimensions_mm as { x: number; y: number; z: number } | undefined,
+                            persisted: true,
                             status: "success" as const,
                         };
                     });
                 }
-                // Merge glbFileUrl and rawMaterialId if updated remotely
+                // Merge glbFileUrl, rawMaterialId, and materialBindings if updated remotely
                 return prev.map((item) => {
                     const found = initialData.find((c: Record<string, unknown>) => c.component_key === item.componentKey || c.component_id === item.id);
                     if (found) {
+                        const foundBindings = extractComponentBindings(found);
+                        const defaultBinding = foundBindings.find(b => b.isDefault);
+                        const nextRawMatId = defaultBinding ? defaultBinding.rawMaterialId : (found.raw_material_id as string) || null;
+                        const foundData = (found.component_data || {}) as Record<string, unknown>;
+                        const foundPrice = typeof found.unit_price === "number" ? found.unit_price : (found.unit_price ? Number(found.unit_price) : item.unitPrice);
+                        const resolvedUnitPrice = foundPrice !== undefined ? foundPrice : (isAccessory ? productBasePrice : undefined);
+                        const resolvedPricingMethod = (found.pricing_method as string) || (isAccessory ? "Fixed" : item.pricingMethod);
                         return {
                             ...item,
-                            glbFileUrl: item.glbFileUrl || (found.glb_file_url as string) || null,
-                            rawMaterialId: item.rawMaterialId !== undefined && item.status !== "success" ? item.rawMaterialId : (found.raw_material_id as string) || item.rawMaterialId,
+                            glbFileUrl: (found.glb_file_url as string) || item.glbFileUrl,
+                            rawMaterialId: nextRawMatId ?? item.rawMaterialId,
+                            materialBindings: foundBindings.length > 0 ? foundBindings : item.materialBindings,
+                            unitPrice: resolvedUnitPrice,
+                            pricingMethod: resolvedPricingMethod,
+                            handingMetadata: (foundData.handing_metadata as ComponentHandingMetadata) || item.handingMetadata,
+                            isAccessorySlot: typeof found.is_accessory_slot === "boolean" ? found.is_accessory_slot : item.isAccessorySlot,
+                            accessoryCategory: (found.accessory_category as AccessoryCategory) || item.accessoryCategory,
+                            allowedAccessoryIds: (found.allowed_accessory_ids as string[]) || item.allowedAccessoryIds,
+                            positionOptions: (found.position_options as AccessoryPositionOptions) || item.positionOptions,
+                            jalousieConfig: ((found.jalousie_config || foundData.jalousie_config) as JalousieConfig) || item.jalousieConfig,
                         };
                     }
                     return item;
@@ -523,13 +775,15 @@ export function StructuralComponentsSection({
 
     const handleFilesAdded = async (files: FileList | null) => {
         if (!files) return;
-
+        const rejected = Array.from(files).filter(f => !f.name.toLowerCase().endsWith(".glb"));
+        setUploadErrors(rejected.map(f => `${f.name}: only .glb files are supported.`));
         const glbFiles = Array.from(files).filter(f => f.name.toLowerCase().endsWith(".glb"));
 
         const newMappedPromises = glbFiles.map(async (f) => {
             const autoDetected = autoDetectComponentSettings(f.name);
             let previewMesh: THREE.Group | null = null;
-            let dims = { x: 1, y: 1, z: 1 };
+            let dims: { x: number; y: number; z: number } | undefined;
+            let parseError: string | undefined;
 
             try {
                 const { GLTFLoader } = await import("three/addons/loaders/GLTFLoader.js");
@@ -543,31 +797,80 @@ export function StructuralComponentsSection({
                 dims = { x: size.x, y: size.y, z: size.z };
                 URL.revokeObjectURL(url);
             } catch (err) {
-                console.warn("Could not parse GLB preview locally:", err);
+                parseError = err instanceof Error ? err.message : "Could not parse GLB geometry.";
             }
+
+            const isJalousieEligibleProduct =
+                productType.toLowerCase().includes("jalousie") ||
+                productType.toLowerCase().includes("louver") ||
+                f.name.toLowerCase().includes("jalousie") ||
+                f.name.toLowerCase().includes("louver") ||
+                f.name.toLowerCase().includes("blade") ||
+                f.name.toLowerCase().includes("operator") ||
+                f.name.toLowerCase().includes("crank") ||
+                f.name.toLowerCase().includes("rotopers") ||
+                f.name.toLowerCase().includes("clips_and_glass");
+
+            const jalousieAnalysis = (previewMesh && isJalousieEligibleProduct)
+                ? analyzeJalousieGeometry(previewMesh, f.name)
+                : null;
+            const isJalousie = Boolean(jalousieAnalysis && (jalousieAnalysis.isLouverBlade || jalousieAnalysis.isLouverOperator));
+            const resolvedBinding = (isAccessory
+                ? "FIXED"
+                : (isJalousie
+                    ? jalousieAnalysis!.suggestedBinding
+                    : (modelStrategy === "Fixed"
+                        ? "FIXED"
+                        : autoDetected.dimensionBinding))) as DimensionBinding;
+            const resolvedBaseQty = isJalousie ? jalousieAnalysis!.suggestedBaseQuantity : 1;
+            const resolvedPresentation = isJalousie ? jalousieAnalysis!.suggestedPresentationCategory : autoDetected.presentationCategory;
+            const suggested = suggestCandidateMaterials(resolvedPresentation, rawMaterials, undefined, resolvedBinding, { productType, productName, modelStrategy });
+            const jalousieConfig = isJalousie ? {
+                pitch_mm: jalousieAnalysis!.pitchMm,
+                blade_height_mm: jalousieAnalysis!.bladeHeightMm,
+                blades_per_operator: jalousieAnalysis!.bladesPerOperator,
+                base_blade_count: jalousieAnalysis!.louverCount,
+                base_operator_count: jalousieAnalysis!.operatorCount,
+            } : null;
 
             return {
                 id: crypto.randomUUID(),
                 file: f,
                 componentKey: formatKeyFromName(f.name),
-                componentName: formatLabelFromName(f.name),
-                componentType: autoDetected.componentType,
-                assemblyGroup: autoDetected.presentationCategory.toLowerCase(),
-                baseQuantity: 1,
-                rawMaterialId: null,
-                dimensionBinding: autoDetected.dimensionBinding,
-                spanRatio: autoDetected.spanRatio,
-                isRemovable: autoDetected.isRemovable,
+                componentName: autoDetected.componentLabel || formatLabelFromName(f.name),
+                componentType: isJalousie ? (jalousieAnalysis!.isLouverBlade ? "Glass" : "Hardware") : autoDetected.componentType,
+                assemblyGroup: resolvedPresentation.toLowerCase(),
+                baseQuantity: resolvedBaseQty,
+                rawMaterialId: isAccessory ? null : suggested.defaultRawMaterialId,
+                materialBindings: isAccessory ? [] : suggested.materialBindings.map(b => ({
+                    rawMaterialId: b.rawMaterialId,
+                    isDefault: b.isDefault,
+                    displayOrder: b.displayOrder,
+                })),
+                dimensionBinding: resolvedBinding,
+                spanRatio: modelStrategy === "Fixed" ? 1.0 : autoDetected.spanRatio,
+                isRemovable: isAccessory ? true : autoDetected.isRemovable,
                 togglePropertyKey: autoDetected.togglePropertyKey,
-                presentationCategory: autoDetected.presentationCategory,
+                presentationCategory: resolvedPresentation,
                 previewMesh,
-                status: "idle" as const,
+                status: parseError ? "error" as const : "idle" as const,
+                errorMsg: parseError,
                 sourceDimensions: dims,
+                isAccessorySlot: isAccessory ? false : (isJalousie ? (jalousieAnalysis?.isLouverOperator ? Boolean(autoDetected.isAccessorySlot) : false) : Boolean(autoDetected.isAccessorySlot)),
+                accessoryCategory: isAccessory ? (initialAccessoryCategory || autoDetected.accessoryCategory || "handle") : (isJalousie ? (jalousieAnalysis?.isLouverOperator ? (autoDetected.accessoryCategory || "handle") : null) : (autoDetected.accessoryCategory || null)),
+                allowedAccessoryIds: [],
+                positionOptions: autoDetected.positionOptions || null,
+                unitPrice: isAccessory ? productBasePrice : undefined,
+                pricingMethod: (isAccessory || (modelStrategy === "Fixed" && !isJalousie)) ? "Fixed" : undefined,
+                handingMetadata: null,
+                jalousieConfig,
+                bayRole: autoDetected.bayRole || null,
             };
         });
 
         const newMapped = await Promise.all(newMappedPromises);
         setMappedFiles(prev => [...prev, ...newMapped]);
+        if (newMapped.length) setSaveState("dirty");
         if (newMapped.length > 0 && selectedIds.size === 0) {
             setSelectedIds(new Set([newMapped[0].id]));
         }
@@ -637,29 +940,44 @@ export function StructuralComponentsSection({
     };
 
     const handleApplyExtractedParts = (selectedParts: ExtractedComponentPart[]) => {
-        const newMapped: MappedFile[] = selectedParts.map((part) => ({
-            id: part.id || crypto.randomUUID(),
-            file: part.file,
-            componentKey: part.componentKey,
-            componentName: part.componentName,
-            componentType: part.componentType,
-            assemblyGroup: part.presentationCategory.toLowerCase(),
-            baseQuantity: part.baseQuantity || 1,
-            rawMaterialId: null,
-            dimensionBinding: part.dimensionBinding,
-            spanRatio: part.spanRatio,
-            isRemovable: part.isRemovable,
-            togglePropertyKey: part.togglePropertyKey,
-            presentationCategory: part.presentationCategory,
-            glbFileUrl: null,
-            status: "idle" as const,
-            previewMesh: part.previewMesh,
-            sourceDimensions: {
-                x: part.dimensionsMm.width / 1000,
-                y: part.dimensionsMm.height / 1000,
-                z: part.dimensionsMm.depth / 1000,
-            },
-        }));
+        const newMapped: MappedFile[] = selectedParts.map((part) => {
+            const suggested = suggestCandidateMaterials(part.presentationCategory, rawMaterials, undefined, part.dimensionBinding, { productType, productName, modelStrategy });
+            return {
+                id: part.id || crypto.randomUUID(),
+                file: part.file,
+                componentKey: part.componentKey,
+                componentName: autoDetectComponentSettings(part.componentKey).componentLabel || part.componentName,
+                componentType: part.componentType,
+                assemblyGroup: part.presentationCategory.toLowerCase(),
+                baseQuantity: part.baseQuantity || 1,
+                rawMaterialId: isAccessory ? null : suggested.defaultRawMaterialId,
+                materialBindings: isAccessory ? [] : suggested.materialBindings.map(b => ({
+                    rawMaterialId: b.rawMaterialId,
+                    isDefault: b.isDefault,
+                    displayOrder: b.displayOrder,
+                })),
+                dimensionBinding: isAccessory ? "FIXED" : part.dimensionBinding,
+                spanRatio: part.spanRatio,
+                isRemovable: part.isRemovable,
+                togglePropertyKey: part.togglePropertyKey,
+                presentationCategory: part.presentationCategory,
+                glbFileUrl: null,
+                status: "idle" as const,
+                previewMesh: part.previewMesh,
+                sourceDimensions: {
+                    x: part.dimensionsMm.width / 1000,
+                    y: part.dimensionsMm.height / 1000,
+                    z: part.dimensionsMm.depth / 1000,
+                },
+                isAccessorySlot: Boolean(part.isAccessorySlot),
+                accessoryCategory: part.accessoryCategory || null,
+                allowedAccessoryIds: [],
+                positionOptions: part.positionOptions || null,
+                unitPrice: isAccessory ? productBasePrice : undefined,
+                pricingMethod: (isAccessory || modelStrategy === "Fixed") ? "Fixed" : undefined,
+                handingMetadata: null,
+            };
+        });
 
         setMappedFiles((prev) => [...prev, ...newMapped]);
         if (newMapped.length > 0) {
@@ -674,7 +992,8 @@ export function StructuralComponentsSection({
 
     const handleSelectPart = (id: string, isShift: boolean) => {
         setSelectedIds(prev => {
-            const next = new Set(isShift ? prev : []);
+            if (!isShift) return new Set([id]);
+            const next = new Set(prev);
             if (next.has(id)) {
                 next.delete(id);
             } else {
@@ -685,19 +1004,68 @@ export function StructuralComponentsSection({
     };
 
     const handleBatchUpdateSelected = (updates: Partial<PartInspectorConfig>) => {
+        setSaveState("dirty");
         setMappedFiles(prev =>
             prev.map(item => {
                 if (selectedIds.has(item.id)) {
+                    let nextBindings = item.materialBindings;
+                    let nextRawMaterialId = item.rawMaterialId;
+
+                    if (updates.materialBindings !== undefined) {
+                        nextBindings = updates.materialBindings;
+                        const def = nextBindings.find(b => b.isDefault);
+                        nextRawMaterialId = def ? def.rawMaterialId : null;
+                    } else if (updates.rawMaterialId !== undefined) {
+                        nextRawMaterialId = updates.rawMaterialId;
+                    }
+
                     return {
                         ...item,
-                        ...(updates.rawMaterialId !== undefined && { rawMaterialId: updates.rawMaterialId }),
+                        rawMaterialId: nextRawMaterialId,
+                        materialBindings: nextBindings,
                         ...(updates.dimensionBinding !== undefined && { dimensionBinding: updates.dimensionBinding }),
                         ...(updates.spanRatio !== undefined && { spanRatio: updates.spanRatio }),
                         ...(updates.isRemovable !== undefined && { isRemovable: updates.isRemovable }),
                         ...(updates.togglePropertyKey !== undefined && { togglePropertyKey: updates.togglePropertyKey }),
                         ...(updates.presentationCategory !== undefined && { presentationCategory: updates.presentationCategory }),
-                        ...(updates.baseQuantity !== undefined && { baseQuantity: updates.baseQuantity }),
+                        ...(updates.baseQuantity !== undefined && { baseQuantity: isContinuousPerimeterRole(updates.bayRole ?? item.bayRole) ? Math.min(2, Math.max(1, updates.baseQuantity)) : updates.baseQuantity }),
                         ...(updates.assemblyGroup !== undefined && { assemblyGroup: updates.assemblyGroup }),
+                        ...(updates.isAccessorySlot !== undefined && { isAccessorySlot: updates.isAccessorySlot }),
+                        ...("accessoryCategory" in updates ? { accessoryCategory: updates.accessoryCategory } : {}),
+                        ...(updates.allowedAccessoryIds !== undefined && { allowedAccessoryIds: updates.allowedAccessoryIds }),
+                        ...(updates.positionOptions !== undefined && { positionOptions: updates.positionOptions }),
+                        ...("unitPrice" in updates ? { unitPrice: updates.unitPrice } : {}),
+                        ...(updates.pricingMethod !== undefined && { pricingMethod: updates.pricingMethod }),
+                        ...("jalousieConfig" in updates ? { jalousieConfig: updates.jalousieConfig } : {}),
+                        ...("bayRole" in updates ? { bayRole: updates.bayRole } : {}),
+                        status: "idle" as const,
+                    };
+                }
+                return item;
+            })
+        );
+
+        if (isAccessory && updates.accessoryCategory && productId && productId !== "draft") {
+            updateProductAccessoryCategory(productId, updates.accessoryCategory).catch((err) => {
+                console.error("Failed to sync accessory category to product:", err);
+            });
+        }
+    };
+
+    const handleSyncAssemblyGroup = (
+        assemblyGroup: string,
+        bindings: ComponentMaterialBinding[],
+        defaultMaterialId: string | null
+    ) => {
+        if (!assemblyGroup) return;
+        setSaveState("dirty");
+        setMappedFiles(prev =>
+            prev.map(item => {
+                if (item.assemblyGroup.toLowerCase() === assemblyGroup.toLowerCase()) {
+                    return {
+                        ...item,
+                        materialBindings: bindings,
+                        rawMaterialId: defaultMaterialId,
                         status: "idle" as const,
                     };
                 }
@@ -707,7 +1075,10 @@ export function StructuralComponentsSection({
     };
 
     const removeMappedFile = (id: string) => {
+        const removed = mappedFiles.find(m => m.id === id);
+        if (removed) setRemovedFiles(prev => [...prev, removed]);
         setMappedFiles(prev => prev.filter(m => m.id !== id));
+        setSaveState("dirty");
         setSelectedIds(prev => {
             const next = new Set(prev);
             next.delete(id);
@@ -715,7 +1086,7 @@ export function StructuralComponentsSection({
         });
     };
 
-    const processSingleUpload = async (mapped: MappedFile) => {
+    const processSingleUpload = async (mapped: MappedFile): Promise<{ name: string; success: boolean; error?: string }> => {
         updateMappedFile(mapped.id, { status: "processing" });
 
         try {
@@ -723,7 +1094,7 @@ export function StructuralComponentsSection({
             const THREE = await import("three");
             const { GLTFLoader } = await import("three/addons/loaders/GLTFLoader.js");
 
-            let dimensions = mapped.sourceDimensions || { x: 1, y: 1, z: 1 };
+            let dimensions = mapped.sourceDimensions;
             if (mapped.file.size > 0) {
                 const url = URL.createObjectURL(mapped.file);
                 const loader = new GLTFLoader();
@@ -734,95 +1105,209 @@ export function StructuralComponentsSection({
                 URL.revokeObjectURL(url);
                 dimensions = { x: size.x, y: size.y, z: size.z };
             }
+            if (!dimensions && !mapped.glbFileUrl) throw new Error("GLB geometry could not be verified.");
 
             updateMappedFile(mapped.id, { status: "uploading" });
 
-            // 2. Upsert Component in DB with all MS-3 fields
-            const componentId = await upsertProductComponent({
+            // FIX13-V5: use one complete payload for initial and post-upload persistence.
+            const buildPayload = (glbFileUrl: string | null, handingMetadata = mapped.handingMetadata): UpsertComponentInput => ({
                 templateId,
                 componentKey: mapped.componentKey,
                 componentName: mapped.componentName,
                 componentType: mapped.componentType,
                 baseQuantity: mapped.baseQuantity,
                 rawMaterialId: mapped.rawMaterialId,
+                materialBindings: mapped.materialBindings?.map(binding => ({
+                    rawMaterialId: binding.rawMaterialId,
+                    isDefault: binding.isDefault,
+                    displayOrder: binding.displayOrder,
+                })),
                 dimensionBinding: mapped.dimensionBinding,
                 spanRatio: mapped.spanRatio,
                 isRemovable: mapped.isRemovable,
                 togglePropertyKey: mapped.togglePropertyKey,
                 presentationCategory: mapped.presentationCategory,
                 assemblyGroup: mapped.assemblyGroup || undefined,
-                glbFileUrl: mapped.glbFileUrl || undefined,
+                glbFileUrl,
                 componentData: {
-                    source_dimensions_mm: dimensions
-                }
+                    ...(dimensions ? { source_dimensions_mm: dimensions } : {}),
+                    ...(handingMetadata ? { handing_metadata: handingMetadata } : {}),
+                    ...(mapped.accessoryCategory ? { accessory_category: mapped.accessoryCategory } : {}),
+                    ...(mapped.jalousieConfig ? { jalousie_config: mapped.jalousieConfig } : {}),
+                    ...(mapped.bayRole ? { bay_role: mapped.bayRole } : {}),
+                },
+                isAccessorySlot: mapped.isAccessorySlot,
+                accessoryCategory: mapped.accessoryCategory,
+                allowedAccessoryIds: mapped.allowedAccessoryIds,
+                positionOptions: mapped.positionOptions || undefined,
+                unitPrice: mapped.unitPrice !== undefined ? mapped.unitPrice : (isAccessory ? productBasePrice : undefined),
+                pricingMethod: mapped.pricingMethod || (isAccessory ? "Fixed" : undefined),
+                handingMetadata,
+                jalousieConfig: mapped.jalousieConfig || undefined,
+                bayRole: mapped.bayRole || undefined,
+                bay_role: mapped.bayRole || undefined,
             });
+            const payload = buildPayload(mapped.glbFileUrl || null);
+            if (isAccessory && (!Number.isFinite(payload.unitPrice) || (payload.unitPrice ?? 0) <= 0)) {
+                throw new Error("Accessory unit price is missing. Set a positive price before saving.");
+            }
 
-            // 3. Request Presigned URL & upload only if file has content
+            // Object storage and PostgreSQL have separate commit boundaries. Upload first.
+            let primaryGlbUrl = mapped.glbFileUrl || "";
+            let stagedAsset: { assetId: string; objectKey: string } | null = null;
             if (mapped.file.size > 0) {
                 const { uploadUrl, assetId, objectKey } = await generatePresignedUrl(
-                    productId,
-                    "Component Model",
-                    mapped.file.name,
-                    mapped.file.type || "model/gltf-binary",
-                    componentId
+                    productId, "Component Model", mapped.file.name, mapped.file.type || "model/gltf-binary"
                 );
-
                 const uploadRes = await fetch(uploadUrl, {
                     method: "PUT",
                     body: mapped.file,
-                    headers: { "Content-Type": mapped.file.type || "model/gltf-binary" }
+                    headers: { "Content-Type": mapped.file.type || "model/gltf-binary" },
                 });
+                if (!uploadRes.ok) throw new Error(`R2 upload failed: ${uploadRes.statusText}`);
+                stagedAsset = { assetId, objectKey };
+                primaryGlbUrl = getR2AssetUrl(objectKey) || "";
+                if (!primaryGlbUrl) throw new Error("Uploaded model URL could not be resolved.");
+            }
 
-                if (!uploadRes.ok) {
-                    throw new Error(`R2 Upload failed: ${uploadRes.statusText}`);
+            let componentId: string;
+            try {
+                componentId = await upsertProductComponent(buildPayload(primaryGlbUrl || null));
+            } catch (saveError) {
+                if (stagedAsset) {
+                    try { await deleteProductAssets([stagedAsset.objectKey]); }
+                    catch (cleanupError) { console.error("Staged component asset cleanup failed:", cleanupError); }
                 }
-
+                throw saveError;
+            }
+            if (stagedAsset) {
                 await confirmAssetUpload(
-                    productId,
-                    assetId,
-                    objectKey,
-                    "Component Model",
-                    mapped.file.name,
-                    mapped.file.type || "model/gltf-binary",
-                    mapped.file.size,
-                    componentId
+                    productId, stagedAsset.assetId, stagedAsset.objectKey, "Component Model",
+                    mapped.file.name, mapped.file.type || "model/gltf-binary", mapped.file.size, componentId
                 );
             }
 
-            updateMappedFile(mapped.id, { status: "success" });
+            // 4. Bilateral Handing Mesh Mirroring for hardware accessories (IMP-MS78)
+            if (isAccessory && mapped.previewMesh) {
+                try {
+                    const mirroredMesh = mirrorObjectHierarchyAcrossX(mapped.previewMesh);
+                    const mirroredFile = await exportMirroredGlb(mirroredMesh, `mirrored_${mapped.file.name}`);
+                    const { uploadUrl: mirrorUploadUrl, assetId: mirrorAssetId, objectKey: mirrorObjectKey } = await generatePresignedUrl(
+                        productId,
+                        "Component Model",
+                        mirroredFile.name,
+                        mirroredFile.type || "model/gltf-binary",
+                        componentId
+                    );
+
+                    const mirrorRes = await fetch(mirrorUploadUrl, {
+                        method: "PUT",
+                        body: mirroredFile,
+                        headers: { "Content-Type": mirroredFile.type || "model/gltf-binary" }
+                    });
+
+                    if (mirrorRes.ok) {
+                        await confirmAssetUpload(
+                            productId,
+                            mirrorAssetId,
+                            mirrorObjectKey,
+                            "Component Model",
+                            mirroredFile.name,
+                            mirroredFile.type || "model/gltf-binary",
+                            mirroredFile.size,
+                            componentId
+                        );
+                        const mirroredGlbUrl = getR2AssetUrl(mirrorObjectKey) || "";
+
+                        const finalHandingMetadata: ComponentHandingMetadata = {
+                            sourceHanding: selectedHanding,
+                            uploadedGlbUrl: primaryGlbUrl,
+                            leftGlbUrl: selectedHanding === "left" ? primaryGlbUrl : mirroredGlbUrl,
+                            rightGlbUrl: selectedHanding === "right" ? primaryGlbUrl : mirroredGlbUrl,
+                            mirroredAt: new Date().toISOString(),
+                        };
+
+                        await upsertProductComponent(buildPayload(primaryGlbUrl, finalHandingMetadata));
+
+                        updateMappedFile(mapped.id, { handingMetadata: finalHandingMetadata });
+                    }
+                } catch (mirrorErr) {
+                    throw new Error(`Accessory handing model could not be saved: ${mirrorErr instanceof Error ? mirrorErr.message : "Unknown error"}`);
+                }
+            }
+
+            updateMappedFile(mapped.id, { status: "success", persisted: true, glbFileUrl: primaryGlbUrl || mapped.glbFileUrl });
+
+            if (isAccessory && mapped.accessoryCategory && productId && productId !== "draft") {
+                try {
+                    await updateProductAccessoryCategory(productId, mapped.accessoryCategory);
+                } catch {
+                    // Ignore background sync errors
+                }
+            }
+
+            return { name: mapped.componentName, success: true };
 
         } catch (err: unknown) {
             console.error("Component upload failed:", err);
             const msg = err instanceof Error ? err.message : "Upload failed";
             updateMappedFile(mapped.id, { status: "error", errorMsg: msg });
+            return { name: mapped.componentName, success: false, error: msg };
         }
     };
 
-    const handleUploadAll = async () => {
+    const handleUploadAll = async (): Promise<boolean> => {
         setIsUploadingAll(true);
+        setSaveState("saving");
+        setSaveError(null);
         const pending = mappedFiles.filter(m => m.status === "idle" || m.status === "error");
-
+        const results: { name: string; success: boolean; error?: string }[] = [];
         const chunkSize = 3;
         for (let i = 0; i < pending.length; i += chunkSize) {
             const chunk = pending.slice(i, i + chunkSize);
-            await Promise.all(chunk.map(processSingleUpload));
+            results.push(...await Promise.all(chunk.map(processSingleUpload)));
         }
-
+        const successfullyRemoved: string[] = [];
+        for (const removed of removedFiles) {
+            if (removed.persisted) {
+                try {
+                    await deleteProductComponent(templateId, removed.componentKey);
+                    successfullyRemoved.push(removed.id);
+                } catch (error) {
+                    results.push({ name: removed.componentName, success: false, error: error instanceof Error ? error.message : "Delete failed" });
+                }
+            } else successfullyRemoved.push(removed.id);
+        }
+        setRemovedFiles(previous => previous.filter(item => !successfullyRemoved.includes(item.id)));
+        const failures = results.filter(result => !result.success);
+        if (failures.length) {
+            setSaveError(failures.map(result => `${result.name}: ${result.error}`).join("; "));
+            setSaveState("error");
+        } else {
+            setSaveState("saved");
+        }
         setIsUploadingAll(false);
+        return failures.length === 0;
     };
 
-    const hasPendingChanges = mappedFiles.some(m => m.status === "idle" || m.status === "error");
+    const hasPendingChanges = removedFiles.length > 0 || mappedFiles.some(m => m.status === "idle" || m.status === "error");
 
     const handleContinue = async () => {
-        const pending = mappedFiles.filter(m => m.status === "idle" || m.status === "error");
-        if (pending.length > 0) {
-            setIsUploadingAll(true);
-            const chunkSize = 3;
-            for (let i = 0; i < pending.length; i += chunkSize) {
-                const chunk = pending.slice(i, i + chunkSize);
-                await Promise.all(chunk.map(processSingleUpload));
-            }
-            setIsUploadingAll(false);
+        if (hasPendingChanges && !(await handleUploadAll())) return;
+        let hasQualifyingModelAsset = false;
+        try {
+            hasQualifyingModelAsset = await hasQualifyingProductModelAsset(productId);
+        } catch (error) {
+            setSaveError(error instanceof Error ? error.message : "Could not verify product model asset.");
+            setSaveState("error");
+            return;
+        }
+        const productIssue = getProductComponentIssue({ ...eligibilityContext, componentsCount: mappedFiles.length, hasQualifyingModelAsset });
+        const partIssues = mappedFiles.flatMap(part => issuesForPart(part).map(issue => `${part.componentName}: ${issue}`));
+        if (productIssue || partIssues.length) {
+            setSaveError([productIssue, ...partIssues].filter(Boolean).join("; "));
+            setSaveState("error");
+            return;
         }
         onSave();
     };
@@ -837,6 +1322,7 @@ export function StructuralComponentsSection({
                 componentName: m.componentName,
                 componentType: m.componentType,
                 rawMaterialId: m.rawMaterialId,
+                materialBindings: m.materialBindings || (m.rawMaterialId ? [{ rawMaterialId: m.rawMaterialId, isDefault: true, displayOrder: 0 }] : []),
                 dimensionBinding: m.dimensionBinding,
                 spanRatio: m.spanRatio,
                 isRemovable: m.isRemovable,
@@ -844,39 +1330,56 @@ export function StructuralComponentsSection({
                 presentationCategory: m.presentationCategory,
                 baseQuantity: m.baseQuantity,
                 assemblyGroup: m.assemblyGroup,
+                isAccessorySlot: m.isAccessorySlot,
+                accessoryCategory: m.accessoryCategory,
+                allowedAccessoryIds: m.allowedAccessoryIds,
+                positionOptions: m.positionOptions,
+                unitPrice: m.unitPrice,
+                pricingMethod: m.pricingMethod,
+                jalousieConfig: m.jalousieConfig,
+                bayRole: m.bayRole,
             }));
     }, [mappedFiles, selectedIds]);
 
-    // If it is fixed, skip structural components setup
-    if (modelStrategy !== "Parametric") {
-        return (
-            <div className="flex flex-col items-center justify-center py-16 px-4 text-center border-2 border-dashed border-neutral-200 rounded-[16px] bg-neutral-50">
-                <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-sm mb-4">
-                    <CheckCircle className="size-8 text-[#05b64b]" />
-                </div>
-                <h3 className="text-xl font-medium text-[#0f1422] mb-2">Not Applicable for Fixed Models</h3>
-                <p className="text-neutral-500 max-w-md">
-                    This product is configured as a Fixed model. Structural components are only required for Parametric models.
-                </p>
-                <button
-                    type="button"
-                    onClick={onSave}
-                    className="mt-6 bg-[#0f1422] text-white px-6 py-2.5 rounded-[10px] hover:bg-black transition-colors font-medium cursor-pointer"
-                >
-                    Continue to Next Step
-                </button>
-            </div>
-        );
-    }
+    const analyzedGrilleData = useMemo((): GrilleGeometryAnalysis | null => {
+        const primary = selectedPartConfigs[0];
+        if (!primary || primary.dimensionBinding !== "GRILLE_LINEAR") return null;
+        const matchingFile = mappedFiles.find((m) => m.id === primary.id);
+        if (!matchingFile?.previewMesh) return null;
+        try {
+            return analyzeGrilleGeometry(matchingFile.previewMesh, 1200, 1200);
+        } catch {
+            return null;
+        }
+    }, [selectedPartConfigs, mappedFiles]);
+
+    const primaryFile = mappedFiles[0];
+    const leftPreviewMesh = useMemo(() => {
+        if (!primaryFile?.previewMesh) return null;
+        if (selectedHanding === "left") {
+            return primaryFile.previewMesh.clone();
+        }
+        return mirrorObjectHierarchyAcrossX(primaryFile.previewMesh);
+    }, [primaryFile, selectedHanding]);
+
+    const rightPreviewMesh = useMemo(() => {
+        if (!primaryFile?.previewMesh) return null;
+        if (selectedHanding === "right") {
+            return primaryFile.previewMesh.clone();
+        }
+        return mirrorObjectHierarchyAcrossX(primaryFile.previewMesh);
+    }, [primaryFile, selectedHanding]);
 
     return (
         <div className="flex flex-col gap-[24px]">
             <div className="flex flex-col gap-1 text-[#0f1422]">
                 <h2 className="text-xl sm:text-2xl font-medium leading-tight tracking-tight">
-                    Structural Components & Part Inspector
+                    {modelStrategy === "Fixed" ? "Fixed Model Components & Pricing" : "Structural Components & Part Inspector"}
                 </h2>
                 <p className="text-xs sm:text-base font-normal leading-snug text-neutral-600">
-                    Upload 3D part meshes (.glb), inspect dimensional bindings, link catalog raw materials, and configure parametric formulas.
+                    {modelStrategy === "Fixed"
+                        ? "Upload constituent 3D part meshes (.glb) and assign fixed prices (PHP) to each part without raw material extrusion formulas."
+                        : "Upload 3D part meshes (.glb), inspect dimensional bindings, link catalog raw materials, and configure parametric formulas."}
                 </p>
             </div>
 
@@ -911,6 +1414,9 @@ export function StructuralComponentsSection({
                 </div>
             )}
 
+            {mappedFiles.length > 0 && <button type="button" onClick={() => setShowUpload(value => !value)} className="self-start rounded-lg border border-neutral-200 px-3 py-2 text-sm font-medium text-[#0f1422]">{showUpload ? "Hide Add Parts" : "Add Parts"}</button>}
+            {uploadErrors.length > 0 && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{uploadErrors.map(error => <p key={error}>{error}</p>)}</div>}
+            {(mappedFiles.length === 0 || showUpload) && <>
             {/* Ingestion Mode Segmented Toggle */}
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="bg-slate-100 p-1.5 rounded-[14px] inline-flex border border-neutral-200">
@@ -986,7 +1492,7 @@ export function StructuralComponentsSection({
                 >
                     <UploadCloud className="size-7 text-neutral-400 mb-1.5 pointer-events-none" />
                     <p className="text-[#0f1422] font-medium text-sm pointer-events-none">Drag & drop multiple .glb parts here</p>
-                    <p className="text-[11px] text-neutral-500 pointer-events-none">Auto-detects Series 798 heads, sills, jambs, rails, glass & rollers</p>
+                    <p className="text-xs text-neutral-500 pointer-events-none">Part names suggest categories and dimensions; review each assignment before saving.</p>
                     <input
                         type="file"
                         accept=".glb,model/gltf-binary"
@@ -1040,9 +1546,10 @@ export function StructuralComponentsSection({
                 </label>
             )}
 
+            </>}
             {/* Quick Material Mapping Summary Banner */}
             {mappedFiles.length > 0 && (
-                <div className="bg-gradient-to-r from-neutral-900 to-[#0f1422] text-white p-4 rounded-[16px] flex flex-wrap items-center justify-between gap-4 shadow-sm">
+                <div className="bg-[#0f1422] text-white p-3 rounded-[12px] flex flex-wrap items-center justify-between gap-4 shadow-sm">
                     <div className="flex items-center gap-6 text-xs sm:text-sm">
                         <div>
                             <span className="text-neutral-400 block text-[11px]">Total Parts</span>
@@ -1055,33 +1562,175 @@ export function StructuralComponentsSection({
                                 {mappedFiles.filter(m => m.rawMaterialId).length} of {mappedFiles.length} Linked
                             </span>
                         </div>
-                        <div className="h-8 w-px bg-neutral-800" />
-                        <div>
-                            <span className="text-neutral-400 block text-[11px]">Toggleable (Sill)</span>
-                            <span className="font-semibold text-amber-400">
-                                {mappedFiles.filter(m => m.isRemovable).length} Removable
-                            </span>
-                        </div>
+                        {!isAccessory && (
+                            <>
+                                <div className="h-8 w-px bg-neutral-800" />
+                                <div>
+                                    <span className="text-neutral-400 block text-[11px]">Toggleable (Sill)</span>
+                                    <span className="font-semibold text-amber-400">
+                                        {mappedFiles.filter(m => m.isRemovable).length} Removable
+                                    </span>
+                                </div>
+                            </>
+                        )}
                     </div>
                     <div className="text-right">
                         <span className="text-neutral-400 block text-[11px]">BOM Estimation Status</span>
-                        <span className="text-xs font-medium text-emerald-400 flex items-center gap-1.5">
-                            <span className="size-2 rounded-full bg-emerald-400 animate-pulse" />
-                            Ready for Test-Drive Simulator (Step 6)
+                        <span className="text-xs font-medium text-white flex items-center gap-1.5">
+                            {mappedFiles.every(m => !hasPartIssue(m)) && !removedFiles.length && (mappedFiles.length > 0 || modelStrategy === "Fixed" && Boolean(wholeModelAsset)) ? "Ready for Validation" : "Needs review"}
                         </span>
                     </div>
                 </div>
             )}
 
+            {/* Bilateral Handing Configuration Card (IMP-MS78) */}
+            {isAccessory && mappedFiles.length > 0 && (
+                <div className="bg-white p-5 rounded-[16px] border border-neutral-200 shadow-sm space-y-4">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                            <Sparkles className="size-5 text-[#07b6d3]" />
+                            <h3 className="text-base font-semibold text-[#0f1422]">
+                                Bilateral Handing Configuration (Left & Right)
+                            </h3>
+                        </div>
+                        <span className="text-xs bg-[#07b6d3]/10 text-[#07b6d3] font-medium px-2.5 py-1 rounded-full">
+                            Hardware Handing
+                        </span>
+                    </div>
+
+                    <p className="text-xs text-neutral-600">
+                        Hardware accessories require both Left and Right handed geometries so that handles, levers, and locks point properly when installed on opposite sides of doors and windows. Select which version you uploaded:
+                    </p>
+
+                    {/* Hardware Accessory Category Selection */}
+                    <div className="bg-neutral-50 p-3.5 rounded-[12px] border border-neutral-200 space-y-2">
+                        <div className="flex items-center justify-between">
+                            <label className="text-xs font-semibold text-[#0f1422] block">
+                                Accessory Category <span className="text-red-500">*</span>
+                            </label>
+                            <span className="text-[10px] text-neutral-500">Hardware Template Type</span>
+                        </div>
+                        <select
+                            value={mappedFiles[0]?.accessoryCategory || "handle"}
+                            onChange={(e) => {
+                                const nextCategory = e.target.value as AccessoryCategory;
+                                setMappedFiles(prev => prev.map(m => ({ ...m, accessoryCategory: nextCategory })));
+                                if (productId && productId !== "draft") {
+                                    updateProductAccessoryCategory(productId, nextCategory).catch(() => {});
+                                }
+                            }}
+                            className="w-full sm:w-80 border border-neutral-300 rounded-[8px] px-3 py-2 text-xs font-medium text-[#0f1422] focus:border-[#07b6d3] outline-none bg-white shadow-xs cursor-pointer"
+                        >
+                            <option value="handle">Handle / Knob / Pull</option>
+                            <option value="lock">Lock / Latch / Smart Lock</option>
+                            <option value="roller">Roller / Guide Wheel</option>
+                            <option value="hinge">Hinge / Pivot</option>
+                            <option value="other">Other Hardware</option>
+                        </select>
+                        <p className="text-[11px] text-neutral-500">
+                            Specifies what type of fixture slot (e.g. door handles or sliding locks) can mount this hardware template.
+                        </p>
+                    </div>
+
+                    {/* Handing Selection Choice Cards */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <label className={`p-4 rounded-[12px] border-2 cursor-pointer transition-all flex flex-col gap-1 ${
+                            selectedHanding === "right"
+                                ? "border-[#07b6d3] bg-[#07b6d3]/5"
+                                : "border-neutral-200 hover:border-neutral-300 bg-white"
+                        }`}>
+                            <div className="flex items-center justify-between">
+                                <span className="text-sm font-semibold text-[#0f1422]">Uploaded Model is Right-Handed</span>
+                                <input
+                                    type="radio"
+                                    name="accessoryHanding"
+                                    value="right"
+                                    checked={selectedHanding === "right"}
+                                    onChange={() => setSelectedHanding("right")}
+                                    className="w-4 h-4 text-[#07b6d3]"
+                                />
+                            </div>
+                            <p className="text-[11px] text-neutral-500">
+                                System assigns uploaded file to Right handing and generates Left handing by lateral reflection.
+                            </p>
+                        </label>
+
+                        <label className={`p-4 rounded-[12px] border-2 cursor-pointer transition-all flex flex-col gap-1 ${
+                            selectedHanding === "left"
+                                ? "border-[#07b6d3] bg-[#07b6d3]/5"
+                                : "border-neutral-200 hover:border-neutral-300 bg-white"
+                        }`}>
+                            <div className="flex items-center justify-between">
+                                <span className="text-sm font-semibold text-[#0f1422]">Uploaded Model is Left-Handed</span>
+                                <input
+                                    type="radio"
+                                    name="accessoryHanding"
+                                    value="left"
+                                    checked={selectedHanding === "left"}
+                                    onChange={() => setSelectedHanding("left")}
+                                    className="w-4 h-4 text-[#07b6d3]"
+                                />
+                            </div>
+                            <p className="text-[11px] text-neutral-500">
+                                System assigns uploaded file to Left handing and generates Right handing by lateral reflection.
+                            </p>
+                        </label>
+                    </div>
+
+                    {/* Dual Handing Side-by-Side 3D Preview */}
+                    {primaryFile?.previewMesh && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                            <div className="flex flex-col gap-2">
+                                <div className="flex items-center justify-between text-xs">
+                                    <span className="font-medium text-[#0f1422]">Left Handing</span>
+                                    <span className="text-neutral-500 text-[10px]">
+                                        {selectedHanding === "left" ? "Original Upload" : "Generated Mirror"}
+                                    </span>
+                                </div>
+                                <div className="h-64 sm:h-72 bg-neutral-100 rounded-[10px] overflow-hidden border border-neutral-200">
+                                    <Canvas shadows camera={{ position: [0, 0, 0.6], fov: 45 }}>
+                                        <ambientLight intensity={0.7} />
+                                        <directionalLight position={[2, 4, 3]} intensity={1.2} />
+                                        <Suspense fallback={null}>
+                                            <Stage environment={null} intensity={0.8} adjustCamera={1.2}>
+                                                {leftPreviewMesh && <primitive object={leftPreviewMesh} />}
+                                            </Stage>
+                                        </Suspense>
+                                        <OrbitControls enableZoom={true} minDistance={0.1} maxDistance={5} autoRotate autoRotateSpeed={2} />
+                                    </Canvas>
+                                </div>
+                            </div>
+
+                            <div className="flex flex-col gap-2">
+                                <div className="flex items-center justify-between text-xs">
+                                    <span className="font-medium text-[#0f1422]">Right Handing</span>
+                                    <span className="text-neutral-500 text-[10px]">
+                                        {selectedHanding === "right" ? "Original Upload" : "Generated Mirror"}
+                                    </span>
+                                </div>
+                                <div className="h-64 sm:h-72 bg-neutral-100 rounded-[10px] overflow-hidden border border-neutral-200">
+                                    <Canvas shadows camera={{ position: [0, 0, 0.6], fov: 45 }}>
+                                        <ambientLight intensity={0.7} />
+                                        <directionalLight position={[2, 4, 3]} intensity={1.2} />
+                                        <Suspense fallback={null}>
+                                            <Stage environment={null} intensity={0.8} adjustCamera={1.2}>
+                                                {rightPreviewMesh && <primitive object={rightPreviewMesh} />}
+                                            </Stage>
+                                        </Suspense>
+                                        <OrbitControls enableZoom={true} minDistance={0.1} maxDistance={5} autoRotate autoRotateSpeed={2} />
+                                    </Canvas>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+
             {/* Split Screen 60/40 Layout */}
             {mappedFiles.length > 0 && (
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 border border-neutral-200 rounded-[16px] overflow-hidden bg-white shadow-sm min-h-[500px]">
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 border border-neutral-200 rounded-[16px] overflow-hidden bg-white shadow-sm lg:h-[min(760px,calc(100vh-150px))]">
                     {/* Left Side: 3D Viewport (60% / 7 cols) */}
-                    <div className="lg:col-span-7 bg-[#f2f4f7] relative min-h-[380px] lg:min-h-full flex flex-col justify-between border-b lg:border-b-0 lg:border-r border-neutral-200">
-                        <div className="absolute top-3 left-3 z-10 bg-white/90 backdrop-blur-md px-3 py-1 rounded-full text-[11px] font-medium text-neutral-700 shadow-xs border border-neutral-200 flex items-center gap-1.5">
-                            <Eye className="size-3.5 text-[#07b6d3]" /> Click part to inspect (Shift+Click for multi-select)
-                        </div>
-
+                    <div className="lg:col-span-7 bg-[#f2f4f7] relative h-[480px] lg:h-full min-h-0 flex flex-col justify-between border-b lg:border-b-0 lg:border-r border-neutral-200">
                         <div className="absolute top-3 right-3 z-10 bg-white/90 backdrop-blur-md p-1 rounded-[10px] inline-flex border border-neutral-200 shadow-xs">
                             <button
                                 type="button"
@@ -1105,7 +1754,7 @@ export function StructuralComponentsSection({
                             </button>
                         </div>
 
-                        <div className="w-full h-full min-h-[360px] flex-1">
+                        <div className="relative w-full min-h-0 flex-1">
                             <Canvas shadows camera={{ position: [0, 1.5, 3], fov: 45 }}>
                                 <ambientLight intensity={0.7} />
                                 <directionalLight position={[5, 8, 5]} intensity={1.2} />
@@ -1122,11 +1771,20 @@ export function StructuralComponentsSection({
                                     </Stage>
                                 </Suspense>
                                 <OrbitControls makeDefault />
+                                <ViewerCameraControls action={cameraAction} />
                             </Canvas>
+                            <div className="pointer-events-none absolute bottom-3 left-3 z-10 flex max-w-[calc(100%-1.5rem)] items-center gap-1.5 rounded-full border border-neutral-200 bg-white/90 px-3 py-1 text-[11px] font-medium text-neutral-700 shadow-xs backdrop-blur-md">
+                                <Eye aria-hidden="true" className="size-3.5 shrink-0 text-[#07b6d3]" />
+                                <span>Click part to inspect (Shift+Click for multi-select)</span>
+                            </div>
+                        </div>
+
+                        <div className="flex gap-2 border-t border-neutral-200 bg-white px-3 py-2 text-xs">
+                            {(["fit", "reset", "front"] as const).map(kind => <button key={kind} type="button" onClick={() => setCameraAction(previous => ({ kind, serial: (previous?.serial || 0) + 1 }))} className="rounded-md border border-neutral-200 px-2 py-1 text-neutral-700 focus-visible:outline-2 focus-visible:outline-[#07b6d3]">{kind === "fit" ? "Fit Model" : kind === "reset" ? "Reset Camera" : "Front View"}</button>)}
                         </div>
 
                         <div className="p-3 bg-white/90 border-t border-neutral-200/80 backdrop-blur-sm flex items-center justify-between text-xs text-neutral-500">
-                            <span>{mappedFiles.length} parts mapped ({selectedIds.size} selected)</span>
+                            <span aria-live="polite">{selectedIds.size === 1 ? mappedFiles.find(m => selectedIds.has(m.id))?.componentName : `${selectedIds.size} parts selected`} · {mappedFiles.length} parts</span>
                             <div className="flex gap-2">
                                 <button
                                     type="button"
@@ -1145,14 +1803,28 @@ export function StructuralComponentsSection({
                                 </button>
                             </div>
                         </div>
+                        <div className="max-h-44 overflow-y-auto border-t border-neutral-200 bg-white p-2" aria-label="Part navigator">
+                            <input aria-label="Search parts" value={partSearch} onChange={event => setPartSearch(event.target.value)} placeholder="Search parts" className="mb-2 w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" />
+                            <button type="button" aria-pressed={showIssuesOnly} onClick={() => setShowIssuesOnly(value => !value)} className="mb-2 rounded-lg border border-neutral-200 px-2 py-1 text-xs">{showIssuesOnly ? "Show all parts" : "Show issues only"}</button>
+                            <div className="grid grid-cols-2 gap-1 sm:grid-cols-3">
+                                {mappedFiles.filter(part => `${part.componentName} ${part.presentationCategory}`.toLowerCase().includes(partSearch.toLowerCase()) && (!showIssuesOnly || hasPartIssue(part))).map(part => <div key={part.id} className={`flex items-center gap-1 rounded-lg px-1 ${selectedIds.has(part.id) ? "bg-[#0f1422] text-white" : "bg-neutral-100 text-neutral-800"}`}><button type="button" aria-pressed={selectedIds.has(part.id)} onClick={() => handleSelectPart(part.id, false)} className="flex-1 px-1 py-1.5 text-left text-xs focus-visible:outline-2 focus-visible:outline-[#07b6d3]">{part.componentName}{part.status === "error" ? " · Error" : ""}</button><button type="button" aria-label={`Toggle ${part.componentName} in batch selection`} aria-pressed={selectedIds.has(part.id)} onClick={() => handleSelectPart(part.id, true)} className="rounded px-1 text-xs focus-visible:outline-2 focus-visible:outline-[#07b6d3]">{selectedIds.has(part.id) ? "✓" : "+"}</button></div>)}
+                            </div>
+                        </div>
                     </div>
 
                     {/* Right Side: Part Inspector Drawer (40% / 5 cols) */}
-                    <div className="lg:col-span-5 bg-white flex flex-col h-full min-h-[460px]">
+                    <div className="lg:col-span-5 bg-white flex flex-col min-h-0 lg:h-full lg:overflow-y-auto">
                         <PartInspectorDrawer
                             selectedParts={selectedPartConfigs}
+                            allParts={mappedFiles}
                             rawMaterials={rawMaterials}
+                            analyzedGrilleData={analyzedGrilleData}
+                            modelStrategy={modelStrategy}
+                            productType={`${productType} ${productName || ""}`}
+                            isAccessory={isAccessory}
+                            productBasePrice={productBasePrice}
                             onUpdateParts={handleBatchUpdateSelected}
+                            onSyncAssemblyGroup={handleSyncAssemblyGroup}
                             onDeselect={() => setSelectedIds(new Set())}
                         />
                     </div>
@@ -1202,10 +1874,16 @@ export function StructuralComponentsSection({
                                         </button>
                                     </th>
                                     <th className="px-3 py-2">Component Name</th>
-                                    <th className="px-3 py-2">Driver</th>
-                                    <th className="px-3 py-2">Span Ratio</th>
-                                    <th className="px-3 py-2">Material Link</th>
-                                    <th className="px-3 py-2">Removable</th>
+                                    {isAccessory ? (
+                                        <th className="px-3 py-2">Unit Price</th>
+                                    ) : (
+                                        <>
+                                            <th className="px-3 py-2">Driver</th>
+                                            <th className="px-3 py-2">Span Ratio</th>
+                                            <th className="px-3 py-2">Material Link</th>
+                                            <th className="px-3 py-2">Removable</th>
+                                        </>
+                                    )}
                                     <th className="px-3 py-2">Status</th>
                                     <th className="px-3 py-2"></th>
                                 </tr>
@@ -1230,35 +1908,55 @@ export function StructuralComponentsSection({
                                                 )}
                                             </td>
                                             <td className="px-3 py-2 font-medium text-[#0f1422]">
-                                                <div>{mapped.componentName}</div>
+                                                <div className="flex items-center gap-1.5 flex-wrap">
+                                                    <button type="button" onClick={(e) => { e.stopPropagation(); handleSelectPart(mapped.id, false); }} className="text-left underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-[#07b6d3]">{mapped.componentName}</button>
+                                                    {mapped.isAccessorySlot && (
+                                                        <span className="px-1.5 py-0.5 rounded-[4px] bg-cyan-50 text-[#07b6d3] font-semibold text-[9px] border border-cyan-200 uppercase tracking-tight">
+                                                            Accessory Slot ({mapped.accessoryCategory || "handle"})
+                                                        </span>
+                                                    )}
+                                                </div>
                                                 <div className="text-[10px] text-neutral-400 font-mono">{mapped.componentKey}</div>
                                             </td>
-                                            <td className="px-3 py-2">
-                                                <span className="px-2 py-0.5 rounded bg-neutral-100 text-neutral-700 font-mono text-[10px]">
-                                                    {mapped.dimensionBinding}
-                                                </span>
-                                            </td>
-                                            <td className="px-3 py-2 font-mono text-neutral-600">
-                                                {mapped.spanRatio.toFixed(2)}x
-                                            </td>
-                                            <td className="px-3 py-2 max-w-[180px] truncate text-neutral-600">
-                                                {mat ? (
-                                                    <span title={mat.description} className="text-[#07b6d3] font-medium">
-                                                        {mat.material_code}
-                                                    </span>
-                                                ) : (
-                                                    <span className="text-neutral-400 italic">Unassigned</span>
-                                                )}
-                                            </td>
-                                            <td className="px-3 py-2">
-                                                {mapped.isRemovable ? (
-                                                    <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-600 text-[10px] font-medium border border-amber-200">
-                                                        {mapped.togglePropertyKey || "Toggleable"}
-                                                    </span>
-                                                ) : (
-                                                    <span className="text-neutral-400 text-[11px]">Fixed</span>
-                                                )}
-                                            </td>
+                                            {isAccessory ? (
+                                                <td className="px-3 py-2 font-medium text-neutral-800">
+                                                    PHP {(productBasePrice ?? 0).toFixed(2)}
+                                                </td>
+                                            ) : (
+                                                <>
+                                                    <td className="px-3 py-2">
+                                                        <span className="px-2 py-0.5 rounded bg-neutral-100 text-neutral-700 font-mono text-[10px]">
+                                                            {mapped.dimensionBinding}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-3 py-2 font-mono text-neutral-600">
+                                                        {mapped.spanRatio.toFixed(2)}x
+                                                    </td>
+                                                    <td className="px-3 py-2 max-w-[180px] truncate text-neutral-600">
+                                                        {mat ? (
+                                                            <span title={mat.description} className="text-[#07b6d3] font-medium flex items-center gap-1">
+                                                                <span>{mat.description} ({mat.material_code})</span>
+                                                                {mapped.materialBindings && mapped.materialBindings.length > 1 && (
+                                                                    <span className="text-[10px] px-1 py-0.2 rounded bg-cyan-100 text-[#07b6d3] font-semibold">
+                                                                        +{mapped.materialBindings.length - 1}
+                                                                    </span>
+                                                                )}
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-neutral-400 italic">Unassigned</span>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-3 py-2">
+                                                        {mapped.isRemovable ? (
+                                                            <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-600 text-[10px] font-medium border border-amber-200">
+                                                                {mapped.togglePropertyKey || "Toggleable"}
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-neutral-400 text-[11px]">Fixed</span>
+                                                        )}
+                                                    </td>
+                                                </>
+                                            )}
                                             <td className="px-3 py-2">
                                                 {mapped.status === "idle" && <span className="text-amber-600 font-medium text-xs">Unsaved</span>}
                                                 {mapped.status === "processing" && (
@@ -1273,7 +1971,7 @@ export function StructuralComponentsSection({
                                                 )}
                                                 {mapped.status === "success" && (
                                                     <span className="flex items-center gap-1 text-green-600 text-xs">
-                                                        <CheckCircle className="size-3" /> Ready
+                                                        <CheckCircle className="size-3" /> Saved
                                                     </span>
                                                 )}
                                                 {mapped.status === "error" && (
@@ -1285,6 +1983,7 @@ export function StructuralComponentsSection({
                                             <td className="px-3 py-2 text-right">
                                                 <button
                                                     type="button"
+                                                    aria-label={`Remove ${mapped.componentName}`}
                                                     onClick={(e) => { e.stopPropagation(); removeMappedFile(mapped.id); }}
                                                     className="text-neutral-400 hover:text-red-500 transition-colors"
                                                 >
@@ -1300,7 +1999,10 @@ export function StructuralComponentsSection({
                 </div>
             )}
 
-            <div className="flex justify-end pt-6 mt-2 border-t border-neutral-200">
+            {removedFiles.length > 0 && <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{removedFiles.length} part(s) pending removal. <button type="button" onClick={() => { setMappedFiles(prev => [...prev, ...removedFiles]); setRemovedFiles([]); }} className="font-semibold underline">Undo removal</button></div>}
+            {saveError && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{saveError}</div>}
+            <div className="sticky bottom-0 z-20 flex items-center justify-between gap-3 bg-white/95 pt-4 pb-2 mt-2 border-t border-neutral-200 backdrop-blur-sm">
+                <span role="status" aria-live="polite" className="text-sm font-medium text-neutral-700">{saveState === "dirty" ? "Unsaved changes" : saveState === "saving" ? "Saving changes" : saveState === "saved" ? "Saved" : saveState === "error" ? "Save failed" : hasPendingChanges ? "Unsaved changes" : "No unsaved changes"}</span>
                 <button
                     type="button"
                     onClick={handleContinue}

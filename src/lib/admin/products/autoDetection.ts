@@ -5,8 +5,8 @@
  * Traceability Codes: PRD-F14, SDD-C9, DSD-UI10, ERD-E6
  */
 
-import type { DimensionBinding, PresentationCategory } from '@/lib/pricing/types';
-import type { ComponentType } from './componentMutations';
+import type { DimensionBinding, PresentationCategory, RawMaterial, DynamicBayRole } from "@/lib/pricing/types";
+import type { ComponentType, AccessoryCategory, AccessoryPositionOptions } from "./types";
 
 export interface AutoDetectionResult {
   dimensionBinding: DimensionBinding;
@@ -16,14 +16,338 @@ export interface AutoDetectionResult {
   presentationCategory: PresentationCategory;
   componentType: ComponentType;
   suggestedMaterialCategory: string;
+  isAccessorySlot?: boolean;
+  accessoryCategory?: AccessoryCategory | null;
+  positionOptions?: AccessoryPositionOptions;
+  bayRole?: DynamicBayRole;
+  componentLabel?: string;
+}
+
+export interface AutoDetectAccessorySlotResult {
+  isAccessorySlot: boolean;
+  accessoryCategory: AccessoryCategory;
+  presentationCategory: PresentationCategory;
+  dimensionBinding: DimensionBinding;
+  positionOptions: AccessoryPositionOptions;
+}
+
+/**
+ * Auto-detect swappable hardware accessory slot configuration from filename keywords.
+ * Maps hardware elements (handles, locks, rollers, hinges) to compatible accessory categories
+ * and canonical positional placement rules (Left vs Right on X axis, Bottom vs Up on Y axis).
+ * Upstream Specification: IMP-MS75 (PRD-F5, PRD-F14, SDD-C4, SDD-C9)
+ */
+export function autoDetectAccessorySlot(fileName: string): AutoDetectAccessorySlotResult | null {
+  const lower = fileName.toLowerCase();
+
+  // Drainage and weep hole covers are fixed hardware fixtures, not swappable accessory slots
+  if (lower.includes("weep") || lower.includes("hole_cover") || lower.includes("drainage")) {
+    return null;
+  }
+
+  // Handles & Knobs
+  if (/handle|doorknob|knob|lever|pull_bar|pullhandle/.test(lower)) {
+    const isPluralHandles = lower.includes("handles");
+    if (isPluralHandles && (lower.includes("cw_") || lower.includes("casement") || lower.includes("double_handle"))) {
+      return null;
+    }
+    return {
+      isAccessorySlot: true,
+      accessoryCategory: "handle",
+      presentationCategory: "Hardware",
+      dimensionBinding: "FIXED",
+      positionOptions: {
+        allowHorizontalToggle: !isPluralHandles,
+        defaultHorizontal: "right",
+        horizontalOffsetMm: 45,
+        allowVerticalToggle: false,
+        defaultVertical: "up",
+        verticalOffsetMm: 1000,
+      },
+    };
+  }
+
+  // Locks, Latches, Smart Locks
+  if (!lower.includes("stile") && !lower.includes("interlock") && /lock|latch|deadbolt|smartlock|electric_lock/.test(lower)) {
+    return {
+      isAccessorySlot: true,
+      accessoryCategory: "lock",
+      presentationCategory: "Hardware",
+      dimensionBinding: "FIXED",
+      positionOptions: {
+        allowHorizontalToggle: true,
+        defaultHorizontal: "right",
+        horizontalOffsetMm: 35,
+        allowVerticalToggle: true,
+        defaultVertical: "up",
+        verticalOffsetMm: 1000,
+      },
+    };
+  }
+
+  // Rollers & Guides
+  if (/roller|wheel|guide_wheel|track_roller/.test(lower)) {
+    if (lower.includes("rollers") || lower.includes("wheels") || lower.includes("guides")) {
+      return null;
+    }
+    return {
+      isAccessorySlot: true,
+      accessoryCategory: "roller",
+      presentationCategory: "Hardware",
+      dimensionBinding: "FIXED",
+      positionOptions: {
+        allowHorizontalToggle: false,
+        defaultHorizontal: "left",
+        horizontalOffsetMm: 0,
+        allowVerticalToggle: false,
+        defaultVertical: "bottom",
+        verticalOffsetMm: 15,
+      },
+    };
+  }
+
+  // Hinges & Pivots
+  if (/hinge|pivot/.test(lower)) {
+    if (lower.includes("hinges") || lower.includes("pivots")) {
+      return null;
+    }
+    return {
+      isAccessorySlot: true,
+      accessoryCategory: "hinge",
+      presentationCategory: "Hardware",
+      dimensionBinding: "FIXED",
+      positionOptions: {
+        allowHorizontalToggle: true,
+        defaultHorizontal: "left",
+        horizontalOffsetMm: 10,
+        allowVerticalToggle: true,
+        defaultVertical: "up",
+        verticalOffsetMm: 1000,
+      },
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Auto-detect modular bay role for structural components from filename keywords.
+ * Maps fenestration profiles to semantic bay roles for automated modular expansion (IMP-MS82).
+ * Traceability: PRD-F5, PRD-F14, SDD-C4, SDD-C9, ERD-E6, QAD-TC97.1
+ */
+export function autoDetectBayRole(fileName: string): DynamicBayRole | null {
+  const lower = fileName.toLowerCase().replace(/\.glb$/, "");
+
+  if (lower.includes("window_sill") || lower.includes("removable_sill")) {
+    return "REMOVABLE_SILL";
+  }
+  if (lower.includes("center") || lower.includes("mullion")) {
+    return "BAY_DIVIDER";
+  }
+  if (
+    lower.includes("jamb_left") ||
+    lower.includes("frame_left") ||
+    lower.includes("left_jamb") ||
+    lower.includes("left_frame") ||
+    (lower.includes("left") && (lower.includes("jamb") || lower.includes("frame") || lower.includes("stile")))
+  ) {
+    return "OUTER_JAMB_LEFT";
+  }
+  if (
+    lower.includes("jamb_right") ||
+    lower.includes("frame_right") ||
+    lower.includes("right_jamb") ||
+    lower.includes("right_frame") ||
+    (lower.includes("right") && (lower.includes("jamb") || lower.includes("frame") || lower.includes("stile")))
+  ) {
+    return "OUTER_JAMB_RIGHT";
+  }
+  if (
+    lower.includes("frame_top") ||
+    lower.includes("top_frame") ||
+    lower.includes("header") ||
+    lower.includes("head_track") ||
+    lower.includes("top_rail")
+  ) {
+    return "OUTER_HEAD";
+  }
+  if (
+    lower.includes("frame_bottom") ||
+    lower.includes("bottom_frame") ||
+    lower.includes("sill_rail") ||
+    lower.includes("bottom_rail") ||
+    (lower.includes("bottom") && (lower.includes("frame") || lower.includes("rail")))
+  ) {
+    return "OUTER_SILL";
+  }
+  if (
+    lower.includes("louver") ||
+    lower.includes("glass") ||
+    lower.includes("blade") ||
+    lower.includes("infill") ||
+    lower.includes("clips_and_glass")
+  ) {
+    return "BAY_INFILL";
+  }
+  if (
+    lower.includes("operator") ||
+    lower.includes("crank") ||
+    lower.includes("rotopers") ||
+    lower.includes("jw_operators")
+  ) {
+    return "BAY_HARDWARE";
+  }
+
+  return null;
 }
 
 /**
  * Parse GLB file name to automatically determine dimension binding, span ratio,
- * removable toggles, presentation categories, and suggested raw material categories.
+ * removable toggles, presentation categories, swappable accessory slots, and suggested materials.
  */
-export function autoDetectComponentSettings(fileName: string): AutoDetectionResult {
+function detectRawComponentSettings(fileName: string): AutoDetectionResult {
   const name = fileName.toLowerCase().replace(/\.glb$/, "");
+
+  // Swappable Hardware Accessory Slots (IMP-MS75)
+  const accessorySlot = autoDetectAccessorySlot(fileName);
+  if (accessorySlot) {
+    return {
+      dimensionBinding: accessorySlot.dimensionBinding,
+      spanRatio: 1.0,
+      isRemovable: false,
+      togglePropertyKey: null,
+      presentationCategory: accessorySlot.presentationCategory,
+      componentType: "Hardware",
+      suggestedMaterialCategory: "Hardware",
+      isAccessorySlot: true,
+      accessoryCategory: accessorySlot.accessoryCategory,
+      positionOptions: accessorySlot.positionOptions,
+    };
+  }
+
+  // Jalousie Louver Blades (IMP-MS81, PRD-F5, PRD-F14, QAD-TC96.3)
+  if (
+    name.includes("louver") ||
+    name.includes("jalousie") ||
+    name.includes("blade") ||
+    name.includes("clips_and_glass") ||
+    name.includes("louver_glass")
+  ) {
+    return {
+      dimensionBinding: "LOUVER_BLADE",
+      spanRatio: 1.0,
+      isRemovable: false,
+      togglePropertyKey: null,
+      presentationCategory: "Glazing",
+      componentType: "Glass",
+      suggestedMaterialCategory: "Glass",
+    };
+  }
+
+  // Jalousie Window Operators (IMP-MS81, PRD-F5, PRD-F14, QAD-TC96.3)
+  if (
+    name.includes("operator") ||
+    name.includes("rotopers") ||
+    name.includes("crank") ||
+    name.includes("jw_operators")
+  ) {
+    return {
+      dimensionBinding: "LOUVER_OPERATOR",
+      spanRatio: 1.0,
+      isRemovable: false,
+      togglePropertyKey: null,
+      presentationCategory: "Hardware",
+      componentType: "Hardware",
+      suggestedMaterialCategory: "Hardware",
+      isAccessorySlot: true,
+      accessoryCategory: "handle",
+    };
+  }
+
+  // Weep hole covers, drainage caps, and moisture plugs (PRD-F14, SDD-C9)
+  if (
+    name.includes("weep") ||
+    name.includes("hole_cover") ||
+    name.includes("holecover") ||
+    name.includes("drainage")
+  ) {
+    return {
+      dimensionBinding: "FIXED",
+      spanRatio: 1.0,
+      isRemovable: false,
+      togglePropertyKey: null,
+      presentationCategory: "Hardware",
+      componentType: "Hardware",
+      suggestedMaterialCategory: "Hardware",
+    };
+  }
+
+  // Weather seals, pile weatherstrips, gaskets, and acoustic draft seals (PRD-F14, SDD-C9)
+  if (
+    name.includes("weather_seal") ||
+    name.includes("weatherseal") ||
+    name.includes("wool_pile") ||
+    name.includes("woolpile") ||
+    name.includes("seal") ||
+    name.includes("gasket")
+  ) {
+    return {
+      dimensionBinding: "PERIMETER",
+      spanRatio: 1.0,
+      isRemovable: false,
+      togglePropertyKey: null,
+      presentationCategory: "Consumable",
+      componentType: "Hardware",
+      suggestedMaterialCategory: "Hardware",
+    };
+  }
+
+  // Grille middle bars, center infill, pickets, lattices, and louvers (IMP-MS72)
+  if (
+    name.includes("center_grille") ||
+    name.includes("middle_bars") ||
+    name.includes("grill_middle") ||
+    name.includes("grill_bars") ||
+    name.includes("grille_infill") ||
+    name.includes("picket") ||
+    name.includes("lattice") ||
+    (name.includes("grill") && !name.includes("frame") && !name.includes("jamb") && !name.includes("rail")) ||
+    (name.includes("grille") && !name.includes("frame") && !name.includes("jamb") && !name.includes("rail"))
+  ) {
+    return {
+      dimensionBinding: "GRILLE_LINEAR",
+      spanRatio: 1.0,
+      isRemovable: false,
+      togglePropertyKey: null,
+      presentationCategory: "Framing",
+      componentType: "Frame",
+      suggestedMaterialCategory: "Aluminum",
+    };
+  }
+
+  // Perimeter frames, tubular subframes, surrounds, and outer casings
+  if (
+    name.includes("perimeter") ||
+    name.includes("subframe") ||
+    name.includes("sub_frame") ||
+    name.includes("surround") ||
+    name.includes("tubular_frame") ||
+    name.includes("casing_frame") ||
+    name.includes("outer_casing") ||
+    name.includes("perimeter_tube") ||
+    name.includes("frame_perimeter") ||
+    (name.includes("outer_frame") && !name.includes("left") && !name.includes("right") && !name.includes("top") && !name.includes("bottom"))
+  ) {
+    return {
+      dimensionBinding: "PERIMETER",
+      spanRatio: 1.0,
+      isRemovable: false,
+      togglePropertyKey: null,
+      presentationCategory: "Framing",
+      componentType: "Frame",
+      suggestedMaterialCategory: "Aluminum",
+    };
+  }
 
   // 1. Sill profiles
   if (name.includes("sill") || name.includes("threshold") || name.includes("bottom_track") || name.includes("bottom_sliding_track")) {
@@ -56,11 +380,19 @@ export function autoDetectComponentSettings(fileName: string): AutoDetectionResu
     name.includes("left_panel") ||
     name.includes("right_panel") ||
     name.includes("side_panel") ||
+    name.includes("frame_left") ||
+    name.includes("left_frame") ||
+    name.includes("frame_right") ||
+    name.includes("right_frame") ||
     name.includes("jamb") ||
     name.includes("stile") ||
     name.includes("interlock") ||
     name.includes("lockstile") ||
-    name.includes("mullion")
+    name.includes("mullion") ||
+    name.includes("frame_center") ||
+    name.includes("center_frame") ||
+    name.includes("center_mullion") ||
+    name.includes("frame_middle")
   ) {
     return {
       dimensionBinding: "HEIGHT",
@@ -91,6 +423,10 @@ export function autoDetectComponentSettings(fileName: string): AutoDetectionResu
     name.includes("top_panel") ||
     name.includes("bottom_panel") ||
     name.includes("bottom_base") ||
+    name.includes("frame_top") ||
+    name.includes("top_frame") ||
+    name.includes("frame_bottom") ||
+    name.includes("bottom_frame") ||
     name.includes("head") ||
     name.includes("top_track") ||
     name.includes("top_sliding_track") ||
@@ -153,7 +489,34 @@ export function autoDetectComponentSettings(fileName: string): AutoDetectionResu
     };
   }
 
-  // 8. Mechanical hardware & wheels
+  // 9. Screen & insect wire mesh
+  if (name.includes("mesh") || name.includes("wire_mesh") || name.includes("screen_mesh") || (name.includes("screen") && !name.includes("door") && !name.includes("frame"))) {
+    return {
+      dimensionBinding: "AREA",
+      spanRatio: 1.0,
+      isRemovable: false,
+      togglePropertyKey: null,
+      presentationCategory: "Hardware",
+      componentType: "Hardware",
+      suggestedMaterialCategory: "Hardware",
+    };
+  }
+
+  // 8. Sash framing and perimeter leaves
+  if (name.includes("sash") && (name.includes("frame") || name.includes("leaf") || name.includes("profile"))) {
+    const isDouble = name.includes("left") || name.includes("right") || name.includes("2p") || name.includes("double");
+    return {
+      dimensionBinding: "AREA",
+      spanRatio: isDouble ? 0.5 : 1.0,
+      isRemovable: false,
+      togglePropertyKey: null,
+      presentationCategory: "Framing",
+      componentType: "Frame",
+      suggestedMaterialCategory: "Aluminum",
+    };
+  }
+
+  // 9. Mechanical hardware, friction stays & hinges
   if (
     name.includes("roller") ||
     name.includes("wheel") ||
@@ -163,7 +526,14 @@ export function autoDetectComponentSettings(fileName: string): AutoDetectionResu
     name.includes("guide") ||
     name.includes("cap") ||
     name.includes("screw") ||
-    name.includes("fastener")
+    name.includes("fastener") ||
+    name.includes("stay") ||
+    name.includes("friction") ||
+    name.includes("hinge") ||
+    name.includes("pivot") ||
+    name.includes("handle") ||
+    name.includes("lever") ||
+    name.includes("knob")
   ) {
     return {
       dimensionBinding: "FIXED",
@@ -185,5 +555,164 @@ export function autoDetectComponentSettings(fileName: string): AutoDetectionResu
     presentationCategory: "Framing",
     componentType: "Model",
     suggestedMaterialCategory: "Aluminum",
+  };
+}
+
+/**
+ * Parse GLB file name to automatically determine dimension binding, span ratio,
+ * removable toggles, presentation categories, swappable accessory slots, suggested materials,
+ * and semantic modular bay roles (IMP-MS82).
+ */
+export function autoDetectComponentSettings(fileName: string): AutoDetectionResult {
+  const result = detectRawComponentSettings(fileName);
+  const bayRole = autoDetectBayRole(fileName);
+  if (bayRole) {
+    result.bayRole = bayRole;
+    if (bayRole === "OUTER_SILL") {
+      result.componentLabel = "Bottom Frame Rail";
+      result.isRemovable = false;
+      result.togglePropertyKey = null;
+    } else if (bayRole === "REMOVABLE_SILL") {
+      result.componentLabel = "Projecting Exterior Sill";
+    }
+  }
+  return result;
+}
+
+export interface SuggestedCandidateMaterial {
+  rawMaterialId: string;
+  isDefault: boolean;
+  displayOrder: number;
+}
+
+export interface SuggestedMaterialConfig {
+  materialBindings: SuggestedCandidateMaterial[];
+  defaultRawMaterialId: string | null;
+}
+
+/** IMP-MS85 / PRD-F14 / QAD-TC100.6-7: descriptive taxonomy, never price-only classification. */
+export function isHeavyCommercialProfile(material: RawMaterial): boolean {
+  return material.category === "Aluminum" && material.billing_unit === "m" &&
+    /storefront|curtain.?wall|commercial|1[ -]?3\/4["”]?\s*[x×]\s*[34]/i.test(`${material.material_code} ${material.description}`);
+}
+
+export function isContinuousPerimeterRole(role?: DynamicBayRole | null): boolean {
+  return role === "OUTER_HEAD" || role === "OUTER_SILL" || role === "OUTER_JAMB_LEFT" || role === "OUTER_JAMB_RIGHT" || role === "REMOVABLE_SILL";
+}
+
+export interface MaterialSuggestionContext {
+  productName?: string | null;
+  productType?: string | null;
+  modelStrategy?: string | null;
+}
+
+function suitableProfiles(materials: RawMaterial[], context?: MaterialSuggestionContext): RawMaterial[] {
+  const family = `${context?.productType || ""} ${context?.productName || ""} ${context?.modelStrategy || ""}`;
+  let pattern: RegExp | null = null;
+  if (/storefront|curtain.?wall|transom|commercial/i.test(family)) {
+    return materials.filter(isHeavyCommercialProfile);
+  }
+  if (/jalousie|louver|screen/i.test(family)) pattern = /jalousie|louver|screen|1["”]?\s*[x×]\s*[12]["”]?/i;
+  else if (/sliding|798/i.test(family)) pattern = /798/;
+  else if (/casement|awning/i.test(family)) pattern = /(?:series[ -]?)?38\b|casement|awning/i;
+  else if (/cabinet|showcase|grille/i.test(family)) pattern = /cabinet|plinth|shelf|1["”]?\s*[x×]\s*[12]["”]?/i;
+  if (!pattern) return materials;
+  return materials.filter(material => !isHeavyCommercialProfile(material) && pattern.test(`${material.material_code} ${material.description}`));
+}
+
+/**
+ * Suggest standard multi-material candidate sets based on component classification
+ * and presentation category per IMP-MS64.
+ */
+export function suggestCandidateMaterials(
+  presentationCategory: PresentationCategory,
+  rawMaterials: RawMaterial[],
+  preferredFinish?: string,
+  dimensionBinding?: DimensionBinding,
+  context?: MaterialSuggestionContext,
+): SuggestedMaterialConfig {
+  if (!rawMaterials || rawMaterials.length === 0) {
+    return { materialBindings: [], defaultRawMaterialId: null };
+  }
+
+  let targetCategory: string;
+  switch (presentationCategory) {
+    case "Framing":
+      targetCategory = "Aluminum";
+      break;
+    case "Glazing":
+      targetCategory = "Glass";
+      break;
+    case "Hardware":
+      targetCategory = "Hardware";
+      break;
+    case "Consumable":
+      targetCategory = "Consumable";
+      break;
+    default:
+      targetCategory = "Aluminum";
+  }
+
+  let matches = rawMaterials.filter(
+    (m) => m.category.toLowerCase() === targetCategory.toLowerCase() && m.is_active !== false
+  );
+
+  if (matches.length === 0) {
+    return { materialBindings: [], defaultRawMaterialId: null };
+  }
+
+  if (presentationCategory === "Framing") {
+    matches = suitableProfiles(matches, context);
+    if (matches.length === 0) return { materialBindings: [], defaultRawMaterialId: null };
+  }
+
+  // Filter or prioritize per-piece ('pc') billing for louver blades and operators (IMP-MS81 Section 5.1)
+  if (dimensionBinding === "LOUVER_BLADE" || dimensionBinding === "LOUVER_OPERATOR") {
+    const pcMatches = matches.filter((m) => m.billing_unit === "pc");
+    if (pcMatches.length > 0) {
+      matches = [...pcMatches, ...matches.filter((m) => m.billing_unit !== "pc")];
+    }
+  }
+
+  // Determine default material index based on preferredFinish or standard conventions
+  let defaultIdx = 0;
+  if (preferredFinish) {
+    const prefIdx = matches.findIndex((m) =>
+      m.finish_type.toLowerCase().includes(preferredFinish.toLowerCase())
+    );
+    if (prefIdx >= 0) defaultIdx = prefIdx;
+  } else if (targetCategory === "Aluminum") {
+    // Prefer Analok or Powder Coated White as primary default
+    const analokIdx = matches.findIndex((m) =>
+      m.finish_type.toLowerCase().includes("analok")
+    );
+    if (analokIdx >= 0) {
+      defaultIdx = analokIdx;
+    } else {
+      const pcwIdx = matches.findIndex((m) =>
+        m.finish_type.toLowerCase().includes("powdercoatedwhite") ||
+        m.finish_type.toLowerCase().includes("white")
+      );
+      if (pcwIdx >= 0) defaultIdx = pcwIdx;
+    }
+  } else if (targetCategory === "Glass") {
+    // Prefer Clear glass as primary default
+    const clearIdx = matches.findIndex((m) =>
+      m.finish_type.toLowerCase().includes("clear")
+    );
+    if (clearIdx >= 0) defaultIdx = clearIdx;
+  }
+
+  const materialBindings: SuggestedCandidateMaterial[] = matches.map((m, idx) => ({
+    rawMaterialId: m.id,
+    isDefault: idx === defaultIdx,
+    displayOrder: idx,
+  }));
+
+  const defaultRawMaterialId = matches[defaultIdx]?.id || null;
+
+  return {
+    materialBindings,
+    defaultRawMaterialId,
   };
 }

@@ -48,10 +48,32 @@ export type UpsertRuleInput = {
 export async function upsertParametersAndRules(
     templateId: string,
     parameters: UpsertParameterInput[],
-    rules: UpsertRuleInput[]
+    rules: UpsertRuleInput[],
+    dynamicBayConfig?: import("@/lib/pricing/types").DynamicBayConfig | null
 ) {
     const adminCtx = await requirePermission("manage_products");
     const supabase = await createSupabaseServerClient();
+
+    // 0. Update dynamic bay config if specified
+    if (dynamicBayConfig !== undefined) {
+        await supabase
+            .from("product_templates")
+            .update({ dynamic_bay_config: dynamicBayConfig })
+            .eq("template_id", templateId);
+
+        const { data: tmpl } = await supabase
+            .from("product_templates")
+            .select("product_id")
+            .eq("template_id", templateId)
+            .single();
+
+        if (tmpl?.product_id) {
+            await supabase
+                .from("products")
+                .update({ dynamic_bay_config: dynamicBayConfig })
+                .eq("product_id", tmpl.product_id);
+        }
+    }
 
     // To ensure full synchronization, we will do a replacement strategy:
     // Delete existing parameters and rules for this template, then insert the new ones.

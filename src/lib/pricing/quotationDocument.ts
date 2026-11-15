@@ -1,7 +1,10 @@
 /** Canonical quotation document domain. Traceability: IMP-MS17, PRD-F10, PRD-F11, SDD-C7. */
 import { z } from "zod";
 import { MeasurementRecordSchema, StoredMeasurementRecordSchema } from "../visualization/measurementRecord";
-import type { CalculatedBOMResult, ItemizedProductQuotation } from "./types";
+import type { CalculatedBOMResult, ItemizedProductQuotation, GrilleLinearBOMResult } from "./types";
+import { consolidateBOMItems } from "./pricingEngine";
+import { calculateAddonBOM } from "./addonPricingEngine";
+import { calculateGrilleLinearBOM } from "./grillePricingEngine";
 
 const MONEY_MAX = 9_999_999_999.99;
 const money = z.number().finite().min(0).max(MONEY_MAX).refine(
@@ -26,7 +29,22 @@ export const QuotationDocumentGroupSchema = z.object({
   unit: required,
   unitPrice: money,
   subtotal: money,
+  componentSummary: z.string().optional(),
+  finishType: z.string().optional(),
 });
+
+export const SwappedAccessoryDocumentSchema = z.object({
+  slotComponentId: z.string().optional(),
+  slotCategory: z.string().optional(),
+  accessoryId: z.string(),
+  accessoryName: z.string(),
+  finish: z.string().optional(),
+  horizontalPosition: z.enum(["left", "right"]).optional(),
+  verticalPosition: z.enum(["bottom", "up"]).optional(),
+  unitPrice: money.optional(),
+  priceDelta: money.optional(),
+});
+export type SwappedAccessoryDocument = z.infer<typeof SwappedAccessoryDocumentSchema>;
 
 export const QuotationDocumentItemSchema = z.object({
   itemId: required,
@@ -52,6 +70,19 @@ export const QuotationDocumentItemSchema = z.object({
   calibrationProvenance: StoredMeasurementRecordSchema.nullable().optional(),
   calibrationMethod: z.string().nullable().optional(),
   calibrationConfidence: z.number().nullable().optional(),
+  selectedMaterials: z.record(z.string(), z.string()).optional(),
+  selectedAddon: z.enum(["none", "screen", "grill"]).optional(),
+  addonProductId: z.string().nullable().optional(),
+  addonName: z.string().nullable().optional(),
+  addonPrice: money.optional(),
+  baseUnitPrice: money.optional(),
+  addonAluminumFinish: z.string().optional(),
+  addonMountingSide: z.enum(["front", "back"]).optional(),
+  hatchCount: z.number().int().nonnegative().optional(),
+  hatchTargetKeys: z.array(z.string()).optional(),
+  grilleBOM: z.custom<GrilleLinearBOMResult>().nullable().optional(),
+  swappedAccessories: z.array(SwappedAccessoryDocumentSchema).optional(),
+  accessoryPriceDelta: money.optional(),
 }).superRefine((item, context) => {
   if (Math.round(item.unitPrice * item.quantity * 100) !== Math.round(item.calculatedSubtotal * 100)) {
     context.addIssue({ code: "custom", path: ["calculatedSubtotal"], message: "Item arithmetic mismatch" });
@@ -163,21 +194,30 @@ export type QuotationPricingView = {
   adminLaborCharge: number | null;
 };
 
-function groupsFromBom(bom: CalculatedBOMResult) {
-  const map = (groupName: string, rows: CalculatedBOMResult["framingItems"]) => rows.map((row) => ({
+export const SILL_OMISSION_NOTICE = "Bottom Sill Profile: Omitted for flush-floor threshold (Net Deduction Applied)";
+
+/** IMP-MS85 / SDD-C7: consolidate only within each material group. */
+export function groupsFromBom(bom: CalculatedBOMResult | undefined | null): z.infer<typeof QuotationDocumentGroupSchema>[] {
+  if (!bom) return [];
+  const map = (groupName: string, category: "Framing" | "Glazing" | "Hardware" | "Consumable", rows: CalculatedBOMResult["framingItems"]) => consolidateBOMItems(rows || [], category).map((row) => ({
     groupName,
     description: row.description,
-    quantity: row.quantity,
+    quantity: row.totalQuantity,
     unit: row.unit,
-    unitPrice: row.unit_price,
+    unitPrice: row.unitPrice,
     subtotal: row.subtotal,
+    finishType: row.finishType,
+    componentSummary: row.contributingComponents.map((part) => `${part.componentName} (${Number(part.subtotalQuantity.toFixed(4))} ${row.unit})`).join(", "),
   }));
   return [
-    ...map("Aluminum Framing", bom.framingItems),
-    ...map("Glass Infill", bom.glazingItems),
-    ...map("Hardware & Accessories", bom.hardwareItems),
-    ...map("Miscellaneous", bom.consumableItems),
-    { groupName: "Labor & Installation", description: "Shop floor labor", quantity: 1, unit: "lot", unitPrice: bom.fabricationLaborCost, subtotal: bom.fabricationLaborCost },
+    ...map("Aluminum Framing", "Framing", bom.framingItems),
+    ...map("Glass Infill", "Glazing", bom.glazingItems),
+    ...map("Hardware & Accessories", "Hardware", bom.hardwareItems),
+    ...map("Miscellaneous", "Consumable", bom.consumableItems),
+    { groupName: "Material Allowances", description: "Aluminum offcut allowance", quantity: 1, unit: "lot", unitPrice: bom.scrapFramingSubtotal, subtotal: bom.scrapFramingSubtotal },
+    { groupName: "Material Allowances", description: "Glass handling scrap allowance", quantity: 1, unit: "lot", unitPrice: bom.scrapGlazingSubtotal, subtotal: bom.scrapGlazingSubtotal },
+    { groupName: "Contractor Margin", description: "Contractor margin", quantity: 1, unit: "lot", unitPrice: bom.contractorMargin, subtotal: bom.contractorMargin },
+    { groupName: "Labor & Installation", description: "Shop floor labor", quantity: 1, unit: "lot", unitPrice: bom.fabricationLaborCost ?? 0, subtotal: bom.fabricationLaborCost ?? 0 },
   ];
 }
 
@@ -185,37 +225,124 @@ export function createQuotationDocumentSnapshotV1(input: {
   customer: QuotationDocumentDraftV1["customer"];
   projectName: string;
   items: ItemizedProductQuotation[];
-  fallbackBom: CalculatedBOMResult;
+  fallbackBom?: CalculatedBOMResult;
   hasSill: boolean;
   structuralWaiver: boolean;
   adminLaborCharge?: number | null;
 }): QuotationDocumentDraftV1 {
-  const sourceItems = input.items.length > 0 ? input.items : [{
+  const fallbackItem: ItemizedProductQuotation | null = input.fallbackBom ? {
     itemId: "primary-item", productId: "", productName: input.projectName, productType: "Window & Door",
     variantName: `${input.fallbackBom.panelCount}-Panel Configuration`, specSummary: `${input.fallbackBom.finishType} | ${input.fallbackBom.widthM * 100}cm × ${input.fallbackBom.heightM * 100}cm`,
     dimensionsFormatted: `${input.fallbackBom.widthM * 100}cm × ${input.fallbackBom.heightM * 100}cm`, widthMm: input.fallbackBom.widthM * 1000,
     heightMm: input.fallbackBom.heightM * 1000, panelCount: input.fallbackBom.panelCount, hasSill: input.hasSill,
     structuralWaiver: input.structuralWaiver, finishType: input.fallbackBom.finishType, glassType: input.fallbackBom.glassType,
     quantity: 1, unitPrice: input.fallbackBom.finalQuotation, totalPrice: input.fallbackBom.finalQuotation, imageUrl: "", bomResult: input.fallbackBom,
-  }];
-  const items = sourceItems.map((item) => ({
-    itemId: item.itemId, productId: item.productId || null, productName: item.productName,
-    productType: item.productType, variantName: item.variantName, specificationSummary: item.specSummary,
-    dimensionsFormatted: item.dimensionsFormatted, widthMm: item.widthMm, heightMm: item.heightMm,
-    panelCount: item.panelCount, hasSill: item.hasSill, structuralWaiver: item.structuralWaiver,
-    finishLabel: item.finishType, glassLabel: item.glassType, quantity: item.quantity, unitPrice: item.unitPrice,
-    calculatedSubtotal: item.totalPrice, imageSource: item.imageUrl || null, groups: groupsFromBom(item.bomResult),
-    dimensionSource: item.dimensionSource,
-    calibrationProvenance: item.calibrationProvenance,
-    calibrationMethod: item.calibrationMethod,
-    calibrationConfidence: item.calibrationConfidence,
-  }));
-  const pricing = sourceItems.reduce((totals, item) => ({
-    directMaterialsSubtotal: totals.directMaterialsSubtotal + item.bomResult.directMaterialsSubtotal * item.quantity,
-    laborSubtotal: totals.laborSubtotal + item.bomResult.fabricationLaborCost * item.quantity,
-    contractorMargin: totals.contractorMargin + item.bomResult.contractorMargin * item.quantity,
-    calculatedFinalPrice: totals.calculatedFinalPrice + item.totalPrice,
-  }), { directMaterialsSubtotal: 0, laborSubtotal: 0, contractorMargin: 0, calculatedFinalPrice: 0 });
+  } : null;
+  const sourceItems: ItemizedProductQuotation[] = input.items.length > 0 ? input.items : fallbackItem ? [fallbackItem] : [];
+  const items = sourceItems.map((item) => {
+    const itemGroups = groupsFromBom(item.bomResult);
+    if (item.selectedAddon && item.selectedAddon !== "none" && (item.addonPrice ?? 0) > 0) {
+      itemGroups.push({
+        groupName: "Hardware & Accessories",
+        description: item.addonName ?? (item.selectedAddon === "screen" ? "Extruded Aluminum Insect Screen" : "Architectural Security Window Grille"),
+        quantity: 1,
+        unit: "set",
+        unitPrice: item.addonPrice ?? 0,
+        subtotal: item.addonPrice ?? 0,
+      });
+    }
+
+    return {
+      itemId: item.itemId, productId: item.productId || null, productName: item.productName,
+      productType: item.productType, variantName: item.variantName, specificationSummary: item.specSummary,
+      dimensionsFormatted: item.dimensionsFormatted, widthMm: item.widthMm, heightMm: item.heightMm,
+      panelCount: item.panelCount, hasSill: item.hasSill, structuralWaiver: item.structuralWaiver,
+      finishLabel: item.finishType, glassLabel: item.glassType, quantity: item.quantity, unitPrice: item.unitPrice,
+      calculatedSubtotal: item.totalPrice, imageSource: item.imageUrl || null, groups: itemGroups,
+      dimensionSource: item.dimensionSource,
+      calibrationProvenance: item.calibrationProvenance,
+      calibrationMethod: item.calibrationMethod,
+      calibrationConfidence: item.calibrationConfidence,
+      selectedMaterials: item.selectedMaterials,
+      selectedAddon: item.selectedAddon,
+      addonProductId: item.addonProductId,
+      addonName: item.addonName,
+      addonPrice: item.addonPrice,
+      baseUnitPrice: item.baseUnitPrice,
+      addonAluminumFinish: item.addonAluminumFinish,
+      addonMountingSide: item.addonMountingSide,
+      hatchCount: item.hatchCount,
+      hatchTargetKeys: item.hatchTargetKeys,
+      grilleBOM: item.grilleBOM,
+      swappedAccessories: item.swappedAccessories
+        ? (Array.isArray(item.swappedAccessories)
+            ? item.swappedAccessories
+            : Object.values(item.swappedAccessories).map((acc) => ({
+                slotComponentId: acc.slotComponentId,
+                slotCategory: acc.category,
+                accessoryId: acc.accessoryId,
+                accessoryName: acc.accessoryName,
+                finish: acc.finish,
+                horizontalPosition: acc.horizontalPosition,
+                verticalPosition: acc.verticalPosition,
+                unitPrice: acc.price,
+                priceDelta: acc.priceDelta ?? 0,
+              })))
+        : [],
+      accessoryPriceDelta: item.accessoryPriceDelta ?? 0,
+    };
+  });
+  const pricing = sourceItems.reduce((totals, item) => {
+    const isGrille = item.selectedAddon === "grill";
+    const resolvedGrilleBOM = isGrille
+      ? (item.grilleBOM ?? calculateGrilleLinearBOM({
+          widthMm: item.widthMm,
+          heightMm: item.heightMm,
+          patternType: "staggered_brick",
+          openingCount: item.hatchCount,
+          openingTargetKeys: item.hatchTargetKeys,
+          grilleRawMaterial: {
+            id: "doc-grille-mat",
+            material_code: "AL-GRILLE-TUBE-16MM",
+            description: "16mm Square Tube Aluminum",
+            unit_price: (item.addonAluminumFinish || "").toLowerCase().includes("white") ? 180 : 160,
+            waste_allowance: 0.12,
+          },
+          includePerimeterFrame: true,
+        }))
+      : null;
+
+    const resolvedAddonBOM = !isGrille && item.selectedAddon && item.selectedAddon !== "none"
+      ? (item.addonBOM ?? calculateAddonBOM({
+          addonType: item.selectedAddon,
+          widthMm: item.widthMm,
+          heightMm: item.heightMm,
+        }))
+      : null;
+
+    const addonMat = resolvedGrilleBOM
+      ? resolvedGrilleBOM.directMaterialCost
+      : resolvedAddonBOM
+        ? resolvedAddonBOM.directMaterialCost
+        : 0;
+    const addonLabor = resolvedGrilleBOM
+      ? resolvedGrilleBOM.laborCost
+      : resolvedAddonBOM
+        ? resolvedAddonBOM.laborCost
+        : 0;
+    const addonMargin = resolvedGrilleBOM
+      ? resolvedGrilleBOM.contractorMargin
+      : resolvedAddonBOM
+        ? resolvedAddonBOM.contractorMargin
+        : 0;
+
+    return {
+      directMaterialsSubtotal: totals.directMaterialsSubtotal + (item.bomResult.directMaterialsSubtotal + addonMat) * item.quantity,
+      laborSubtotal: totals.laborSubtotal + (item.bomResult.fabricationLaborCost + addonLabor) * item.quantity,
+      contractorMargin: totals.contractorMargin + (item.bomResult.contractorMargin + addonMargin) * item.quantity,
+      calculatedFinalPrice: totals.calculatedFinalPrice + item.totalPrice,
+    };
+  }, { directMaterialsSubtotal: 0, laborSubtotal: 0, contractorMargin: 0, calculatedFinalPrice: 0 });
   return QuotationDocumentDraftV1Schema.parse({ schemaVersion: 1, customer: input.customer, projectName: input.projectName, hasSill: input.hasSill, structuralWaiver: input.structuralWaiver, items, pricing });
 }
 
@@ -360,6 +487,12 @@ export function reconstructLegacyQuotationDocument(input: {
     const calculatedSubtotal = Math.round(unitPrice * quantity * 100) / 100;
     const widthMm = Math.max(1, Number(details.width_mm) || (Number(details.width_m) ? Number(details.width_m) * 1000 : 1));
     const heightMm = Math.max(1, Number(details.height_mm) || (Number(details.height_m) ? Number(details.height_m) * 1000 : 1));
+    const swappedAccessories = Array.isArray(details.swapped_accessories)
+      ? details.swapped_accessories.flatMap((entry) => {
+          const parsed = SwappedAccessoryDocumentSchema.safeParse(entry);
+          return parsed.success ? [parsed.data] : [];
+        })
+      : [];
     return {
       itemId,
       productId: typeof details.product_id === "string" ? details.product_id : null,
@@ -381,6 +514,11 @@ export function reconstructLegacyQuotationDocument(input: {
       unitPrice,
       calculatedSubtotal,
       imageSource: typeof details.image_url === "string" ? details.image_url : null,
+      selectedMaterials: (details.selected_materials && typeof details.selected_materials === "object") ? (details.selected_materials as Record<string, string>) : undefined,
+      swappedAccessories,
+      accessoryPriceDelta: typeof details.accessory_price_delta === "number" && details.accessory_price_delta >= 0
+        ? details.accessory_price_delta
+        : 0,
       groups: rows.map((row) => ({
         groupName: String(row.item_group_name || row.item_name || "Component Group"),
         description: String(row.item_name || "Component Description"),
