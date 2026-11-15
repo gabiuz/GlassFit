@@ -541,7 +541,7 @@ const DEFAULT_SCHEDULES: OperatingScheduleRange[] = [
 const DEFAULT_PREFERENCES: SystemPreferencesInput = {
     businessName: "GlassFit",
     contactEmail: "glassfit@gmail.com",
-    contactPhone: "+63 917 123 4567",
+    contactPhone: "+63 905 325 8970",
     schedules: DEFAULT_SCHEDULES,
 };
 
@@ -746,7 +746,7 @@ function SystemPreferencesCard({
                     <InputField
                         value={currentData.contactPhone}
                         onChange={updateDraftField("contactPhone")}
-                        placeholder="+63 917 123 4567"
+                        placeholder="+63 905 325 8970"
                         disabled={!isEditing || !isOwner}
                     />
                 </FormRow>

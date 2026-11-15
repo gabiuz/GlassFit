@@ -122,6 +122,8 @@ The main unknowns are the Viber URI supported by the target devices and business
 
 The source changes for #174 through #176, #167, and #168 are implemented. Viber now uses a separate message within its 200-character share limit, with the quotation number, amount, and complete signed link preserved. The compact editor uses contain-fit photo rendering, Quick Actions stack inside the tablet dashboard column, no-glass pricing follows the bound material category, and Step 1 shows readable quotation metadata from the actual product. The booking information card also uses flexible columns to keep warranty text inside its card.
 
+fix-21 supersedes the Viber forward handoff described above. The current booking link addresses the business number through Viber's documented `viber.me/639053258970?draft=` format and carries the complete consultation message. The existing copy control remains available if Viber or its draft does not open. Android and iOS destination behavior still requires physical-device acceptance.
+
 Focused booking and pricing tests, TypeScript, targeted lint, and the production build passed during implementation. Repository-wide lint remains blocked by existing React effect errors in `AdminLoginForm.tsx` and `MobileBottomSheet.tsx`. Physical Android and iOS Viber launch, authenticated viewport checks, and the reported product's live catalog binding still need manual verification.
 
 ## Self-Check

@@ -275,7 +275,7 @@ export const PRIVACY_SECTIONS: PrivacySectionItem[] = [
         value: "glassfit.work@gmail.com",
         href: "mailto:glassfit.work@gmail.com",
       },
-      { label: "Contact Number:", value: "0918-601-4737" },
+      { label: "Contact Number:", value: "0905-325-8970" },
       {
         label: "Business Address:",
         value: "3 Sta. Fe, Parañaque City, Metro Manila, Philippines",
@@ -304,7 +304,7 @@ export const PRIVACY_SECTIONS: PrivacySectionItem[] = [
         value: "glassfit.work@gmail.com",
         href: "mailto:glassfit.work@gmail.com",
       },
-      { label: "Contact Number:", value: "0918-601-4737" },
+      { label: "Contact Number:", value: "0905-325-8970" },
       {
         label: "Business Address:",
         value: "3 Sta. Fe, Parañaque City, Metro Manila, Philippines",
