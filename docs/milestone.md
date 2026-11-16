@@ -616,3 +616,7 @@ Implemented November 2, 2026 under PRD-F10, PRD-F14, PRD-F19, SDD-C7, SDD-C9 and
 ## MS88: Post-Fit Product Facing
 
 **Status:** Implemented (November 3, 2026); production asset and full-scene acceptance pending. **Specification:** [IMP-MS88](implementation/ms88.md). **Traceability:** PRD-F5, PRD-F6, PRD-F9; SDD-C4, SDD-C5, SDD-C6; DSD-UI4; ERD-E10, ERD-E11; QAD-TC103.1 through QAD-TC103.12. Implementation and verification evidence is maintained in the specification.
+
+## MS89: Context-Aware Visualization Onboarding and First Placement Guidance
+
+**Status:** Implemented (November 16, 2026); automated unit tests (`npm run test:ms89`, 20/20 passing), related regression suites, `npm run lint`, `npx tsc --noEmit`, `npm run build`, and CV health check passed. Live browser/mobile-device, screen-reader, live-catalog asset, and first-time-user usability acceptance remain pending. **Plan:** [IMP-MS89](implementation/ms89.md). **Traceability:** BRD-M4; PRD-F3, PRD-F6; SDD-C2, SDD-C5; DSD-UI3, DSD-UI4. **Acceptance:** QAD-TC104.1 through QAD-TC104.14. Covers both entry paths, paper preparation/review popup tour, workspace desktop/mobile popup tour, bounded Cabinet Fit correction, shared capability policy, stable image/product-instance guide continuity, preview acceptance, skip/opt-out/restart, and mobile ergonomics.

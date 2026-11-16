@@ -5,7 +5,7 @@
 **Version:** 1.0 (Capstone Production Release)  
 **Owner:** Reynard John B. Rabanal (Lead Product / Systems Architect) & GlassFit Capstone Team (PUP CCIS)  
 **Status:** Locked  
-**Last reconciled:** October 28, 2026 (Registered planned IMP-MS79 admin Components workspace usability milestone)
+**Last reconciled:** November 16, 2026 (Implemented IMP-MS89 Work Packages 1 through 5; automated unit, lint, typecheck, build, and CV health passed; live browser/device and usability acceptance pending)
 
 ---
 
@@ -66,6 +66,7 @@ GlassFit is a responsive, web-based photo-simulation and consultation-support pl
 | IMP-MS82 | Smart Dynamic Modular Bay Replication, Directional Aperture Expansion, and Automated Infill and Hardware Generation | `docs/implementation/ms82.md` | Implemented | October 29, 2026 | GlassFit Capstone Team |
 
 | IMP-MS88 | Post-Fit Front (Exterior) and Back (Interior) Product Facing | `docs/implementation/ms88.md` | Implemented; production asset acceptance pending | November 3, 2026 | GlassFit Capstone Team |
+| IMP-MS89 | Context-Aware Visualization Onboarding and First Placement Guidance | `docs/implementation/ms89.md` | Implemented; automated checks passed, browser/device & usability acceptance pending | November 16, 2026 | GlassFit Capstone Team |
 
 ---
 
@@ -73,6 +74,7 @@ GlassFit is a responsive, web-based photo-simulation and consultation-support pl
 
 | Business Metric (`BRD-M#`) | Product Feature (`PRD-F#`) | System Component (`SDD-C#`) | Data Entity (`ERD-E#`) | Test Case (`QAD-TC#`) | Status |
 |---|---|---|---|---|---|
+| BRD-M4 | PRD-F3, PRD-F6; preserves PRD-F5/F9/F10/F15/F16 | SDD-C2, SDD-C5; preserves SDD-C4/C6/C7 | ERD-E10, ERD-E11 preserved; no schema change or onboarding data in database | QAD-TC104.1 through QAD-TC104.14 | Implemented (`npm run test:ms89` passing); live browser/device and usability acceptance pending |
 | BRD-M1, BRD-M5 | PRD-F3, PRD-F4, PRD-F5, PRD-F6, PRD-F10 | SDD-C2, SDD-C3, SDD-C4, SDD-C5 | No schema change; existing session state and immutable quotation snapshots retained | QAD-TC77.1 through QAD-TC77.12 | IMP-MS62 implemented; browser acceptance pending |
 | BRD-M1, BRD-M4, BRD-M6 (Mobile Intake Resilience & Latency) | PRD-F3, PRD-F4, PRD-F10 | SDD-C2, SDD-C3 | N/A (Client Blob Buffering & Temporary Session Files) | QAD-TC78.1 through QAD-TC78.8 | Implemented |
 | BRD-M1 (Compress Intake Duration) | PRD-F13 (Signed Booking Link & Messaging Handoff) | SDD-C8 (Signed Booking Link & Messaging Handoff) | ERD-E15 (signed_booking_links), ERD-E16 (booking_requests) | QAD-TC13 | Verified |

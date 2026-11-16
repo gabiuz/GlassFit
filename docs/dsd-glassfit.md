@@ -5,7 +5,7 @@
 **Version:** 1.0 (Capstone Production Release)  
 **Owner:** Gianne Crizzle A. Dasco (Design & Frontend Lead) & GlassFit Capstone Team (PUP CCIS)  
 **Status:** Locked  
-**Last reconciled:** October 1, 2026 (Added DSD-UI16 quotation document preview and print surface)
+**Last reconciled:** November 16, 2026 (Implemented IMP-MS89 Work Packages 1 through 5; automated unit, lint, typecheck, build, and CV health passed; live browser/device and usability acceptance pending)
 **PRD:** docs/prd-glassfit.md
 
 ---
@@ -193,3 +193,13 @@ DSD-UI3 (fix-14 follow-up): Confirmed non-space images say that the upload is no
 ## IMP-MS88: Post-Fit Product Facing
 
 DSD-UI4: After Fit, Placement contains Product Facing with Front (Exterior) and Back (Interior) and the hint "Choose the side of the product visible in your photo." Reuse segmented selection styling, native keyboard controls, visible focus and 44px touch targets on mobile. See [MS88](implementation/ms88.md), QAD-TC103.1 through QAD-TC103.12.
+
+## IMP-MS89: First Placement Guidance
+
+**Status:** Implemented (November 16, 2026); automated unit, lint, typecheck, production build, and CV health passed; live browser/device and first-time usability acceptance pending. See [MS89](implementation/ms89.md), QAD-TC104.1 through QAD-TC104.14.
+
+DSD-UI3 and DSD-UI4: Reuse existing components, layout conventions, tokens, guideline imagery, and dialogs. Keep the existing `CalibrationModeSelector`, `UploadImage`, and `GuideLine` pre-upload flow without an extra pre-upload popup tour; after uploading in Paper Reference mode, provide a first-time step-by-step Paper Calibration Review popup tour over a darkened backdrop (`bg-black/60 backdrop-blur-xs`) inside `PaperDetectionConfirmationModal`. Retain required paper review controls even when optional tours are skipped or opted out. Preserve the current ImageSuccessModal and keep automatic mode paper-free.
+
+On desktop, present the active workspace step inside a darkened-backdrop popup tour card near the workflow. Prioritize Add Product in the empty state, then Fit for eligible products or canvas movement/resize for free placement. Provide Place manually as an optional guide branch without automatically clearing fitted geometry. Confirm Fit advances to the final tour step; Next advances intermediate tour steps and Got it completes the tour. Post-fit facing and finishes remain optional. Keep advanced controls available without requiring a tour.
+
+Expose Skip (current run), Don't show again (persistent opt-out), and Help/Restart guide with keyboard and touch support. Pause teaching cues for loading, errors, and modal ownership. On mobile, use visible fullscreen-editor controls with a compact bottom-sheet/docked tour over a darkened backdrop; Controls leads to Placement, and Done only exits fullscreen editing. Continue to Comparison remains the existing downstream action with measurement checks. Preserve focus, readable announcements, reduced motion, touch targets, and unobstructed canvas gestures. Missing anchors fall back to readable popup/sheet instructions. Guide UI must never appear in snapshots or exports.

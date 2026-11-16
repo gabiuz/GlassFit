@@ -16,6 +16,7 @@ import {
 } from "@/features/visualization";
 import { analyzeImage, SpacePhotoError, type SpaceImageSession, type UploadProgressStage } from "@/lib/imageApi";
 import { useVisualizationSession } from "@/lib/visualization/visualizationSession";
+import { useOptionalVisualizationOnboarding } from "../onboarding/VisualizationOnboardingProvider";
 import {
   type CalibrationMode,
   type FiducialPaperStandard,
@@ -36,6 +37,7 @@ export function ProductAwareUploadPage({
   const requestIdRef = useRef(0);
   const analysisControllerRef = useRef<AbortController | null>(null);
   const { setPreparedSpaceImage, clearPendingProductConfiguration } = useVisualizationSession();
+  const onboarding = useOptionalVisualizationOnboarding();
   const [pendingSession, setPendingSession] = useState<SpaceImageSession | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [status, setStatus] = useState<UploadStatus>("idle");
@@ -62,6 +64,7 @@ export function ProductAwareUploadPage({
     setRetryAttempt(0);
     setErrorMessage(null);
     setPhotoErrorCode(null);
+    onboarding?.resetForFreshImage(null);
 
     try {
       const session = await analyzeImage(file, {
@@ -80,6 +83,7 @@ export function ProductAwareUploadPage({
         return;
       }
 
+      onboarding?.syncImageSession(session.sessionId);
       setPendingSession(session);
       setStatus("ready");
     } catch (error) {
@@ -100,6 +104,7 @@ export function ProductAwareUploadPage({
   const handlePlaceProduct = () => {
     if (!pendingSession) return;
 
+    onboarding?.reserveFirstProductHandoff(pendingSession.sessionId, product.productId);
     setPreparedSpaceImage(product.productId, pendingSession);
     router.push(`/visualize/${product.productId}/workspace`);
   };
@@ -112,6 +117,7 @@ export function ProductAwareUploadPage({
     if (!pendingSession) return;
     const updatedSession = confirmPaperReference(pendingSession, corners, result, paperStd);
 
+    onboarding?.reserveFirstProductHandoff(updatedSession.sessionId, product.productId);
     setPreparedSpaceImage(product.productId, updatedSession);
     router.push(`/visualize/${product.productId}/workspace`);
   };
@@ -120,6 +126,7 @@ export function ProductAwareUploadPage({
     if (!pendingSession) return;
     const fallbackSession = skipPaperReference(pendingSession, review);
 
+    onboarding?.reserveFirstProductHandoff(fallbackSession.sessionId, product.productId);
     setPreparedSpaceImage(product.productId, fallbackSession);
     router.push(`/visualize/${product.productId}/workspace`);
   };
@@ -133,6 +140,7 @@ export function ProductAwareUploadPage({
     setStatus("idle");
     setErrorMessage(null);
     setPhotoErrorCode(null);
+    onboarding?.resetForFreshImage(null);
   };
 
   const handleTryAgain = () => {

@@ -19,7 +19,7 @@ import {
   useMotionValue,
   useReducedMotion,
 } from "motion/react";
-import { ChevronDown, RotateCw, FlipHorizontal, RotateCcw, Trash2, MousePointer2, Maximize, Move, Minus, Plus, CheckCircle2, Info, Lock, ShieldCheck } from "lucide-react";
+import { ChevronDown, RotateCw, FlipHorizontal, RotateCcw, Trash2, MousePointer2, Maximize, Move, Minus, Plus, CheckCircle2, Info, Lock, ShieldCheck, HelpCircle } from "lucide-react";
 import Button from "@/components/shared/Button";
 import { cn } from "@/lib/utils";
 import { AddProductModal } from "./AddProductModal";
@@ -141,6 +141,14 @@ import type {
   Point2D,
   ScaleEstimationSignal,
 } from "@/lib/visualization/types";
+import {
+  CABINET_FREE_PLACEMENT_NOTICE,
+  resolveWorkspaceProductCapabilities,
+} from "@/lib/visualization/workspaceCapabilities";
+import { useOptionalVisualizationOnboarding } from "../onboarding/VisualizationOnboardingProvider";
+import { resolveNextGuideAction } from "../onboarding/resolver";
+import { WorkspaceOnboardingTour } from "../onboarding/WorkspaceOnboardingTour";
+import type { ActiveBlockingModal, GuideActionAttempt } from "../onboarding/types";
 import {
   useOptionalVisualizationSession,
   type CalibrationMetadata,
@@ -776,6 +784,11 @@ export function ProductModelWorkspace({
 
   // Fiducial Paper Calibration and Grounded Scale State (IMP-MS47, IMP-MS49)
   const sessionContext = useOptionalVisualizationSession();
+  const onboarding = useOptionalVisualizationOnboarding();
+  const fitAttemptRef = useRef<GuideActionAttempt | null>(null);
+  const isWorkspaceTourVisibleRef = useRef(false);
+  const isFreePlacementStepRef = useRef(false);
+  const isBlockingModalOpenRef = useRef(false);
   const commitSessionCalibration = onCalibrationChange ?? sessionContext?.updateSessionCalibration;
 
   const [activeScaleSignal, setActiveScaleSignal] = useState<ScaleEstimationSignal | null>(() => {
@@ -977,10 +990,18 @@ export function ProductModelWorkspace({
     if (!shouldLockMobileEditor) return;
     mobileDialogRef.current?.focus();
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !showPerspectivePicker && !showOcclusionPointPicker && !isMeasurementModalOpen && !isGuardrailModalOpen) {
+      if (
+        event.key === "Escape" &&
+        !isWorkspaceTourVisibleRef.current &&
+        !isBlockingModalOpenRef.current &&
+        !showPerspectivePicker &&
+        !showOcclusionPointPicker &&
+        !isMeasurementModalOpen &&
+        !isGuardrailModalOpen
+      ) {
         closeMobileEditor();
       }
-      if (event.key === "Tab" && !showPerspectivePicker && !showOcclusionPointPicker && !isMeasurementModalOpen && !isGuardrailModalOpen) {
+      if (event.key === "Tab" && !isWorkspaceTourVisibleRef.current && !showPerspectivePicker && !showOcclusionPointPicker && !isMeasurementModalOpen && !isGuardrailModalOpen) {
         const dialog = mobileDialogRef.current;
         if (!dialog) return;
         const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(
@@ -1047,6 +1068,7 @@ export function ProductModelWorkspace({
 
   const [modalTitle, setModalTitle] = useState("Add Product");
   const [productBuildError, setProductBuildError] = useState<string | null>(null);
+  const [isModelBuilding, setIsModelBuilding] = useState(false);
   const initialOverlaySize = useMemo(() => {
     const wStr = initialConfiguration?.widthCm
       ? String(initialConfiguration.widthCm)
@@ -1841,7 +1863,158 @@ export function ProductModelWorkspace({
     },
     [applyWorkspacePresentation],
   );
-  const supportsPerspectivePlane = isWindowProduct || isDoorProduct;
+  const workspaceCapabilities = useMemo(
+    () =>
+      resolveWorkspaceProductCapabilities({
+        structuralDefinition,
+        selectedProductName,
+        isDefinitionLoading: Boolean(selectedProduct && !structuralDefinition) || isModelBuilding,
+        hasDefinitionError: Boolean(productBuildError),
+      }),
+    [
+      isModelBuilding,
+      productBuildError,
+      selectedProduct,
+      selectedProductName,
+      structuralDefinition,
+    ],
+  );
+  const supportsPerspectivePlane = workspaceCapabilities.supportsPerspectivePlane;
+
+  const handleOpenPerspectivePicker = useCallback(() => {
+    if (!supportsPerspectivePlane) return;
+    fitAttemptRef.current =
+      onboarding?.beginActionAttempt(
+        "fit_opening",
+        onboarding.activeGuideInstanceId,
+      ) ?? null;
+    setShowPerspectivePicker(true);
+  }, [onboarding, supportsPerspectivePlane]);
+
+  const handleCancelPerspectivePicker = useCallback(() => {
+    if (fitAttemptRef.current) {
+      onboarding?.cancelActionAttempt(fitAttemptRef.current.attemptId);
+      fitAttemptRef.current = null;
+    }
+    setShowPerspectivePicker(false);
+  }, [onboarding]);
+
+  const handleSwitchToFreePlace = useCallback(() => {
+    setMeasurementCorners(null);
+    setPerspectiveCorners(null);
+    setModelRevision((prev) => prev + 1);
+  }, []);
+
+  const currentResolvedProductId = selectedProduct
+    ? currentProductId ?? structuralDefinition?.product.productId ?? null
+    : null;
+  const currentOnboardingImageId =
+    spaceImageSession?.sessionId ?? sessionContext?.spaceImageSession?.sessionId ?? null;
+
+  useEffect(() => {
+    if (!onboarding) return;
+    onboarding.adoptWorkspaceProduct({
+      imageId: currentOnboardingImageId,
+      productId: currentResolvedProductId,
+      activeOverlayId: selectedProduct ? activeOverlayId : null,
+    });
+  }, [
+    activeOverlayId,
+    currentOnboardingImageId,
+    currentResolvedProductId,
+    onboarding,
+    selectedProduct,
+  ]);
+
+  const activeBlockingModal: ActiveBlockingModal = showPaperPinPicker
+    ? "paper_review"
+    : isAddModalOpen
+      ? "add_product"
+      : showPerspectivePicker
+        ? "perspective_picker"
+        : isMeasurementModalOpen
+          ? "measurement"
+          : isGuardrailModalOpen
+            ? "guardrail"
+            : showOcclusionPointPicker
+              ? "occlusion"
+              : isMobileFinishesSheetOpen
+                ? "finishes_sheet"
+                : "none";
+
+  const workspaceGuideResolution = useMemo(() => {
+    if (!onboarding) return null;
+    const activeProductFacts =
+      selectedProduct && currentResolvedProductId
+        ? {
+            productId: currentResolvedProductId,
+            guideInstanceId: onboarding.activeGuideInstanceId,
+            isReady: Boolean(structuralDefinition && materialCapabilities !== null && !isModelBuilding),
+            capabilities: workspaceCapabilities,
+            hasFittedCorners: Boolean(perspectiveCorners),
+          }
+        : null;
+
+    return resolveNextGuideAction({
+      isSessionHydrated: onboarding.isHydrated,
+      hasValidImage: Boolean(uploadedImage || spaceImageSession),
+      imageId: currentOnboardingImageId ?? onboarding.imageId,
+      calibrationMode:
+        activeCalibrationMeta?.mode ??
+        spaceImageSession?.calibrationMeta?.mode ??
+        "auto_detect",
+      isUploadingOrAnalyzing: false,
+      isModelLoading: isModelBuilding,
+      hasError: Boolean(productBuildError),
+      activeBlockingModal,
+      isComparisonPreparing: onboarding.isComparisonPreparing,
+      activeProduct: activeProductFacts,
+      placedProductCount: placedOverlays.length,
+      preferenceStatus: onboarding.preferenceStatus,
+      runSkipped: onboarding.runSkipped,
+      comparisonSuspended: onboarding.comparisonSuspended,
+      manualRunActive: onboarding.manualRunActive,
+      paperTourCompletedForRun: onboarding.paperTourCompletedForRun,
+      instanceProgress: onboarding.activeInstanceProgress,
+    });
+  }, [
+    activeBlockingModal,
+    activeCalibrationMeta?.mode,
+    currentOnboardingImageId,
+    currentResolvedProductId,
+    isModelBuilding,
+    materialCapabilities,
+    onboarding,
+    perspectiveCorners,
+    placedOverlays.length,
+    productBuildError,
+    selectedProduct,
+    spaceImageSession,
+    structuralDefinition,
+    uploadedImage,
+    workspaceCapabilities,
+  ]);
+
+  useEffect(() => {
+    isWorkspaceTourVisibleRef.current = Boolean(
+      workspaceGuideResolution?.shouldShowPopupTour,
+    );
+    isFreePlacementStepRef.current = Boolean(
+      workspaceGuideResolution?.shouldShowPopupTour &&
+        workspaceGuideResolution.task === "free_placement",
+    );
+    isBlockingModalOpenRef.current = activeBlockingModal !== "none";
+  }, [
+    activeBlockingModal,
+    workspaceGuideResolution?.shouldShowPopupTour,
+    workspaceGuideResolution?.task,
+  ]);
+
+  const markFreePlacementInteracted = useCallback(() => {
+    if (isFreePlacementStepRef.current && onboarding) {
+      onboarding.acceptFreePlacement(onboarding.activeGuideInstanceId);
+    }
+  }, [onboarding]);
   const modelEffectStyle = useMemo(
     () => getModelEffectStyle({
       autoRealism,
@@ -2145,6 +2318,7 @@ export function ProductModelWorkspace({
     }
     let cancelled = false;
     setMaterialCapabilities(null);
+    setIsModelBuilding(true);
     mvpRendererRef.current.setSize(
       renderFrameSizeRef.current.width,
       renderFrameSizeRef.current.height,
@@ -2194,8 +2368,10 @@ export function ProductModelWorkspace({
       // The revision redraw measures the rebuilt model as soon as measurement resumes.
       setModelRevision((prev) => prev + 1);
       setProductBuildError(null);
+      setIsModelBuilding(false);
     }).catch((error: unknown) => {
       if (cancelled) return;
+      setIsModelBuilding(false);
       const rollbackEntries = Object.entries(accessoryRollbackRef.current);
       if (rollbackEntries.length > 0) {
         accessoryRollbackRef.current = {};
@@ -2216,7 +2392,10 @@ export function ProductModelWorkspace({
         setProductBuildError(error instanceof Error ? error.message : "Could not build the product model.");
       }
     });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      setIsModelBuilding(false);
+    };
   }, [structuralDefinition, widthCm, heightCm, panelCount, includeSill, selectedAddon, selectedAddonProductId, addonAlumFinish, addonMountingSide, activeCompatibleAddon, includeHatch, screenMeshDensity, effectiveHatchTargetKeys, effectiveGrilleOpeningTargets, removableStates, glassAppearance, glassColor, glassThicknessMm, alumFinish, hasExplicitOverrides, visualMaterialOverrides, candidateMaterialsMap, selectedAccessories, getFinishHexColor]);
 
   useEffect(() => {
@@ -2764,6 +2943,7 @@ export function ProductModelWorkspace({
 
   const handleRemove = (e: React.MouseEvent) => {
     e.stopPropagation();
+    onboarding?.removeActiveProduct(onboarding.activeGuideInstanceId);
     setSelectedProduct(false);
   };
 
@@ -2777,6 +2957,7 @@ export function ProductModelWorkspace({
     requestId: number;
     productId: string;
     mode: "add" | "change" | "edit";
+    previousGuideInstanceId?: string | null;
     placedOverlay?: PlacedOverlay;
     targetOverlay?: PlacedOverlay;
     targetLayerNumber: number;
@@ -2787,6 +2968,7 @@ export function ProductModelWorkspace({
     if (requestId !== switchRequestRef.current) return;
     const roomId = assetSessionId;
     pendingSwitchRef.current = `${intent.mode}:${intent.productId}:${intent.targetOverlayId}`;
+    setIsModelBuilding(true);
     try {
       const definition = await getWorkspaceDefinition(roomId, intent.productId);
       const fallbackWidth = definition.product.productType.toLowerCase().includes("door") ? 900 : 2100;
@@ -2893,6 +3075,37 @@ export function ProductModelWorkspace({
         setIsAddModalOpen(false);
         setIsGuardrailModalOpen(false);
         setIsMeasurementModalOpen(false);
+        if (onboarding) {
+          if (intent.placedOverlay) {
+            onboarding.registerOverlayAlias(
+              intent.previousGuideInstanceId ?? null,
+              intent.placedOverlay.overlayId,
+              "placed",
+            );
+          }
+          if (intent.mode === "add") {
+            onboarding.duplicateProductInstance(
+              intent.productId,
+              intent.targetOverlayId,
+            );
+          } else if (intent.mode === "change") {
+            onboarding.replaceProductInstance(
+              intent.previousGuideInstanceId ?? null,
+              intent.productId,
+              intent.targetOverlayId,
+            );
+          } else if (intent.mode === "edit" && intent.targetOverlay) {
+            const resolvedId = onboarding.activatePlacedOverlay(
+              intent.targetOverlay.overlayId,
+              intent.productId,
+            );
+            onboarding.registerOverlayAlias(
+              resolvedId,
+              intent.targetOverlayId,
+              "active",
+            );
+          }
+        }
         onProductSelect(intent.productId, intent.mode, intent.placedOverlay, targetConfiguration,
           intent.mode === "edit" ? intent.targetOverlay?.overlayId : undefined, definition);
       });
@@ -2901,7 +3114,10 @@ export function ProductModelWorkspace({
         setProductBuildError(error instanceof Error ? error.message : "Could not switch products. Please try again.");
       }
     } finally {
-      if (requestId === switchRequestRef.current) pendingSwitchRef.current = null;
+      if (requestId === switchRequestRef.current) {
+        pendingSwitchRef.current = null;
+        setIsModelBuilding(false);
+      }
     }
   };
 
@@ -2910,12 +3126,14 @@ export function ProductModelWorkspace({
     if (mode === "change" && !selectedProduct) return;
     if (pendingSwitchRef.current?.startsWith(`${mode}:${product.id}:`)) return;
     const requestId = ++switchRequestRef.current;
+    const previousGuideInstanceId = onboarding?.activeGuideInstanceId ?? null;
 
     if (product.id === currentProductId && !selectedProduct) {
       resetProductPlacement();
       setProductFacing("front");
       setSelectedProduct(true);
       setIsSnapshotApplied(false);
+      onboarding?.duplicateProductInstance(product.id, activeOverlayId);
       return;
     }
 
@@ -2948,7 +3166,7 @@ export function ProductModelWorkspace({
       let maxNum = activeLayerNumber;
       for (const overlay of placedOverlays) maxNum = Math.max(maxNum, overlay.layerNumber ?? 0);
       await activateDifferentProduct({
-        requestId, productId: product.id, mode, placedOverlay: newlyPlacedOverlay,
+        requestId, productId: product.id, mode, previousGuideInstanceId, placedOverlay: newlyPlacedOverlay,
         targetLayerNumber: mode === "add" ? maxNum + 1 : activeLayerNumber, targetOverlayId: nextActiveOverlayId
       });
       return;
@@ -2969,6 +3187,16 @@ export function ProductModelWorkspace({
 
     if (product.id === currentProductId) {
       applyProductConfiguration(createDuplicateConfiguration(currentConfiguration));
+      if (onboarding) {
+        if (newlyPlacedOverlay) {
+          onboarding.registerOverlayAlias(
+            previousGuideInstanceId,
+            newlyPlacedOverlay.overlayId,
+            "placed",
+          );
+        }
+        onboarding.duplicateProductInstance(product.id, nextActiveOverlayId);
+      }
     }
 
     setSelectedProduct(true);
@@ -3218,6 +3446,7 @@ export function ProductModelWorkspace({
       const targetLayerNumber =
         overlay.layerNumber ?? (targetIndex >= 0 ? targetIndex + 1 : 1);
       const currentActiveNum = activeLayerNumber;
+      const previousGuideInstanceId = onboarding?.activeGuideInstanceId ?? null;
 
       let newlyPlaced: PlacedOverlay | undefined;
       let nextOverlays: PlacedOverlay[];
@@ -3236,6 +3465,7 @@ export function ProductModelWorkspace({
           requestId,
           productId: overlay.productId,
           mode: "edit",
+          previousGuideInstanceId,
           placedOverlay: newlyPlaced,
           targetOverlay: overlay,
           targetLayerNumber,
@@ -3245,6 +3475,11 @@ export function ProductModelWorkspace({
       }
 
       if (newlyPlaced) {
+        onboarding?.registerOverlayAlias(
+          previousGuideInstanceId,
+          newlyPlaced.overlayId,
+          "placed",
+        );
         newlyPlaced.layerNumber = currentActiveNum;
         nextOverlays = [...placedOverlays];
         if (targetIndex >= 0) {
@@ -3258,6 +3493,7 @@ export function ProductModelWorkspace({
         );
       }
 
+      onboarding?.activatePlacedOverlay(overlay.overlayId, overlay.productId);
       onPlacedOverlaysChange?.(nextOverlays);
       setActiveOverlayId(overlay.overlayId);
       setActiveLayerNumber(targetLayerNumber);
@@ -3272,6 +3508,7 @@ export function ProductModelWorkspace({
       currentProductId,
       onPlacedOverlaysChange,
       onProductSelect,
+      onboarding,
       placedOverlays,
       selectedProduct,
     ],
@@ -3286,10 +3523,11 @@ export function ProductModelWorkspace({
     for (const asset of Object.values(removedOverlay?.variationAssetRefs ?? {})) {
       if (asset) variationAssetRegistry.revoke(asset.cacheKey);
     }
+    onboarding?.removePlacedOverlay(overlayId);
     onPlacedOverlaysChange?.(
       placedOverlays.filter((overlay) => overlay.overlayId !== overlayId),
     );
-  }, [assetSessionId, onPlacedOverlaysChange, placedOverlays]);
+  }, [assetSessionId, onPlacedOverlaysChange, onboarding, placedOverlays]);
 
   const applyVisualizationSnapshot = useCallback(async () => {
     setIsCapturingSnapshot(true);
@@ -3351,16 +3589,24 @@ export function ProductModelWorkspace({
   const handleContinueToComparison = useCallback(async () => {
     setIsCapturingSnapshot(true);
     setProductBuildError(null);
+    onboarding?.beginComparisonPreparation();
 
     try {
       await captureCurrentSnapshot();
       setIsSnapshotApplied(true);
-      const comparisonOverlays = selectedProduct
-        ? [
+      let comparisonOverlays = placedOverlays;
+      if (selectedProduct) {
+        const activeComparisonOverlay = await createPlacedOverlay();
+        onboarding?.registerOverlayAlias(
+          onboarding.activeGuideInstanceId,
+          activeComparisonOverlay.overlayId,
+          "comparison",
+        );
+        comparisonOverlays = [
           ...placedOverlays,
-          { ...(await createPlacedOverlay()), isActive: true },
-        ]
-        : placedOverlays;
+          { ...activeComparisonOverlay, isActive: true },
+        ];
+      }
 
       // Publish metadata and the visible finish asset only. Other finishes render on demand.
       pendingComparisonOverlaysRef.current = comparisonOverlays;
@@ -3378,6 +3624,7 @@ export function ProductModelWorkspace({
       if (entries.length === 0) {
         onPlacedOverlaysChange?.(comparisonOverlays);
         onComparisonOverlaysChange?.(comparisonOverlays);
+        onboarding?.completeComparisonNavigation();
         router.push("/comparison");
         return;
       }
@@ -3385,6 +3632,7 @@ export function ProductModelWorkspace({
       setMeasurementEntries(entries);
       setIsMeasurementModalOpen(true);
     } catch (error) {
+      onboarding?.cancelOrFailComparisonPreparation();
       const message =
         error instanceof Error
           ? error.message
@@ -3401,6 +3649,7 @@ export function ProductModelWorkspace({
     heightCm,
     onComparisonOverlaysChange,
     onPlacedOverlaysChange,
+    onboarding,
     placedOverlays,
     realtimePricing.totalPrice,
     router,
@@ -3452,11 +3701,13 @@ export function ProductModelWorkspace({
 
       onPlacedOverlaysChange?.(completePlacedOverlays);
       onComparisonOverlaysChange?.(patchedComparisonOverlays);
+      onboarding?.completeComparisonNavigation();
       router.push("/comparison");
     },
     [
       onComparisonOverlaysChange,
       onPlacedOverlaysChange,
+      onboarding,
       placedOverlays,
       router,
       selectedProduct,
@@ -3470,7 +3721,8 @@ export function ProductModelWorkspace({
     setIsMeasurementModalOpen(false);
     setIsSnapshotApplied(false);
     pendingComparisonOverlaysRef.current = [];
-  }, []);
+    onboarding?.cancelOrFailComparisonPreparation();
+  }, [onboarding]);
 
   const handlePaperPinConfirm = useCallback(
     (
@@ -3978,6 +4230,7 @@ export function ProductModelWorkspace({
         setWorkspaceTouchProxy(null);
         setIsUsingTransformHandle(false);
         setIsOutlineMeasurementPaused(false);
+        markFreePlacementInteracted();
         window.removeEventListener("pointermove", handleMove);
         window.removeEventListener("pointerup", handleEnd);
         window.removeEventListener("pointercancel", handleEnd);
@@ -3987,7 +4240,7 @@ export function ProductModelWorkspace({
       window.addEventListener("pointerup", handleEnd);
       window.addEventListener("pointercancel", handleEnd);
     },
-    [applyOverlaySize, heightCm, overlaySize, widthCm, zoomLevel],
+    [applyOverlaySize, heightCm, markFreePlacementInteracted, overlaySize, widthCm, zoomLevel],
   );
 
   const startOverlayDrag = useCallback(
@@ -4162,6 +4415,7 @@ export function ProductModelWorkspace({
         if (endEvent.pointerId !== session.pointerId) return;
         setIsUsingTransformHandle(false);
         setWorkspaceTouchProxy(null);
+        markFreePlacementInteracted();
         window.removeEventListener("pointermove", handleMove);
         window.removeEventListener("pointerup", handleEnd);
         window.removeEventListener("pointercancel", handleEnd);
@@ -4171,7 +4425,7 @@ export function ProductModelWorkspace({
       window.addEventListener("pointerup", handleEnd);
       window.addEventListener("pointercancel", handleEnd);
     },
-    [perspectiveCorners, measurementCorners, widthCm, heightCm, canvasDisplaySize.width, canvasDisplaySize.height, metricReference, updateMetricPerspectiveCorners],
+    [perspectiveCorners, measurementCorners, widthCm, heightCm, canvasDisplaySize.width, canvasDisplaySize.height, metricReference, updateMetricPerspectiveCorners, markFreePlacementInteracted],
   );
 
   const startPerspectiveRotation = useCallback((event: React.PointerEvent) => {
@@ -4245,6 +4499,7 @@ export function ProductModelWorkspace({
 
       const handleEnd = () => {
         setIsUsingTransformHandle(false);
+        markFreePlacementInteracted();
         window.removeEventListener("pointermove", handleMove);
         window.removeEventListener("pointerup", handleEnd);
         window.removeEventListener("pointercancel", handleEnd);
@@ -4254,7 +4509,7 @@ export function ProductModelWorkspace({
       window.addEventListener("pointerup", handleEnd);
       window.addEventListener("pointercancel", handleEnd);
     },
-    [perspectiveCorners, measurementCorners, isUsingTransformHandle, canvasDisplaySize.width, canvasDisplaySize.height, updateMetricPerspectiveCorners],
+    [perspectiveCorners, measurementCorners, isUsingTransformHandle, canvasDisplaySize.width, canvasDisplaySize.height, updateMetricPerspectiveCorners, markFreePlacementInteracted],
   );
 
   // PRD-F6 / PRD-F10 / DSD-UI4: keep the live estimate beside the active configuration flow.
@@ -4291,14 +4546,32 @@ export function ProductModelWorkspace({
         : "w-full max-w-367 mx-auto px-4 sm:px-6"}
     >
       {shouldLockMobileEditor && (
-        <header className={`flex min-w-0 items-center justify-between gap-3 border-b border-neutral-200 bg-white ${compactOrientation === "landscape" ? "px-3 py-1" : "px-3 py-2"}`}>
+        <header className={`flex min-w-0 items-center justify-between gap-3 border-b border-white/10 bg-white ${compactOrientation === "landscape" ? "px-3 py-1" : "px-3 py-2"}`}>
           <div className="min-w-0">
             <h2 className="truncate text-sm font-semibold text-[#0f1422]">Edit {overlayName}</h2>
             {compactOrientation === "portrait" && <p className="text-xs text-neutral-500">Portrait workspace</p>}
+            {perspectiveCorners && workspaceCapabilities.isCanonicalCabinet && (
+              <p role="status" className="mt-0.5 text-[11px] text-[#097283] font-medium">
+                {CABINET_FREE_PLACEMENT_NOTICE}
+              </p>
+            )}
           </div>
-          <button type="button" onClick={closeMobileEditor} className="min-h-11 shrink-0 rounded-[20px] bg-[#0f1422] px-5 text-sm font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]">
-            Done
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            {onboarding && (
+              <button
+                type="button"
+                onClick={() => onboarding.restartGuideManually()}
+                className="inline-flex min-h-11 shrink-0 items-center gap-1 rounded-[20px] border border-neutral-300 bg-white px-3.5 text-sm font-medium text-[#0f1422] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]"
+                aria-label="Help and guide"
+              >
+                <HelpCircle className="size-4 text-green" aria-hidden="true" />
+                <span>Help</span>
+              </button>
+            )}
+            <button type="button" data-onboarding-target="workspace-mobile-done" onClick={closeMobileEditor} className="min-h-11 shrink-0 rounded-[20px] bg-[#0f1422] px-5 text-sm font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]">
+              Done
+            </button>
+          </div>
         </header>
       )}
       {/* ── Section Header ── */}
@@ -4354,10 +4627,22 @@ export function ProductModelWorkspace({
           <span className="text-green text-lg sm:text-xl font-normal tracking-[-0.38px] whitespace-nowrap">
             Want to make changes?
           </span>
-          <div className="flex items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-2.5">
+            {onboarding && (
+              <button
+                type="button"
+                onClick={() => onboarding.restartGuideManually()}
+                className="inline-flex min-h-11 items-center gap-1.5 rounded-[10px] border border-neutral-300 bg-white px-3.5 py-2 text-sm font-medium text-[#0f1422] hover:bg-neutral-100 transition-colors cursor-pointer whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]"
+                aria-label="Help and placement guide"
+              >
+                <HelpCircle className="size-4 text-green" aria-hidden="true" />
+                <span>Help</span>
+              </button>
+            )}
             <div className="relative">
               <button
                 type="button"
+                data-onboarding-target="workspace-add-product"
                 onClick={() => handleOpenAddModal("Add Product")}
                 className="bg-[#0f1422] hover:bg-black text-white px-4 py-2 rounded-[10px] text-sm font-normal transition-colors cursor-pointer whitespace-nowrap"
               >
@@ -4557,6 +4842,7 @@ export function ProductModelWorkspace({
           <div className={shouldLockMobileEditor ? "relative flex h-full w-full items-center justify-center overflow-hidden bg-[#0f1422] touch-none [container-type:size]" : "bg-white/10 border border-[#f5f5f5] p-3 sm:p-5 rounded-[20px] shadow-[0px_0px_5px_0px_rgba(0,0,0,0.25)] relative w-full flex flex-col items-center justify-center gap-3"}>
             <div
               ref={canvasRef}
+              data-onboarding-target="workspace-canvas-stage"
               className="relative mx-auto rounded-[15px] overflow-hidden bg-neutral-100"
               style={{
                 aspectRatio: workspaceAspectRatio,
@@ -4819,6 +5105,7 @@ export function ProductModelWorkspace({
                             x: overlayX.get(),
                             y: overlayY.get(),
                           });
+                          markFreePlacementInteracted();
                         }}
                         className={[
                           "pointer-events-auto relative",
@@ -5104,7 +5391,7 @@ export function ProductModelWorkspace({
             {!shouldLockMobileEditor && selectedProduct && isEditingProduct && !perspectiveCorners && (
               <div className="grid w-full max-w-[600px] grid-cols-2 gap-2 select-none sm:grid-cols-5">
                 {supportsPerspectivePlane && (
-                  <button type="button" onClick={() => setShowPerspectivePicker(true)} className="bg-[#0f1422] hover:bg-black text-white min-h-11 min-w-0 px-2 py-2 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]">
+                  <button type="button" data-onboarding-target="workspace-fit-button" onClick={handleOpenPerspectivePicker} className="bg-[#0f1422] hover:bg-black text-white min-h-11 min-w-0 px-2 py-2 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]">
                     <Maximize className="w-4 h-4 text-white" />
                     <span className="text-[13px] font-normal tracking-[-0.266px] text-center">Fit</span>
                   </button>
@@ -5128,29 +5415,36 @@ export function ProductModelWorkspace({
               </div>
             )}
             {!shouldLockMobileEditor && selectedProduct && isEditingProduct && perspectiveCorners && (
-              <div
-                className="grid w-full max-w-[600px] grid-cols-2 gap-2 select-none sm:grid-cols-5"
-              >
-                <button
-                  type="button"
-                  onClick={() => setShowPerspectivePicker(true)}
-                  className="bg-[#0f1422] hover:bg-black text-white min-h-11 min-w-0 px-2 py-2 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]"
+              <div className="flex w-full max-w-[600px] flex-col items-center gap-2 select-none">
+                {workspaceCapabilities.isCanonicalCabinet && (
+                  <p
+                    role="status"
+                    className="w-full rounded-[12px] border border-neutral-200 bg-[#f5f5f5] px-4 py-2 text-center text-xs sm:text-sm text-[#0f1422]"
+                  >
+                    {CABINET_FREE_PLACEMENT_NOTICE}
+                  </p>
+                )}
+                <div
+                  className="grid w-full grid-cols-2 gap-2 sm:grid-cols-5"
                 >
-                  <Maximize className="w-4 h-4 text-white" />
-                  <span className="text-[13px] font-normal tracking-[-0.266px] text-center">Edit Corners</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMeasurementCorners(null);
-                    setPerspectiveCorners(null);
-                    setModelRevision((prev) => prev + 1);
-                  }}
-                  className="bg-[#0f1422] hover:bg-black text-white min-h-11 min-w-0 px-2 py-2 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]"
-                >
-                  <Move className="w-4 h-4 text-white" />
-                  <span className="text-[13px] font-normal tracking-[-0.266px] text-center">Free Place</span>
-                </button>
+                  {supportsPerspectivePlane && (
+                    <button
+                      type="button"
+                      onClick={handleOpenPerspectivePicker}
+                      className="bg-[#0f1422] hover:bg-black text-white min-h-11 min-w-0 px-2 py-2 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]"
+                    >
+                      <Maximize className="w-4 h-4 text-white" />
+                      <span className="text-[13px] font-normal tracking-[-0.266px] text-center">Edit Corners</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleSwitchToFreePlace}
+                    className="bg-[#0f1422] hover:bg-black text-white min-h-11 min-w-0 px-2 py-2 rounded-[10px] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]"
+                  >
+                    <Move className="w-4 h-4 text-white" />
+                    <span className="text-[13px] font-normal tracking-[-0.266px] text-center">Free Place</span>
+                  </button>
                 <button
                   type="button"
                   onClick={handleFlip}
@@ -5175,6 +5469,7 @@ export function ProductModelWorkspace({
                   <Trash2 className="w-4 h-4 text-white" />
                   <span className="text-[13px] font-normal tracking-[-0.266px] text-center">Remove</span>
                 </button>
+                </div>
               </div>
             )}
 
@@ -6557,8 +6852,14 @@ export function ProductModelWorkspace({
 
       {shouldLockMobileEditor && (
         <div className={`flex min-w-0 items-center justify-center gap-1.5 overflow-x-auto border-t border-white/10 bg-[#0f1422] px-2 scrollbar-none ${compactOrientation === "landscape" ? "py-1" : "flex-wrap py-2"}`}>
-          {supportsPerspectivePlane && (
-            <button type="button" onClick={() => setShowPerspectivePicker(true)} className="min-h-11 rounded-[14px] bg-white/10 px-3 text-xs text-white focus-visible:outline-2 focus-visible:outline-[#07b6d3]">Fit</button>
+          {!perspectiveCorners && supportsPerspectivePlane && (
+            <button type="button" data-onboarding-target="workspace-fit-button-mobile" onClick={handleOpenPerspectivePicker} className="min-h-11 rounded-[14px] bg-white/10 px-3 text-xs text-white focus-visible:outline-2 focus-visible:outline-[#07b6d3]">Fit</button>
+          )}
+          {perspectiveCorners && supportsPerspectivePlane && (
+            <button type="button" onClick={handleOpenPerspectivePicker} className="min-h-11 rounded-[14px] bg-white/10 px-3 text-xs text-white focus-visible:outline-2 focus-visible:outline-[#07b6d3]">Edit Corners</button>
+          )}
+          {perspectiveCorners && (
+            <button type="button" onClick={handleSwitchToFreePlace} className="min-h-11 rounded-[14px] bg-white/10 px-3 text-xs text-white focus-visible:outline-2 focus-visible:outline-[#07b6d3]">Free Place</button>
           )}
           <button type="button" onClick={handleRotate} className="min-h-11 rounded-[14px] bg-white/10 px-3 text-xs text-white focus-visible:outline-2 focus-visible:outline-[#07b6d3]">Rotate</button>
           <button type="button" onClick={handleFlip} className="min-h-11 rounded-[14px] bg-white/10 px-3 text-xs text-white focus-visible:outline-2 focus-visible:outline-[#07b6d3]">Flip</button>
@@ -6619,23 +6920,25 @@ export function ProductModelWorkspace({
             >
               {isCapturingSnapshot ? "Saving Snapshot..." : "Save Snapshot"}
             </button>
-            <Button
-              type="button"
-              disabled={isCapturingSnapshot || (!selectedProduct && placedOverlays.length === 0)}
-              onClick={handleContinueToComparison}
-              variant="lightGradWhiteText"
-              value={isCapturingSnapshot ? "Preparing Comparison..." : "Continue to Comparison"}
-              leftIcon={null}
-              rightIcon={
-                <Image
-                  src="/right_arrow.svg"
-                  width={25}
-                  height={25}
-                  alt="Arrow right"
-                />
-              }
-              className="w-full sm:w-auto justify-center"
-            />
+            <div data-onboarding-target="workspace-continue-comparison" className="w-full sm:w-auto">
+              <Button
+                type="button"
+                disabled={isCapturingSnapshot || (!selectedProduct && placedOverlays.length === 0)}
+                onClick={handleContinueToComparison}
+                variant="lightGradWhiteText"
+                value={isCapturingSnapshot ? "Preparing Comparison..." : "Continue to Comparison"}
+                leftIcon={null}
+                rightIcon={
+                  <Image
+                    src="/right_arrow.svg"
+                    width={25}
+                    height={25}
+                    alt="Arrow right"
+                  />
+                }
+                className="w-full sm:w-auto justify-center"
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -6766,7 +7069,7 @@ export function ProductModelWorkspace({
       )}
 
       {/* ── Perspective Plane Picker Modal (MS-02, IMP-MS52) ── */}
-      {showPerspectivePicker && (
+      {showPerspectivePicker && supportsPerspectivePlane && (
         <PerspectivePlanePicker
           backgroundImageUrl={bgImage}
           canvasWidth={aspectWidth}
@@ -6775,6 +7078,8 @@ export function ProductModelWorkspace({
           openingType={isDoorProduct ? "door" : "window"}
           isVerifiedCalibrated={isVerifiedCalibrated}
           onConfirm={async (corners) => {
+            const activeAttempt = fitAttemptRef.current;
+            fitAttemptRef.current = null;
             const photoWidth =
               spaceImageSession?.workspaceImage.width ||
               canvasRef.current?.clientWidth || canvasDisplaySize.width;
@@ -6798,7 +7103,12 @@ export function ProductModelWorkspace({
                 }
               }
 
-              if (fitImageId !== latestFitIdentityRef.current.imageId || fitProductId !== latestFitIdentityRef.current.productId) return;
+              if (fitImageId !== latestFitIdentityRef.current.imageId || fitProductId !== latestFitIdentityRef.current.productId) {
+                if (activeAttempt) {
+                  onboarding?.cancelActionAttempt(activeAttempt.attemptId);
+                }
+                return;
+              }
               setTargetPlaneId(null);
               setManualDimensions(false);
               setSavedMeasurementEvidence(null);
@@ -6822,6 +7132,9 @@ export function ProductModelWorkspace({
               setOverlaySize(getOverlaySizeFromDimensions(String(estimate.widthCm), String(estimate.heightCm)));
             }
 
+            if (activeAttempt) {
+              onboarding?.acknowledgeActionAttempt(activeAttempt);
+            }
             setMeasurementCorners(corners);
             setPerspectiveCorners(corners);
             setYaw(0);
@@ -6830,7 +7143,27 @@ export function ProductModelWorkspace({
             setModelRevision((prev) => prev + 1);
             setShowPerspectivePicker(false);
           }}
-          onCancel={() => setShowPerspectivePicker(false)}
+          onCancel={handleCancelPerspectivePicker}
+        />
+      )}
+      {workspaceGuideResolution && onboarding && (
+        <WorkspaceOnboardingTour
+          resolution={workspaceGuideResolution}
+          isMobileEditor={Boolean(shouldLockMobileEditor)}
+          isCompactViewport={isCompactViewport}
+          hasPerspectiveCorners={Boolean(perspectiveCorners)}
+          isCanonicalCabinet={workspaceCapabilities.isCanonicalCabinet}
+          supportsPerspectivePlane={supportsPerspectivePlane}
+          onPlaceManually={() =>
+            onboarding.requestManualPlacement(onboarding.activeGuideInstanceId)
+          }
+          onAcceptFreePlacement={() =>
+            onboarding.acceptFreePlacement(onboarding.activeGuideInstanceId)
+          }
+          onEditCorners={handleOpenPerspectivePicker}
+          onCompleteTour={() => onboarding.completeWorkspaceTour()}
+          onSkip={() => onboarding.skipCurrentRun()}
+          onDontShowAgain={() => onboarding.optOutDontShowAgain()}
         />
       )}
       {workspaceTouchProxy && (
