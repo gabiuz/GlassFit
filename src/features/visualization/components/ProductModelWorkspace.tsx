@@ -147,7 +147,11 @@ import {
 } from "@/lib/visualization/workspaceCapabilities";
 import { useOptionalVisualizationOnboarding } from "../onboarding/VisualizationOnboardingProvider";
 import { resolveNextGuideAction } from "../onboarding/resolver";
-import { WorkspaceOnboardingTour } from "../onboarding/WorkspaceOnboardingTour";
+import {
+  getWorkspaceConfigStages,
+  WorkspaceOnboardingTour,
+  type ConfigStageId,
+} from "../onboarding/WorkspaceOnboardingTour";
 import type { ActiveBlockingModal, GuideActionAttempt } from "../onboarding/types";
 import {
   useOptionalVisualizationSession,
@@ -2015,6 +2019,32 @@ export function ProductModelWorkspace({
       onboarding.acceptFreePlacement(onboarding.activeGuideInstanceId);
     }
   }, [onboarding]);
+
+  const configStages = useMemo(
+    () =>
+      getWorkspaceConfigStages({
+        hasCompatibleAddons,
+        hasHardwareAccessories: accessorySlots.length > 0,
+      }),
+    [accessorySlots.length, hasCompatibleAddons],
+  );
+  const configScopeKey = onboarding
+    ? `${onboarding.guideGeneration}:${onboarding.activeGuideInstanceId ?? "none"}:${perspectiveCorners ? "fitted" : "free"}`
+    : "none";
+  const [configStageState, setConfigStageState] = useState<{
+    scopeKey: string;
+    index: number;
+  }>({
+    scopeKey: "",
+    index: 0,
+  });
+  const activeConfigStageIndex =
+    configStageState.scopeKey === configScopeKey
+      ? Math.min(configStageState.index, configStages.length - 1)
+      : 0;
+  const resetConfigStage = useCallback(() => {
+    setConfigStageState({ scopeKey: configScopeKey, index: 0 });
+  }, [configScopeKey]);
   const modelEffectStyle = useMemo(
     () => getModelEffectStyle({
       autoRealism,
@@ -3550,13 +3580,39 @@ export function ProductModelWorkspace({
   }, [captureCurrentSnapshot]);
 
   const handleApplySnapshotClick = useCallback(async () => {
+    const isApplyChangesTourStep = Boolean(
+      workspaceGuideResolution?.shouldShowPopupTour &&
+        workspaceGuideResolution.task === "preview_ready" &&
+        !workspaceGuideResolution.hasPlacedProductsOnly &&
+        configStages[activeConfigStageIndex] === "apply_changes",
+    );
+
+    const advanceAfterApplyChanges = () => {
+      if (!isApplyChangesTourStep) return;
+      const nextIndex = Math.min(activeConfigStageIndex + 1, configStages.length - 1);
+      if (shouldLockMobileEditor && configStages[nextIndex] === "preview_ready") {
+        setIsMobileControlsOpen(false);
+      }
+      setConfigStageState({ scopeKey: configScopeKey, index: nextIndex });
+    };
+
     if (isSnapshotApplied) {
       setIsSnapshotApplied(false);
+      advanceAfterApplyChanges();
       return;
     }
 
     await applyVisualizationSnapshot();
-  }, [applyVisualizationSnapshot, isSnapshotApplied]);
+    advanceAfterApplyChanges();
+  }, [
+    activeConfigStageIndex,
+    applyVisualizationSnapshot,
+    configScopeKey,
+    configStages,
+    isSnapshotApplied,
+    shouldLockMobileEditor,
+    workspaceGuideResolution,
+  ]);
 
   const handleSaveSnapshot = useCallback(async () => {
     setIsCapturingSnapshot(true);
@@ -4053,6 +4109,31 @@ export function ProductModelWorkspace({
 
 
   const toggleAccordion = (title: string) => {
+    const accordionToStage: Record<string, ConfigStageId> = {
+      "Placement": "placement",
+      "Design and Customization Option": "design",
+      "Add-on Options": "addons",
+      "Hardware & Accessories": "hardware",
+      "Object Aware Occlusion": "occlusion",
+    };
+    const clickedStage = accordionToStage[title];
+    if (
+      workspaceGuideResolution?.shouldShowPopupTour &&
+      workspaceGuideResolution.task === "preview_ready" &&
+      !workspaceGuideResolution.hasPlacedProductsOnly &&
+      clickedStage &&
+      configStages[activeConfigStageIndex] === clickedStage
+    ) {
+      // Keep accordions collapsed during the dropdown tour so the sidebar does not jump.
+      setOpenAccordions((prev) => (prev.length === 0 ? prev : []));
+      const nextIndex = Math.min(activeConfigStageIndex + 1, configStages.length - 1);
+      if (shouldLockMobileEditor && configStages[nextIndex] === "preview_ready") {
+        setIsMobileControlsOpen(false);
+      }
+      setConfigStageState({ scopeKey: configScopeKey, index: nextIndex });
+      return;
+    }
+
     setOpenAccordions((prev) =>
       prev.includes(title)
         ? prev.filter((t) => t !== title)
@@ -4560,7 +4641,11 @@ export function ProductModelWorkspace({
             {onboarding && (
               <button
                 type="button"
-                onClick={() => onboarding.restartGuideManually()}
+                onClick={() => {
+                  setOpenAccordions([]);
+                  resetConfigStage();
+                  onboarding.restartGuideManually();
+                }}
                 className="inline-flex min-h-11 shrink-0 items-center gap-1 rounded-[20px] border border-neutral-300 bg-white px-3.5 text-sm font-medium text-[#0f1422] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]"
                 aria-label="Help and guide"
               >
@@ -4631,7 +4716,11 @@ export function ProductModelWorkspace({
             {onboarding && (
               <button
                 type="button"
-                onClick={() => onboarding.restartGuideManually()}
+                onClick={() => {
+                  setOpenAccordions([]);
+                  resetConfigStage();
+                  onboarding.restartGuideManually();
+                }}
                 className="inline-flex min-h-11 items-center gap-1.5 rounded-[10px] border border-neutral-300 bg-white px-3.5 py-2 text-sm font-medium text-[#0f1422] hover:bg-neutral-100 transition-colors cursor-pointer whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]"
                 aria-label="Help and placement guide"
               >
@@ -5614,6 +5703,7 @@ export function ProductModelWorkspace({
                 <div className="bg-[#f5f5f5]/30 border border-white rounded-[20px] shadow-[0px_0px_5px_0px_rgba(0,0,0,0.25)] overflow-hidden transition-colors">
                   <button
                     type="button"
+                    data-onboarding-target="workspace-accordion-placement"
                     onClick={() => toggleAccordion("Placement")}
                     className="w-full p-6 flex justify-between items-center text-left cursor-pointer"
                   >
@@ -5714,6 +5804,7 @@ export function ProductModelWorkspace({
                 <div className="bg-[#f5f5f5]/30 border border-white rounded-[20px] shadow-[0px_0px_5px_0px_rgba(0,0,0,0.25)] overflow-hidden transition-colors">
                   <button
                     type="button"
+                    data-onboarding-target="workspace-accordion-design"
                     onClick={() => toggleAccordion("Design and Customization Option")}
                     className="w-full p-6 flex justify-between items-center text-left cursor-pointer"
                   >
@@ -5938,6 +6029,7 @@ export function ProductModelWorkspace({
                   <div className="bg-[#f5f5f5]/30 border border-white rounded-[20px] shadow-[0px_0px_5px_0px_rgba(0,0,0,0.25)] overflow-hidden transition-colors">
                     <button
                       type="button"
+                      data-onboarding-target="workspace-accordion-addons"
                       onClick={() => toggleAccordion("Add-on Options")}
                       className="w-full p-6 flex justify-between items-center text-left cursor-pointer"
                     >
@@ -6432,6 +6524,7 @@ export function ProductModelWorkspace({
                   <div className="bg-[#f5f5f5]/30 border border-white rounded-[20px] shadow-[0px_0px_5px_0px_rgba(0,0,0,0.25)] overflow-hidden transition-colors">
                     <button
                       type="button"
+                      data-onboarding-target="workspace-accordion-hardware"
                       onClick={() => toggleAccordion("Hardware & Accessories")}
                       className="w-full p-6 flex justify-between items-center text-left cursor-pointer"
                     >
@@ -6715,6 +6808,7 @@ export function ProductModelWorkspace({
                 <div className="bg-[#f5f5f5]/30 border border-white rounded-[20px] shadow-[0px_0px_5px_0px_rgba(0,0,0,0.25)] overflow-hidden transition-colors">
                   <button
                     type="button"
+                    data-onboarding-target="workspace-accordion-occlusion"
                     onClick={() => toggleAccordion("Object Aware Occlusion")}
                     className="w-full p-6 flex justify-between items-center text-left cursor-pointer"
                   >
@@ -6828,6 +6922,7 @@ export function ProductModelWorkspace({
               {/* Apply Changes Primary CTA */}
               <button
                 type="button"
+                data-onboarding-target="workspace-apply-changes"
                 disabled={isCapturingSnapshot}
                 onClick={handleApplySnapshotClick}
                 className="w-full bg-green hover:bg-[#06a3bd] text-white text-lg sm:text-[20px] font-normal py-4 rounded-[25px] transition-colors cursor-pointer shadow-sm text-center tracking-[-0.38px]"
@@ -6876,6 +6971,7 @@ export function ProductModelWorkspace({
           )}
           <button
             type="button"
+            data-onboarding-target="workspace-mobile-controls"
             onClick={() => setIsMobileControlsOpen((open) => !open)}
             aria-expanded={isMobileControlsOpen}
             aria-controls="mobile-configuration-controls"
@@ -7149,11 +7245,15 @@ export function ProductModelWorkspace({
       {workspaceGuideResolution && onboarding && (
         <WorkspaceOnboardingTour
           resolution={workspaceGuideResolution}
+          configStages={configStages}
+          activeConfigStageIndex={activeConfigStageIndex}
           isMobileEditor={Boolean(shouldLockMobileEditor)}
           isCompactViewport={isCompactViewport}
+          isMobileControlsOpen={isMobileControlsOpen}
           hasPerspectiveCorners={Boolean(perspectiveCorners)}
           isCanonicalCabinet={workspaceCapabilities.isCanonicalCabinet}
           supportsPerspectivePlane={supportsPerspectivePlane}
+          onResetConfigStage={resetConfigStage}
           onPlaceManually={() =>
             onboarding.requestManualPlacement(onboarding.activeGuideInstanceId)
           }

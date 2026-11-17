@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useEffect, useId, useMemo, useRef, useState } from "react";
+import React, { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Compass, HelpCircle, X } from "lucide-react";
 import { useReducedMotion } from "motion/react";
 
@@ -14,6 +15,62 @@ interface RectSnapshot {
   bottom: number;
   width: number;
   height: number;
+}
+
+interface MeasurementSnapshot {
+  targetViewportRect: RectSnapshot | null;
+  popoverWidth: number;
+  popoverHeight: number;
+  viewportWidth: number;
+  viewportHeight: number;
+  scrollX: number;
+  scrollY: number;
+  docHeight: number;
+  usesDocumentCoords: boolean;
+}
+
+const subscribeNoop = () => () => {};
+
+function hasFixedAncestor(element: HTMLElement | null): boolean {
+  let node: HTMLElement | null = element;
+  while (node && node !== document.documentElement) {
+    if (window.getComputedStyle(node).position === "fixed") {
+      return true;
+    }
+    node = node.parentElement;
+  }
+  return false;
+}
+
+function rectsEqual(a: RectSnapshot | null, b: RectSnapshot | null): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return (
+    Math.abs(a.top - b.top) < 0.5 &&
+    Math.abs(a.left - b.left) < 0.5 &&
+    Math.abs(a.width - b.width) < 0.5 &&
+    Math.abs(a.height - b.height) < 0.5
+  );
+}
+
+function ensureTargetInViewport(el: HTMLElement, vh: number): void {
+  const initialRect = el.getBoundingClientRect();
+  if (initialRect.top >= 24 && initialRect.bottom <= vh - 24) {
+    return;
+  }
+  el.scrollIntoView({
+    block: "center",
+    inline: "nearest",
+    behavior: "auto",
+  });
+  const afterRect = el.getBoundingClientRect();
+  if (afterRect.top < 24 || afterRect.bottom > vh - 24) {
+    const deltaY = afterRect.top + afterRect.height / 2 - vh / 2;
+    window.scrollTo({
+      top: Math.max(0, window.scrollY + deltaY),
+      behavior: "auto",
+    });
+  }
 }
 
 export interface OnboardingTourPopupProps {
@@ -220,72 +277,197 @@ export function OnboardingTourPopup({
   const descId = useId();
   const prefersReducedMotion = useReducedMotion();
   const cardRef = useRef<HTMLDivElement>(null);
+  const isClient = useSyncExternalStore(subscribeNoop, () => true, () => false);
 
-  const [targetRect, setTargetRect] = useState<RectSnapshot | null>(null);
-  const [popoverDims, setPopoverDims] = useState<{ width: number; height: number }>({
-    width: variant === "mobile" ? 340 : 350,
-    height: 210,
-  });
-  const [viewport, setViewport] = useState<{ width: number; height: number }>({
-    width: 1280,
-    height: 800,
-  });
+  const [measurement, setMeasurement] = useState<MeasurementSnapshot>(() => ({
+    targetViewportRect: null,
+    popoverWidth: variant === "mobile" ? 340 : 350,
+    popoverHeight: 210,
+    viewportWidth: 1280,
+    viewportHeight: 800,
+    scrollX: 0,
+    scrollY: 0,
+    docHeight: 800,
+    usesDocumentCoords: false,
+  }));
 
-  // Scroll target into view once when step / targetSelector changes.
+  // Lock user page scrolling while a blocking tour step is active.
+  useEffect(() => {
+    if (!isOpen || !blocking) return;
+
+    const htmlEl = document.documentElement;
+    const prevHtmlOverflow = htmlEl.style.overflow;
+    const prevHtmlOverscroll = htmlEl.style.overscrollBehavior;
+
+    htmlEl.style.overflow = "hidden";
+    htmlEl.style.overscrollBehavior = "none";
+
+    const isInsideNode = (container: HTMLElement | null, node: EventTarget | null): boolean =>
+      Boolean(container && node instanceof Node && container.contains(node));
+
+    const handleWheel = (event: WheelEvent) => {
+      if (isInsideNode(cardRef.current, event.target)) return;
+      event.preventDefault();
+    };
+
+    const handleTouchMove = (event: TouchEvent) => {
+      if (isInsideNode(cardRef.current, event.target)) return;
+      const spotlightEl = targetSelector
+        ? document.querySelector<HTMLElement>(targetSelector)
+        : null;
+      if (isInsideNode(spotlightEl, event.target)) return;
+      event.preventDefault();
+    };
+
+    const handleScrollKeys = (event: KeyboardEvent) => {
+      if (
+        event.key !== "PageUp" &&
+        event.key !== "PageDown" &&
+        event.key !== "Home" &&
+        event.key !== "End" &&
+        event.key !== "ArrowUp" &&
+        event.key !== "ArrowDown" &&
+        event.key !== " "
+      ) {
+        return;
+      }
+      const target = event.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      if (isInsideNode(cardRef.current, target)) return;
+      event.preventDefault();
+    };
+
+    window.addEventListener("wheel", handleWheel, { capture: true, passive: false });
+    window.addEventListener("touchmove", handleTouchMove, { capture: true, passive: false });
+    window.addEventListener("keydown", handleScrollKeys, true);
+
+    return () => {
+      htmlEl.style.overflow = prevHtmlOverflow;
+      htmlEl.style.overscrollBehavior = prevHtmlOverscroll;
+      window.removeEventListener("wheel", handleWheel, true);
+      window.removeEventListener("touchmove", handleTouchMove, true);
+      window.removeEventListener("keydown", handleScrollKeys, true);
+    };
+  }, [blocking, isOpen, targetSelector]);
+
+  // Frame target comfortably in view when step / targetSelector changes.
   useEffect(() => {
     if (!isOpen || !targetSelector) return;
     const el = document.querySelector<HTMLElement>(targetSelector);
     if (!el) return;
-    el.scrollIntoView({
-      block: "nearest",
-      inline: "nearest",
-      behavior: prefersReducedMotion ? "auto" : "smooth",
-    });
-  }, [isOpen, prefersReducedMotion, targetSelector]);
+    el.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "auto" });
+    ensureTargetInViewport(el, window.innerHeight);
+  }, [isOpen, targetSelector]);
 
-  // Continuously track target element bounds, card size, and viewport size.
+  // Continuously track target bounds, card dimensions, and document/viewport geometry.
   useEffect(() => {
     if (!isOpen) return;
 
     let rafId = 0;
-    const measure = () => {
-      const vw = window.innerWidth;
-      const vh = window.innerHeight;
-      setViewport({ width: vw, height: vh });
+    const readDocumentMode = (el: HTMLElement | null): boolean =>
+      Boolean(el && !hasFixedAncestor(el));
 
+    const measure = () => {
+      const vw = document.documentElement.clientWidth || window.innerWidth;
+      const vh = window.innerHeight;
+      let sx = window.scrollX;
+      let sy = window.scrollY;
+      const docHeight = Math.max(
+        document.documentElement.scrollHeight,
+        document.body ? document.body.scrollHeight : 0,
+        vh,
+      );
+
+      let nextCardW = 0;
+      let nextCardH = 0;
       if (cardRef.current) {
         const cardBounds = cardRef.current.getBoundingClientRect();
         if (cardBounds.width > 0 && cardBounds.height > 0) {
-          setPopoverDims({
-            width: Math.round(cardBounds.width),
-            height: Math.round(cardBounds.height),
-          });
+          nextCardW = Math.round(cardBounds.width);
+          nextCardH = Math.round(cardBounds.height);
         }
       }
 
+      let nextTargetRect: RectSnapshot | null = null;
+      let usesDocumentCoords = false;
       if (targetSelector) {
         const el = document.querySelector<HTMLElement>(targetSelector);
         if (el) {
-          const rect = el.getBoundingClientRect();
+          let rect = el.getBoundingClientRect();
+          if (blocking && rect.width > 0 && rect.height > 0 && (rect.top < 24 || rect.bottom > vh - 24)) {
+            ensureTargetInViewport(el, vh);
+            rect = el.getBoundingClientRect();
+            sx = window.scrollX;
+            sy = window.scrollY;
+          }
           if (rect.width > 0 && rect.height > 0) {
-            setTargetRect({
+            usesDocumentCoords = readDocumentMode(el);
+            nextTargetRect = {
               top: rect.top,
               left: rect.left,
               right: rect.right,
               bottom: rect.bottom,
               width: rect.width,
               height: rect.height,
-            });
-            return;
+            };
           }
         }
       }
-      setTargetRect(null);
+
+      setMeasurement((prev) => {
+        const popoverWidth = nextCardW > 0 ? nextCardW : prev.popoverWidth;
+        const popoverHeight = nextCardH > 0 ? nextCardH : prev.popoverHeight;
+        if (
+          rectsEqual(prev.targetViewportRect, nextTargetRect) &&
+          prev.popoverWidth === popoverWidth &&
+          prev.popoverHeight === popoverHeight &&
+          prev.viewportWidth === vw &&
+          prev.viewportHeight === vh &&
+          prev.scrollX === sx &&
+          prev.scrollY === sy &&
+          prev.docHeight === docHeight &&
+          prev.usesDocumentCoords === usesDocumentCoords
+        ) {
+          return prev;
+        }
+        return {
+          targetViewportRect: nextTargetRect,
+          popoverWidth,
+          popoverHeight,
+          viewportWidth: vw,
+          viewportHeight: vh,
+          scrollX: sx,
+          scrollY: sy,
+          docHeight,
+          usesDocumentCoords,
+        };
+      });
     };
 
     const scheduleMeasure = () => {
       if (rafId) window.cancelAnimationFrame(rafId);
       rafId = window.requestAnimationFrame(measure);
+    };
+
+    const handleScroll = (event: Event) => {
+      // Document-flow overlays ride on the GPU compositor during page scroll with zero JS lag.
+      if (event.target === document || event.target === window) {
+        const targetEl = targetSelector
+          ? document.querySelector<HTMLElement>(targetSelector)
+          : null;
+        if (readDocumentMode(targetEl)) {
+          return;
+        }
+      }
+      measure();
     };
 
     scheduleMeasure();
@@ -296,23 +478,31 @@ export function OnboardingTourPopup({
         : null;
 
     if (observer) {
+      observer.observe(document.documentElement);
       if (cardRef.current) observer.observe(cardRef.current);
       if (targetSelector) {
         const targetEl = document.querySelector<HTMLElement>(targetSelector);
-        if (targetEl) observer.observe(targetEl);
+        if (targetEl) {
+          observer.observe(targetEl);
+          let ancestor = targetEl.parentElement;
+          while (ancestor && ancestor !== document.body) {
+            observer.observe(ancestor);
+            ancestor = ancestor.parentElement;
+          }
+        }
       }
     }
 
     window.addEventListener("resize", scheduleMeasure);
-    window.addEventListener("scroll", scheduleMeasure, true);
+    window.addEventListener("scroll", handleScroll, { capture: true, passive: true });
 
     return () => {
       if (rafId) window.cancelAnimationFrame(rafId);
       observer?.disconnect();
       window.removeEventListener("resize", scheduleMeasure);
-      window.removeEventListener("scroll", scheduleMeasure, true);
+      window.removeEventListener("scroll", handleScroll, true);
     };
-  }, [isOpen, targetSelector, title, description]);
+  }, [blocking, isOpen, targetSelector, title, description]);
 
   // Capture Escape exclusively so parent modals stay open when dismissing the guide.
   useEffect(() => {
@@ -331,25 +521,26 @@ export function OnboardingTourPopup({
     };
   }, [isOpen, onSkip]);
 
+  const targetRect = measurement.targetViewportRect;
   const layout = useMemo(
     () =>
       computeAnchoredLayout({
         targetRect,
-        popoverWidth: popoverDims.width,
-        popoverHeight: popoverDims.height,
-        viewportWidth: viewport.width,
-        viewportHeight: viewport.height,
+        popoverWidth: measurement.popoverWidth,
+        popoverHeight: measurement.popoverHeight,
+        viewportWidth: measurement.viewportWidth,
+        viewportHeight: measurement.viewportHeight,
         variant,
         preferredPlacement,
       }),
     [
-      popoverDims.height,
-      popoverDims.width,
+      measurement.popoverHeight,
+      measurement.popoverWidth,
+      measurement.viewportHeight,
+      measurement.viewportWidth,
       preferredPlacement,
       targetRect,
       variant,
-      viewport.height,
-      viewport.width,
     ],
   );
 
@@ -363,14 +554,25 @@ export function OnboardingTourPopup({
     ? `Step ${stepIndex + 1} of ${totalSteps}`
     : "Guided step";
 
+  const usesDocumentCoords = isClient && measurement.usesDocumentCoords && Boolean(targetRect);
+  const posClass = usesDocumentCoords ? "absolute" : "fixed";
+  const offsetX = usesDocumentCoords ? measurement.scrollX : 0;
+  const offsetY = usesDocumentCoords ? measurement.scrollY : 0;
+  const maxRight = usesDocumentCoords
+    ? measurement.viewportWidth + measurement.scrollX
+    : measurement.viewportWidth;
+  const maxBottom = usesDocumentCoords
+    ? measurement.docHeight
+    : measurement.viewportHeight;
+
   const spotlightPad = 6;
-  const cutTop = targetRect ? Math.max(0, targetRect.top - spotlightPad) : 0;
-  const cutLeft = targetRect ? Math.max(0, targetRect.left - spotlightPad) : 0;
+  const cutTop = targetRect ? Math.max(0, targetRect.top + offsetY - spotlightPad) : 0;
+  const cutLeft = targetRect ? Math.max(0, targetRect.left + offsetX - spotlightPad) : 0;
   const cutRight = targetRect
-    ? Math.min(viewport.width, targetRect.right + spotlightPad)
+    ? Math.max(cutLeft, Math.min(maxRight, targetRect.right + offsetX + spotlightPad))
     : 0;
   const cutBottom = targetRect
-    ? Math.min(viewport.height, targetRect.bottom + spotlightPad)
+    ? Math.max(cutTop, Math.min(maxBottom, targetRect.bottom + offsetY + spotlightPad))
     : 0;
 
   const motionClass = prefersReducedMotion
@@ -393,13 +595,13 @@ export function OnboardingTourPopup({
       ? "w-[min(calc(100vw-16px),380px)] max-h-[45dvh] overflow-y-auto p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]"
       : "w-[min(calc(100vw-28px),360px)] p-5";
 
-  return (
+  const overlayContent = (
     <>
       {/* Darkened backdrop or 4-strip spotlight cutout leaving target interactive */}
       {blocking && !targetRect && (
         <div
           aria-hidden="true"
-          className="fixed inset-0 bg-black/60 backdrop-blur-xs"
+          className="pointer-events-auto fixed inset-0 bg-black/60 backdrop-blur-xs"
           style={{ zIndex: zIndexBase - 2 }}
         />
       )}
@@ -407,7 +609,7 @@ export function OnboardingTourPopup({
       {blocking && targetRect && (
         <div aria-hidden="true">
           <div
-            className="fixed bg-black/60"
+            className={`pointer-events-auto ${posClass} bg-black/60`}
             style={{
               zIndex: zIndexBase - 2,
               top: 0,
@@ -417,17 +619,27 @@ export function OnboardingTourPopup({
             }}
           />
           <div
-            className="fixed bg-black/60"
-            style={{
-              zIndex: zIndexBase - 2,
-              top: cutBottom,
-              left: 0,
-              right: 0,
-              bottom: 0,
-            }}
+            className={`pointer-events-auto ${posClass} bg-black/60`}
+            style={
+              usesDocumentCoords
+                ? {
+                    zIndex: zIndexBase - 2,
+                    top: cutBottom,
+                    left: 0,
+                    right: 0,
+                    height: Math.max(0, measurement.docHeight - cutBottom),
+                  }
+                : {
+                    zIndex: zIndexBase - 2,
+                    top: cutBottom,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                  }
+            }
           />
           <div
-            className="fixed bg-black/60"
+            className={`pointer-events-auto ${posClass} bg-black/60`}
             style={{
               zIndex: zIndexBase - 2,
               top: cutTop,
@@ -437,7 +649,7 @@ export function OnboardingTourPopup({
             }}
           />
           <div
-            className="fixed bg-black/60"
+            className={`pointer-events-auto ${posClass} bg-black/60`}
             style={{
               zIndex: zIndexBase - 2,
               top: cutTop,
@@ -449,11 +661,11 @@ export function OnboardingTourPopup({
         </div>
       )}
 
-      {/* Spotlight ring around target element */}
+      {/* Spotlight ring around target element (zero CSS position transition so it never lags scroll) */}
       {targetRect && (
         <div
           aria-hidden="true"
-          className="pointer-events-none fixed rounded-[14px] border-2 border-[#07b6d3] shadow-[0_0_0_4px_rgba(7,182,211,0.28)] transition-all duration-150"
+          className={`pointer-events-none ${posClass} rounded-[14px] border-2 border-[#07b6d3] shadow-[0_0_0_4px_rgba(7,182,211,0.28)]`}
           style={{
             zIndex: zIndexBase - 1,
             top: cutTop,
@@ -471,11 +683,11 @@ export function OnboardingTourPopup({
         aria-modal={blocking && !targetRect ? true : undefined}
         aria-labelledby={titleId}
         aria-describedby={descId}
-        className={`pointer-events-auto fixed rounded-[20px] border border-[#07b6d3]/40 bg-white text-left shadow-[0px_10px_30px_rgba(0,0,0,0.28)] ${popoverWidthClass} ${motionClass}`}
+        className={`pointer-events-auto ${posClass} rounded-[20px] border border-[#07b6d3]/40 bg-white text-left shadow-[0px_10px_30px_rgba(0,0,0,0.28)] ${popoverWidthClass} ${motionClass}`}
         style={{
           zIndex: zIndexBase,
-          top: layout.top,
-          left: layout.left,
+          top: layout.top + offsetY,
+          left: layout.left + offsetX,
         }}
       >
         {/* Geometric Arrow Tail pointing directly toward the target */}
@@ -605,4 +817,18 @@ export function OnboardingTourPopup({
       </div>
     </>
   );
+
+  if (usesDocumentCoords) {
+    return createPortal(
+      <div
+        className="pointer-events-none absolute top-0 left-0 right-0"
+        style={{ height: measurement.docHeight }}
+      >
+        {overlayContent}
+      </div>,
+      document.body,
+    );
+  }
+
+  return overlayContent;
 }
