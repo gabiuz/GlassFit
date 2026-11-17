@@ -9,6 +9,7 @@
 import { z } from "zod";
 import { MeasurementRecordSchema } from "@/lib/visualization/measurementRecord";
 import { QuotationDocumentDraftV1Schema, QuotationDocumentSnapshotV1Schema, SwappedAccessoryDocumentSchema } from "@/lib/pricing/quotationDocument";
+import type { QuotationItemGroupName } from "@/lib/pricing/types";
 
 // ----------------------------------------------------------------------------
 // 1. Booking Request Platform & Status Enums
@@ -356,4 +357,22 @@ export interface DashboardRecentBookingRow {
       quotation_items: RawQuotationItemRecord[];
     } | null;
   } | null;
+}
+
+/**
+ * Normalizes any BOM group name or line item category to one of the 5 canonical
+ * database-checked values in public.quotation_items (ERD-E14, quotation_items_group_name_check).
+ * Maps non-standard groups like "Material Allowances" and "Contractor Margin" to "Miscellaneous".
+ */
+export function normalizeQuotationItemGroupName(groupName: string): QuotationItemGroupName {
+  if (
+    groupName === "Aluminum Framing" ||
+    groupName === "Glass Infill" ||
+    groupName === "Hardware & Accessories" ||
+    groupName === "Labor & Installation" ||
+    groupName === "Miscellaneous"
+  ) {
+    return groupName;
+  }
+  return "Miscellaneous";
 }

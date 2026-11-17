@@ -75,7 +75,7 @@ export function VisualizationStrategySection({ productId, initialData, onSave }:
                 </div>
             )}
 
-            <div className="flex flex-col sm:flex-row gap-4 max-w-2xl">
+            <div data-onboarding-target="admin-setup-strategy-cards" className="flex flex-col sm:flex-row gap-4 max-w-2xl">
                 {/* Strategy Cards */}
                 <label className={`flex-1 p-5 rounded-[12px] border-2 cursor-pointer transition-all ${
                     strategy === "Fixed" 

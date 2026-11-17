@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { HeroSection, ProductModelWorkspace } from "@/features/visualization";
 import { useVisualizationSession } from "@/lib/visualization/visualizationSession";
+import { useOptionalVisualizationOnboarding } from "../onboarding/VisualizationOnboardingProvider";
 import type { ProductStructuralDefinition } from "@/lib/visualization/types";
 import type { CatalogProduct } from "@/lib/products/types";
 import { getMatchingProductConfigurationSeed } from "@/lib/visualization/configurationPropagation";
@@ -19,6 +20,7 @@ export function ProductAwareWorkspacePage({
   catalogProducts: CatalogProduct[];
 }) {
   const router = useRouter();
+  const onboarding = useOptionalVisualizationOnboarding();
   const {
     assetSessionId,
     spaceImageSession,
@@ -142,6 +144,7 @@ export function ProductAwareWorkspacePage({
             }
           }}
           onBack={() => {
+            onboarding?.resetForFreshImage(null);
             resetVisualizationSession();
             router.push(`/visualize/${productId}/upload`);
           }}

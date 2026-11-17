@@ -23,13 +23,20 @@ export type ParametersAndRulesSectionProps = {
         dynamicBayConfig?: DynamicBayConfig | null;
     };
     onSave: () => void;
+    onOnboardingStateChange?: (state: {
+        activeTab: "parameters" | "rules" | "addons";
+    }) => void;
 };
 
-export function ParametersAndRulesSection({ productId, isAddon = false, templateId, modelStrategy, productType = "Window", initialData, onSave }: ParametersAndRulesSectionProps) {
+export function ParametersAndRulesSection({ productId, isAddon = false, templateId, modelStrategy, productType = "Window", initialData, onSave, onOnboardingStateChange }: ParametersAndRulesSectionProps) {
     const [isSaving, setIsSaving] = useState(false);
     const [autoSaveStatus, setAutoSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<"parameters" | "rules" | "addons">("parameters");
+
+    useEffect(() => {
+        onOnboardingStateChange?.({ activeTab });
+    }, [activeTab, onOnboardingStateChange]);
 
     // Reference data for rules
     const rawComponents = initialData?.components;
@@ -366,7 +373,7 @@ export function ParametersAndRulesSection({ productId, isAddon = false, template
 
     if (modelStrategy !== "Parametric") {
         return (
-            <div className="flex flex-col items-center justify-center py-16 px-4 text-center border-2 border-dashed border-neutral-200 rounded-[16px] bg-neutral-50">
+            <div data-onboarding-target="admin-setup-parameters-fixed-guard" className="flex flex-col items-center justify-center py-16 px-4 text-center border-2 border-dashed border-neutral-200 rounded-[16px] bg-neutral-50">
                 <Info className="size-12 text-[#07b6d3] mb-4" />
                 <h3 className="text-xl font-medium text-[#0f1422] mb-2">Fixed Model Selected</h3>
                 <p className="text-neutral-500 max-w-md">
@@ -412,7 +419,7 @@ export function ParametersAndRulesSection({ productId, isAddon = false, template
             </div>
 
             {/* Tabs */}
-            <div className="flex gap-2 border-b border-neutral-200 mt-2">
+            <div data-onboarding-target="admin-setup-parameters-tabs" className="flex gap-2 border-b border-neutral-200 mt-2">
                 <button
                     onClick={() => setActiveTab("parameters")}
                     className={`flex items-center gap-2 px-4 py-2 border-b-2 font-medium transition-colors ${
@@ -443,7 +450,7 @@ export function ParametersAndRulesSection({ productId, isAddon = false, template
 
             {/* Parameters Tab */}
             {activeTab === "parameters" && (
-                <div className="flex flex-col gap-4 mt-2">
+                <div data-onboarding-target="admin-setup-parameters-list" className="flex flex-col gap-4 mt-2">
                     {parameters.map((param, index) => (
                         <div key={index} className="flex flex-wrap gap-4 items-end bg-[#fcfcfc] border border-neutral-200 p-4 rounded-[12px]">
                             <div className="flex flex-col gap-1 w-full sm:w-[200px]">
@@ -532,7 +539,7 @@ export function ParametersAndRulesSection({ productId, isAddon = false, template
 
             {/* Rules Tab */}
             {activeTab === "rules" && (
-                <div className="flex flex-col gap-4 mt-2">
+                <div data-onboarding-target="admin-setup-rules-editor" className="flex flex-col gap-4 mt-2">
                     {/* Smart Dynamic Bay Replication Card */}
                     <div className="bg-[#fcfcfc] border border-neutral-200 rounded-[12px] p-4 flex flex-col gap-4 shadow-xs">
                         <div className="flex items-start justify-between gap-4">
@@ -900,7 +907,7 @@ export function ParametersAndRulesSection({ productId, isAddon = false, template
 
             {/* Compatible Add-ons Tab */}
             {activeTab === "addons" && productId && (
-                <div className="mt-2">
+                <div data-onboarding-target="admin-setup-addon-inheritance" className="mt-2">
                     <AddonInheritanceSection
                         productId={productId}
                         isAddon={isAddon}

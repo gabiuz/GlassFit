@@ -14,20 +14,39 @@ type LockedStyle = {
 };
 
 let ownerCount = 0;
+let htmlLockCount = 0;
 let savedPosition = { x: 0, y: 0 };
 let savedHtml: Pick<LockedStyle, "overflow" | "overscrollBehavior"> | null = null;
 let savedBody: LockedStyle | null = null;
 
-function acquireDocumentLock() {
-  ownerCount += 1;
-  if (ownerCount !== 1) return;
+export function acquireHtmlLock() {
+  htmlLockCount += 1;
+  if (htmlLockCount !== 1) return;
   const html = document.documentElement;
-  const body = document.body;
-  savedPosition = { x: window.scrollX, y: window.scrollY };
   savedHtml = {
     overflow: html.style.overflow,
     overscrollBehavior: html.style.overscrollBehavior,
   };
+  html.style.overflow = "hidden";
+  html.style.overscrollBehavior = "none";
+}
+
+export function releaseHtmlLock() {
+  if (htmlLockCount === 0) return;
+  htmlLockCount -= 1;
+  if (htmlLockCount !== 0 || !savedHtml) return;
+  const html = document.documentElement;
+  Object.assign(html.style, savedHtml);
+  savedHtml = null;
+}
+
+export function acquireDocumentLock() {
+  ownerCount += 1;
+  if (ownerCount !== 1) return;
+  acquireHtmlLock();
+  const html = document.documentElement;
+  const body = document.body;
+  savedPosition = { x: window.scrollX, y: window.scrollY };
   savedBody = {
     overflow: body.style.overflow,
     overscrollBehavior: body.style.overscrollBehavior,
@@ -39,8 +58,6 @@ function acquireDocumentLock() {
     paddingRight: body.style.paddingRight,
   };
   const scrollbarWidth = Math.max(0, window.innerWidth - html.clientWidth);
-  html.style.overflow = "hidden";
-  html.style.overscrollBehavior = "none";
   body.style.overflow = "hidden";
   body.style.overscrollBehavior = "none";
   body.style.position = "fixed";
@@ -51,18 +68,24 @@ function acquireDocumentLock() {
   if (scrollbarWidth > 0) body.style.paddingRight = `${scrollbarWidth}px`;
 }
 
-function releaseDocumentLock() {
+export function releaseDocumentLock() {
   if (ownerCount === 0) return;
   ownerCount -= 1;
-  if (ownerCount !== 0 || !savedHtml || !savedBody) return;
-  const html = document.documentElement;
+  if (ownerCount !== 0 || !savedBody) return;
   const body = document.body;
-  Object.assign(html.style, savedHtml);
   Object.assign(body.style, savedBody);
   const { x, y } = savedPosition;
-  savedHtml = null;
   savedBody = null;
+  releaseHtmlLock();
   window.scrollTo(x, y);
+}
+
+export function useHtmlScrollLock(active: boolean) {
+  useEffect(() => {
+    if (!active) return;
+    acquireHtmlLock();
+    return releaseHtmlLock;
+  }, [active]);
 }
 
 export function useDocumentScrollLock(active: boolean) {

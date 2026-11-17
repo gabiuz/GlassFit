@@ -103,23 +103,23 @@ export function BookingFlow() {
 
   const bomCalc = structuralDefinition
     ? calculateBOMFromStructuralDefinition(structuralDefinition, {
-        widthMm,
-        heightMm,
-        panelCount,
-        hasSill,
-        finishType,
-        glassType,
-        structuralWaiver,
-      })
+      widthMm,
+      heightMm,
+      panelCount,
+      hasSill,
+      finishType,
+      glassType,
+      structuralWaiver,
+    })
     : calculateStandardSeries798({
-        widthMm,
-        heightMm,
-        panelCount,
-        hasSill,
-        finishType,
-        glassType,
-        structuralWaiver,
-      });
+      widthMm,
+      heightMm,
+      panelCount,
+      hasSill,
+      finishType,
+      glassType,
+      structuralWaiver,
+    });
 
   const {
     quotationItems,
@@ -399,6 +399,17 @@ export function BookingFlow() {
     setErrorMessage("");
 
     try {
+      const supabase = createSupabaseBrowserClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        setErrorMessage("Authentication required to generate consultation booking link. Please log in or register.");
+        setIsGeneratingLink(false);
+        return;
+      }
+
       const result = await generateSignedBookingLink({
         widthMm,
         heightMm,
@@ -429,7 +440,23 @@ export function BookingFlow() {
       setIsLinkGenerated(true);
     } catch (err: unknown) {
       console.error("Failed to generate signed reference link:", err);
-      const msg = err instanceof Error ? err.message : "Failed to generate consultation reference link.";
+      const rawMsg = err instanceof Error ? err.message : "Failed to generate consultation reference link.";
+      let msg = rawMsg;
+      if (rawMsg.includes("Server Components render") || rawMsg.includes("digest")) {
+        try {
+          const supabase = createSupabaseBrowserClient();
+          const {
+            data: { user },
+          } = await supabase.auth.getUser();
+          if (!user) {
+            msg = "Authentication required to generate consultation booking link. Please log in or register.";
+          } else {
+            msg = "Failed to generate consultation reference link. Please check your connection and try again.";
+          }
+        } catch {
+          msg = "Failed to generate consultation reference link. Please try again.";
+        }
+      }
       setErrorMessage(msg);
     } finally {
       setIsGeneratingLink(false);
@@ -550,8 +577,8 @@ export function BookingFlow() {
           <>
             <Step4ConfirmSent
               sharingMethod={sharingMethod}
-              onConfirm={() => {}}
-              onBack={() => {}}
+              onConfirm={() => { }}
+              onBack={() => { }}
             />
             <Step4Success
               sharingMethod={sharingMethod}
@@ -581,11 +608,10 @@ export function BookingFlow() {
             <button
               onClick={handleNext}
               disabled={step === 2 && !isLinkGenerated}
-              className={`w-full sm:w-auto font-normal text-base sm:text-[20px] tracking-[-0.38px] leading-[1.4] px-5 py-3.5 rounded-[25px] flex items-center justify-center gap-3.5 transition-all shadow-sm ${
-                step === 2 && !isLinkGenerated
-                  ? "bg-[#c3c3c3] text-white opacity-70 pointer-events-none"
-                  : "bg-grad-light text-white cursor-pointer hover:opacity-95 active:translate-y-px"
-              }`}
+              className={`w-full sm:w-auto font-normal text-base sm:text-[20px] tracking-[-0.38px] leading-[1.4] px-5 py-3.5 rounded-[25px] flex items-center justify-center gap-3.5 transition-all shadow-sm ${step === 2 && !isLinkGenerated
+                ? "bg-[#c3c3c3] text-white opacity-70 pointer-events-none"
+                : "bg-grad-light text-white cursor-pointer hover:opacity-95 active:translate-y-px"
+                }`}
             >
               <span>Continue</span>
               <div className="relative w-5 h-5">

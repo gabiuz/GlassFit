@@ -1,7 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { UserPlus } from "lucide-react";
+import { useAdminSession } from "@/features/admin/auth/AdminSessionProvider";
+import { AdminHelpButton } from "@/features/admin/onboarding/AdminHelpButton";
+import { AdminSurfaceTour } from "@/features/admin/onboarding/AdminSurfaceTour";
+import { resolveStaffTourSteps } from "@/features/admin/onboarding/adminTourConfigs";
 import { StaffStatusBadge } from "./StaffStatusBadge";
 import { StaffActionsMenu } from "./StaffActionsMenu";
 import { InviteStaffDialog } from "./InviteStaffDialog";
@@ -23,6 +27,13 @@ type StaffContentProps = {
 };
 
 export function StaffContent({ initialStaff }: StaffContentProps) {
+    const { profileId, role } = useAdminSession();
+    const [helpTriggerCount, setHelpTriggerCount] = useState(0);
+    const [rowModalOpenCount, setRowModalOpenCount] = useState(0);
+
+    const handleRowModalOpenChange = useCallback((open: boolean) => {
+        setRowModalOpenCount((prev) => Math.max(0, prev + (open ? 1 : -1)));
+    }, []);
     const [staff, setStaff] = useState<StaffMember[]>(initialStaff);
     const [isInviteOpen, setIsInviteOpen] = useState(false);
     const [toast, setToast] = useState<{ type: "success" | "error"; message: string } | null>(null);
@@ -45,9 +56,10 @@ export function StaffContent({ initialStaff }: StaffContentProps) {
                 </h1>
                 <button
                     id="invite-staff-btn"
+                    data-onboarding-target="admin-staff-invite-button"
                     type="button"
                     onClick={() => setIsInviteOpen(true)}
-                    className="flex items-center gap-2 px-5 py-2.5 rounded-[10px] bg-[#07b6d3] text-white text-sm font-normal hover:bg-[#06a4be] transition-colors self-start sm:self-auto"
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-[10px] bg-[#07b6d3] text-white text-sm font-normal hover:bg-[#06a4be] transition-colors self-start sm:self-auto cursor-pointer"
                 >
                     <UserPlus className="w-4 h-4" />
                     Invite Staff
@@ -69,7 +81,7 @@ export function StaffContent({ initialStaff }: StaffContentProps) {
             )}
 
             {/* Staff Table */}
-            <div className="min-w-0 bg-white rounded-[20px] shadow-xs overflow-hidden">
+            <div data-onboarding-target="admin-staff-table" className="min-w-0 bg-white rounded-[20px] shadow-xs overflow-hidden">
                 <div className="overflow-x-auto">
                     <table className="w-full min-w-[800px]">
                         <thead>
@@ -110,6 +122,7 @@ export function StaffContent({ initialStaff }: StaffContentProps) {
                                         key={member.profile_id}
                                         member={member}
                                         onActionResult={showToast}
+                                        onModalOpenChange={handleRowModalOpenChange}
                                     />
                                 ))
                             )}
@@ -126,6 +139,20 @@ export function StaffContent({ initialStaff }: StaffContentProps) {
                     showToast(result);
                 }}
             />
+
+            <AdminSurfaceTour
+                profileId={profileId}
+                surfaceId="staff"
+                steps={resolveStaffTourSteps(role.roleName)}
+                autoOpen={false}
+                isPaused={isInviteOpen || rowModalOpenCount > 0}
+                manualTriggerCount={helpTriggerCount}
+            />
+
+            <AdminHelpButton
+                onClick={() => setHelpTriggerCount((prev) => prev + 1)}
+                ariaLabel="Staff accounts guide help"
+            />
         </div>
     );
 }
@@ -133,9 +160,11 @@ export function StaffContent({ initialStaff }: StaffContentProps) {
 function StaffTableRow({
     member,
     onActionResult,
+    onModalOpenChange,
 }: {
     member: StaffMember;
     onActionResult: (result: StaffActionResult) => void;
+    onModalOpenChange?: (open: boolean) => void;
 }) {
     const roleName = member.admin_roles?.role_name ?? "Staff";
     const isOwner = roleName.toLowerCase() === "owner";
@@ -193,6 +222,7 @@ function StaffTableRow({
                     roleName={roleName}
                     fullName={member.full_name}
                     onResult={onActionResult}
+                    onModalOpenChange={onModalOpenChange}
                 />
             </td>
         </tr>

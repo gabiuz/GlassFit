@@ -5,6 +5,7 @@ import Navbar from "@/components/ui/Navbar";
 import Footer from "@/components/ui/Footer";
 import { AuthProvider } from "@/features/auth";
 import { VisualizationSessionProvider } from "@/lib/visualization/visualizationSession";
+import { VisualizationOnboardingProvider } from "@/features/visualization/onboarding/VisualizationOnboardingProvider";
 import {
   NavbarVisibilityProvider,
   useNavbarVisibility,
@@ -57,7 +58,9 @@ export default function LayoutWrapper({
     <AuthProvider>
       <NavbarVisibilityProvider>
         <VisualizationSessionProvider>
-          <LayoutContent isAuthPage={isAuthPage}>{children}</LayoutContent>
+          <VisualizationOnboardingProvider>
+            <LayoutContent isAuthPage={isAuthPage}>{children}</LayoutContent>
+          </VisualizationOnboardingProvider>
         </VisualizationSessionProvider>
       </NavbarVisibilityProvider>
     </AuthProvider>

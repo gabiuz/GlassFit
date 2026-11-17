@@ -17,6 +17,10 @@ import {
 import Link from "next/link";
 import { Check, Copy, Plus } from "lucide-react";
 import { Select } from "radix-ui";
+import { useAdminSession } from "@/features/admin/auth/AdminSessionProvider";
+import { AdminHelpButton } from "@/features/admin/onboarding/AdminHelpButton";
+import { AdminSurfaceTour } from "@/features/admin/onboarding/AdminSurfaceTour";
+import { resolveProductsTourSteps } from "@/features/admin/onboarding/adminTourConfigs";
 import { deleteProduct } from "@/lib/admin/products/productMutations";
 import { duplicateProductPreset } from "@/lib/admin/products/presetDuplication";
 import { DeleteProductModal } from "./DeleteProductModal";
@@ -293,6 +297,8 @@ export function ProductsContent({ initialProducts }: { initialProducts: AdminPro
       ? initialScopeFromQuery
       : "standard"
   );
+  const { profileId } = useAdminSession();
+  const [helpTriggerCount, setHelpTriggerCount] = useState(0);
   const [productToDelete, setProductToDelete] = useState<AdminProductItem | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
@@ -374,7 +380,7 @@ export function ProductsContent({ initialProducts }: { initialProducts: AdminPro
           </p>
         </div>
 
-        <div className="flex w-full flex-wrap items-center gap-2 xl:w-auto xl:justify-end">
+        <div data-onboarding-target="admin-products-create-actions" className="flex w-full flex-wrap items-center gap-2 xl:w-auto xl:justify-end">
           <Link
             href="/admin/products/new"
             className="bg-[#0f1422] text-white rounded-[25px] px-4 sm:px-5 py-2.5 sm:py-3 flex items-center justify-center gap-2 cursor-pointer hover:bg-black transition-colors shrink-0 shadow-xs"
@@ -405,6 +411,7 @@ export function ProductsContent({ initialProducts }: { initialProducts: AdminPro
         </div>
       </div>
 
+      <div data-onboarding-target="admin-products-filter-bar" className="flex w-full flex-col gap-3">
       <div className="flex w-full flex-wrap items-center gap-3">
         <SearchBar
           compact
@@ -492,8 +499,9 @@ export function ProductsContent({ initialProducts }: { initialProducts: AdminPro
           Showing {filtered.length} of {scopeTotal} products in this scope
         </p>
       </div>
+      </div>
 
-      <div className="bg-white rounded-[20px] p-4 sm:p-6 lg:p-[30px] flex flex-col items-start w-full shadow-xs overflow-hidden">
+      <div data-onboarding-target="admin-products-table" className="bg-white rounded-[20px] p-4 sm:p-6 lg:p-[30px] flex flex-col items-start w-full shadow-xs overflow-hidden">
         <div className="w-full overflow-x-auto pb-2">
           <div className="w-[1181px] flex flex-col gap-2.5 items-start">
             <div className="w-full flex items-center gap-4">
@@ -548,6 +556,20 @@ export function ProductsContent({ initialProducts }: { initialProducts: AdminPro
         onConfirm={handleConfirmDelete}
         productName={productToDelete?.name || ""}
         isDeleting={isDeleting}
+      />
+
+      <AdminSurfaceTour
+        profileId={profileId}
+        surfaceId="products"
+        steps={resolveProductsTourSteps()}
+        autoOpen={true}
+        isPaused={productToDelete !== null || duplicatingId !== null}
+        manualTriggerCount={helpTriggerCount}
+      />
+
+      <AdminHelpButton
+        onClick={() => setHelpTriggerCount((prev) => prev + 1)}
+        ariaLabel="Products catalog guide help"
       />
     </div>
   );

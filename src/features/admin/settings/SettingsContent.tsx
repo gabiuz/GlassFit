@@ -13,6 +13,9 @@ import { useRouter } from "next/navigation";
 import { Eye, EyeOff, User, Plus, Trash2, ShieldAlert, Clock, Calendar } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAdminSession } from "@/features/admin/auth/AdminSessionProvider";
+import { AdminHelpButton } from "@/features/admin/onboarding/AdminHelpButton";
+import { AdminSurfaceTour } from "@/features/admin/onboarding/AdminSurfaceTour";
+import { resolveSettingsTourSteps } from "@/features/admin/onboarding/adminTourConfigs";
 import {
     updateAdminProfile,
     changeAdminEmail,
@@ -232,10 +235,12 @@ function AdminProfileCard({
     const [request, setRequest] = useState<AdminEmailChangeEventView | null>(null);
     const [reviewRequests, setReviewRequests] = useState<AdminEmailChangeEventView[]>([]);
     const fullName = [firstName, lastName].filter(Boolean).join(" ");
-    const privileged = role === "Owner" || role === "Manager";
+    const normalizedRole = role.trim().toLowerCase();
+    const isStaffRole = normalizedRole === "staff";
+    const privileged = normalizedRole === "owner" || normalizedRole === "manager";
 
     const reloadRequests = async () => {
-        if (role === "Staff") {
+        if (isStaffRole) {
             const result = await getOwnStaffEmailChangeRequest();
             if (result.ok) setRequest(result.data ?? null);
         } else if (privileged) {
@@ -247,7 +252,7 @@ function AdminProfileCard({
     useEffect(() => {
         let active = true;
         const load = async () => {
-            if (role === "Staff") {
+            if (isStaffRole) {
                 const result = await getOwnStaffEmailChangeRequest();
                 if (active && result.ok) setRequest(result.data ?? null);
             } else if (privileged) {
@@ -257,7 +262,7 @@ function AdminProfileCard({
         };
         void load();
         return () => { active = false; };
-    }, [role, privileged]);
+    }, [isStaffRole, privileged]);
 
     const handleSaveName = async () => {
         setNameLoading(true);
@@ -922,8 +927,10 @@ function FeedbackToast({ toast }: { toast: ToastState }) {
 // ---------------------------------------------------------------------------
 
 export function SettingsContent() {
-    const { firstName, lastName, email, role } = useAdminSession();
+    const { profileId, firstName, lastName, email, role } = useAdminSession();
     const { toast, show: showToast } = useToast();
+    const [helpTriggerCount, setHelpTriggerCount] = useState(0);
+    const [isAnalyticsModalOpen, setIsAnalyticsModalOpen] = useState(false);
 
     return (
         <div className="flex flex-col items-start gap-6 sm:gap-8 w-full max-w-[1240px] pb-12 select-none">
@@ -938,9 +945,11 @@ export function SettingsContent() {
             </div>
 
             {/* Two-column card grid */}
-            <div className="w-full grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
-                {/* Left column */}
-                <div className="flex flex-col gap-6">
+            <div className="w-full flex flex-col gap-6">
+                <div
+                    data-onboarding-target="admin-settings-profile-card"
+                    className="w-full grid grid-cols-1 xl:grid-cols-2 gap-6 items-start"
+                >
                     <AdminProfileCard
                         initialFirstName={firstName}
                         initialLastName={lastName}
@@ -948,23 +957,41 @@ export function SettingsContent() {
                         role={role.roleName}
                         onToast={showToast}
                     />
-                    <DataManagementCard
-                        isOwner={role.roleName.toLowerCase() === "owner"}
-                        onToast={showToast}
-                    />
+                    <SecurityCard email={email} onToast={showToast} />
                 </div>
 
-                {/* Right column */}
-                <div className="flex flex-col gap-6">
-                    <SecurityCard email={email} onToast={showToast} />
-                    <SystemPreferencesCard
-                        roleName={role.roleName}
-                        onToast={showToast}
-                    />
+                <div className="w-full grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
+                    <div data-onboarding-target="admin-settings-data-management-card">
+                        <DataManagementCard
+                            isOwner={role.roleName.toLowerCase() === "owner"}
+                            onToast={showToast}
+                            onAnalyticsModalOpenChange={setIsAnalyticsModalOpen}
+                        />
+                    </div>
+                    <div data-onboarding-target="admin-settings-preferences-card">
+                        <SystemPreferencesCard
+                            roleName={role.roleName}
+                            onToast={showToast}
+                        />
+                    </div>
                 </div>
             </div>
 
             <FeedbackToast toast={toast} />
+
+            <AdminSurfaceTour
+                profileId={profileId}
+                surfaceId="settings"
+                steps={resolveSettingsTourSteps(role.roleName)}
+                autoOpen={false}
+                isPaused={isAnalyticsModalOpen}
+                manualTriggerCount={helpTriggerCount}
+            />
+
+            <AdminHelpButton
+                onClick={() => setHelpTriggerCount((prev) => prev + 1)}
+                ariaLabel="Settings guide help"
+            />
         </div>
     );
 }

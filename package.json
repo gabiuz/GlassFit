@@ -9,6 +9,8 @@
     "lint": "eslint",
     "test:window-validation": "npx tsx --test tests/unit/windowComponentValidation.test.ts",
     "test:ms86": "npx tsx --test tests/unit/grilleOpeningAlignment.test.ts",
+    "test:ms89": "npx tsx --test tests/unit/workspaceCapabilities.test.ts tests/unit/ms89Onboarding.test.ts",
+    "test:ms90": "npx tsx --test tests/unit/ms90Onboarding.test.ts",
     "test:ms88": "npx tsx --test tests/unit/productFacing.test.ts",
     "test:ms87": "npx tsx --test tests/unit/interiorAddonAlignmentGuardrail.test.ts",
     "test:ms85": "npx tsx --test tests/unit/universalBOMConsolidation.test.ts tests/unit/profileSuitability.test.ts tests/unit/universalBOMPresentation.test.ts",

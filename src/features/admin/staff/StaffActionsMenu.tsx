@@ -21,6 +21,7 @@ type StaffActionsMenuProps = {
     roleName?: string;
     fullName?: string | null;
     onResult: (result: StaffActionResult) => void;
+    onModalOpenChange?: (open: boolean) => void;
 };
 
 export function StaffActionsMenu({
@@ -30,12 +31,31 @@ export function StaffActionsMenu({
     roleName = "Staff",
     fullName,
     onResult,
+    onModalOpenChange,
 }: StaffActionsMenuProps) {
     const { profileId: currentProfileId, role } = useAdminSession();
     const [isOpen, setIsOpen] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [isRemoveOpen, setIsRemoveOpen] = useState(false);
     const [resendResult, setResendResult] = useState<InviteStaffResult | null>(null);
+    const prevModalOpenRef = useRef(false);
+
+    useEffect(() => {
+        const isModalOpen = isRemoveOpen || resendResult !== null;
+        if (prevModalOpenRef.current !== isModalOpen) {
+            prevModalOpenRef.current = isModalOpen;
+            onModalOpenChange?.(isModalOpen);
+        }
+    }, [isRemoveOpen, resendResult, onModalOpenChange]);
+
+    useEffect(() => {
+        return () => {
+            if (prevModalOpenRef.current) {
+                prevModalOpenRef.current = false;
+                onModalOpenChange?.(false);
+            }
+        };
+    }, [onModalOpenChange]);
     const [copied, setCopied] = useState(false);
     const [menuPosition, setMenuPosition] = useState<{ top: number; right: number; openUpwards: boolean } | null>(null);
     const buttonRef = useRef<HTMLButtonElement>(null);
