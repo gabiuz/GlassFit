@@ -380,7 +380,7 @@ export function OnboardingTourPopup({
     const readDocumentMode = (el: HTMLElement | null): boolean =>
       Boolean(el && !hasFixedAncestor(el));
 
-    const measure = () => {
+    const measure = (ensureVisible = true) => {
       const vw = document.documentElement.clientWidth || window.innerWidth;
       const vh = window.innerHeight;
       let sx = window.scrollX;
@@ -407,7 +407,7 @@ export function OnboardingTourPopup({
         const el = document.querySelector<HTMLElement>(targetSelector);
         if (el) {
           let rect = el.getBoundingClientRect();
-          if (blocking && rect.width > 0 && rect.height > 0 && (rect.top < 24 || rect.bottom > vh - 24)) {
+          if (blocking && ensureVisible && rect.width > 0 && rect.height > 0 && (rect.top < 24 || rect.bottom > vh - 24)) {
             ensureTargetInViewport(el, vh);
             rect = el.getBoundingClientRect();
             sx = window.scrollX;
@@ -459,20 +459,12 @@ export function OnboardingTourPopup({
 
     const scheduleMeasure = () => {
       if (rafId) window.cancelAnimationFrame(rafId);
-      rafId = window.requestAnimationFrame(measure);
+      rafId = window.requestAnimationFrame(() => measure());
     };
 
-    const handleScroll = (event: Event) => {
-      // Document-flow overlays ride on the GPU compositor during page scroll with zero JS lag.
-      if (event.target === document || event.target === window) {
-        const targetEl = targetSelector
-          ? document.querySelector<HTMLElement>(targetSelector)
-          : null;
-        if (readDocumentMode(targetEl)) {
-          return;
-        }
-      }
-      measure();
+    const handleScroll = () => {
+      // Track the target without recentering it while the user scrolls.
+      measure(false);
     };
 
     scheduleMeasure();
@@ -588,6 +580,7 @@ export function OnboardingTourPopup({
 
   const usesDocumentCoords = isClient && measurement.usesDocumentCoords && Boolean(targetRect);
   const posClass = usesDocumentCoords ? "absolute" : "fixed";
+  const cardPosClass = variant === "mobile" ? "fixed" : posClass;
   const offsetX = usesDocumentCoords ? measurement.scrollX : 0;
   const offsetY = usesDocumentCoords ? measurement.scrollY : 0;
   const maxRight = usesDocumentCoords
@@ -722,11 +715,11 @@ export function OnboardingTourPopup({
         aria-modal={blocking && !targetRect ? true : undefined}
         aria-labelledby={titleId}
         aria-describedby={descId}
-        className={`pointer-events-auto ${posClass} rounded-[20px] border border-[#07b6d3]/40 bg-white text-left shadow-[0px_10px_30px_rgba(0,0,0,0.28)] ${popoverWidthClass} ${motionClass}`}
+        className={`pointer-events-auto ${cardPosClass} rounded-[20px] border border-[#07b6d3]/40 bg-white text-left shadow-[0px_10px_30px_rgba(0,0,0,0.28)] ${popoverWidthClass} ${motionClass}`}
         style={{
           zIndex: zIndexBase,
-          top: layout.top + offsetY,
-          left: layout.left + offsetX,
+          top: layout.top + (variant === "mobile" ? 0 : offsetY),
+          left: layout.left + (variant === "mobile" ? 0 : offsetX),
         }}
       >
         {/* Geometric Arrow Tail pointing directly toward the target */}

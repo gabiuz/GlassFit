@@ -657,7 +657,7 @@ describe("QAD-TC104.2 / QAD-TC104.12 / QAD-TC104.13 UI, backdrop, Escape, and ac
     assert.match(modal, /isPaperTourOpenRef\.current/);
   });
 
-  it("meets anchored spotlight, directional arrow, mobile compact sheet, non-blocking preview, and Escape parity contracts", () => {
+  it("keeps first-placement guidance concise and preserves workspace controls", () => {
     const popup = readFileSync("src/features/visualization/onboarding/OnboardingTourPopup.tsx", "utf8");
     const workspaceTour = readFileSync("src/features/visualization/onboarding/WorkspaceOnboardingTour.tsx", "utf8");
     const workspace = readFileSync("src/features/visualization/components/ProductModelWorkspace.tsx", "utf8");
@@ -681,17 +681,11 @@ describe("QAD-TC104.2 / QAD-TC104.12 / QAD-TC104.13 UI, backdrop, Escape, and ac
     assert.match(workspaceTour, /workspace-add-product/);
     assert.match(workspaceTour, /workspace-fit-button/);
     assert.match(workspaceTour, /workspace-canvas-stage/);
-    assert.match(workspaceTour, /workspace-accordion-placement/);
-    assert.match(workspaceTour, /workspace-accordion-design/);
-    assert.match(workspaceTour, /workspace-accordion-addons/);
-    assert.match(workspaceTour, /workspace-accordion-hardware/);
-    assert.match(workspaceTour, /workspace-accordion-occlusion/);
-    assert.match(workspaceTour, /workspace-apply-changes/);
-    assert.match(workspaceTour, /workspace-mobile-controls/);
     assert.match(workspaceTour, /workspace-continue-comparison/);
+    assert.match(workspaceTour, /const totalSteps = resolution\.hasPlacedProductsOnly \? 1 : 3/);
+    assert.doesNotMatch(workspaceTour, /workspace-accordion-|workspace-apply-changes/);
     assert.doesNotMatch(workspaceTour, /Adaptive/);
-    assert.match(workspace, /getWorkspaceConfigStages/);
-    assert.match(workspace, /accordionToStage/);
+    assert.doesNotMatch(workspace, /accordionToStage|configStages/);
     assert.match(workspace, /workspace-accordion-placement/);
     assert.match(workspace, /workspace-accordion-design/);
     assert.match(workspace, /workspace-accordion-addons/);

@@ -167,6 +167,12 @@ describe("QAD-TC105.2 admin account isolation, skip, opt-out precedence, and sto
       broken,
     );
     assert.equal(readAdminOnboardingPreference("admin-mem", broken).surfaces.products, "completed");
+
+    // Quota errors can block writes even when reads still work. The failed
+    // write remains available for the lifetime of the document.
+    const quotaLimited = createMemoryStorage({ throwOnWrite: true });
+    assert.equal(writeComparisonGuidePreference("dont_show_again", quotaLimited), false);
+    assert.equal(readComparisonGuidePreference(quotaLimited), "dont_show_again");
   });
 });
 

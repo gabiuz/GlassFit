@@ -15,7 +15,7 @@ export function resolveBookingsQueueSteps(
       targetSelector: '[data-onboarding-target="admin-bookings-search-and-tabs"]',
       title: "Search & Filter Consultation Requests",
       description:
-        "Search requests by booking reference (GF-...), customer name, email, or product summary, and filter the queue using the All, Pending, Reviewing, Confirmed, and Cancelled status tabs.",
+        "Search requests by booking reference, customer name, email, or product summary, and filter the queue using the All, Pending, Reviewing, Confirmed, and Cancelled status tabs.",
       preferredPlacement: "bottom",
       primaryActionLabel: "Next",
     },

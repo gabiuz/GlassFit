@@ -147,11 +147,7 @@ import {
 } from "@/lib/visualization/workspaceCapabilities";
 import { useOptionalVisualizationOnboarding } from "../onboarding/VisualizationOnboardingProvider";
 import { resolveNextGuideAction } from "../onboarding/resolver";
-import {
-  getWorkspaceConfigStages,
-  WorkspaceOnboardingTour,
-  type ConfigStageId,
-} from "../onboarding/WorkspaceOnboardingTour";
+import { WorkspaceOnboardingTour } from "../onboarding/WorkspaceOnboardingTour";
 import type { ActiveBlockingModal, GuideActionAttempt } from "../onboarding/types";
 import {
   useOptionalVisualizationSession,
@@ -2020,31 +2016,6 @@ export function ProductModelWorkspace({
     }
   }, [onboarding]);
 
-  const configStages = useMemo(
-    () =>
-      getWorkspaceConfigStages({
-        hasCompatibleAddons,
-        hasHardwareAccessories: accessorySlots.length > 0,
-      }),
-    [accessorySlots.length, hasCompatibleAddons],
-  );
-  const configScopeKey = onboarding
-    ? `${onboarding.guideGeneration}:${onboarding.activeGuideInstanceId ?? "none"}:${perspectiveCorners ? "fitted" : "free"}`
-    : "none";
-  const [configStageState, setConfigStageState] = useState<{
-    scopeKey: string;
-    index: number;
-  }>({
-    scopeKey: "",
-    index: 0,
-  });
-  const activeConfigStageIndex =
-    configStageState.scopeKey === configScopeKey
-      ? Math.min(configStageState.index, configStages.length - 1)
-      : 0;
-  const resetConfigStage = useCallback(() => {
-    setConfigStageState({ scopeKey: configScopeKey, index: 0 });
-  }, [configScopeKey]);
   const modelEffectStyle = useMemo(
     () => getModelEffectStyle({
       autoRealism,
@@ -3580,38 +3551,15 @@ export function ProductModelWorkspace({
   }, [captureCurrentSnapshot]);
 
   const handleApplySnapshotClick = useCallback(async () => {
-    const isApplyChangesTourStep = Boolean(
-      workspaceGuideResolution?.shouldShowPopupTour &&
-        workspaceGuideResolution.task === "preview_ready" &&
-        !workspaceGuideResolution.hasPlacedProductsOnly &&
-        configStages[activeConfigStageIndex] === "apply_changes",
-    );
-
-    const advanceAfterApplyChanges = () => {
-      if (!isApplyChangesTourStep) return;
-      const nextIndex = Math.min(activeConfigStageIndex + 1, configStages.length - 1);
-      if (shouldLockMobileEditor && configStages[nextIndex] === "preview_ready") {
-        setIsMobileControlsOpen(false);
-      }
-      setConfigStageState({ scopeKey: configScopeKey, index: nextIndex });
-    };
-
     if (isSnapshotApplied) {
       setIsSnapshotApplied(false);
-      advanceAfterApplyChanges();
       return;
     }
 
     await applyVisualizationSnapshot();
-    advanceAfterApplyChanges();
   }, [
-    activeConfigStageIndex,
     applyVisualizationSnapshot,
-    configScopeKey,
-    configStages,
     isSnapshotApplied,
-    shouldLockMobileEditor,
-    workspaceGuideResolution,
   ]);
 
   const handleSaveSnapshot = useCallback(async () => {
@@ -4109,31 +4057,6 @@ export function ProductModelWorkspace({
 
 
   const toggleAccordion = (title: string) => {
-    const accordionToStage: Record<string, ConfigStageId> = {
-      "Placement": "placement",
-      "Design and Customization Option": "design",
-      "Add-on Options": "addons",
-      "Hardware & Accessories": "hardware",
-      "Object Aware Occlusion": "occlusion",
-    };
-    const clickedStage = accordionToStage[title];
-    if (
-      workspaceGuideResolution?.shouldShowPopupTour &&
-      workspaceGuideResolution.task === "preview_ready" &&
-      !workspaceGuideResolution.hasPlacedProductsOnly &&
-      clickedStage &&
-      configStages[activeConfigStageIndex] === clickedStage
-    ) {
-      // Keep accordions collapsed during the dropdown tour so the sidebar does not jump.
-      setOpenAccordions((prev) => (prev.length === 0 ? prev : []));
-      const nextIndex = Math.min(activeConfigStageIndex + 1, configStages.length - 1);
-      if (shouldLockMobileEditor && configStages[nextIndex] === "preview_ready") {
-        setIsMobileControlsOpen(false);
-      }
-      setConfigStageState({ scopeKey: configScopeKey, index: nextIndex });
-      return;
-    }
-
     setOpenAccordions((prev) =>
       prev.includes(title)
         ? prev.filter((t) => t !== title)
@@ -4642,8 +4565,6 @@ export function ProductModelWorkspace({
               <button
                 type="button"
                 onClick={() => {
-                  setOpenAccordions([]);
-                  resetConfigStage();
                   onboarding.restartGuideManually();
                 }}
                 className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border border-neutral-300 bg-white px-3.5 py-2 text-sm font-medium text-[#0f1422] shadow-xs transition-colors hover:border-[#07b6d3] hover:bg-[#e9f9fb] cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]"
@@ -4717,8 +4638,6 @@ export function ProductModelWorkspace({
               <button
                 type="button"
                 onClick={() => {
-                  setOpenAccordions([]);
-                  resetConfigStage();
                   onboarding.restartGuideManually();
                 }}
                 className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border border-neutral-300 bg-white px-3.5 py-2 text-sm font-medium text-[#0f1422] shadow-xs transition-colors hover:border-[#07b6d3] hover:bg-[#e9f9fb] cursor-pointer whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]"
@@ -7245,15 +7164,11 @@ export function ProductModelWorkspace({
       {workspaceGuideResolution && onboarding && (
         <WorkspaceOnboardingTour
           resolution={workspaceGuideResolution}
-          configStages={configStages}
-          activeConfigStageIndex={activeConfigStageIndex}
           isMobileEditor={Boolean(shouldLockMobileEditor)}
           isCompactViewport={isCompactViewport}
-          isMobileControlsOpen={isMobileControlsOpen}
           hasPerspectiveCorners={Boolean(perspectiveCorners)}
           isCanonicalCabinet={workspaceCapabilities.isCanonicalCabinet}
           supportsPerspectivePlane={supportsPerspectivePlane}
-          onResetConfigStage={resetConfigStage}
           onPlaceManually={() =>
             onboarding.requestManualPlacement(onboarding.activeGuideInstanceId)
           }

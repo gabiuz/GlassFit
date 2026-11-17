@@ -50,7 +50,7 @@ export function resolveComparisonTourStep(
       targetSelector,
       title: "Compare Aluminum Finishes",
       description:
-        "In Product Variant mode, select different finishes in Panel A (left) and Panel B (right), or use Swap to flip sides. A finish selected in one panel is disabled in the other so you always compare two distinct options.",
+        "In Product Variant mode, choose different finishes in Panel A (left) and Panel B (right), or use Swap to flip sides. After you choose a finish, that option is unavailable in the other panel.",
       helperNote:
         comparisonOverlaysCount > 1
           ? "Multiple fixtures placed: click a product directly in the preview or use the 'Choose a product to compare' buttons above to change which fixture is being edited."

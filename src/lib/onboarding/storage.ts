@@ -44,9 +44,11 @@ export interface StorageLike {
 }
 
 const inMemoryFallbackStore = new Map<string, string>();
+const pendingFallbackWrites = new Set<string>();
 
 export function clearOnboardingMemoryFallbackForTests(): void {
   inMemoryFallbackStore.clear();
+  pendingFallbackWrites.clear();
 }
 
 function getDefaultLocalStorage(): StorageLike | null {
@@ -117,6 +119,11 @@ const VALID_BOOKINGS_PHASES = new Set<BookingsSubGuideId>([
 ]);
 
 function safeGetRaw(key: string, storage: StorageLike | null): string | null {
+  // A quota failure can leave storage readable but stale. Keep the most recent
+  // in-memory write authoritative for this document (QAD-TC105.2).
+  if (pendingFallbackWrites.has(key)) {
+    return inMemoryFallbackStore.get(key) ?? null;
+  }
   if (storage) {
     try {
       const value = storage.getItem(key);
@@ -138,11 +145,16 @@ function safeSetRaw(
   storage: StorageLike | null,
 ): boolean {
   inMemoryFallbackStore.set(key, serialized);
-  if (!storage) return false;
+  if (!storage) {
+    pendingFallbackWrites.add(key);
+    return false;
+  }
   try {
     storage.setItem(key, serialized);
+    pendingFallbackWrites.delete(key);
     return true;
   } catch {
+    pendingFallbackWrites.add(key);
     return false;
   }
 }
