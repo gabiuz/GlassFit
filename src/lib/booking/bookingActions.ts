@@ -104,7 +104,7 @@ export async function generateSignedBookingLink(
       .eq("component_id", componentId)
       .single();
     if (componentError || !component || component.status !== "Active" || !component.is_accessory_slot ||
-        !component.accessory_category || !component.allowed_accessory_ids?.includes(accessoryId)) return null;
+      !component.accessory_category || !component.allowed_accessory_ids?.includes(accessoryId)) return null;
     const eligible = await getEligibleAccessories(supabase, component.accessory_category as AccessoryCategory, [accessoryId]);
     const approved = eligible.find((candidate) => candidate.id === accessoryId);
     return approved ? { productName: approved.name, basePrice: approved.price } : null;
@@ -494,8 +494,8 @@ export async function getPublicBookingReference(
     const formattedQuoteNo = cleanCode.startsWith("CF-")
       ? cleanCode.replace("CF-", "Q-")
       : cleanCode.startsWith("Q-")
-      ? cleanCode
-      : `Q-${cleanCode}`;
+        ? cleanCode
+        : `Q-${cleanCode}`;
 
     query = query.eq("quotation_estimates.quotation_number", formattedQuoteNo);
   }
@@ -571,13 +571,13 @@ export async function getPublicBookingReference(
           const wMm = typeof details.width_mm === "number"
             ? details.width_mm
             : typeof details.width_m === "number"
-            ? Math.round(details.width_m * 1000)
-            : 1200;
+              ? Math.round(details.width_m * 1000)
+              : 1200;
           const hMm = typeof details.height_mm === "number"
             ? details.height_mm
             : typeof details.height_m === "number"
-            ? Math.round(details.height_m * 1000)
-            : 1200;
+              ? Math.round(details.height_m * 1000)
+              : 1200;
           const pCount = typeof details.panel_count === "number" ? details.panel_count : 2;
           const sill = typeof details.has_sill === "boolean" ? details.has_sill : true;
           const waiver = Boolean(details.structural_waiver);
@@ -600,9 +600,9 @@ export async function getPublicBookingReference(
           const addonAluminumFinish = typeof details.addon_aluminum_finish === "string" ? details.addon_aluminum_finish : typeof rawAddon?.finish === "string" ? (rawAddon.finish as string) : undefined;
           const parsedAccessories = Array.isArray(details.swapped_accessories)
             ? details.swapped_accessories.flatMap((entry) => {
-                const parsed = SwappedAccessoryDocumentSchema.safeParse(entry);
-                return parsed.success ? [parsed.data] : [];
-              })
+              const parsed = SwappedAccessoryDocumentSchema.safeParse(entry);
+              return parsed.success ? [parsed.data] : [];
+            })
             : [];
           const accessoryPriceDelta = typeof details.accessory_price_delta === "number" ? details.accessory_price_delta : 0;
 
@@ -656,33 +656,33 @@ export async function getPublicBookingReference(
   const rawItemsList = Array.from(itemsMap.values());
   const itemsList = docSnapshot && docSnapshot.items.length > 0
     ? docSnapshot.items.map((item) => ({
-        itemId: item.itemId,
-        productId: item.productId ?? undefined,
-        productName: item.productName,
-        productType: item.productType,
-        variantName: item.variantName,
-        specSummary: item.specificationSummary,
-        dimensionsFormatted: item.dimensionsFormatted,
-        widthMm: item.widthMm,
-        heightMm: item.heightMm,
-        panelCount: item.panelCount,
-        hasSill: item.hasSill,
-        structuralWaiver: item.structuralWaiver,
-        finishType: item.finishLabel,
-        glassType: item.glassLabel,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        totalPrice: item.calculatedSubtotal,
-        imageUrl: item.imageSource ?? null,
-        selectedAddon: item.selectedAddon,
-        addonProductId: item.addonProductId ?? null,
-        addonName: item.addonName ?? null,
-        addonPrice: item.addonPrice,
-        baseUnitPrice: item.baseUnitPrice,
-        addonAluminumFinish: item.addonAluminumFinish,
-        swappedAccessories: item.swappedAccessories,
-        accessoryPriceDelta: item.accessoryPriceDelta,
-      }))
+      itemId: item.itemId,
+      productId: item.productId ?? undefined,
+      productName: item.productName,
+      productType: item.productType,
+      variantName: item.variantName,
+      specSummary: item.specificationSummary,
+      dimensionsFormatted: item.dimensionsFormatted,
+      widthMm: item.widthMm,
+      heightMm: item.heightMm,
+      panelCount: item.panelCount,
+      hasSill: item.hasSill,
+      structuralWaiver: item.structuralWaiver,
+      finishType: item.finishLabel,
+      glassType: item.glassLabel,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      totalPrice: item.calculatedSubtotal,
+      imageUrl: item.imageSource ?? null,
+      selectedAddon: item.selectedAddon,
+      addonProductId: item.addonProductId ?? null,
+      addonName: item.addonName ?? null,
+      addonPrice: item.addonPrice,
+      baseUnitPrice: item.baseUnitPrice,
+      addonAluminumFinish: item.addonAluminumFinish,
+      swappedAccessories: item.swappedAccessories,
+      accessoryPriceDelta: item.accessoryPriceDelta,
+    }))
     : rawItemsList;
   const isMultiProduct = itemsList.length > 1;
 
@@ -773,10 +773,10 @@ export async function getPublicBookingReference(
     totalEstimatedAmount: Number(quote.total_estimated_amount),
     ...(docSnapshot
       ? deriveQuotationPricingFromItems(
-          docSnapshot,
-          QuotationItemPriceOverridesV1Schema.safeParse(quote.item_price_overrides).success ? QuotationItemPriceOverridesV1Schema.parse(quote.item_price_overrides) : null,
-          quote.admin_labor_charge !== null && quote.admin_labor_charge !== undefined ? Number(quote.admin_labor_charge) : null,
-        )
+        docSnapshot,
+        QuotationItemPriceOverridesV1Schema.safeParse(quote.item_price_overrides).success ? QuotationItemPriceOverridesV1Schema.parse(quote.item_price_overrides) : null,
+        quote.admin_labor_charge !== null && quote.admin_labor_charge !== undefined ? Number(quote.admin_labor_charge) : null,
+      )
       : deriveQuotationPricing(Number(quote.total_estimated_amount), quote.negotiated_amount === null ? null : Number(quote.negotiated_amount))),
     createdAtFormatted,
     expiresAtFormatted,
@@ -787,47 +787,47 @@ export async function getPublicBookingReference(
     items: itemsList.length > 0 ? itemsList : undefined,
     consolidatedMetrics: isMultiProduct
       ? {
-          totalQuantity: totalQuantity || itemsList.length,
-          totalFramingMeters: Math.round(totalFramingMeters * 10) / 10,
-          totalGlazingSqm: Math.round(totalGlazingSqm * 100) / 100,
-          totalLaborCost: Math.round(totalLaborCost * 100) / 100,
-        }
+        totalQuantity: totalQuantity || itemsList.length,
+        totalFramingMeters: Math.round(totalFramingMeters * 10) / 10,
+        totalGlazingSqm: Math.round(totalGlazingSqm * 100) / 100,
+        totalLaborCost: Math.round(totalLaborCost * 100) / 100,
+      }
       : undefined,
     groups: docSnapshot && docSnapshot.items.length > 0
       ? docSnapshot.items.flatMap((it) =>
-          it.groups.map((g) => ({
-            item_group_name: g.description || g.groupName,
-            component_summary: g.componentSummary,
-            finish_type: g.finishType,
-            quantity: g.quantity * it.quantity,
-            unit_label: g.unit,
-            unit_price: g.unitPrice,
-            estimated_subtotal: g.subtotal * it.quantity,
-            product_name: it.productName,
-          }))
-        )
+        it.groups.map((g) => ({
+          item_group_name: g.description || g.groupName,
+          component_summary: g.componentSummary,
+          finish_type: g.finishType,
+          quantity: g.quantity * it.quantity,
+          unit_label: g.unit,
+          unit_price: g.unitPrice,
+          estimated_subtotal: g.subtotal * it.quantity,
+          product_name: it.productName,
+        }))
+      )
       : rawItems.map(
-          (item: {
-            item_name: string;
-            quantity: number;
-            unit: string;
-            unit_price: number;
-            estimated_subtotal: number;
-            pricing_details?: unknown;
-          }) => {
-            const det = item.pricing_details as Record<string, unknown> | undefined;
-            return {
-              item_group_name: item.item_name,
-              component_summary: undefined as string | undefined,
-              finish_type: undefined as string | undefined,
-              quantity: Number(item.quantity),
-              unit_label: item.unit,
-              unit_price: Number(item.unit_price),
-              estimated_subtotal: Number(item.estimated_subtotal),
-              product_name: typeof det?.product_name === "string" ? det.product_name : undefined,
-            };
-          }
-        ),
+        (item: {
+          item_name: string;
+          quantity: number;
+          unit: string;
+          unit_price: number;
+          estimated_subtotal: number;
+          pricing_details?: unknown;
+        }) => {
+          const det = item.pricing_details as Record<string, unknown> | undefined;
+          return {
+            item_group_name: item.item_name,
+            component_summary: undefined as string | undefined,
+            finish_type: undefined as string | undefined,
+            quantity: Number(item.quantity),
+            unit_label: item.unit,
+            unit_price: Number(item.unit_price),
+            estimated_subtotal: Number(item.estimated_subtotal),
+            product_name: typeof det?.product_name === "string" ? det.product_name : undefined,
+          };
+        }
+      ),
   };
 }
 

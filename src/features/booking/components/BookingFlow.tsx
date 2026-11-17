@@ -103,23 +103,23 @@ export function BookingFlow() {
 
   const bomCalc = structuralDefinition
     ? calculateBOMFromStructuralDefinition(structuralDefinition, {
-        widthMm,
-        heightMm,
-        panelCount,
-        hasSill,
-        finishType,
-        glassType,
-        structuralWaiver,
-      })
+      widthMm,
+      heightMm,
+      panelCount,
+      hasSill,
+      finishType,
+      glassType,
+      structuralWaiver,
+    })
     : calculateStandardSeries798({
-        widthMm,
-        heightMm,
-        panelCount,
-        hasSill,
-        finishType,
-        glassType,
-        structuralWaiver,
-      });
+      widthMm,
+      heightMm,
+      panelCount,
+      hasSill,
+      finishType,
+      glassType,
+      structuralWaiver,
+    });
 
   const {
     quotationItems,
@@ -577,8 +577,8 @@ export function BookingFlow() {
           <>
             <Step4ConfirmSent
               sharingMethod={sharingMethod}
-              onConfirm={() => {}}
-              onBack={() => {}}
+              onConfirm={() => { }}
+              onBack={() => { }}
             />
             <Step4Success
               sharingMethod={sharingMethod}
@@ -608,11 +608,10 @@ export function BookingFlow() {
             <button
               onClick={handleNext}
               disabled={step === 2 && !isLinkGenerated}
-              className={`w-full sm:w-auto font-normal text-base sm:text-[20px] tracking-[-0.38px] leading-[1.4] px-5 py-3.5 rounded-[25px] flex items-center justify-center gap-3.5 transition-all shadow-sm ${
-                step === 2 && !isLinkGenerated
-                  ? "bg-[#c3c3c3] text-white opacity-70 pointer-events-none"
-                  : "bg-grad-light text-white cursor-pointer hover:opacity-95 active:translate-y-px"
-              }`}
+              className={`w-full sm:w-auto font-normal text-base sm:text-[20px] tracking-[-0.38px] leading-[1.4] px-5 py-3.5 rounded-[25px] flex items-center justify-center gap-3.5 transition-all shadow-sm ${step === 2 && !isLinkGenerated
+                ? "bg-[#c3c3c3] text-white opacity-70 pointer-events-none"
+                : "bg-grad-light text-white cursor-pointer hover:opacity-95 active:translate-y-px"
+                }`}
             >
               <span>Continue</span>
               <div className="relative w-5 h-5">
