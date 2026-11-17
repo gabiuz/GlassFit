@@ -9,18 +9,24 @@ interface DataManagementCardProps {
     lastBackupAt?: string | null;
     isOwner: boolean;
     onToast: (msg: string, variant: "success" | "error") => void;
+    onAnalyticsModalOpenChange?: (open: boolean) => void;
 }
 
 export function DataManagementCard({
     lastBackupAt: initialLastBackupAt,
     isOwner,
     onToast,
+    onAnalyticsModalOpenChange,
 }: DataManagementCardProps) {
     const [lastBackupAt, setLastBackupAt] = useState<string | null>(initialLastBackupAt ?? null);
     const [isExportingBookings, setIsExportingBookings] = useState(false);
     const [isExportingProducts, setIsExportingProducts] = useState(false);
     const [isDownloadingBackup, setIsDownloadingBackup] = useState(false);
     const [isAnalyticsModalOpen, setIsAnalyticsModalOpen] = useState(false);
+
+    useEffect(() => {
+        onAnalyticsModalOpenChange?.(isAnalyticsModalOpen);
+    }, [isAnalyticsModalOpen, onAnalyticsModalOpenChange]);
 
     useEffect(() => {
         if (initialLastBackupAt !== undefined) return;

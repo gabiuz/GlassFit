@@ -5,7 +5,7 @@
 **Version:** 1.0 (Capstone Production Release)  
 **Owner:** Gianne Crizzle A. Dasco (Design & Frontend Lead) & GlassFit Capstone Team (PUP CCIS)  
 **Status:** Locked  
-**Last reconciled:** November 16, 2026 (Implemented IMP-MS89 Work Packages 1 through 5; automated unit, lint, typecheck, build, and CV health passed; live browser/device and usability acceptance pending)
+**Last reconciled:** November 17, 2026 (Implemented IMP-MS90 Work Packages 1 through 5; automated unit, lint, typecheck, and build passed; live browser/device and usability acceptance pending)
 **PRD:** docs/prd-glassfit.md
 
 ---
@@ -203,3 +203,11 @@ DSD-UI3 and DSD-UI4: Reuse existing components, layout conventions, tokens, guid
 On desktop, present the active workspace step inside a darkened-backdrop popup tour card near the workflow. Prioritize Add Product in the empty state, then Fit for eligible products or canvas movement/resize for free placement. Provide Place manually as an optional guide branch without automatically clearing fitted geometry. Confirm Fit advances to the final tour step; Next advances intermediate tour steps and Got it completes the tour. Post-fit facing and finishes remain optional. Keep advanced controls available without requiring a tour.
 
 Expose Skip (current run), Don't show again (persistent opt-out), and Help/Restart guide with keyboard and touch support. Pause teaching cues for loading, errors, and modal ownership. On mobile, use visible fullscreen-editor controls with a compact bottom-sheet/docked tour over a darkened backdrop; Controls leads to Placement, and Done only exits fullscreen editing. Continue to Comparison remains the existing downstream action with measurement checks. Preserve focus, readable announcements, reduced motion, touch targets, and unobstructed canvas gestures. Missing anchors fall back to readable popup/sheet instructions. Guide UI must never appear in snapshots or exports.
+
+## IMP-MS90: Client Comparison Tour and Role-Aware Admin Workbench Guidance
+
+**Status:** Implemented (November 17, 2026); automated unit, lint, typecheck, and production build passed; live browser/device and usability acceptance pending. See [MS90](implementation/ms90.md), QAD-TC105.1 through QAD-TC105.14.
+
+DSD-UI9, DSD-UI10, DSD-UI11, DSD-UI14, DSD-UI16: Reuse `OnboardingTourPopup` via `src/components/shared/onboarding/OnboardingTourPopup.tsx` and explicit `useTourViewportVariant` (`"desktop" | "mobile"`). Provide a short 3-step automatic first-use tour + `Help` replay on `/comparison` (pausing for `IncompleteVariationPrompt`, `isPreparingQuotation`, and `comparisonError`), while keeping `/quotation`, `/send-booking`, `/product`, `/product-details/[id]`, `/my-requests`, `/profile`, and `/q/[code]` free of popup tours.
+
+Across Admin surfaces, scope preferences and session skips by `profileId` (`glassfit.onboarding.admin.preference.v1.<profileId>`). Provide phase-contextual guidance in `/admin/products/[productId]/setup` keyed by semantic `StepKey`, `ProductRole`, active sub-tab, and mounted controls; 2-phase orientation and `supportsItemNegotiation`-aware inspector guidance on `/admin/bookings`; 3-step automatic tours on `/admin/materials` and `/admin/products`; a non-blocking welcome cue with optional 3-step tour on `/admin`; and optional role-aware `Help` walkthroughs on `/admin/staff` and `/admin/settings`. All tours pause cleanly when domain modals are open and restore focus to the surface `Help` trigger on close.

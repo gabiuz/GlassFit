@@ -99,6 +99,8 @@ export interface OnboardingTourPopupProps {
    */
   blocking?: boolean;
   zIndexBase?: number;
+  /** Optional CSS selector to restore focus to when the tour closes (e.g. header Help button). */
+  restoreFocusSelector?: string;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -272,11 +274,14 @@ export function OnboardingTourPopup({
   variant = "desktop",
   blocking = true,
   zIndexBase = 70,
+  restoreFocusSelector,
 }: OnboardingTourPopupProps) {
   const titleId = useId();
   const descId = useId();
   const prefersReducedMotion = useReducedMotion();
   const cardRef = useRef<HTMLDivElement>(null);
+  const wasOpenRef = useRef(false);
+  const lastActiveElementRef = useRef<HTMLElement | null>(null);
   const isClient = useSyncExternalStore(subscribeNoop, () => true, () => false);
 
   const [measurement, setMeasurement] = useState<MeasurementSnapshot>(() => ({
@@ -521,6 +526,33 @@ export function OnboardingTourPopup({
     };
   }, [isOpen, onSkip]);
 
+  // Restore focus to the surface Help trigger (or prior active element) when the tour closes.
+  useEffect(() => {
+    if (isOpen) {
+      if (!wasOpenRef.current && typeof document !== "undefined") {
+        const active = document.activeElement;
+        lastActiveElementRef.current = active instanceof HTMLElement ? active : null;
+      }
+      wasOpenRef.current = true;
+      return;
+    }
+
+    if (wasOpenRef.current) {
+      wasOpenRef.current = false;
+      const restoreTarget = restoreFocusSelector
+        ? document.querySelector<HTMLElement>(restoreFocusSelector)
+        : lastActiveElementRef.current;
+      if (
+        restoreTarget &&
+        restoreTarget.isConnected &&
+        !(restoreTarget as HTMLButtonElement).disabled
+      ) {
+        restoreTarget.focus({ preventScroll: true });
+      }
+      lastActiveElementRef.current = null;
+    }
+  }, [isOpen, restoreFocusSelector]);
+
   const targetRect = measurement.targetViewportRect;
   const layout = useMemo(
     () =>
@@ -609,7 +641,7 @@ export function OnboardingTourPopup({
       {blocking && targetRect && (
         <div aria-hidden="true">
           <div
-            className={`pointer-events-auto ${posClass} bg-black/60`}
+            className={`pointer-events-auto ${posClass} bg-transparent`}
             style={{
               zIndex: zIndexBase - 2,
               top: 0,
@@ -619,7 +651,7 @@ export function OnboardingTourPopup({
             }}
           />
           <div
-            className={`pointer-events-auto ${posClass} bg-black/60`}
+            className={`pointer-events-auto ${posClass} bg-transparent`}
             style={
               usesDocumentCoords
                 ? {
@@ -639,7 +671,7 @@ export function OnboardingTourPopup({
             }
           />
           <div
-            className={`pointer-events-auto ${posClass} bg-black/60`}
+            className={`pointer-events-auto ${posClass} bg-transparent`}
             style={{
               zIndex: zIndexBase - 2,
               top: cutTop,
@@ -649,7 +681,7 @@ export function OnboardingTourPopup({
             }}
           />
           <div
-            className={`pointer-events-auto ${posClass} bg-black/60`}
+            className={`pointer-events-auto ${posClass} bg-transparent`}
             style={{
               zIndex: zIndexBase - 2,
               top: cutTop,
@@ -661,19 +693,26 @@ export function OnboardingTourPopup({
         </div>
       )}
 
-      {/* Spotlight ring around target element (zero CSS position transition so it never lags scroll) */}
+      {/* Spotlight ring + rounded darkened cutout (zero corner mismatch, zero scroll lag) */}
       {targetRect && (
         <div
           aria-hidden="true"
-          className={`pointer-events-none ${posClass} rounded-[14px] border-2 border-[#07b6d3] shadow-[0_0_0_4px_rgba(7,182,211,0.28)]`}
-          style={{
-            zIndex: zIndexBase - 1,
-            top: cutTop,
-            left: cutLeft,
-            width: Math.max(0, cutRight - cutLeft),
-            height: Math.max(0, cutBottom - cutTop),
-          }}
-        />
+          className={`pointer-events-none ${usesDocumentCoords ? "absolute inset-0" : "fixed inset-0"} overflow-hidden`}
+          style={{ zIndex: zIndexBase - 1 }}
+        >
+          <div
+            className={`pointer-events-none ${posClass} rounded-[14px] border-2 border-[#07b6d3]`}
+            style={{
+              top: cutTop,
+              left: cutLeft,
+              width: Math.max(0, cutRight - cutLeft),
+              height: Math.max(0, cutBottom - cutTop),
+              boxShadow: blocking
+                ? "0 0 0 4px rgba(7,182,211,0.28), 0 0 0 9999px rgba(0,0,0,0.6)"
+                : "0 0 0 4px rgba(7,182,211,0.28)",
+            }}
+          />
+        </div>
       )}
 
       {/* Anchored Popover Card with Directional Arrow */}

@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { SearchBar } from "@/components/shared/SearchBar";
 import { Check, ChevronDown } from "lucide-react";
+import { AdminHelpButton } from "@/features/admin/onboarding/AdminHelpButton";
+import { AdminBookingsOnboardingTour } from "@/features/admin/onboarding/AdminBookingsOnboardingTour";
 import { Select } from "radix-ui";
 import {
   type AdminBookingItem,
@@ -114,7 +116,8 @@ function BookingStatusOption({ value, label }: { value: string; label: string })
 }
 
 export function BookingsContent({ initialBookings, loadError = null }: BookingsContentProps) {
-  const { fullName: estimatorName } = useAdminSession();
+  const { fullName: estimatorName, profileId } = useAdminSession();
+  const [helpTriggerCount, setHelpTriggerCount] = useState(0);
   const router = useRouter();
   const [state, dispatch] = useReducer(
     bookingStateReducer,
@@ -359,6 +362,7 @@ export function BookingsContent({ initialBookings, loadError = null }: BookingsC
 
   return (
     <div className="flex flex-col items-start gap-6 sm:gap-8 w-full max-w-[1240px] pb-12 select-none">
+      <div data-onboarding-target="admin-bookings-search-and-tabs" className="w-full flex flex-col gap-6 sm:gap-8">
       <div className="w-full flex flex-col md:flex-row items-start md:items-center justify-between gap-4 md:gap-6">
         <div className="flex flex-col gap-1 items-start min-w-0">
           <h1 className="text-black text-2xl sm:text-3xl lg:text-[32px] font-medium leading-tight tracking-tight">
@@ -415,9 +419,17 @@ export function BookingsContent({ initialBookings, loadError = null }: BookingsC
           })}
         </div>
       </div>
+      </div>
 
       <div className="w-full flex flex-col xl:flex-row items-start gap-6">
-        <div className="w-full xl:w-[420px] 2xl:w-[480px] shrink-0 flex flex-col gap-4">
+        <div
+          data-onboarding-target={
+            filteredBookings.length > 0
+              ? "admin-bookings-list"
+              : "admin-bookings-empty-state"
+          }
+          className="w-full xl:w-[420px] 2xl:w-[480px] shrink-0 flex flex-col gap-4"
+        >
           {!state.loadError && filteredBookings.length === 0 ? (
             <div className="bg-white rounded-[20px] p-6 flex items-center justify-center text-[#c3c3c3] text-base">
               No bookings found
@@ -518,7 +530,7 @@ export function BookingsContent({ initialBookings, loadError = null }: BookingsC
               </div>
 
               <div className="bg-[#f5f5f5] p-4 sm:p-5 rounded-[20px] flex flex-col gap-4 w-full">
-                <div aria-busy={isSavingPrice || isSavingLabor} className="rounded-[16px] bg-white p-4 flex flex-col gap-3">
+                <div data-onboarding-target="admin-bookings-pricing-card" aria-busy={isSavingPrice || isSavingLabor} className="rounded-[16px] bg-white p-4 flex flex-col gap-3">
                   <div className="flex flex-col gap-1 border-b border-[#e5e5e5] pb-3">
                     <p className="text-xs text-[#c3c3c3]">Raw Product Fabrication Subtotal</p>
                     <p className="text-base font-semibold text-[#0f1422]">
@@ -619,6 +631,7 @@ export function BookingsContent({ initialBookings, loadError = null }: BookingsC
                   </div>
                   {priceError && <p role="alert" className="text-xs text-[#c50000]">{priceError}</p>}
                 </div>
+                <div data-onboarding-target="admin-bookings-pdf-and-actions" className="flex flex-col gap-4 w-full">
                 <div className="flex flex-col gap-1 items-start">
                   <p className="text-[#07b6d3] text-lg sm:text-xl font-medium leading-snug">
                     Customer Quotation PDF
@@ -669,6 +682,7 @@ export function BookingsContent({ initialBookings, loadError = null }: BookingsC
                       <span className="w-full text-[11px] text-[#c3c3c3]">Download opens Print / Save as PDF.</span>
                     </div>
                   </div>
+                </div>
                 </div>
               </div>
 
@@ -721,6 +735,21 @@ export function BookingsContent({ initialBookings, loadError = null }: BookingsC
           onConfirm={() => void handleConfirmDelete()}
         />
       )}
+
+      <AdminBookingsOnboardingTour
+        profileId={profileId}
+        loadError={state.loadError}
+        filteredBookingsCount={filteredBookings.length}
+        hasSelectedBooking={Boolean(selectedBooking)}
+        supportsItemNegotiation={Boolean(selectedBooking?.quotation.supportsItemNegotiation)}
+        isPaused={isDiscardModalOpen || isSaving || isDeleting || isSavingPrice || isSavingLabor}
+        manualTriggerCount={helpTriggerCount}
+      />
+
+      <AdminHelpButton
+        onClick={() => setHelpTriggerCount((prev) => prev + 1)}
+        ariaLabel="Bookings guide help"
+      />
 
       {/* Floating feedback toast */}
       {feedbackToast && (

@@ -3,7 +3,10 @@
 import { useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { useAdminSession } from "@/features/admin/auth/AdminSessionProvider";
+import { AdminHelpButton } from "@/features/admin/onboarding/AdminHelpButton";
 import { getProductDraft } from "@/lib/admin/products/productMutations";
+import { ProductSetupOnboardingTour, type ProductRole } from "./ProductSetupOnboardingTour";
 import { BasicInfoSection } from "./BasicInfoSection";
 import { VisualizationStrategySection } from "./VisualizationStrategySection";
 import { CatalogAssetsSection } from "./CatalogAssetsSection";
@@ -68,16 +71,44 @@ export type ProductSetupWizardProps = {
 
 export function ProductSetupWizard({ productId, initialData, initialStep }: ProductSetupWizardProps) {
     const router = useRouter();
+    const { profileId } = useAdminSession();
     const [draftId, setDraftId] = useState<string>(productId === "draft" ? "" : productId);
     const [activeStep, setActiveStep] = useState<StepKey>(initialStep);
     
     // We maintain a local copy of data to share across steps
     const [productData, setProductData] = useState<ProductSetupData>(initialData ?? {});
+    const [helpTriggerCount, setHelpTriggerCount] = useState(0);
+    const [lightboxOpen, setLightboxOpen] = useState(false);
+    const [componentsState, setComponentsState] = useState({
+        mappedFilesCount: 0,
+        selectedPartsCount: 0,
+        isDecomposing: false,
+        decompositionModalOpen: false,
+    });
+    const [parametersTab, setParametersTab] = useState<"parameters" | "rules" | "addons">("parameters");
+    const [validationState, setValidationState] = useState({
+        activeTab: "dimensions" as "dimensions" | "materials",
+        isLoading: true,
+        hasError: false,
+        hasDefinition: false,
+    });
 
     const isDraft = !draftId;
     const currentProductId = draftId || productId;
     const isAddon = Boolean(productData?.is_addon);
     const isAccessory = Boolean(productData?.is_accessory);
+    const productRole: ProductRole = isAccessory ? "accessory" : isAddon ? "addon" : "standard";
+    const resolvedModelStrategy = isAccessory
+        ? "Fixed"
+        : (Array.isArray(productData?.product_templates)
+            ? productData.product_templates[0]?.model_strategy
+            : productData?.product_templates?.model_strategy) || (isAddon ? "Parametric" : null);
+    const wholeModelAsset = productData?.product_assets?.find?.(
+        (a: ProductAssetSummary) =>
+            (a.asset_type === "Whole Model" || a.asset_type === "Catalog 3D Preview") &&
+            a.status === "Active" &&
+            Boolean(a.file_url),
+    ) || null;
     const steps = getStepsForProduct(isAddon, isAccessory);
 
     useEffect(() => {
@@ -212,22 +243,24 @@ export function ProductSetupWizard({ productId, initialData, initialStep }: Prod
                             catalogPreview: productData?.product_assets?.find?.((a: ProductAssetSummary) => a.asset_type === "Catalog 3D Preview" && a.is_primary !== false)
                         }}
                         onSave={() => handleStepChange("components")}
+                        onOnboardingStateChange={({ lightboxOpen: nextOpen }) => setLightboxOpen(nextOpen)}
                     />
                 )}
                 {activeStep === "components" && (
                     <StructuralComponentsSection
                         productId={draftId}
                         templateId={(Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.template_id : productData?.product_templates?.template_id) || ""}
-                        modelStrategy={isAccessory ? "Fixed" : ((Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.model_strategy : productData?.product_templates?.model_strategy) || (isAddon ? "Parametric" : null))}
+                        modelStrategy={resolvedModelStrategy}
                         productType={productData?.product_type || "Window"}
                         productName={productData?.product_name}
                         initialData={Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.product_components : productData?.product_templates?.product_components}
-                        wholeModelAsset={productData?.product_assets?.find?.((a: ProductAssetSummary) => (a.asset_type === "Whole Model" || a.asset_type === "Catalog 3D Preview") && a.status === "Active" && Boolean(a.file_url)) || null}
+                        wholeModelAsset={wholeModelAsset}
                         isAccessory={isAccessory}
                         isAddon={isAddon}
                         initialAccessoryCategory={(productData?.accessory_category as AccessoryCategory) || null}
                         productBasePrice={typeof productData?.base_price === "number" ? productData.base_price : undefined}
                         onSave={() => handleStepChange(isAccessory ? "validation" : "parameters")}
+                        onOnboardingStateChange={setComponentsState}
                     />
                 )}
                 {activeStep === "parameters" && (
@@ -235,7 +268,7 @@ export function ProductSetupWizard({ productId, initialData, initialStep }: Prod
                         productId={currentProductId}
                         isAddon={isAddon}
                         templateId={(Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.template_id : productData?.product_templates?.template_id) || null}
-                        modelStrategy={(Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.model_strategy : productData?.product_templates?.model_strategy) || (isAddon ? "Parametric" : null)}
+                        modelStrategy={resolvedModelStrategy}
                         productType={productData?.product_type || "Window"}
                         initialData={{
                             parameters: (Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.product_parameters : productData?.product_templates?.product_parameters) as UpsertParameterInput[] | undefined,
@@ -244,18 +277,45 @@ export function ProductSetupWizard({ productId, initialData, initialStep }: Prod
                             dynamicBayConfig: ((productData?.dynamic_bay_config || (Array.isArray(productData?.product_templates) ? productData.product_templates[0]?.dynamic_bay_config : productData?.product_templates?.dynamic_bay_config)) as DynamicBayConfig | null) || null,
                         }}
                         onSave={() => handleStepChange("validation")}
+                        onOnboardingStateChange={({ activeTab }) => setParametersTab(activeTab)}
                     />
                 )}
                 {activeStep === "validation" && (
                     <ValidationWorkspaceSection
                         productId={currentProductId}
                         onSave={() => handleStepChange("review")}
+                        onOnboardingStateChange={setValidationState}
                     />
                 )}
                 {activeStep === "review" && (
                     <ReviewAndPublishSection productId={currentProductId} />
                 )}
             </div>
+
+            <ProductSetupOnboardingTour
+                profileId={profileId}
+                manualTriggerCount={helpTriggerCount}
+                activeStep={activeStep}
+                isDraft={isDraft}
+                productRole={productRole}
+                modelStrategy={resolvedModelStrategy}
+                hasWholeModelAsset={Boolean(wholeModelAsset?.file_url)}
+                mappedFilesCount={componentsState.mappedFilesCount}
+                selectedPartsCount={componentsState.selectedPartsCount}
+                isDecomposing={componentsState.isDecomposing}
+                decompositionModalOpen={componentsState.decompositionModalOpen}
+                lightboxOpen={lightboxOpen}
+                parametersTab={parametersTab}
+                validationTab={validationState.activeTab}
+                validationLoading={validationState.isLoading}
+                validationHasError={validationState.hasError}
+                validationHasDefinition={validationState.hasDefinition}
+            />
+
+            <AdminHelpButton
+                onClick={() => setHelpTriggerCount((prev) => prev + 1)}
+                ariaLabel="Product setup guide help"
+            />
         </div>
     );
 }

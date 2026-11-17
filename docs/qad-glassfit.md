@@ -5,7 +5,7 @@
 **Version:** 1.3 (Capstone Production Release)
 **Owner:** Jedia Nicole I. Sagun (Quality Assurance Lead) & GlassFit Capstone Team (PUP CCIS)
 **Status:** Locked
-**Last reconciled:** November 16, 2026 (Implemented IMP-MS89 Work Packages 1 through 5; `npm run test:ms89` and automated build/lint/typecheck gates passed; live browser/device and usability acceptance pending)
+**Last reconciled:** November 17, 2026 (Implemented IMP-MS90 Work Packages 1 through 5; `npm run test:ms90`, `npm run test:ms89`, lint, typecheck, and build passed; live browser/device and usability acceptance pending)
 **PRD:** docs/prd-glassfit.md
 
 ---
@@ -27,6 +27,7 @@
 
 | Test ID | Traces to PRD | Test Scenario Description | Preconditions | Execution Steps | Expected Result | Severity |
 |---|---|---|---|---|---|---|
+| QAD-TC105 | PRD-F14, PRD-F15, PRD-F16, PRD-F19; preserves PRD-F5/F6/F9/F10/F11/F12/F13 | Client Comparison tour and role-aware Admin Workbench onboarding | Fresh/returning client and account-scoped admin preference states | Execute QAD-TC105.1 through QAD-TC105.14 below | Implemented (`npm run test:ms90` passing, 12/12); live browser/device, keyboard/screen-reader, and usability acceptance pending | P1 |
 | QAD-TC104 | PRD-F3, PRD-F6; preserves PRD-F5/F9/F10/F15/F16 | Context-aware first placement guidance | Both entry routes, photo modes, and placement capabilities | Execute QAD-TC104.1 through QAD-TC104.14 below | Implemented (`npm run test:ms89` passing); live browser/device, screen-reader, and usability acceptance pending | P1 |
 | QAD-TC77 | PRD-F3, PRD-F4, PRD-F5, PRD-F6, PRD-F10 | Automatic Detection and Paper Reference Calibration isolation | Both upload entry paths, API, and restored workspace sessions | Execute QAD-TC77.1 through QAD-TC77.12 below | Automatic flow is paper-free; paper-mode functionality and legitimate prior work retained under the explicit restoration policy | P0 |
 | QAD-TC78 | PRD-F3, PRD-F4, PRD-F10 | Resilient HEIC space image ingestion, exponential backoff retry, and low-latency paper detection pipeline | Space photo upload in visualization workspace with simulated network instability and 12 MP HEIC files | Execute QAD-TC78.1 through QAD-TC78.8 below | Automated retry succeeds across network drops; paper detection executes on downscaled workspace array in <180ms; click-guided snapping uses session endpoint without redundant blob re-upload | P0 |
@@ -619,3 +620,24 @@ Former MS89-AC01 through MS89-AC14 map one-to-one to QAD-TC104.1 through QAD-TC1
 | QAD-TC104.14 | Continue through snapshot/measurement/guardrail success and failure paths; inspect comparison, saved snapshot, and exports for unchanged domain checks and absent guide UI. | Continue to Comparison retains snapshot, measurement, and guardrail behavior. Guidance is absent from snapshots and exports; preview success does not confer metric accuracy. |
 
 Run the related regression catalogs and implementation checks listed in [MS89 Section 7](implementation/ms89.md#7-registered-acceptance-and-verification). Record actual browser/device versions, catalog/fixture coverage, command results, and unresolved acceptance. Missing live catalog access leaves representative-asset acceptance pending; fixtures do not establish deployed-product compatibility. First-time-user observation remains required to evaluate the onboarding outcome.
+
+## QAD-TC105: Client Comparison Tour and Role-Aware Admin Workbench Guidance
+
+**Status:** Implemented (November 17, 2026). Automated unit and contract coverage (`npm run test:ms90`: 12/12 passing in `tests/unit/ms90Onboarding.test.ts`; `npm run test:ms89`: 20/20 passing), `npm run lint`, `npx tsc --noEmit`, and `npm run build` passed. Live browser/device (`QAD-TC105.13`) and keyboard/screen-reader accessibility (`QAD-TC105.14`) remain pending until executed in a live browser environment. **Specification:** [IMP-MS90](implementation/ms90.md). **Traceability:** BRD-M3, BRD-M4, BRD-M5; PRD-F14, PRD-F15, PRD-F16, PRD-F19; SDD-C6, SDD-C7, SDD-C9; DSD-UI9, DSD-UI10, DSD-UI11, DSD-UI14, DSD-UI16.
+
+| Test ID | Verification Mode | Summary |
+|---|---|---|
+| QAD-TC105.1 | Automated Unit / Contract | MS89 storage keys preserved; Comparison and account-scoped Admin preferences isolated. |
+| QAD-TC105.2 | Automated Unit / Contract | Admin account isolation (`profileId`), session-only `Skip`, `dont_show_again` precedence on manual `Help` replay, malformed record recovery, and in-memory fallback. |
+| QAD-TC105.3 | Automated Unit / Contract | Product Setup Wizard semantic `StepKey` and `ProductRole` mapping (`standard` 7, `addon` 5, `accessory` 4), per-phase completion, and surface-wide opt-out. |
+| QAD-TC105.4 | Automated Unit / Contract | Conditional target resolution for `components_intake` vs `components_inspector`, `parameters` sub-tabs (`AddonInheritanceSection`), and `validation` inline `PartMaterialsSandbox`. |
+| QAD-TC105.5 | Automated Unit / Contract | `/comparison` 3-step tour, multi-overlay note, and pause/recovery guards for `IncompleteVariationPrompt`, `isPreparingQuotation`, and `comparisonError`. |
+| QAD-TC105.6 | Automated Unit / Contract | `/quotation`, `/send-booking`, `/product`, `/product-details/[id]`, `/my-requests`, `/profile`, and `/q/[code]` mount zero popup tours. |
+| QAD-TC105.7 | Automated Unit / Contract | `/admin/bookings` 2-phase progression, empty-queue completion, `supportsItemNegotiation` branching, PDF preview, and `Save Changes` / `Discard` copy. |
+| QAD-TC105.8 | Automated Unit / Contract | `/admin/materials` 3-step tour covering entry actions, filters, BOM pricing impact, and safe deactivation on delete. |
+| QAD-TC105.9 | Automated Unit / Contract | `/admin/products` 3-step tour covering 3 product role links, scope/status filters, and `Edit` / `Duplicate` / `Delete` behavior. |
+| QAD-TC105.10 | Automated Unit / Contract | `/admin` non-blocking welcome cue (`autoOpen={false}`) and optional 3-step tour matching rendered KPIs, shortcuts, and feeds. |
+| QAD-TC105.11 | Automated Unit / Contract | `/admin/staff` and `/admin/settings` optional role-aware `Help` only (`autoOpen={false}`). |
+| QAD-TC105.12 | Automated Unit / Contract | Modal pause invariants and zero domain mutations from tour actions. |
+| QAD-TC105.13 | Live Browser / Manual QA | Desktop (`>= 768px`) and mobile (`< 768px`) `useTourViewportVariant` layout, touch targets, and cutout alignment (Pending). |
+| QAD-TC105.14 | Live Browser / Manual QA | Keyboard navigation, `Escape` isolation, focus restoration to `Help`, `aria-live="polite"`, and reduced motion (Pending). |

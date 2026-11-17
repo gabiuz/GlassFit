@@ -203,7 +203,7 @@ export function ReviewAndPublishSection({ productId }: ReviewAndPublishSectionPr
             </div>
 
 
-            <div className="border border-neutral-200 rounded-[12px] overflow-hidden">
+            <div data-onboarding-target="admin-setup-review-publish" className="border border-neutral-200 rounded-[12px] overflow-hidden">
                 <div className="bg-neutral-50 p-4 border-b border-neutral-200">
                     <h3 className="font-medium text-[#0f1422]">Automatic Validation</h3>
                 </div>

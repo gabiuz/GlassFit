@@ -113,7 +113,7 @@ export function BasicInfoSection({ productId, initialData, onSave, isEditing }: 
 
             <div className="flex flex-col gap-[20px] max-w-2xl">
                 {/* Product Role Selector (MS67 & MS74) */}
-                <div className="flex flex-col gap-[8px] w-full">
+                <div data-onboarding-target="admin-setup-basic-role" className="flex flex-col gap-[8px] w-full">
                     <label className="text-[16px] font-medium leading-[1.4] text-[#0f1422]">
                         Product Role <span className="text-[#e74242]">*</span>
                     </label>

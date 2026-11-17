@@ -5,7 +5,7 @@
 **Version:** 1.0 (Capstone Production Release)  
 **Owner:** Reynard John B. Rabanal (Lead Product / Systems Architect) & GlassFit Capstone Team (PUP CCIS)  
 **Status:** Locked  
-**Last reconciled:** November 16, 2026 (Implemented IMP-MS89 Work Packages 1 through 5; automated unit, lint, typecheck, build, and CV health passed; live browser/device and usability acceptance pending)
+**Last reconciled:** November 17, 2026 (Implemented IMP-MS90 Work Packages 1 through 5; automated unit, lint, typecheck, and production build checks executed; live browser/device and usability acceptance pending)
 
 ---
 
@@ -67,6 +67,7 @@ GlassFit is a responsive, web-based photo-simulation and consultation-support pl
 
 | IMP-MS88 | Post-Fit Front (Exterior) and Back (Interior) Product Facing | `docs/implementation/ms88.md` | Implemented; production asset acceptance pending | November 3, 2026 | GlassFit Capstone Team |
 | IMP-MS89 | Context-Aware Visualization Onboarding and First Placement Guidance | `docs/implementation/ms89.md` | Implemented; automated checks passed, browser/device & usability acceptance pending | November 16, 2026 | GlassFit Capstone Team |
+| IMP-MS90 | Context-Aware Client Comparison Tour and Role-Aware Admin Workbench Guidance | `docs/implementation/ms90.md` | Implemented; automated checks passed, browser/device & usability acceptance pending | November 17, 2026 | GlassFit Capstone Team |
 
 ---
 
@@ -74,6 +75,7 @@ GlassFit is a responsive, web-based photo-simulation and consultation-support pl
 
 | Business Metric (`BRD-M#`) | Product Feature (`PRD-F#`) | System Component (`SDD-C#`) | Data Entity (`ERD-E#`) | Test Case (`QAD-TC#`) | Status |
 |---|---|---|---|---|---|
+| BRD-M3, BRD-M4, BRD-M5 | PRD-F14, PRD-F15, PRD-F16, PRD-F19; preserves PRD-F5/F6/F9/F10/F11/F12/F13 | SDD-C6, SDD-C7, SDD-C9 | ERD-E1 through ERD-E20 preserved; no schema change or onboarding data in database | QAD-TC105.1 through QAD-TC105.14 | Implemented (`npm run test:ms90` passing); live browser/device and usability acceptance pending |
 | BRD-M4 | PRD-F3, PRD-F6; preserves PRD-F5/F9/F10/F15/F16 | SDD-C2, SDD-C5; preserves SDD-C4/C6/C7 | ERD-E10, ERD-E11 preserved; no schema change or onboarding data in database | QAD-TC104.1 through QAD-TC104.14 | Implemented (`npm run test:ms89` passing); live browser/device and usability acceptance pending |
 | BRD-M1, BRD-M5 | PRD-F3, PRD-F4, PRD-F5, PRD-F6, PRD-F10 | SDD-C2, SDD-C3, SDD-C4, SDD-C5 | No schema change; existing session state and immutable quotation snapshots retained | QAD-TC77.1 through QAD-TC77.12 | IMP-MS62 implemented; browser acceptance pending |
 | BRD-M1, BRD-M4, BRD-M6 (Mobile Intake Resilience & Latency) | PRD-F3, PRD-F4, PRD-F10 | SDD-C2, SDD-C3 | N/A (Client Blob Buffering & Temporary Session Files) | QAD-TC78.1 through QAD-TC78.8 | Implemented |

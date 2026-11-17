@@ -4646,10 +4646,10 @@ export function ProductModelWorkspace({
                   resetConfigStage();
                   onboarding.restartGuideManually();
                 }}
-                className="inline-flex min-h-11 shrink-0 items-center gap-1 rounded-[20px] border border-neutral-300 bg-white px-3.5 text-sm font-medium text-[#0f1422] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]"
+                className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border border-neutral-300 bg-white px-3.5 py-2 text-sm font-medium text-[#0f1422] shadow-xs transition-colors hover:border-[#07b6d3] hover:bg-[#e9f9fb] cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]"
                 aria-label="Help and guide"
               >
-                <HelpCircle className="size-4 text-green" aria-hidden="true" />
+                <HelpCircle className="size-4 text-[#07b6d3]" aria-hidden="true" />
                 <span>Help</span>
               </button>
             )}
@@ -4721,10 +4721,10 @@ export function ProductModelWorkspace({
                   resetConfigStage();
                   onboarding.restartGuideManually();
                 }}
-                className="inline-flex min-h-11 items-center gap-1.5 rounded-[10px] border border-neutral-300 bg-white px-3.5 py-2 text-sm font-medium text-[#0f1422] hover:bg-neutral-100 transition-colors cursor-pointer whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]"
+                className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border border-neutral-300 bg-white px-3.5 py-2 text-sm font-medium text-[#0f1422] shadow-xs transition-colors hover:border-[#07b6d3] hover:bg-[#e9f9fb] cursor-pointer whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]"
                 aria-label="Help and placement guide"
               >
-                <HelpCircle className="size-4 text-green" aria-hidden="true" />
+                <HelpCircle className="size-4 text-[#07b6d3]" aria-hidden="true" />
                 <span>Help</span>
               </button>
             )}
