@@ -6,9 +6,24 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { PaperDetectionConfirmationModal } from "../../src/features/visualization/components/PaperDetectionConfirmationModal";
+import {
+  acquireDocumentLock,
+  acquireHtmlLock,
+  releaseDocumentLock,
+  releaseHtmlLock,
+} from "../../src/features/visualization/hooks/useDocumentScrollLock";
+import {
+  computeAnchoredLayout,
+  hasScrollableContainerWithin,
+} from "../../src/features/visualization/onboarding/OnboardingTourPopup";
+import { getWorkspaceConfigStages } from "../../src/features/visualization/onboarding/WorkspaceOnboardingTour";
 import { resolveNextGuideAction } from "../../src/features/visualization/onboarding/resolver";
 import {
   clearGuideProgress,
+  completeGuidePreference,
   createEmptyGuideProgressRecord,
   GUIDE_PREFERENCE_STORAGE_KEY,
   GUIDE_PROGRESS_STORAGE_KEY,
@@ -659,6 +674,7 @@ describe("QAD-TC104.2 / QAD-TC104.12 / QAD-TC104.13 UI, backdrop, Escape, and ac
 
   it("keeps first-placement guidance concise and preserves workspace controls", () => {
     const popup = readFileSync("src/features/visualization/onboarding/OnboardingTourPopup.tsx", "utf8");
+    const scrollLock = readFileSync("src/features/visualization/hooks/useDocumentScrollLock.ts", "utf8");
     const workspaceTour = readFileSync("src/features/visualization/onboarding/WorkspaceOnboardingTour.tsx", "utf8");
     const workspace = readFileSync("src/features/visualization/components/ProductModelWorkspace.tsx", "utf8");
     const layout = readFileSync("src/components/shared/LayoutWrapper.tsx", "utf8");
@@ -669,23 +685,33 @@ describe("QAD-TC104.2 / QAD-TC104.12 / QAD-TC104.13 UI, backdrop, Escape, and ac
     assert.match(popup, /min-h-11/);
     assert.match(popup, /env\(safe-area-inset-bottom\)/);
     assert.match(popup, /aria-live="polite"/);
-    assert.match(popup, /useReducedMotion/);
+    assert.doesNotMatch(popup, /animate-in|animate-pulse/);
+    assert.match(popup, /zIndexBase = 120/);
     assert.match(popup, /stopImmediatePropagation/);
     assert.match(popup, /computeAnchoredLayout/);
     assert.match(popup, /hasFixedAncestor/);
     assert.match(popup, /createPortal/);
-    assert.match(popup, /htmlEl\.style\.overflow = "hidden"/);
+    assert.match(popup, /useHtmlScrollLock/);
+    assert.match(scrollLock, /html\.style\.overflow = "hidden"/);
     assert.match(popup, /ensureTargetInViewport/);
     assert.match(popup, /handleWheel/);
     assert.doesNotMatch(popup, /transition-all/);
     assert.match(workspaceTour, /workspace-add-product/);
     assert.match(workspaceTour, /workspace-fit-button/);
     assert.match(workspaceTour, /workspace-canvas-stage/);
+    assert.match(workspaceTour, /workspace-accordion-placement/);
+    assert.match(workspaceTour, /workspace-accordion-design/);
+    assert.match(workspaceTour, /workspace-accordion-addons/);
+    assert.match(workspaceTour, /workspace-accordion-hardware/);
+    assert.match(workspaceTour, /workspace-accordion-occlusion/);
+    assert.match(workspaceTour, /workspace-apply-changes/);
+    assert.match(workspaceTour, /workspace-mobile-controls/);
     assert.match(workspaceTour, /workspace-continue-comparison/);
-    assert.match(workspaceTour, /const totalSteps = resolution\.hasPlacedProductsOnly \? 1 : 3/);
-    assert.doesNotMatch(workspaceTour, /workspace-accordion-|workspace-apply-changes/);
+    assert.match(workspaceTour, /primaryActionLabel:\s*"Next"/);
     assert.doesNotMatch(workspaceTour, /Adaptive/);
-    assert.doesNotMatch(workspace, /accordionToStage|configStages/);
+    assert.match(workspace, /getWorkspaceConfigStages/);
+    assert.match(workspace, /accordionToStage/);
+    assert.match(workspace, /advanceConfigStage/);
     assert.match(workspace, /workspace-accordion-placement/);
     assert.match(workspace, /workspace-accordion-design/);
     assert.match(workspace, /workspace-accordion-addons/);
@@ -693,8 +719,295 @@ describe("QAD-TC104.2 / QAD-TC104.12 / QAD-TC104.13 UI, backdrop, Escape, and ac
     assert.match(workspace, /workspace-accordion-occlusion/);
     assert.match(workspace, /workspace-apply-changes/);
     assert.match(workspace, /workspace-mobile-controls/);
-    assert.match(workspaceTour, /blocking=\{false\}/);
+    assert.deepEqual(
+      getWorkspaceConfigStages({ hasCompatibleAddons: false, hasHardwareAccessories: false }),
+      ["placement", "design", "occlusion", "apply_changes", "preview_ready"],
+    );
+    assert.deepEqual(
+      getWorkspaceConfigStages({ hasCompatibleAddons: true, hasHardwareAccessories: true }),
+      ["placement", "design", "addons", "hardware", "occlusion", "apply_changes", "preview_ready"],
+    );
+    assert.match(workspaceTour, /blocking:\s*false/);
+    assert.match(workspaceTour, /blocking=\{activeStep\?\.blocking \?\? false\}/);
     assert.match(workspace, /!isWorkspaceTourVisibleRef\.current/);
     assert.match(workspace, /markFreePlacementInteracted/);
+  });
+});
+
+describe("FIX22-V1 / FIX22-V2 / FIX22-V3 / FIX22-V9 / FIX22-V11 client onboarding regressions", () => {
+  it("renders PaperDetectionConfirmationModal cleanly when candidates is undefined and exposes Next on steps 0, 2, 3 (FIX22-V1)", () => {
+    const markup = renderToStaticMarkup(
+      React.createElement(PaperDetectionConfirmationModal, {
+        isOpen: true,
+        backgroundImageUrl: "room.webp",
+        canvasWidth: 1024,
+        canvasHeight: 768,
+        initialCorners: [
+          { x: 100, y: 100 },
+          { x: 310, y: 100 },
+          { x: 310, y: 397 },
+          { x: 100, y: 397 },
+        ],
+        candidates: undefined,
+        selectedCandidateId: null,
+        status: "manual_pin_required",
+        onConfirm: () => {},
+        onSkip: () => {},
+        onCancel: () => {},
+      }),
+    );
+    assert.match(markup, /data-onboarding-target="paper-tour-help-trigger"/);
+    assert.match(markup, /Review paper reference/);
+    assert.match(markup, /Select the paper format you used/);
+
+    const modalSource = readFileSync(
+      "src/features/visualization/components/PaperDetectionConfirmationModal.tsx",
+      "utf8",
+    );
+    assert.match(modalSource, /const EMPTY_CANDIDATES:\s*PaperCandidate\[\]\s*=\s*\[\]/);
+    assert.match(modalSource, /candidates\s*=\s*EMPTY_CANDIDATES/);
+    assert.match(
+      modalSource,
+      /paperTourStep === 0 \|\| paperTourStep === 2 \|\| paperTourStep === 3[\s\S]*?"Next"/,
+    );
+    assert.match(
+      modalSource,
+      /<OnboardingTourPopup[\s\S]*?isOpen=\{isPaperTourOpen\}[\s\S]*?restoreFocusSelector='\[data-onboarding-target="paper-tour-help-trigger"\]'/,
+    );
+  });
+
+  it("coordinates html and body scroll locks across nested child/parent mount and unmount orders (FIX22-V2)", () => {
+    const originalDocument = globalThis.document;
+    const originalWindow = globalThis.window;
+
+    const htmlStyle: Record<string, string> = { overflow: "", overscrollBehavior: "" };
+    const bodyStyle: Record<string, string> = {
+      overflow: "",
+      overscrollBehavior: "",
+      position: "",
+      top: "",
+      left: "",
+      right: "",
+      width: "",
+      paddingRight: "",
+    };
+    const scrollCalls: Array<{ x: number; y: number }> = [];
+
+    try {
+      (globalThis as { document: unknown }).document = {
+        documentElement: { style: htmlStyle, clientWidth: 1280 },
+        body: { style: bodyStyle },
+      };
+      (globalThis as { window: unknown }).window = {
+        scrollX: 0,
+        scrollY: 120,
+        innerWidth: 1280,
+        scrollTo: (x: number, y: number) => {
+          scrollCalls.push({ x, y });
+        },
+      };
+
+      // Child effect (OnboardingTourPopup) acquires html lock before parent (PaperDetectionConfirmationModal) acquires document lock.
+      acquireHtmlLock();
+      assert.equal(htmlStyle.overflow, "hidden");
+      assert.equal(htmlStyle.overscrollBehavior, "none");
+
+      acquireDocumentLock();
+      assert.equal(htmlStyle.overflow, "hidden");
+      assert.equal(bodyStyle.overflow, "hidden");
+      assert.equal(bodyStyle.position, "fixed");
+
+      // Closing child first then parent leaves both html and body unlocked.
+      releaseHtmlLock();
+      assert.equal(htmlStyle.overflow, "hidden");
+      releaseDocumentLock();
+      assert.equal(htmlStyle.overflow, "");
+      assert.equal(htmlStyle.overscrollBehavior, "");
+      assert.equal(bodyStyle.overflow, "");
+      assert.equal(bodyStyle.position, "");
+
+      // Closing parent before child also leaves html unlocked only once both release.
+      acquireHtmlLock();
+      acquireDocumentLock();
+      releaseDocumentLock();
+      assert.equal(htmlStyle.overflow, "hidden");
+      assert.equal(bodyStyle.overflow, "");
+      releaseHtmlLock();
+      assert.equal(htmlStyle.overflow, "");
+      assert.equal(htmlStyle.overscrollBehavior, "");
+      assert.ok(scrollCalls.length >= 2);
+    } finally {
+      (globalThis as { document: unknown }).document = originalDocument;
+      (globalThis as { window: unknown }).window = originalWindow;
+    }
+
+    const popupSource = readFileSync("src/features/visualization/onboarding/OnboardingTourPopup.tsx", "utf8");
+    const modalSource = readFileSync("src/features/visualization/components/PaperDetectionConfirmationModal.tsx", "utf8");
+    assert.match(popupSource, /useHtmlScrollLock\(Boolean\(isOpen && blocking\)\)/);
+    assert.match(modalSource, /useDocumentScrollLock\(isOpen\)/);
+  });
+
+  it("preserves dont_show_again across manual Help replay completion in storage, store, and provider (FIX22-V3)", () => {
+    resetInMemoryPreferenceFallbackForTests();
+    const local = makeMemoryStorage();
+
+    writeGuidePreference("dont_show_again", local);
+    assert.equal(completeGuidePreference(local), "dont_show_again");
+    assert.equal(readGuidePreference(local), "dont_show_again");
+
+    const freshLocal = makeMemoryStorage();
+    assert.equal(completeGuidePreference(freshLocal), "completed");
+    assert.equal(readGuidePreference(freshLocal), "completed");
+
+    let optedOutState = createInitialGuideRuntimeState({
+      storedPreference: "dont_show_again",
+      storedProgress: null,
+      sessionImageId: "img-v3",
+    });
+    optedOutState = restartGuideManuallyState(optedOutState);
+    assert.equal(optedOutState.manualRunActive, true);
+    optedOutState = completeWorkspaceTourState(optedOutState);
+    assert.equal(optedOutState.preferenceStatus, "dont_show_again");
+    assert.equal(optedOutState.manualRunActive, false);
+
+    const providerSource = readFileSync(
+      "src/features/visualization/onboarding/VisualizationOnboardingProvider.tsx",
+      "utf8",
+    );
+    assert.match(providerSource, /const completeWorkspaceTour = useCallback\(\(\) => \{\s*completeGuidePreference\(\);/);
+  });
+
+  it("pins mobile footer actions and bottom-anchors tall targets without overlapping headers (FIX22-V9)", () => {
+    const tallTargetLayout = computeAnchoredLayout({
+      targetRect: { top: 80, left: 16, right: 374, bottom: 720, width: 358, height: 640 },
+      popoverWidth: 374,
+      popoverHeight: 240,
+      viewportWidth: 390,
+      viewportHeight: 844,
+      variant: "mobile",
+      preferredPlacement: "auto",
+    });
+    assert.equal(tallTargetLayout.side, "fallback");
+    assert.equal(tallTargetLayout.top, 844 - 240 - 8);
+
+    const centeredTargetLayout = computeAnchoredLayout({
+      targetRect: { top: 300, left: 20, right: 370, bottom: 520, width: 350, height: 220 },
+      popoverWidth: 374,
+      popoverHeight: 220,
+      viewportWidth: 390,
+      viewportHeight: 844,
+      variant: "mobile",
+      preferredPlacement: "auto",
+    });
+    assert.equal(centeredTargetLayout.side, "fallback");
+    assert.equal(centeredTargetLayout.top, 844 - 220 - 8);
+
+    const compactBottomTarget = computeAnchoredLayout({
+      targetRect: { top: 700, left: 20, right: 370, bottom: 760, width: 350, height: 60 },
+      popoverWidth: 374,
+      popoverHeight: 200,
+      viewportWidth: 390,
+      viewportHeight: 844,
+      variant: "mobile",
+      preferredPlacement: "auto",
+    });
+    assert.equal(compactBottomTarget.side, "top");
+
+    const popupSource = readFileSync("src/features/visualization/onboarding/OnboardingTourPopup.tsx", "utf8");
+    assert.match(popupSource, /max-h-\[45dvh\] flex flex-col overflow-hidden/);
+    assert.match(popupSource, /min-h-0 flex-1 overflow-y-auto overscroll-contain/);
+    assert.match(popupSource, /<div className="shrink-0">/);
+  });
+
+  it("hardens wheel scroll inside spotlight, non-trapping fallback, Tab trap, focus entry, and isPaused focus guard (FIX22-V11)", () => {
+    const originalElement = globalThis.Element;
+    const originalHTMLElement = globalThis.HTMLElement;
+    const originalWindow = globalThis.window;
+
+    class MockElement {
+      parentElement: MockElement | null = null;
+      private children: MockElement[] = [];
+      appendChild(child: MockElement) {
+        child.parentElement = this;
+        this.children.push(child);
+      }
+      contains(node: unknown): boolean {
+        if (node === this) return true;
+        return this.children.some((c) => c.contains(node));
+      }
+    }
+    class MockHTMLElement extends MockElement {
+      scrollHeight = 100;
+      clientHeight = 100;
+      scrollWidth = 100;
+      clientWidth = 100;
+      overflowY = "visible";
+      overflowX = "visible";
+    }
+
+    try {
+      (globalThis as { Element: unknown }).Element = MockElement;
+      (globalThis as { HTMLElement: unknown }).HTMLElement = MockHTMLElement;
+      (globalThis as { window: unknown }).window = {
+        getComputedStyle: (el: MockHTMLElement) => ({
+          overflowY: el.overflowY,
+          overflowX: el.overflowX,
+        }),
+      };
+
+      const boundary = new MockHTMLElement();
+      const scrollDrawer = new MockHTMLElement();
+      scrollDrawer.overflowY = "auto";
+      scrollDrawer.scrollHeight = 500;
+      scrollDrawer.clientHeight = 200;
+      const innerChild = new MockHTMLElement();
+      boundary.appendChild(scrollDrawer);
+      scrollDrawer.appendChild(innerChild);
+
+      const nonScrollEl = new MockHTMLElement();
+      boundary.appendChild(nonScrollEl);
+
+      const outsideEl = new MockHTMLElement();
+
+      assert.equal(
+        hasScrollableContainerWithin(
+          innerChild as unknown as EventTarget,
+          boundary as unknown as HTMLElement,
+        ),
+        true,
+      );
+      assert.equal(
+        hasScrollableContainerWithin(
+          nonScrollEl as unknown as EventTarget,
+          boundary as unknown as HTMLElement,
+        ),
+        false,
+      );
+      assert.equal(
+        hasScrollableContainerWithin(
+          outsideEl as unknown as EventTarget,
+          boundary as unknown as HTMLElement,
+        ),
+        false,
+      );
+    } finally {
+      (globalThis as { Element: unknown }).Element = originalElement;
+      (globalThis as { HTMLElement: unknown }).HTMLElement = originalHTMLElement;
+      (globalThis as { window: unknown }).window = originalWindow;
+    }
+
+    const popupSource = readFileSync("src/features/visualization/onboarding/OnboardingTourPopup.tsx", "utf8");
+    assert.match(popupSource, /isInsideNode\(spotlightEl, event\.target\) &&\s*hasScrollableContainerWithin\(event\.target, spotlightEl\)/);
+    assert.match(popupSource, /\{blocking && !targetRect && \(\s*<div[\s\S]*?className="pointer-events-none fixed inset-0 bg-black\/60/);
+    assert.match(popupSource, /event\.key === "Tab" && blocking && !targetRect && cardRef\.current/);
+    assert.match(popupSource, /if \(!alreadyFocusedInside\)\s*\{\s*cardRef\.current\?\.focus\(\{ preventScroll: true \}\)/);
+    assert.match(popupSource, /if \(!isPaused\)\s*\{\s*const restoreTarget = restoreFocusSelector/);
+
+    const workspaceTourSource = readFileSync("src/features/visualization/onboarding/WorkspaceOnboardingTour.tsx", "utf8");
+    const workspaceSource = readFileSync("src/features/visualization/components/ProductModelWorkspace.tsx", "utf8");
+    assert.match(workspaceTourSource, /isOpen=\{Boolean\(activeStep\)\}/);
+    assert.match(workspaceTourSource, /isPaused=\{isPaused\}/);
+    assert.match(workspaceTourSource, /restoreFocusSelector='\[data-onboarding-target="workspace-help-trigger"\]'/);
+    assert.match(workspaceSource, /data-onboarding-target="workspace-help-trigger"/);
   });
 });

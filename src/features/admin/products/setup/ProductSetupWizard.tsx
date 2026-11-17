@@ -26,7 +26,7 @@ export interface ProductAssetSummary {
     is_primary?: boolean;
     display_order?: number;
     file_name?: string;
-    file_url?: string;
+    file_url?: string | null;
     storage_path?: string;
     r2_object_key?: string;
     file_size_bytes?: number;
@@ -92,6 +92,28 @@ export function ProductSetupWizard({ productId, initialData, initialStep }: Prod
         hasError: false,
         hasDefinition: false,
     });
+    const [reviewState, setReviewState] = useState({
+        isLoading: true,
+        hasError: false,
+    });
+
+    const resetStepTransientState = useCallback((targetStep: StepKey) => {
+        if (targetStep === "parameters") {
+            setParametersTab("parameters");
+        } else if (targetStep === "validation") {
+            setValidationState({
+                activeTab: "dimensions",
+                isLoading: true,
+                hasError: false,
+                hasDefinition: false,
+            });
+        } else if (targetStep === "review") {
+            setReviewState({
+                isLoading: true,
+                hasError: false,
+            });
+        }
+    }, []);
 
     const isDraft = !draftId;
     const currentProductId = draftId || productId;
@@ -107,7 +129,7 @@ export function ProductSetupWizard({ productId, initialData, initialStep }: Prod
         (a: ProductAssetSummary) =>
             (a.asset_type === "Whole Model" || a.asset_type === "Catalog 3D Preview") &&
             a.status === "Active" &&
-            Boolean(a.file_url),
+            Boolean(a.file_url || a.r2_object_key),
     ) || null;
     const steps = getStepsForProduct(isAddon, isAccessory);
 
@@ -115,7 +137,8 @@ export function ProductSetupWizard({ productId, initialData, initialStep }: Prod
         // Route state is authoritative when the server provides a new validated step.
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setActiveStep(initialStep);
-    }, [initialStep]);
+        resetStepTransientState(initialStep);
+    }, [initialStep, resetStepTransientState]);
 
     const refreshDraft = useCallback(async (idToFetch?: string) => {
         const id = idToFetch || draftId;
@@ -131,6 +154,7 @@ export function ProductSetupWizard({ productId, initialData, initialStep }: Prod
     }, [draftId]);
 
     const handleStepChange = async (targetStep: StepKey) => {
+        resetStepTransientState(targetStep);
         setActiveStep(targetStep);
         if (currentProductId && currentProductId !== "draft") {
             router.replace(buildProductSetupUrl(currentProductId, targetStep), { scroll: false });
@@ -144,6 +168,7 @@ export function ProductSetupWizard({ productId, initialData, initialStep }: Prod
         setDraftId(newId);
         setProductData({ ...productData, ...data, product_id: newId });
         const nextStep = (isAddonProduct || isAccessoryProduct) ? "components" : "strategy";
+        resetStepTransientState(nextStep);
         setActiveStep(nextStep);
         router.replace(buildProductSetupUrl(newId, nextStep));
         refreshDraft(newId);
@@ -162,6 +187,7 @@ export function ProductSetupWizard({ productId, initialData, initialStep }: Prod
             product_templates: Array.isArray(productData?.product_templates) ? [mergedTemplate] : mergedTemplate,
         });
         const nextStep = isAccessory ? "components" : "assets";
+        resetStepTransientState(nextStep);
         setActiveStep(nextStep);
         router.replace(buildProductSetupUrl(currentProductId, nextStep), { scroll: false });
         if (draftId) refreshDraft(draftId);
@@ -169,13 +195,20 @@ export function ProductSetupWizard({ productId, initialData, initialStep }: Prod
 
     return (
         <div className="flex flex-col items-start gap-6 sm:gap-8 w-full max-w-[1240px] pb-12 select-none">
-            <div className="w-full flex flex-col items-start min-w-0">
-                <h1 className="text-black text-2xl sm:text-3xl lg:text-[32px] font-medium leading-tight tracking-tight">
-                    {isDraft ? "Add Product" : "Edit Product Setup"}
-                </h1>
-                <p className="text-neutral-700 text-sm sm:text-base lg:text-lg font-normal leading-snug">
-                    {isDraft ? "Start by entering the basic product information" : `Setting up product: ${productData?.product_name || draftId}`}
-                </p>
+            <div className="w-full flex items-start justify-between gap-3 min-w-0">
+                <div className="flex flex-col items-start min-w-0">
+                    <h1 className="text-black text-2xl sm:text-3xl lg:text-[32px] font-medium leading-tight tracking-tight">
+                        {isDraft ? "Add Product" : "Edit Product Setup"}
+                    </h1>
+                    <p className="text-neutral-700 text-sm sm:text-base lg:text-lg font-normal leading-snug">
+                        {isDraft ? "Start by entering the basic product information" : `Setting up product: ${productData?.product_name || draftId}`}
+                    </p>
+                </div>
+                <AdminHelpButton
+                    inlineOnMobile
+                    onClick={() => setHelpTriggerCount((prev) => prev + 1)}
+                    ariaLabel="Product setup guide help"
+                />
             </div>
 
             {/* Stepper / Tabs */}
@@ -288,7 +321,10 @@ export function ProductSetupWizard({ productId, initialData, initialStep }: Prod
                     />
                 )}
                 {activeStep === "review" && (
-                    <ReviewAndPublishSection productId={currentProductId} />
+                    <ReviewAndPublishSection
+                        productId={currentProductId}
+                        onOnboardingStateChange={setReviewState}
+                    />
                 )}
             </div>
 
@@ -299,7 +335,7 @@ export function ProductSetupWizard({ productId, initialData, initialStep }: Prod
                 isDraft={isDraft}
                 productRole={productRole}
                 modelStrategy={resolvedModelStrategy}
-                hasWholeModelAsset={Boolean(wholeModelAsset?.file_url)}
+                hasWholeModelAsset={Boolean(wholeModelAsset?.file_url || wholeModelAsset?.r2_object_key)}
                 mappedFilesCount={componentsState.mappedFilesCount}
                 selectedPartsCount={componentsState.selectedPartsCount}
                 isDecomposing={componentsState.isDecomposing}
@@ -310,11 +346,8 @@ export function ProductSetupWizard({ productId, initialData, initialStep }: Prod
                 validationLoading={validationState.isLoading}
                 validationHasError={validationState.hasError}
                 validationHasDefinition={validationState.hasDefinition}
-            />
-
-            <AdminHelpButton
-                onClick={() => setHelpTriggerCount((prev) => prev + 1)}
-                ariaLabel="Product setup guide help"
+                reviewLoading={reviewState.isLoading}
+                reviewHasError={reviewState.hasError}
             />
         </div>
     );

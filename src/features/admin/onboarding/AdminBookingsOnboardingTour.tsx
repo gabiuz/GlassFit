@@ -40,8 +40,14 @@ export function resolveBookingsActiveSubGuide(
     return null;
   }
 
+  const hasVisibleSelectedBooking =
+    input.filteredBookingsCount > 0 && input.hasSelectedBooking;
+
   if (input.manualPhase) {
-    if (input.manualPhase === "inspector_negotiation" && !input.hasSelectedBooking) {
+    if (
+      input.manualPhase === "inspector_negotiation" &&
+      !hasVisibleSelectedBooking
+    ) {
       return "queue_orientation";
     }
     return input.manualPhase;
@@ -64,7 +70,7 @@ export function resolveBookingsActiveSubGuide(
     input.session.skippedBookingsPhases.inspector_negotiation,
   );
 
-  if (input.hasSelectedBooking && !inspectorDone && !inspectorSkipped) {
+  if (hasVisibleSelectedBooking && !inspectorDone && !inspectorSkipped) {
     return "inspector_negotiation";
   }
 
@@ -129,11 +135,14 @@ export function AdminBookingsOnboardingTour({
     }
   }
 
+  const hasVisibleSelectedBooking =
+    filteredBookingsCount > 0 && hasSelectedBooking;
+
   const activePhase = resolveBookingsActiveSubGuide({
     isHydrated,
     loadError,
     filteredBookingsCount,
-    hasSelectedBooking,
+    hasSelectedBooking: hasVisibleSelectedBooking,
     isPaused,
     preference,
     session,
@@ -145,7 +154,7 @@ export function AdminBookingsOnboardingTour({
       ? resolveBookingsInspectorSteps(supportsItemNegotiation)
       : resolveBookingsQueueSteps({
           filteredBookingsCount,
-          hasSelectedBooking,
+          hasSelectedBooking: hasVisibleSelectedBooking,
         });
 
   const handleSkip = useCallback(() => {
@@ -181,7 +190,7 @@ export function AdminBookingsOnboardingTour({
       );
       setPreference(nextPref);
 
-      if (filteredBookingsCount > 0 && hasSelectedBooking) {
+      if (hasVisibleSelectedBooking) {
         setStepIndex(0);
         if (manualPhase === "queue_orientation") {
           setManualPhase("inspector_negotiation");
@@ -201,38 +210,37 @@ export function AdminBookingsOnboardingTour({
     setManualPhase(null);
   }, [
     activePhase,
-    filteredBookingsCount,
-    hasSelectedBooking,
+    hasVisibleSelectedBooking,
     manualPhase,
     profileId,
     stepIndex,
     steps.length,
   ]);
 
-  if (!activePhase || steps.length === 0) return null;
-
-  const clampedIndex = Math.min(Math.max(0, stepIndex), steps.length - 1);
+  const isOpen = Boolean(activePhase && steps.length > 0);
+  const clampedIndex =
+    steps.length > 0 ? Math.min(Math.max(0, stepIndex), steps.length - 1) : 0;
   const step = steps[clampedIndex];
   const displayStepIndex =
     activePhase === "inspector_negotiation" ? clampedIndex + 2 : clampedIndex;
-  const displayTotalSteps =
-    filteredBookingsCount > 0 && hasSelectedBooking ? 4 : 2;
+  const displayTotalSteps = hasVisibleSelectedBooking ? 4 : 2;
 
   return (
     <OnboardingTourPopup
-      isOpen={true}
-      title={step.title}
-      description={step.description}
+      isOpen={isOpen}
+      title={step?.title ?? ""}
+      description={step?.description ?? ""}
       stepIndex={displayStepIndex}
       totalSteps={displayTotalSteps}
-      targetSelector={step.targetSelector}
-      preferredPlacement={step.preferredPlacement}
-      primaryActionLabel={step.primaryActionLabel}
+      targetSelector={step?.targetSelector}
+      preferredPlacement={step?.preferredPlacement ?? "auto"}
+      primaryActionLabel={step?.primaryActionLabel}
       onPrimaryAction={handlePrimaryAction}
       onSkip={handleSkip}
       onDontShowAgain={handleDontShowAgain}
       variant={viewportVariant}
       blocking={true}
+      isPaused={isPaused}
       restoreFocusSelector='[data-onboarding-target="admin-header-help"]'
     />
   );

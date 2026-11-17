@@ -1,6 +1,9 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { AdminHelpButton } from "../../src/features/admin/onboarding/AdminHelpButton";
 
 import {
   GUIDE_PREFERENCE_STORAGE_KEY,
@@ -602,5 +605,353 @@ describe("QAD-TC105.7 through QAD-TC105.12 Admin surfaces, role-aware Help, and 
     const settings = readFileSync("src/features/admin/settings/SettingsContent.tsx", "utf8");
     assert.match(settings, /isPaused=\{isAnalyticsModalOpen\}/);
     assert.match(settings, /autoOpen=\{false\}/);
+  });
+});
+
+describe("FIX22-V4 through FIX22-V12 admin and comparison onboarding regressions", () => {
+  it("prevents Bookings inspector_negotiation when filteredBookingsCount is 0 and keeps tour mounted for focus restore (FIX22-V4)", () => {
+    clearOnboardingMemoryFallbackForTests();
+    const local = createMemoryStorage();
+    const session = createMemoryStorage();
+
+    const queueDonePref = markAdminBookingsPhaseCompleted(
+      "admin-v4",
+      "queue_orientation",
+      false,
+      local,
+    );
+
+    // Even if a stale selectedBooking reference exists, 0 visible filtered rows must never trigger inspector_negotiation.
+    const autoWithZeroFiltered = resolveBookingsActiveSubGuide({
+      isHydrated: true,
+      loadError: null,
+      filteredBookingsCount: 0,
+      hasSelectedBooking: true,
+      isPaused: false,
+      preference: queueDonePref,
+      session: readAdminOnboardingSession("admin-v4", session),
+      manualPhase: null,
+    });
+    assert.equal(autoWithZeroFiltered, null);
+
+    const manualInspectorZeroFiltered = resolveBookingsActiveSubGuide({
+      isHydrated: true,
+      loadError: null,
+      filteredBookingsCount: 0,
+      hasSelectedBooking: true,
+      isPaused: false,
+      preference: queueDonePref,
+      session: readAdminOnboardingSession("admin-v4", session),
+      manualPhase: "inspector_negotiation",
+    });
+    assert.equal(manualInspectorZeroFiltered, "queue_orientation");
+
+    const bookingsContent = readFileSync(
+      "src/features/admin/bookings/BookingsContent.tsx",
+      "utf8",
+    );
+    assert.match(
+      bookingsContent,
+      /hasSelectedBooking=\{filteredBookings\.length > 0 && Boolean\(selectedBooking\)\}/,
+    );
+
+    const bookingsTour = readFileSync(
+      "src/features/admin/onboarding/AdminBookingsOnboardingTour.tsx",
+      "utf8",
+    );
+    assert.match(bookingsTour, /const isOpen = Boolean\(activePhase && steps\.length > 0\);/);
+    assert.match(
+      bookingsTour,
+      /<OnboardingTourPopup[\s\S]*?isOpen=\{isOpen\}[\s\S]*?isPaused=\{isPaused\}[\s\S]*?restoreFocusSelector='\[data-onboarding-target="admin-header-help"\]'/,
+    );
+  });
+
+  it("stabilizes StaffContent row modal tracking with useCallback and prevModalOpenRef transition guard (FIX22-V5)", () => {
+    const staffContent = readFileSync("src/features/admin/staff/StaffContent.tsx", "utf8");
+    assert.match(
+      staffContent,
+      /const handleRowModalOpenChange = useCallback\(\(open:\s*boolean\)\s*=>\s*\{[\s\S]*?setRowModalOpenCount\(\(prev\)\s*=>\s*Math\.max\(0, prev \+ \(open \? 1 : -1\)\)\);[\s\S]*?\}, \[\]\);/,
+    );
+    assert.match(staffContent, /onModalOpenChange=\{handleRowModalOpenChange\}/);
+
+    const staffActions = readFileSync("src/features/admin/staff/StaffActionsMenu.tsx", "utf8");
+    assert.match(staffActions, /const prevModalOpenRef = useRef\(false\);/);
+    assert.match(
+      staffActions,
+      /if \(prevModalOpenRef\.current !== isModalOpen\)\s*\{\s*prevModalOpenRef\.current = isModalOpen;\s*onModalOpenChange\?\.\(isModalOpen\);\s*\}/,
+    );
+    assert.match(
+      staffActions,
+      /return \(\)\s*=>\s*\{\s*if \(prevModalOpenRef\.current\)\s*\{\s*prevModalOpenRef\.current = false;\s*onModalOpenChange\?\.\(false\);\s*\}\s*\};/,
+    );
+  });
+
+  it("populates file_url in getProductDraft and supports r2_object_key fallback in ProductSetupWizard (FIX22-V6)", () => {
+    const mutations = readFileSync("src/lib/admin/products/productMutations.ts", "utf8");
+    assert.match(
+      mutations,
+      /file_url:\s*a\.r2_object_key\s*\?\s*getR2AssetUrl\(a\.r2_object_key\)\s*:\s*null/,
+    );
+
+    const wizard = readFileSync(
+      "src/features/admin/products/setup/ProductSetupWizard.tsx",
+      "utf8",
+    );
+    assert.match(wizard, /Boolean\(a\.file_url \|\| a\.r2_object_key\)/);
+    assert.match(
+      wizard,
+      /hasWholeModelAsset=\{Boolean\(wholeModelAsset\?\.file_url \|\| wholeModelAsset\?\.r2_object_key\)\}/,
+    );
+  });
+
+  it("enforces role-accurate addon Compatible Add-ons and accessory validation guidance (FIX22-V7)", () => {
+    clearOnboardingMemoryFallbackForTests();
+    const local = createMemoryStorage();
+    const session = createMemoryStorage();
+
+    const addonAddonsPhase = resolveProductSetupWizardPhase({
+      activeStep: "parameters",
+      isDraft: false,
+      productRole: "addon",
+      modelStrategy: "Parametric",
+      hasWholeModelAsset: false,
+      mappedFilesCount: 1,
+      selectedPartsCount: 0,
+      isDecomposing: false,
+      decompositionModalOpen: false,
+      lightboxOpen: false,
+      parametersTab: "addons",
+      validationTab: "dimensions",
+      validationLoading: false,
+      validationHasError: false,
+      validationHasDefinition: false,
+    });
+    assert.equal(addonAddonsPhase?.phaseId, "parameters_addons");
+    assert.equal(addonAddonsPhase?.isAutomaticPhase, false);
+    assert.match(
+      addonAddonsPhase?.steps[0].description ?? "",
+      /cannot attach nested add-ons/,
+    );
+    assert.equal(
+      shouldShowWizardPhaseTour({
+        isHydrated: true,
+        resolvedPhase: addonAddonsPhase,
+        preference: readAdminOnboardingPreference("admin-v7", local),
+        session: readAdminOnboardingSession("admin-v7", session),
+        manualRunPhaseId: null,
+      }),
+      false,
+    );
+    assert.equal(
+      shouldShowWizardPhaseTour({
+        isHydrated: true,
+        resolvedPhase: addonAddonsPhase,
+        preference: readAdminOnboardingPreference("admin-v7", local),
+        session: readAdminOnboardingSession("admin-v7", session),
+        manualRunPhaseId: "parameters_addons",
+      }),
+      true,
+    );
+
+    const accessoryValidationPhase = resolveProductSetupWizardPhase({
+      activeStep: "validation",
+      isDraft: false,
+      productRole: "accessory",
+      modelStrategy: "Fixed",
+      hasWholeModelAsset: false,
+      mappedFilesCount: 1,
+      selectedPartsCount: 0,
+      isDecomposing: false,
+      decompositionModalOpen: false,
+      lightboxOpen: false,
+      parametersTab: "parameters",
+      validationTab: "dimensions",
+      validationLoading: false,
+      validationHasError: false,
+      validationHasDefinition: true,
+    });
+    assert.equal(accessoryValidationPhase?.phaseId, "validation_sandbox");
+    assert.match(
+      accessoryValidationPhase?.steps[0].targetSelector ?? "",
+      /admin-setup-validation-accessory-dock/,
+    );
+    assert.match(
+      accessoryValidationPhase?.steps[0].description ?? "",
+      /Left Side and Right Side mirrored handing/,
+    );
+    assert.doesNotMatch(
+      accessoryValidationPhase?.steps[0].description ?? "",
+      /Width and Height sliders|Materials tab/,
+    );
+
+    const validationSection = readFileSync(
+      "src/features/admin/products/setup/ValidationWorkspaceSection.tsx",
+      "utf8",
+    );
+    assert.match(validationSection, /admin-setup-validation-accessory-dock/);
+  });
+
+  it("resets transient step state synchronously in ProductSetupWizard and guards review loading/error (FIX22-V8)", () => {
+    clearOnboardingMemoryFallbackForTests();
+    const local = createMemoryStorage();
+    const session = createMemoryStorage();
+
+    const reviewLoadingPhase = resolveProductSetupWizardPhase({
+      activeStep: "review",
+      isDraft: false,
+      productRole: "standard",
+      modelStrategy: "Parametric",
+      hasWholeModelAsset: false,
+      mappedFilesCount: 1,
+      selectedPartsCount: 0,
+      isDecomposing: false,
+      decompositionModalOpen: false,
+      lightboxOpen: false,
+      parametersTab: "parameters",
+      validationTab: "dimensions",
+      validationLoading: false,
+      validationHasError: false,
+      validationHasDefinition: true,
+      reviewLoading: true,
+      reviewHasError: false,
+    });
+    assert.equal(reviewLoadingPhase?.phaseId, "review");
+    assert.equal(reviewLoadingPhase?.isPaused, true);
+    assert.equal(
+      shouldShowWizardPhaseTour({
+        isHydrated: true,
+        resolvedPhase: reviewLoadingPhase,
+        preference: readAdminOnboardingPreference("admin-v8", local),
+        session: readAdminOnboardingSession("admin-v8", session),
+        manualRunPhaseId: "review",
+      }),
+      false,
+    );
+
+    const reviewErrorPhase = resolveProductSetupWizardPhase({
+      activeStep: "review",
+      isDraft: false,
+      productRole: "standard",
+      modelStrategy: "Parametric",
+      hasWholeModelAsset: false,
+      mappedFilesCount: 1,
+      selectedPartsCount: 0,
+      isDecomposing: false,
+      decompositionModalOpen: false,
+      lightboxOpen: false,
+      parametersTab: "parameters",
+      validationTab: "dimensions",
+      validationLoading: false,
+      validationHasError: false,
+      validationHasDefinition: true,
+      reviewLoading: false,
+      reviewHasError: true,
+    });
+    assert.equal(reviewErrorPhase?.isPaused, true);
+
+    const wizard = readFileSync(
+      "src/features/admin/products/setup/ProductSetupWizard.tsx",
+      "utf8",
+    );
+    assert.match(wizard, /const resetStepTransientState = useCallback\(\(targetStep:\s*StepKey\)\s*=>/);
+    assert.match(
+      wizard,
+      /const handleStepChange = async \(targetStep:\s*StepKey\)\s*=>\s*\{\s*resetStepTransientState\(targetStep\);\s*setActiveStep\(targetStep\);/,
+    );
+
+    const reviewSection = readFileSync(
+      "src/features/admin/products/setup/ReviewAndPublishSection.tsx",
+      "utf8",
+    );
+    assert.match(
+      reviewSection,
+      /<div data-onboarding-target="admin-setup-review-publish"[\s\S]*?Automatic Validation[\s\S]*?Activate Product[\s\S]*?<\/div>\s*<\/div>\s*\);/,
+    );
+  });
+
+  it("supports inlineOnMobile placement in AdminHelpButton and wires it in ProductSetupWizard (FIX22-V9)", () => {
+    const inlineMarkup = renderToStaticMarkup(
+      React.createElement(AdminHelpButton, {
+        onClick: () => {},
+        ariaLabel: "Product setup guide help",
+        inlineOnMobile: true,
+      }),
+    );
+    assert.match(inlineMarkup, /static md:fixed/);
+
+    const floatingMarkup = renderToStaticMarkup(
+      React.createElement(AdminHelpButton, {
+        onClick: () => {},
+        ariaLabel: "Guide help",
+      }),
+    );
+    assert.match(floatingMarkup, /fixed bottom-5 right-5/);
+
+    const wizard = readFileSync(
+      "src/features/admin/products/setup/ProductSetupWizard.tsx",
+      "utf8",
+    );
+    assert.match(wizard, /<AdminHelpButton[\s\S]*?inlineOnMobile/);
+  });
+
+  it("spotlights both AdminProfileCard and SecurityCard in Settings Step 1 and normalizes role checks (FIX22-V10)", () => {
+    const settings = readFileSync("src/features/admin/settings/SettingsContent.tsx", "utf8");
+    assert.match(
+      settings,
+      /data-onboarding-target="admin-settings-profile-card"[\s\S]*?<AdminProfileCard[\s\S]*?<SecurityCard/,
+    );
+    assert.match(settings, /const normalizedRole = role\.trim\(\)\.toLowerCase\(\);/);
+    assert.match(settings, /const isStaffRole = normalizedRole === "staff";/);
+    assert.match(
+      settings,
+      /const privileged = normalizedRole === "owner" \|\| normalizedRole === "manager";/,
+    );
+  });
+
+  it("aligns BasicInfoSection Add-on Accessory copy, Comparison Step 2 copy + isPaused, and Dashboard min-h-11 cues (FIX22-V12)", () => {
+    const basicInfo = readFileSync(
+      "src/features/admin/products/setup/BasicInfoSection.tsx",
+      "utf8",
+    );
+    assert.match(basicInfo, /Add-on Accessory/);
+    assert.doesNotMatch(basicInfo, /Add-on Attachment/);
+
+    const compStep1 = resolveComparisonTourStep({
+      stepIndex: 1,
+      compareMode: "left",
+      variantModeReady: true,
+      comparisonOverlaysCount: 1,
+    });
+    assert.match(
+      compStep1.description,
+      /The initial panels may show the same default finish\./,
+    );
+
+    const compTour = readFileSync(
+      "src/features/comparison/components/ComparisonOnboardingTour.tsx",
+      "utf8",
+    );
+    assert.match(compTour, /isPaused=\{isPaused\}/);
+
+    const dashboard = readFileSync(
+      "src/features/admin/components/DashboardContent.tsx",
+      "utf8",
+    );
+    const welcomeCueSection = dashboard.match(
+      /data-onboarding-target="admin-dashboard-welcome-cue"[\s\S]*?<\/aside>/,
+    );
+    assert.ok(welcomeCueSection, "expected welcome cue aside");
+    assert.match(welcomeCueSection[0], /min-h-11/);
+    assert.doesNotMatch(welcomeCueSection[0], /min-h-10/);
+    assert.match(dashboard, /z-\[120\]/);
+
+    const materials = readFileSync(
+      "src/features/admin/materials/MaterialsContent.tsx",
+      "utf8",
+    );
+    assert.match(
+      materials,
+      /data-onboarding-target="admin-materials-entry-actions" className="inline-flex/,
+    );
   });
 });

@@ -50,7 +50,7 @@ export function resolveComparisonTourStep(
       targetSelector,
       title: "Compare Aluminum Finishes",
       description:
-        "In Product Variant mode, choose different finishes in Panel A (left) and Panel B (right), or use Swap to flip sides. After you choose a finish, that option is unavailable in the other panel.",
+        "In Product Variant mode, choose different finishes in Panel A (left) and Panel B (right), or use Swap to flip sides. After you choose a finish, that option is unavailable in the other panel. The initial panels may show the same default finish.",
       helperNote:
         comparisonOverlaysCount > 1
           ? "Multiple fixtures placed: click a product directly in the preview or use the 'Choose a product to compare' buttons above to change which fixture is being edited."
@@ -184,6 +184,11 @@ export function ComparisonOnboardingTour({
     comparisonOverlaysCount,
   });
 
+  const isPaused =
+    isIncompleteVariationPromptActive ||
+    isPreparingQuotation ||
+    comparisonError !== null;
+
   return (
     <OnboardingTourPopup
       isOpen={isOpen}
@@ -204,6 +209,7 @@ export function ComparisonOnboardingTour({
       onDontShowAgain={handleDontShowAgain}
       variant={viewportVariant}
       blocking={true}
+      isPaused={isPaused}
       restoreFocusSelector='[data-onboarding-target="comparison-header-help"]'
     />
   );

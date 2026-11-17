@@ -171,6 +171,20 @@ export function writeGuidePreference(
   }
 }
 
+/**
+ * Preserves an explicit `"dont_show_again"` opt-out when a user finishes a manual Help replay.
+ */
+export function completeGuidePreference(
+  storage: StorageLike | null = getDefaultLocalStorage(),
+): GuidePreferenceStatus {
+  const current = readGuidePreference(storage);
+  if (current === "dont_show_again") {
+    return "dont_show_again";
+  }
+  writeGuidePreference("completed", storage);
+  return "completed";
+}
+
 export function parseGuideProgressRecord(raw: string | null): GuideSessionProgressRecord | null {
   if (!raw) return null;
   try {

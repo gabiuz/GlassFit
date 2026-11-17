@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Compass, HelpCircle, X } from "lucide-react";
-import { useReducedMotion } from "motion/react";
+import { useHtmlScrollLock } from "../hooks/useDocumentScrollLock";
 
 export type TourPlacement = "top" | "bottom" | "left" | "right" | "auto";
 type ResolvedSide = "top" | "bottom" | "left" | "right" | "fallback";
@@ -40,6 +40,37 @@ function hasFixedAncestor(element: HTMLElement | null): boolean {
     node = node.parentElement;
   }
   return false;
+}
+
+export function hasScrollableContainerWithin(
+  target: EventTarget | null,
+  boundary: HTMLElement | null,
+): boolean {
+  if (!boundary || !(target instanceof Element) || !boundary.contains(target)) {
+    return false;
+  }
+  let node: HTMLElement | null = target instanceof HTMLElement ? target : target.parentElement;
+  while (node) {
+    const style = window.getComputedStyle(node);
+    const canScrollY =
+      (style.overflowY === "auto" || style.overflowY === "scroll" || style.overflowY === "overlay") &&
+      node.scrollHeight > node.clientHeight;
+    const canScrollX =
+      (style.overflowX === "auto" || style.overflowX === "scroll" || style.overflowX === "overlay") &&
+      node.scrollWidth > node.clientWidth;
+    if (canScrollY || canScrollX) return true;
+    if (node === boundary) break;
+    node = node.parentElement;
+  }
+  return false;
+}
+
+function getFocusableElements(container: HTMLElement): HTMLElement[] {
+  return Array.from(
+    container.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ),
+  ).filter((el) => el.offsetParent !== null || el === document.activeElement);
 }
 
 function rectsEqual(a: RectSnapshot | null, b: RectSnapshot | null): boolean {
@@ -101,6 +132,8 @@ export interface OnboardingTourPopupProps {
   zIndexBase?: number;
   /** Optional CSS selector to restore focus to when the tour closes (e.g. header Help button). */
   restoreFocusSelector?: string;
+  /** True when the tour is temporarily paused for another modal or async load; suppresses focus restoration. */
+  isPaused?: boolean;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -108,7 +141,7 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-function computeAnchoredLayout(options: {
+export function computeAnchoredLayout(options: {
   targetRect: RectSnapshot | null;
   popoverWidth: number;
   popoverHeight: number;
@@ -148,9 +181,18 @@ function computeAnchoredLayout(options: {
   const targetCenterY = targetRect.top + targetRect.height / 2;
 
   if (variant === "mobile") {
-    const placeAbove = targetCenterY >= viewportHeight * 0.48;
     const rawLeft = targetCenterX - popoverWidth / 2;
     const left = clamp(rawLeft, margin, viewportWidth - popoverWidth - margin);
+    const isTallOrCenteredTarget =
+      targetRect.height > viewportHeight * 0.55 ||
+      (targetRect.top <= viewportHeight * 0.45 && targetRect.bottom >= viewportHeight * 0.55);
+
+    if (isTallOrCenteredTarget) {
+      const top = Math.max(margin, viewportHeight - popoverHeight - margin);
+      return { side: "fallback", top, left, arrowOffset: 0 };
+    }
+
+    const placeAbove = targetCenterY >= viewportHeight * 0.48;
     const arrowOffset = clamp(targetCenterX - left, 24, popoverWidth - 24);
 
     if (placeAbove) {
@@ -273,16 +315,18 @@ export function OnboardingTourPopup({
   onDontShowAgain,
   variant = "desktop",
   blocking = true,
-  zIndexBase = 70,
+  zIndexBase = 120,
   restoreFocusSelector,
+  isPaused = false,
 }: OnboardingTourPopupProps) {
   const titleId = useId();
   const descId = useId();
-  const prefersReducedMotion = useReducedMotion();
   const cardRef = useRef<HTMLDivElement>(null);
   const wasOpenRef = useRef(false);
   const lastActiveElementRef = useRef<HTMLElement | null>(null);
   const isClient = useSyncExternalStore(subscribeNoop, () => true, () => false);
+
+  useHtmlScrollLock(Boolean(isOpen && blocking));
 
   const [measurement, setMeasurement] = useState<MeasurementSnapshot>(() => ({
     targetViewportRect: null,
@@ -296,22 +340,24 @@ export function OnboardingTourPopup({
     usesDocumentCoords: false,
   }));
 
-  // Lock user page scrolling while a blocking tour step is active.
+  // Prevent user page scrolling via wheel/touch/keys while a blocking tour step is active.
   useEffect(() => {
     if (!isOpen || !blocking) return;
-
-    const htmlEl = document.documentElement;
-    const prevHtmlOverflow = htmlEl.style.overflow;
-    const prevHtmlOverscroll = htmlEl.style.overscrollBehavior;
-
-    htmlEl.style.overflow = "hidden";
-    htmlEl.style.overscrollBehavior = "none";
 
     const isInsideNode = (container: HTMLElement | null, node: EventTarget | null): boolean =>
       Boolean(container && node instanceof Node && container.contains(node));
 
     const handleWheel = (event: WheelEvent) => {
       if (isInsideNode(cardRef.current, event.target)) return;
+      const spotlightEl = targetSelector
+        ? document.querySelector<HTMLElement>(targetSelector)
+        : null;
+      if (
+        isInsideNode(spotlightEl, event.target) &&
+        hasScrollableContainerWithin(event.target, spotlightEl)
+      ) {
+        return;
+      }
       event.preventDefault();
     };
 
@@ -355,8 +401,6 @@ export function OnboardingTourPopup({
     window.addEventListener("keydown", handleScrollKeys, true);
 
     return () => {
-      htmlEl.style.overflow = prevHtmlOverflow;
-      htmlEl.style.overscrollBehavior = prevHtmlOverscroll;
       window.removeEventListener("wheel", handleWheel, true);
       window.removeEventListener("touchmove", handleTouchMove, true);
       window.removeEventListener("keydown", handleScrollKeys, true);
@@ -372,8 +416,8 @@ export function OnboardingTourPopup({
     ensureTargetInViewport(el, window.innerHeight);
   }, [isOpen, targetSelector]);
 
-  // Continuously track target bounds, card dimensions, and document/viewport geometry.
-  useEffect(() => {
+  // Measure synchronously before paint on open/step changes so the popup snaps straight to its target.
+  useLayoutEffect(() => {
     if (!isOpen) return;
 
     let rafId = 0;
@@ -467,7 +511,7 @@ export function OnboardingTourPopup({
       measure(false);
     };
 
-    scheduleMeasure();
+    measure();
 
     const observer =
       typeof ResizeObserver !== "undefined"
@@ -501,7 +545,9 @@ export function OnboardingTourPopup({
     };
   }, [blocking, isOpen, targetSelector, title, description]);
 
-  // Capture Escape exclusively so parent modals stay open when dismissing the guide.
+  const targetRect = measurement.targetViewportRect;
+
+  // Capture Escape exclusively and trap Tab within the popup when no spotlight target exists.
   useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -510,20 +556,54 @@ export function OnboardingTourPopup({
         event.stopPropagation();
         event.stopImmediatePropagation();
         onSkip();
+        return;
+      }
+
+      if (event.key === "Tab" && blocking && !targetRect && cardRef.current) {
+        const focusables = getFocusableElements(cardRef.current);
+        if (focusables.length === 0) {
+          event.preventDefault();
+          cardRef.current.focus({ preventScroll: true });
+          return;
+        }
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        const active = document.activeElement;
+        if (!cardRef.current.contains(active)) {
+          event.preventDefault();
+          (event.shiftKey ? last : first).focus({ preventScroll: true });
+          return;
+        }
+        if (event.shiftKey && (active === first || active === cardRef.current)) {
+          event.preventDefault();
+          last.focus({ preventScroll: true });
+        } else if (!event.shiftKey && active === last) {
+          event.preventDefault();
+          first.focus({ preventScroll: true });
+        }
       }
     };
     window.addEventListener("keydown", handleKeyDown, true);
     return () => {
       window.removeEventListener("keydown", handleKeyDown, true);
     };
-  }, [isOpen, onSkip]);
+  }, [blocking, isOpen, onSkip, targetRect]);
 
-  // Restore focus to the surface Help trigger (or prior active element) when the tour closes.
+  // Move initial focus into the popup on open and restore focus on user-initiated close.
   useEffect(() => {
     if (isOpen) {
       if (!wasOpenRef.current && typeof document !== "undefined") {
         const active = document.activeElement;
         lastActiveElementRef.current = active instanceof HTMLElement ? active : null;
+        const spotlightEl = targetSelector
+          ? document.querySelector<HTMLElement>(targetSelector)
+          : null;
+        const alreadyFocusedInside =
+          (cardRef.current && active instanceof Node && cardRef.current.contains(active)) ||
+          (spotlightEl && active instanceof Node && spotlightEl.contains(active));
+        if (!alreadyFocusedInside) {
+          cardRef.current?.focus({ preventScroll: true });
+        }
       }
       wasOpenRef.current = true;
       return;
@@ -531,21 +611,22 @@ export function OnboardingTourPopup({
 
     if (wasOpenRef.current) {
       wasOpenRef.current = false;
-      const restoreTarget = restoreFocusSelector
-        ? document.querySelector<HTMLElement>(restoreFocusSelector)
-        : lastActiveElementRef.current;
-      if (
-        restoreTarget &&
-        restoreTarget.isConnected &&
-        !(restoreTarget as HTMLButtonElement).disabled
-      ) {
-        restoreTarget.focus({ preventScroll: true });
+      if (!isPaused) {
+        const restoreTarget = restoreFocusSelector
+          ? document.querySelector<HTMLElement>(restoreFocusSelector)
+          : lastActiveElementRef.current;
+        if (
+          restoreTarget &&
+          restoreTarget.isConnected &&
+          !(restoreTarget as HTMLButtonElement).disabled
+        ) {
+          restoreTarget.focus({ preventScroll: true });
+        }
       }
       lastActiveElementRef.current = null;
     }
-  }, [isOpen, restoreFocusSelector]);
+  }, [isOpen, isPaused, restoreFocusSelector, targetSelector]);
 
-  const targetRect = measurement.targetViewportRect;
   const layout = useMemo(
     () =>
       computeAnchoredLayout({
@@ -600,10 +681,6 @@ export function OnboardingTourPopup({
     ? Math.max(cutTop, Math.min(maxBottom, targetRect.bottom + offsetY + spotlightPad))
     : 0;
 
-  const motionClass = prefersReducedMotion
-    ? ""
-    : "animate-in fade-in duration-150";
-
   const DirectionArrowIcon =
     layout.side === "top"
       ? ArrowDown
@@ -617,8 +694,8 @@ export function OnboardingTourPopup({
 
   const popoverWidthClass =
     variant === "mobile"
-      ? "w-[min(calc(100vw-16px),380px)] max-h-[45dvh] overflow-y-auto p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]"
-      : "w-[min(calc(100vw-28px),360px)] p-5";
+      ? "w-[min(calc(100vw-16px),380px)] max-h-[45dvh] flex flex-col overflow-hidden p-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))]"
+      : "w-[min(calc(100vw-28px),360px)] flex flex-col p-5";
 
   const overlayContent = (
     <>
@@ -626,7 +703,7 @@ export function OnboardingTourPopup({
       {blocking && !targetRect && (
         <div
           aria-hidden="true"
-          className="pointer-events-auto fixed inset-0 bg-black/60 backdrop-blur-xs"
+          className="pointer-events-none fixed inset-0 bg-black/60 backdrop-blur-xs"
           style={{ zIndex: zIndexBase - 2 }}
         />
       )}
@@ -712,10 +789,11 @@ export function OnboardingTourPopup({
       <div
         ref={cardRef}
         role="dialog"
+        tabIndex={-1}
         aria-modal={blocking && !targetRect ? true : undefined}
         aria-labelledby={titleId}
         aria-describedby={descId}
-        className={`pointer-events-auto ${cardPosClass} rounded-[20px] border border-[#07b6d3]/40 bg-white text-left shadow-[0px_10px_30px_rgba(0,0,0,0.28)] ${popoverWidthClass} ${motionClass}`}
+        className={`pointer-events-auto ${cardPosClass} rounded-[20px] border border-[#07b6d3]/40 bg-white text-left shadow-[0px_10px_30px_rgba(0,0,0,0.28)] outline-none focus-visible:ring-2 focus-visible:ring-[#07b6d3] ${popoverWidthClass}`}
         style={{
           zIndex: zIndexBase,
           top: layout.top + (variant === "mobile" ? 0 : offsetY),
@@ -756,95 +834,105 @@ export function OnboardingTourPopup({
           {stepLabel}: {title}. {description}
         </div>
 
-        <div className="flex items-start justify-between gap-2.5">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-light text-green border border-green/25">
-              {DirectionArrowIcon ? (
-                <DirectionArrowIcon
-                  className={`size-4 ${prefersReducedMotion ? "" : "animate-pulse"}`}
-                  aria-hidden="true"
-                />
-              ) : blocking ? (
-                <Compass className="size-4" aria-hidden="true" />
-              ) : (
-                <HelpCircle className="size-4" aria-hidden="true" />
-              )}
+        <div
+          className={
+            variant === "mobile"
+              ? "min-h-0 flex-1 overflow-y-auto overscroll-contain pr-0.5"
+              : ""
+          }
+        >
+          <div className="flex items-start justify-between gap-2.5">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-light text-green border border-green/25">
+                {DirectionArrowIcon ? (
+                  <DirectionArrowIcon
+                    className="size-4"
+                    aria-hidden="true"
+                  />
+                ) : blocking ? (
+                  <Compass className="size-4" aria-hidden="true" />
+                ) : (
+                  <HelpCircle className="size-4" aria-hidden="true" />
+                )}
+              </div>
+              <div className="min-w-0">
+                <span className="inline-flex items-center rounded-full bg-light px-2 py-0.5 text-[11px] font-semibold text-[#097283] border border-green/20">
+                  {stepLabel}
+                </span>
+                <h2
+                  id={titleId}
+                  className="mt-0.5 text-base sm:text-lg font-semibold text-[#0f1422] tracking-tight"
+                >
+                  {title}
+                </h2>
+              </div>
             </div>
-            <div className="min-w-0">
-              <span className="inline-flex items-center rounded-full bg-light px-2 py-0.5 text-[11px] font-semibold text-[#097283] border border-green/20">
-                {stepLabel}
-              </span>
-              <h2
-                id={titleId}
-                className="mt-0.5 text-base sm:text-lg font-semibold text-[#0f1422] tracking-tight"
-              >
-                {title}
-              </h2>
-            </div>
+
+            <button
+              type="button"
+              onClick={onSkip}
+              aria-label="Skip guide"
+              className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full text-neutral-400 hover:bg-neutral-100 hover:text-[#0f1422] transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]"
+            >
+              <X className="size-4.5" aria-hidden="true" />
+            </button>
           </div>
 
-          <button
-            type="button"
-            onClick={onSkip}
-            aria-label="Skip guide"
-            className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full text-neutral-400 hover:bg-neutral-100 hover:text-[#0f1422] transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]"
+          <p
+            id={descId}
+            className="mt-2.5 text-sm leading-relaxed text-[#0f1422]/85"
           >
-            <X className="size-4.5" aria-hidden="true" />
-          </button>
+            {description}
+          </p>
+
+          {helperNote && (
+            <p className="mt-2 rounded-[10px] border border-neutral-200 bg-neutral-50 px-2.5 py-1.5 text-xs leading-snug text-neutral-700">
+              {helperNote}
+            </p>
+          )}
         </div>
 
-        <p
-          id={descId}
-          className="mt-2.5 text-sm leading-relaxed text-[#0f1422]/85"
-        >
-          {description}
-        </p>
+        <div className="shrink-0">
+          {(primaryActionLabel || secondaryActionLabel) && (
+            <div className="mt-3 flex flex-col gap-2">
+              {primaryActionLabel && onPrimaryAction && (
+                <button
+                  type="button"
+                  onClick={onPrimaryAction}
+                  className="w-full min-h-11 rounded-xl bg-green hover:bg-[#06a3bd] px-4 py-2 text-sm font-medium text-white shadow-xs transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0f1422]"
+                >
+                  {primaryActionLabel}
+                </button>
+              )}
 
-        {helperNote && (
-          <p className="mt-2 rounded-[10px] border border-neutral-200 bg-neutral-50 px-2.5 py-1.5 text-xs leading-snug text-neutral-700">
-            {helperNote}
-          </p>
-        )}
+              {secondaryActionLabel && onSecondaryAction && (
+                <button
+                  type="button"
+                  onClick={onSecondaryAction}
+                  className="w-full min-h-11 rounded-xl border border-green/40 bg-light hover:bg-light/70 px-4 py-2 text-sm font-medium text-[#0f1422] transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]"
+                >
+                  {secondaryActionLabel}
+                </button>
+              )}
+            </div>
+          )}
 
-        {(primaryActionLabel || secondaryActionLabel) && (
-          <div className="mt-3.5 flex flex-col gap-2">
-            {primaryActionLabel && onPrimaryAction && (
-              <button
-                type="button"
-                onClick={onPrimaryAction}
-                className="w-full min-h-11 rounded-xl bg-green hover:bg-[#06a3bd] px-4 py-2 text-sm font-medium text-white shadow-xs transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0f1422]"
-              >
-                {primaryActionLabel}
-              </button>
-            )}
-
-            {secondaryActionLabel && onSecondaryAction && (
-              <button
-                type="button"
-                onClick={onSecondaryAction}
-                className="w-full min-h-11 rounded-xl border border-green/40 bg-light hover:bg-light/70 px-4 py-2 text-sm font-medium text-[#0f1422] transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]"
-              >
-                {secondaryActionLabel}
-              </button>
-            )}
+          <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 border-t border-neutral-100 pt-2">
+            <button
+              type="button"
+              onClick={onSkip}
+              className="min-h-11 rounded-[10px] px-2.5 text-xs font-medium text-neutral-600 hover:bg-neutral-100 hover:text-[#0f1422] transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]"
+            >
+              Skip
+            </button>
+            <button
+              type="button"
+              onClick={onDontShowAgain}
+              className="min-h-11 rounded-[10px] px-2.5 text-xs font-medium text-neutral-500 hover:bg-neutral-100 hover:text-[#0f1422] transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]"
+            >
+              Don&apos;t show again
+            </button>
           </div>
-        )}
-
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-neutral-100 pt-2">
-          <button
-            type="button"
-            onClick={onSkip}
-            className="min-h-11 rounded-[10px] px-2.5 text-xs font-medium text-neutral-600 hover:bg-neutral-100 hover:text-[#0f1422] transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]"
-          >
-            Skip
-          </button>
-          <button
-            type="button"
-            onClick={onDontShowAgain}
-            className="min-h-11 rounded-[10px] px-2.5 text-xs font-medium text-neutral-500 hover:bg-neutral-100 hover:text-[#0f1422] transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]"
-          >
-            Don&apos;t show again
-          </button>
         </div>
       </div>
     </>
@@ -854,12 +942,16 @@ export function OnboardingTourPopup({
     return createPortal(
       <div
         className="pointer-events-none absolute top-0 left-0 right-0"
-        style={{ height: measurement.docHeight }}
+        style={{ height: measurement.docHeight, zIndex: zIndexBase }}
       >
         {overlayContent}
       </div>,
       document.body,
     );
+  }
+
+  if (isClient) {
+    return createPortal(overlayContent, document.body);
   }
 
   return overlayContent;

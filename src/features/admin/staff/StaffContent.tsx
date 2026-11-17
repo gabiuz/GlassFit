@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { UserPlus } from "lucide-react";
 import { useAdminSession } from "@/features/admin/auth/AdminSessionProvider";
 import { AdminHelpButton } from "@/features/admin/onboarding/AdminHelpButton";
@@ -30,6 +30,10 @@ export function StaffContent({ initialStaff }: StaffContentProps) {
     const { profileId, role } = useAdminSession();
     const [helpTriggerCount, setHelpTriggerCount] = useState(0);
     const [rowModalOpenCount, setRowModalOpenCount] = useState(0);
+
+    const handleRowModalOpenChange = useCallback((open: boolean) => {
+        setRowModalOpenCount((prev) => Math.max(0, prev + (open ? 1 : -1)));
+    }, []);
     const [staff, setStaff] = useState<StaffMember[]>(initialStaff);
     const [isInviteOpen, setIsInviteOpen] = useState(false);
     const [toast, setToast] = useState<{ type: "success" | "error"; message: string } | null>(null);
@@ -118,11 +122,7 @@ export function StaffContent({ initialStaff }: StaffContentProps) {
                                         key={member.profile_id}
                                         member={member}
                                         onActionResult={showToast}
-                                        onModalOpenChange={(open) =>
-                                            setRowModalOpenCount((prev) =>
-                                                Math.max(0, prev + (open ? 1 : -1)),
-                                            )
-                                        }
+                                        onModalOpenChange={handleRowModalOpenChange}
                                     />
                                 ))
                             )}

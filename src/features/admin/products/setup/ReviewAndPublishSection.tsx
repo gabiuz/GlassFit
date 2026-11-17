@@ -9,14 +9,25 @@ import type { ProductStructuralDefinition } from "@/lib/visualization/types";
 
 export type ReviewAndPublishSectionProps = {
     productId: string;
+    onOnboardingStateChange?: (state: { isLoading: boolean; hasError: boolean }) => void;
 };
 
-export function ReviewAndPublishSection({ productId }: ReviewAndPublishSectionProps) {
+export function ReviewAndPublishSection({
+    productId,
+    onOnboardingStateChange,
+}: ReviewAndPublishSectionProps) {
     const router = useRouter();
     const [isActivating, setIsActivating] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
     const [draft, setDraft] = useState<ProductStructuralDefinition | null>(null);
+
+    useEffect(() => {
+        onOnboardingStateChange?.({
+            isLoading,
+            hasError: Boolean(errorMsg && !draft),
+        });
+    }, [draft, errorMsg, isLoading, onOnboardingStateChange]);
 
     useEffect(() => {
         async function load() {
@@ -203,36 +214,38 @@ export function ReviewAndPublishSection({ productId }: ReviewAndPublishSectionPr
             </div>
 
 
-            <div data-onboarding-target="admin-setup-review-publish" className="border border-neutral-200 rounded-[12px] overflow-hidden">
-                <div className="bg-neutral-50 p-4 border-b border-neutral-200">
-                    <h3 className="font-medium text-[#0f1422]">Automatic Validation</h3>
-                </div>
-                <div className="p-4 flex flex-col gap-3">
-                    {missingErrors.length === 0 ? (
-                        <div className="flex items-center gap-3 text-emerald-600 bg-emerald-50 p-3 rounded-lg">
-                            <CheckCircle2 className="size-5" />
-                            <span className="font-medium text-sm">All required fields are present. Ready to publish.</span>
-                        </div>
-                    ) : (
-                        missingErrors.map((err, i) => (
-                            <div key={i} className="flex items-center gap-3 text-red-600 bg-red-50 p-3 rounded-lg">
-                                <XCircle className="size-5" />
-                                <span className="font-medium text-sm">{err}</span>
+            <div data-onboarding-target="admin-setup-review-publish" className="flex flex-col gap-4">
+                <div className="border border-neutral-200 rounded-[12px] overflow-hidden">
+                    <div className="bg-neutral-50 p-4 border-b border-neutral-200">
+                        <h3 className="font-medium text-[#0f1422]">Automatic Validation</h3>
+                    </div>
+                    <div className="p-4 flex flex-col gap-3">
+                        {missingErrors.length === 0 ? (
+                            <div className="flex items-center gap-3 text-emerald-600 bg-emerald-50 p-3 rounded-lg">
+                                <CheckCircle2 className="size-5" />
+                                <span className="font-medium text-sm">All required fields are present. Ready to publish.</span>
                             </div>
-                        ))
-                    )}
+                        ) : (
+                            missingErrors.map((err, i) => (
+                                <div key={i} className="flex items-center gap-3 text-red-600 bg-red-50 p-3 rounded-lg">
+                                    <XCircle className="size-5" />
+                                    <span className="font-medium text-sm">{err}</span>
+                                </div>
+                            ))
+                        )}
+                    </div>
                 </div>
-            </div>
 
-            <div className="flex justify-end mt-4">
-                <button
-                    onClick={handleActivate}
-                    disabled={!canActivate || isActivating}
-                    className="flex items-center gap-2 px-6 py-2.5 rounded-[10px] font-medium transition-all text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm shadow-emerald-900/10"
-                >
-                    {isActivating ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
-                    Activate Product
-                </button>
+                <div className="flex justify-end">
+                    <button
+                        onClick={handleActivate}
+                        disabled={!canActivate || isActivating}
+                        className="flex items-center gap-2 px-6 py-2.5 rounded-[10px] font-medium transition-all text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm shadow-emerald-900/10"
+                    >
+                        {isActivating ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
+                        Activate Product
+                    </button>
+                </div>
             </div>
         </div>
     );

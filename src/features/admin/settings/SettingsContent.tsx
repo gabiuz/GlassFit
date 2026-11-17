@@ -235,10 +235,12 @@ function AdminProfileCard({
     const [request, setRequest] = useState<AdminEmailChangeEventView | null>(null);
     const [reviewRequests, setReviewRequests] = useState<AdminEmailChangeEventView[]>([]);
     const fullName = [firstName, lastName].filter(Boolean).join(" ");
-    const privileged = role === "Owner" || role === "Manager";
+    const normalizedRole = role.trim().toLowerCase();
+    const isStaffRole = normalizedRole === "staff";
+    const privileged = normalizedRole === "owner" || normalizedRole === "manager";
 
     const reloadRequests = async () => {
-        if (role === "Staff") {
+        if (isStaffRole) {
             const result = await getOwnStaffEmailChangeRequest();
             if (result.ok) setRequest(result.data ?? null);
         } else if (privileged) {
@@ -250,7 +252,7 @@ function AdminProfileCard({
     useEffect(() => {
         let active = true;
         const load = async () => {
-            if (role === "Staff") {
+            if (isStaffRole) {
                 const result = await getOwnStaffEmailChangeRequest();
                 if (active && result.ok) setRequest(result.data ?? null);
             } else if (privileged) {
@@ -260,7 +262,7 @@ function AdminProfileCard({
         };
         void load();
         return () => { active = false; };
-    }, [role, privileged]);
+    }, [isStaffRole, privileged]);
 
     const handleSaveName = async () => {
         setNameLoading(true);
@@ -943,18 +945,22 @@ export function SettingsContent() {
             </div>
 
             {/* Two-column card grid */}
-            <div className="w-full grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
-                {/* Left column */}
-                <div className="flex flex-col gap-6">
-                    <div data-onboarding-target="admin-settings-profile-card">
-                        <AdminProfileCard
-                            initialFirstName={firstName}
-                            initialLastName={lastName}
-                            initialEmail={email}
-                            role={role.roleName}
-                            onToast={showToast}
-                        />
-                    </div>
+            <div className="w-full flex flex-col gap-6">
+                <div
+                    data-onboarding-target="admin-settings-profile-card"
+                    className="w-full grid grid-cols-1 xl:grid-cols-2 gap-6 items-start"
+                >
+                    <AdminProfileCard
+                        initialFirstName={firstName}
+                        initialLastName={lastName}
+                        initialEmail={email}
+                        role={role.roleName}
+                        onToast={showToast}
+                    />
+                    <SecurityCard email={email} onToast={showToast} />
+                </div>
+
+                <div className="w-full grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
                     <div data-onboarding-target="admin-settings-data-management-card">
                         <DataManagementCard
                             isOwner={role.roleName.toLowerCase() === "owner"}
@@ -962,11 +968,6 @@ export function SettingsContent() {
                             onAnalyticsModalOpenChange={setIsAnalyticsModalOpen}
                         />
                     </div>
-                </div>
-
-                {/* Right column */}
-                <div className="flex flex-col gap-6">
-                    <SecurityCard email={email} onToast={showToast} />
                     <div data-onboarding-target="admin-settings-preferences-card">
                         <SystemPreferencesCard
                             roleName={role.roleName}

@@ -76,6 +76,8 @@ export interface PaperDetectionConfirmationModalProps {
   onCancel: () => void;
 }
 
+const EMPTY_CANDIDATES: PaperCandidate[] = [];
+
 const CORNER_NAMES = [
   "1: Top-Left",
   "2: Top-Right",
@@ -185,7 +187,7 @@ export function PaperDetectionConfirmationModal({
   initialCorners,
   paperStandard = "short",
   confidence = 0,
-  candidates = [],
+  candidates = EMPTY_CANDIDATES,
   selectedCandidateId = null,
   paperStandardConfirmed = false,
   suggestedPaperStandard = null,
@@ -846,6 +848,7 @@ export function PaperDetectionConfirmationModal({
       <div className="relative flex-1 h-[45vh] lg:h-full min-w-0 flex flex-col items-center justify-center p-2 sm:p-4 lg:p-6 overflow-hidden bg-light">
         <button
           type="button"
+          data-onboarding-target="paper-tour-help-trigger"
           onClick={handlePaperTourHelp}
           className="absolute top-3 left-3 sm:top-4 sm:left-4 z-30 inline-flex min-h-9 cursor-pointer items-center gap-1.5 rounded-full border border-neutral-200 bg-white/95 backdrop-blur-md px-3.5 py-1.5 text-xs font-medium text-[#0f1422] shadow-md hover:bg-white transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]"
           aria-label="Help with paper calibration review"
@@ -1496,7 +1499,7 @@ export function PaperDetectionConfirmationModal({
         </div>
       </div>
       {/* ── First-Time Paper Calibration Review Popup Tour (IMP-MS89) ── */}
-      {isPaperTourOpen && (() => {
+      {(() => {
         const baseStep = PAPER_TOUR_STEPS[paperTourStep];
         const isManualCornerStep = paperTourStep === 1 && nextManualCorner !== null;
         const cornerLabel =
@@ -1525,10 +1528,15 @@ export function PaperDetectionConfirmationModal({
             ? "Got it"
             : paperTourStep === 1 && nextManualCorner === null
               ? "Corners look good"
-              : undefined;
+              : paperTourStep === 0 || paperTourStep === 2 || paperTourStep === 3
+                ? "Next"
+                : undefined;
 
         const tourPrimaryAction =
-          paperTourStep === 4
+          paperTourStep === 4 ||
+          paperTourStep === 0 ||
+          paperTourStep === 2 ||
+          paperTourStep === 3
             ? handlePaperTourNext
             : paperTourStep === 1 && nextManualCorner === null
               ? () => advancePaperTourTo(2, 1)
@@ -1563,6 +1571,7 @@ export function PaperDetectionConfirmationModal({
             variant={isCompactViewport ? "mobile" : "desktop"}
             blocking={paperTourStep < 4}
             zIndexBase={190}
+            restoreFocusSelector='[data-onboarding-target="paper-tour-help-trigger"]'
           />
         );
       })()}

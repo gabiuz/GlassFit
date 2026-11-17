@@ -13,6 +13,7 @@ import {
 } from "react";
 import { useOptionalVisualizationSession } from "@/lib/visualization/visualizationSession";
 import {
+  completeGuidePreference,
   readGuidePreference,
   readGuideProgress,
   writeGuidePreference,
@@ -338,7 +339,7 @@ export function VisualizationOnboardingProvider({
   }, [commitState]);
 
   const completeWorkspaceTour = useCallback(() => {
-    writeGuidePreference("completed");
+    completeGuidePreference();
     commitState((prev) => completeWorkspaceTourState(prev));
   }, [commitState]);
 

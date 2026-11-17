@@ -1837,7 +1837,14 @@ export function ValidationWorkspaceSection({ productId, onSave, onOnboardingStat
 
               {/* Hardware Accessories & Handing Test Dock (IMP-MS75) */}
               {dockComponents.length > 0 && (
-                <div className="bg-white border border-neutral-200 rounded-[12px] p-4 shadow-xs space-y-3.5">
+                <div
+                  data-onboarding-target={
+                    definition?.product?.isAccessory
+                      ? "admin-setup-validation-accessory-dock"
+                      : undefined
+                  }
+                  className="bg-white border border-neutral-200 rounded-[12px] p-4 shadow-xs space-y-3.5"
+                >
                   <div className="flex items-center justify-between border-b border-neutral-100 pb-2.5">
                     <div className="flex items-center gap-2">
                       <Sliders className="size-4 text-[#07b6d3]" />

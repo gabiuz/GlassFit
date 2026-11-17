@@ -39,7 +39,7 @@ export type StructuralComponentsSectionProps = {
     wholeModelAsset?: {
         asset_id?: string;
         file_name?: string;
-        file_url?: string;
+        file_url?: string | null;
         byte_size?: number;
     } | null;
     isAccessory?: boolean;

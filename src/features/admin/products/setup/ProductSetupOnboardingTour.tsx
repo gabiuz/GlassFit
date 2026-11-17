@@ -38,6 +38,8 @@ export interface ProductSetupPhaseInput {
   validationLoading: boolean;
   validationHasError: boolean;
   validationHasDefinition: boolean;
+  reviewLoading?: boolean;
+  reviewHasError?: boolean;
 }
 
 export interface ResolvedWizardPhaseGuide {
@@ -67,6 +69,8 @@ export function resolveProductSetupWizardPhase(
     validationLoading,
     validationHasError,
     validationHasDefinition,
+    reviewLoading = false,
+    reviewHasError = false,
   } = input;
 
   if (activeStep === "basic") {
@@ -243,6 +247,27 @@ export function resolveProductSetupWizardPhase(
     }
 
     if (parametersTab === "addons") {
+      if (productRole === "addon") {
+        return {
+          phaseId: "parameters_addons",
+          isAutomaticPhase: false,
+          isPaused: false,
+          marksSurfaceCompletedOnFinish: false,
+          steps: [
+            {
+              id: "setup-parameters-addons-notice",
+              targetSelector:
+                '[data-onboarding-target="admin-setup-addon-inheritance"]',
+              title: "Add-on Attachment Policy",
+              description:
+                "Add-on items attach to standard host fixtures and cannot attach nested add-ons. Use Dimensions or Logic Rules to configure how this add-on scales when attached to a host opening.",
+              preferredPlacement: "bottom",
+              primaryActionLabel: "Got it",
+            },
+          ],
+        };
+      }
+
       return {
         phaseId: "parameters_addons",
         isAutomaticPhase: true,
@@ -318,6 +343,36 @@ export function resolveProductSetupWizardPhase(
       };
     }
 
+    if (productRole === "accessory") {
+      return {
+        phaseId: "validation_sandbox",
+        isAutomaticPhase: true,
+        isPaused,
+        marksSurfaceCompletedOnFinish: true,
+        steps: [
+          {
+            id: "setup-validation-accessory-handing",
+            targetSelector:
+              '[data-onboarding-target="admin-setup-validation-accessory-dock"]',
+            title: "Test-Drive Bilateral Handing & Preview",
+            description:
+              "Switch between Left Side and Right Side mirrored handing variations in the Hardware Accessory Handing Dock to verify the 3D preview and mesh orientation.",
+            preferredPlacement: "left",
+            primaryActionLabel: "Next",
+          },
+          {
+            id: "setup-validation-bom",
+            targetSelector: '[data-onboarding-target="admin-setup-validation-bom"]',
+            title: "Verify Accessory Cost & Pre-Activation Gate",
+            description:
+              "Inspect the accessory unit cost, hardware pricing output, and readiness checks. Once the Ready for Activation check passes, click Confirm & Proceed to Review.",
+            preferredPlacement: "left",
+            primaryActionLabel: "Got it",
+          },
+        ],
+      };
+    }
+
     return {
       phaseId: "validation_sandbox",
       isAutomaticPhase: true,
@@ -351,7 +406,7 @@ export function resolveProductSetupWizardPhase(
     return {
       phaseId: "review",
       isAutomaticPhase: false,
-      isPaused: false,
+      isPaused: Boolean(reviewLoading || reviewHasError),
       marksSurfaceCompletedOnFinish: false,
       steps: [
         {
@@ -504,30 +559,28 @@ export function ProductSetupOnboardingTour({
     setManualRunPhaseId(null);
   };
 
-  if (!resolvedPhase) return null;
-
-  const clampedStepIndex = Math.min(
-    Math.max(0, stepIndex),
-    resolvedPhase.steps.length - 1,
-  );
-  const step = resolvedPhase.steps[clampedStepIndex];
+  const clampedStepIndex = resolvedPhase
+    ? Math.min(Math.max(0, stepIndex), resolvedPhase.steps.length - 1)
+    : 0;
+  const step = resolvedPhase?.steps[clampedStepIndex];
 
   return (
     <OnboardingTourPopup
       isOpen={isOpen}
-      title={step.title}
-      description={step.description}
-      helperNote={step.helperNote}
+      title={step?.title ?? ""}
+      description={step?.description ?? ""}
+      helperNote={step?.helperNote}
       stepIndex={clampedStepIndex}
-      totalSteps={resolvedPhase.steps.length}
-      targetSelector={step.targetSelector}
-      preferredPlacement={step.preferredPlacement}
-      primaryActionLabel={step.primaryActionLabel}
+      totalSteps={resolvedPhase?.steps.length ?? 0}
+      targetSelector={step?.targetSelector}
+      preferredPlacement={step?.preferredPlacement ?? "auto"}
+      primaryActionLabel={step?.primaryActionLabel}
       onPrimaryAction={handlePrimaryAction}
       onSkip={handleSkip}
       onDontShowAgain={handleDontShowAgain}
       variant={viewportVariant}
       blocking={true}
+      isPaused={Boolean(resolvedPhase?.isPaused)}
       restoreFocusSelector='[data-onboarding-target="admin-header-help"]'
     />
   );

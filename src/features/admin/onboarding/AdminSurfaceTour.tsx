@@ -129,6 +129,7 @@ export function AdminSurfaceTour({
       onDontShowAgain={handleDontShowAgain}
       variant={viewportVariant}
       blocking={true}
+      isPaused={isPaused}
       restoreFocusSelector={restoreFocusSelector}
     />
   );

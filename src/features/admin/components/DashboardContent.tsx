@@ -98,7 +98,7 @@ export function DashboardContent({ summary, metrics, recentBookings, recentBooki
         <aside
           data-onboarding-target="admin-dashboard-welcome-cue"
           aria-label="Admin workbench welcome guide"
-          className="fixed bottom-5 right-5 z-50 w-[min(calc(100vw-24px),360px)] rounded-[20px] border border-[#07b6d3]/40 bg-white p-4 shadow-[0px_10px_30px_rgba(0,0,0,0.18)]"
+          className="fixed bottom-5 right-5 z-[120] w-[min(calc(100vw-24px),360px)] rounded-[20px] border border-[#07b6d3]/40 bg-white p-4 shadow-[0px_10px_30px_rgba(0,0,0,0.18)]"
         >
           <div className="flex flex-col gap-1">
             <p className="text-sm font-semibold text-[#0f1422]">
@@ -115,7 +115,7 @@ export function DashboardContent({ summary, metrics, recentBookings, recentBooki
                 setCueDismissed(true);
                 setHelpTriggerCount((prev) => prev + 1);
               }}
-              className="min-h-10 flex-1 rounded-xl bg-[#07b6d3] px-3.5 py-2 text-xs font-semibold text-white hover:bg-[#06a3bd] transition-colors cursor-pointer"
+              className="min-h-11 flex-1 rounded-xl bg-[#07b6d3] px-3.5 py-2 text-xs font-semibold text-white hover:bg-[#06a3bd] transition-colors cursor-pointer"
             >
               Take a quick tour
             </button>
@@ -125,7 +125,7 @@ export function DashboardContent({ summary, metrics, recentBookings, recentBooki
                 setCueDismissed(true);
                 setAdminSurfaceSessionSkipped(profileId, "dashboard", true);
               }}
-              className="min-h-10 rounded-xl px-2.5 py-2 text-xs font-medium text-neutral-600 hover:bg-neutral-100 hover:text-[#0f1422] transition-colors cursor-pointer"
+              className="min-h-11 rounded-xl px-2.5 py-2 text-xs font-medium text-neutral-600 hover:bg-neutral-100 hover:text-[#0f1422] transition-colors cursor-pointer"
             >
               Dismiss
             </button>
@@ -135,7 +135,7 @@ export function DashboardContent({ summary, metrics, recentBookings, recentBooki
                 setCueDismissed(true);
                 markAdminSurfaceDontShowAgain(profileId, "dashboard");
               }}
-              className="min-h-10 rounded-xl px-2.5 py-2 text-xs font-medium text-neutral-500 hover:bg-neutral-100 hover:text-[#0f1422] transition-colors cursor-pointer"
+              className="min-h-11 rounded-xl px-2.5 py-2 text-xs font-medium text-neutral-500 hover:bg-neutral-100 hover:text-[#0f1422] transition-colors cursor-pointer"
             >
               Don&apos;t show again
             </button>

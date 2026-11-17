@@ -740,9 +740,11 @@ export function optOutDontShowAgainState(state: GuideRuntimeState): GuideRuntime
 export function completeWorkspaceTourState(state: GuideRuntimeState): GuideRuntimeState {
   const activeId = state.progress.activeGuideInstanceId;
   const activeInstance = activeId ? state.progress.instances[activeId] : undefined;
+  const nextPreferenceStatus: GuidePreferenceStatus =
+    state.preferenceStatus === "dont_show_again" ? "dont_show_again" : "completed";
   return {
     ...state,
-    preferenceStatus: "completed",
+    preferenceStatus: nextPreferenceStatus,
     manualRunActive: false,
     progress: {
       ...state.progress,

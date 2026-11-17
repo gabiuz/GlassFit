@@ -464,7 +464,15 @@ export async function getProductDraft(productId: string) {
         }
     }
 
-    return product;
+    const enrichedAssets = assets.map((a) => ({
+        ...a,
+        file_url: a.r2_object_key ? getR2AssetUrl(a.r2_object_key) : null,
+    }));
+
+    return {
+        ...product,
+        product_assets: enrichedAssets,
+    };
 }
 
 export async function deleteProduct(productId: string) {

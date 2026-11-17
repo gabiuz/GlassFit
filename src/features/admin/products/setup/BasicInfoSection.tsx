@@ -143,7 +143,7 @@ export function BasicInfoSection({ productId, initialData, onSave, isEditing }: 
                                     : "border-[#c3c3c3] bg-white text-neutral-600 hover:border-neutral-400"
                             )}
                         >
-                            <span className="text-sm font-semibold text-[#0f1422]">Add-on Attachment</span>
+                            <span className="text-sm font-semibold text-[#0f1422]">Add-on Accessory</span>
                             <span className="text-xs text-neutral-500 mt-1">
                                 Aperture-spanning modular fixtures (insect screens and security grilles).
                             </span>
