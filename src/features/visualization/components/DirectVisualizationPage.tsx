@@ -19,6 +19,7 @@ import {
   type Point2D,
 } from "@/lib/visualization/types";
 import { useVisualizationSession } from "@/lib/visualization/visualizationSession";
+import { useOptionalVisualizationOnboarding } from "../onboarding/VisualizationOnboardingProvider";
 
 import { confirmPaperReference, skipPaperReference, type PaperReviewResult } from "@/lib/visualization/paperReference";
 
@@ -33,6 +34,7 @@ export function DirectVisualizationPage({
   const requestIdRef = useRef(0);
   const analysisControllerRef = useRef<AbortController | null>(null);
   const { setPreparedSpaceImage, updateSessionCalibration } = useVisualizationSession();
+  const onboarding = useOptionalVisualizationOnboarding();
   const [activeSession, setActiveSession] = useState<SpaceImageSession | null>(null);
   const [pendingSession, setPendingSession] = useState<SpaceImageSession | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
@@ -60,6 +62,7 @@ export function DirectVisualizationPage({
     setRetryAttempt(0);
     setErrorMessage(null);
     setPhotoErrorCode(null);
+    onboarding?.resetForFreshImage(null);
 
     try {
       const session = await analyzeImage(file, {
@@ -78,6 +81,7 @@ export function DirectVisualizationPage({
         return;
       }
 
+      onboarding?.syncImageSession(session.sessionId);
       setPendingSession(session);
       setStatus("ready");
     } catch (error) {
@@ -133,6 +137,7 @@ export function DirectVisualizationPage({
   const handleSelectProduct = (productId: string) => {
     if (!activeSession) return;
 
+    onboarding?.reserveFirstProductHandoff(activeSession.sessionId, productId);
     setPreparedSpaceImage(productId, activeSession);
     router.push(`/visualize/${productId}/workspace`);
   };
@@ -146,6 +151,7 @@ export function DirectVisualizationPage({
     setStatus("idle");
     setErrorMessage(null);
     setPhotoErrorCode(null);
+    onboarding?.resetForFreshImage(null);
   };
 
   const handleTryAgain = () => {
@@ -161,6 +167,7 @@ export function DirectVisualizationPage({
 
     setStatus("idle");
     setErrorMessage(null);
+    onboarding?.resetForFreshImage(null);
   };
 
   const handleResetImage = () => {
@@ -172,6 +179,7 @@ export function DirectVisualizationPage({
     setPendingFile(null);
     setStatus("idle");
     setErrorMessage(null);
+    onboarding?.resetForFreshImage(null);
   };
 
   const isPaperFiducialSession =

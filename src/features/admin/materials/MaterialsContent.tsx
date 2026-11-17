@@ -4,6 +4,10 @@ import { useState, useMemo, useTransition } from "react";
 import { SearchBar } from "@/components/shared/SearchBar";
 import { Copy, Check, Plus, TrendingUp, Layers, CheckCircle2, UploadCloud, ChevronDown } from "lucide-react";
 import { Select } from "radix-ui";
+import { useAdminSession } from "@/features/admin/auth/AdminSessionProvider";
+import { AdminHelpButton } from "@/features/admin/onboarding/AdminHelpButton";
+import { AdminSurfaceTour } from "@/features/admin/onboarding/AdminSurfaceTour";
+import { resolveMaterialsTourSteps } from "@/features/admin/onboarding/adminTourConfigs";
 
 import { cn } from "@/lib/utils";
 import type { RawMaterial, RawMaterialCategory, RawMaterialFinishType } from "@/lib/pricing/types";
@@ -173,6 +177,8 @@ export function MaterialsContent({ initialMaterials }: MaterialsContentProps) {
   const [statusFilter, setStatusFilter] = useState<"ALL" | "ACTIVE" | "INACTIVE">("ALL");
 
   // Modals state
+  const { profileId } = useAdminSession();
+  const [helpTriggerCount, setHelpTriggerCount] = useState(0);
   const [isAddEditOpen, setIsAddEditOpen] = useState(false);
   const [editingMaterial, setEditingMaterial] = useState<RawMaterial | null>(null);
   const [isBatchOpen, setIsBatchOpen] = useState(false);
@@ -340,43 +346,45 @@ export function MaterialsContent({ initialMaterials }: MaterialsContentProps) {
         </div>
 
         {/* Row 2: Action buttons placed below */}
-        <div className="w-full flex items-center justify-end gap-3 flex-wrap">
-          <button
-            type="button"
-            onClick={() => setIsUploadOpen(true)}
-            className="bg-white border border-neutral-300 hover:bg-neutral-50 text-[#0f1422] rounded-[25px] px-4 py-2.5 sm:py-3 flex items-center justify-center gap-2 cursor-pointer transition-colors shrink-0 shadow-xs"
-          >
-            <UploadCloud className="size-4 text-[#097283]" />
-            <span className="text-sm font-medium whitespace-nowrap">Import Spreadsheet</span>
-          </button>
+        <div className="w-full flex items-center justify-end">
+          <div data-onboarding-target="admin-materials-entry-actions" className="inline-flex items-center justify-end gap-3 flex-wrap">
+            <button
+              type="button"
+              onClick={() => setIsUploadOpen(true)}
+              className="bg-white border border-neutral-300 hover:bg-neutral-50 text-[#0f1422] rounded-[25px] px-4 py-2.5 sm:py-3 flex items-center justify-center gap-2 cursor-pointer transition-colors shrink-0 shadow-xs"
+            >
+              <UploadCloud className="size-4 text-[#097283]" />
+              <span className="text-sm font-medium whitespace-nowrap">Import Spreadsheet</span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setIsBatchOpen(true)}
-            className="bg-white border border-neutral-300 hover:bg-neutral-50 text-[#0f1422] rounded-[25px] px-4 py-2.5 sm:py-3 flex items-center justify-center gap-2 cursor-pointer transition-colors shrink-0 shadow-xs"
-          >
-            <TrendingUp className="size-4 text-[#097283]" />
-            <span className="text-sm font-medium whitespace-nowrap">Batch Price Adjust</span>
-          </button>
+            <button
+              type="button"
+              onClick={() => setIsBatchOpen(true)}
+              className="bg-white border border-neutral-300 hover:bg-neutral-50 text-[#0f1422] rounded-[25px] px-4 py-2.5 sm:py-3 flex items-center justify-center gap-2 cursor-pointer transition-colors shrink-0 shadow-xs"
+            >
+              <TrendingUp className="size-4 text-[#097283]" />
+              <span className="text-sm font-medium whitespace-nowrap">Batch Price Adjust</span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => {
-              setEditingMaterial(null);
-              setIsAddEditOpen(true);
-            }}
-            className="bg-[#0f1422] rounded-[25px] px-5 py-2.5 sm:py-3 flex items-center justify-center gap-2 cursor-pointer hover:bg-black transition-colors shrink-0 shadow-xs text-white"
-          >
-            <Plus className="size-4" />
-            <span className="text-sm sm:text-base font-medium whitespace-nowrap">
-              Add Material
-            </span>
-          </button>
+            <button
+              type="button"
+              onClick={() => {
+                setEditingMaterial(null);
+                setIsAddEditOpen(true);
+              }}
+              className="bg-[#0f1422] rounded-[25px] px-5 py-2.5 sm:py-3 flex items-center justify-center gap-2 cursor-pointer hover:bg-black transition-colors shrink-0 shadow-xs text-white"
+            >
+              <Plus className="size-4" />
+              <span className="text-sm sm:text-base font-medium whitespace-nowrap">
+                Add Material
+              </span>
+            </button>
+          </div>
         </div>
       </div>
 
       {/* Filter and Count Summary Bar */}
-      <div className="w-full flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white p-3 sm:p-4 rounded-[20px] shadow-xs border border-neutral-100">
+      <div data-onboarding-target="admin-materials-filter-bar" className="w-full flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white p-3 sm:p-4 rounded-[20px] shadow-xs border border-neutral-100">
         <div className="flex items-center gap-2 flex-wrap">
           {/* Category Filter Pills */}
           <div className="flex items-center gap-1.5 flex-wrap">
@@ -428,7 +436,7 @@ export function MaterialsContent({ initialMaterials }: MaterialsContentProps) {
       </div>
 
       {/* Materials Table Container */}
-      <div className="bg-white rounded-[20px] p-4 sm:p-6 lg:p-[30px] flex flex-col items-start w-full shadow-xs overflow-hidden border border-neutral-100">
+      <div data-onboarding-target="admin-materials-table" className="bg-white rounded-[20px] p-4 sm:p-6 lg:p-[30px] flex flex-col items-start w-full shadow-xs overflow-hidden border border-neutral-100">
         <div className="w-full overflow-x-auto pb-2">
           <table className="w-full min-w-[960px] text-left border-collapse">
             <thead>
@@ -588,6 +596,20 @@ export function MaterialsContent({ initialMaterials }: MaterialsContentProps) {
         onConfirm={handleConfirmDelete}
         material={deletingMaterial}
         isDeleting={isDeleting}
+      />
+
+      <AdminSurfaceTour
+        profileId={profileId}
+        surfaceId="materials"
+        steps={resolveMaterialsTourSteps()}
+        autoOpen={true}
+        isPaused={isAddEditOpen || isBatchOpen || isUploadOpen || deletingMaterial !== null}
+        manualTriggerCount={helpTriggerCount}
+      />
+
+      <AdminHelpButton
+        onClick={() => setHelpTriggerCount((prev) => prev + 1)}
+        ariaLabel="Raw materials guide help"
       />
     </div>
   );

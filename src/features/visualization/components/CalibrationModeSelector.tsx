@@ -156,7 +156,7 @@ export function CalibrationModeSelector({
           </div>
 
           <p className="mt-3 text-xs leading-relaxed text-neutral-600 sm:text-sm">
-            Upload a space photo and enter the workspace with an approximate preview. No paper reference required.
+            Upload a space photo for an approximate visual preview. Does not establish exact real-world dimensions; no paper reference required.
           </p>
 
           <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-neutral-100 pt-3">

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import Image from "next/image";
 import {
   ChevronLeft,
@@ -52,6 +52,7 @@ export type CatalogAssetsSectionProps = {
     imageAsset?: CatalogAssetRecord | null;
     previewAsset: AssetSummary | CatalogAssetRecord | null;
   }) => void;
+  onOnboardingStateChange?: (state: { lightboxOpen: boolean }) => void;
 };
 
 type UploadStatus = "idle" | "uploading" | "success" | "error";
@@ -74,6 +75,7 @@ export function CatalogAssetsSection({
   productId,
   initialData,
   onSave,
+  onOnboardingStateChange,
 }: CatalogAssetsSectionProps) {
   // Multi-image catalog state
   const initialImages: CatalogAssetRecord[] = (
@@ -119,6 +121,10 @@ export function CatalogAssetsSection({
   } | null>(null);
 
   const previewInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    onOnboardingStateChange?.({ lightboxOpen: lightboxData !== null });
+  }, [lightboxData, onOnboardingStateChange]);
 
   const totalImages = assets.length;
   const activeAsset = assets[activeIndex] || null;
@@ -310,7 +316,7 @@ export function CatalogAssetsSection({
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl">
+      <div data-onboarding-target="admin-setup-catalog-assets" className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl">
         {/* 2D Catalog Images (Multi-Image Ingestion & Infinite Marquee) */}
         <div className="flex flex-col gap-3">
           <div className="flex min-h-[66px] flex-col gap-1 md:min-h-[78px] xl:min-h-[66px]">

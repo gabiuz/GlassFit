@@ -10,10 +10,11 @@ import {
   type RefObject,
 } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronLeft, ChevronRight, Check, LoaderCircle } from "lucide-react";
+import { ChevronLeft, ChevronRight, Check, HelpCircle, LoaderCircle } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 import Button from "@/components/shared/Button";
+import { ComparisonOnboardingTour } from "./ComparisonOnboardingTour";
 import { useVisualizationSession } from "@/lib/visualization/visualizationSession";
 import {
   getAluminumVariationMetadata,
@@ -591,6 +592,7 @@ export function Comparison() {
   );
   const [isPreparingQuotation, setIsPreparingQuotation] = useState(false);
   const [comparisonError, setComparisonError] = useState<string | null>(null);
+  const [helpTriggerCount, setHelpTriggerCount] = useState(0);
   const [assetStatuses, setAssetStatuses] = useState<Record<string, VariationAssetStatus>>({});
   const [resolvedAssetUrls, setResolvedAssetUrls] = useState<Record<string, string>>({});
   const renderersRef = useRef(new Map<string, { fingerprint: string; renderer: VariationLayerRenderer }>());
@@ -1070,7 +1072,20 @@ export function Comparison() {
   };
 
   return (
-    <div className="w-full max-w-325 mx-auto px-6 py-12 md:py-16 flex flex-col gap-12 items-center">
+    <div className="relative w-full max-w-325 mx-auto px-6 py-12 md:py-16 flex flex-col gap-12 items-center">
+      <div className="w-full flex justify-start md:absolute md:top-6 md:left-6 md:w-auto z-10">
+        <button
+          type="button"
+          data-onboarding-target="comparison-header-help"
+          onClick={() => setHelpTriggerCount((prev) => prev + 1)}
+          aria-label="Comparison guide help"
+          className="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-neutral-300 bg-white px-3.5 py-2 text-sm font-medium text-[#0f1422] shadow-xs transition-colors hover:border-[#07b6d3] hover:bg-[#e9f9fb] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#07b6d3] focus-visible:ring-offset-2"
+        >
+          <HelpCircle className="size-4 text-[#07b6d3]" aria-hidden="true" />
+          <span>Help</span>
+        </button>
+      </div>
+
       {/* Header Title Section */}
       <div className="flex flex-col gap-5 items-center justify-center text-center">
         <h1 className="text-3xl sm:text-4xl lg:text-5xl font-medium tracking-tight text-black leading-tight">
@@ -1083,7 +1098,10 @@ export function Comparison() {
 
       {/* Control Panel Section */}
       <div className="w-full min-w-0 flex flex-col xl:flex-row gap-6 justify-between items-center">
-        <div className="flex min-w-0 flex-col md:flex-row gap-8 md:gap-12 xl:gap-25.75 items-center">
+        <div
+          data-onboarding-target="comparison-mode-controls"
+          className="flex min-w-0 flex-col md:flex-row gap-8 md:gap-12 xl:gap-25.75 items-center"
+        >
           {/* View As Toggle */}
           <div className="flex flex-col gap-2.5 items-center xl:items-start w-full xl:w-auto">
             <span className="text-[#c3c3c3] text-[16px] tracking-[-0.304px] leading-[1.4] font-normal">
@@ -1156,7 +1174,10 @@ export function Comparison() {
       )}
 
       {/* Main Compare Views Area */}
-      <div className="w-full flex items-center justify-center min-h-64 sm:min-h-96 lg:min-h-144.75">
+      <div
+        data-onboarding-target="comparison-preview-stage"
+        className="w-full flex items-center justify-center min-h-64 sm:min-h-96 lg:min-h-144.75"
+      >
         {isSideBySide ? (
           /* Side-by-Side View Mode */
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 w-full">
@@ -1366,7 +1387,11 @@ export function Comparison() {
 
       {/* Product Variant Selection Panel */}
       {!isBeforeAfter && (
-        <section className="w-full rounded-[20px] border border-neutral-200 bg-[#f5f5f5] p-4 shadow-sm sm:p-6" aria-labelledby="variant-selection-heading">
+        <section
+          data-onboarding-target="comparison-variant-panel"
+          className="w-full rounded-[20px] border border-neutral-200 bg-[#f5f5f5] p-4 shadow-sm sm:p-6"
+          aria-labelledby="variant-selection-heading"
+        >
           <div className="mb-5 flex flex-col gap-1">
             <h2 id="variant-selection-heading" className="text-xl font-medium tracking-[-0.38px] text-[#0f1422] sm:text-2xl">
               Choose finishes for each panel
@@ -1491,22 +1516,35 @@ export function Comparison() {
           />
         </Link>
 
-        <Button
-          variant="lightGradWhiteText"
-          leftIcon={null}
-          rightIcon={<ChevronRight className="w-5 h-5 shrink-0 text-white" />}
-          className="w-full sm:w-auto font-medium justify-center cursor-pointer py-3.5 rounded-[25px] flex items-center hover:opacity-95 [--btn-width:100%] sm:[--btn-width:fit-content] [--btn-padding:12px_16px] sm:[--btn-padding:15px_20px] [--btn-font-size:16px] sm:[--btn-font-size:20px] [--btn-gap:10px] sm:[--btn-gap:15px] whitespace-nowrap"
-          style={{
-            width: "var(--btn-width, fit-content)",
-            padding: "var(--btn-padding, 15px 20px)",
-            fontSize: "var(--btn-font-size, 20px)",
-            gap: "var(--btn-gap, 15px)",
-          }}
-          onClick={handleProceedToQuotation}
-          disabled={isPreparingQuotation}
-          value={isPreparingQuotation ? "Preparing comparison..." : "Proceed to Estimate Price"}
-        />
+        <div data-onboarding-target="comparison-proceed-quotation" className="w-full sm:w-auto">
+          <Button
+            variant="lightGradWhiteText"
+            leftIcon={null}
+            rightIcon={<ChevronRight className="w-5 h-5 shrink-0 text-white" />}
+            className="w-full sm:w-auto font-medium justify-center cursor-pointer py-3.5 rounded-[25px] flex items-center hover:opacity-95 [--btn-width:100%] sm:[--btn-width:fit-content] [--btn-padding:12px_16px] sm:[--btn-padding:15px_20px] [--btn-font-size:16px] sm:[--btn-font-size:20px] [--btn-gap:10px] sm:[--btn-gap:15px] whitespace-nowrap"
+            style={{
+              width: "var(--btn-width, fit-content)",
+              padding: "var(--btn-padding, 15px 20px)",
+              fontSize: "var(--btn-font-size, 20px)",
+              gap: "var(--btn-gap, 15px)",
+            }}
+            onClick={handleProceedToQuotation}
+            disabled={isPreparingQuotation}
+            value={isPreparingQuotation ? "Preparing comparison..." : "Proceed to Estimate Price"}
+          />
+        </div>
       </div>
+
+      <ComparisonOnboardingTour
+        compareMode={compareMode}
+        variantModeReady={variantModeReady}
+        comparisonOverlaysCount={comparisonOverlays.length}
+        variationSnapshotsCount={variationSnapshots.length}
+        isPreparingQuotation={isPreparingQuotation}
+        comparisonError={comparisonError}
+        onSwitchToProductVariant={() => setCompareMode("right")}
+        manualTriggerCount={helpTriggerCount}
+      />
     </div>
   );
 }

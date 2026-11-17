@@ -39,7 +39,7 @@ export type StructuralComponentsSectionProps = {
     wholeModelAsset?: {
         asset_id?: string;
         file_name?: string;
-        file_url?: string;
+        file_url?: string | null;
         byte_size?: number;
     } | null;
     isAccessory?: boolean;
@@ -47,6 +47,12 @@ export type StructuralComponentsSectionProps = {
     initialAccessoryCategory?: AccessoryCategory | null;
     productBasePrice?: number;
     onSave: () => void;
+    onOnboardingStateChange?: (state: {
+        mappedFilesCount: number;
+        selectedPartsCount: number;
+        isDecomposing: boolean;
+        decompositionModalOpen: boolean;
+    }) => void;
 };
 
 type MappedFile = {
@@ -552,6 +558,7 @@ export function StructuralComponentsSection({
     initialAccessoryCategory = null,
     productBasePrice,
     onSave,
+    onOnboardingStateChange,
 }: StructuralComponentsSectionProps) {
     const [uploadMode, setUploadMode] = useState<"individual" | "assembled">("individual");
     const [viewMode, setViewMode] = useState<"assembled" | "exploded">("assembled");
@@ -1341,6 +1348,21 @@ export function StructuralComponentsSection({
             }));
     }, [mappedFiles, selectedIds]);
 
+    useEffect(() => {
+        onOnboardingStateChange?.({
+            mappedFilesCount: mappedFiles.length,
+            selectedPartsCount: selectedPartConfigs.length,
+            isDecomposing,
+            decompositionModalOpen,
+        });
+    }, [
+        mappedFiles.length,
+        selectedPartConfigs.length,
+        isDecomposing,
+        decompositionModalOpen,
+        onOnboardingStateChange,
+    ]);
+
     const analyzedGrilleData = useMemo((): GrilleGeometryAnalysis | null => {
         const primary = selectedPartConfigs[0];
         if (!primary || primary.dimensionBinding !== "GRILLE_LINEAR") return null;
@@ -1385,7 +1407,7 @@ export function StructuralComponentsSection({
 
             {/* Step 3 Whole Model Auto-Ingestion Banner */}
             {wholeModelAsset?.file_url && (
-                <div className="bg-gradient-to-r from-sky-50 via-cyan-50 to-blue-50 border border-[#07b6d3]/30 rounded-[16px] p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+                <div data-onboarding-target="admin-setup-extract-whole-model" className="bg-gradient-to-r from-sky-50 via-cyan-50 to-blue-50 border border-[#07b6d3]/30 rounded-[16px] p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
                     <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-[12px] bg-[#07b6d3] text-white flex items-center justify-center shrink-0 shadow-xs">
                             <Sparkles className="size-5" />
@@ -1416,7 +1438,7 @@ export function StructuralComponentsSection({
 
             {mappedFiles.length > 0 && <button type="button" onClick={() => setShowUpload(value => !value)} className="self-start rounded-lg border border-neutral-200 px-3 py-2 text-sm font-medium text-[#0f1422]">{showUpload ? "Hide Add Parts" : "Add Parts"}</button>}
             {uploadErrors.length > 0 && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{uploadErrors.map(error => <p key={error}>{error}</p>)}</div>}
-            {(mappedFiles.length === 0 || showUpload) && <>
+            {(mappedFiles.length === 0 || showUpload) && <div data-onboarding-target="admin-setup-components-upload" className="flex flex-col gap-4">
             {/* Ingestion Mode Segmented Toggle */}
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="bg-slate-100 p-1.5 rounded-[14px] inline-flex border border-neutral-200">
@@ -1546,7 +1568,7 @@ export function StructuralComponentsSection({
                 </label>
             )}
 
-            </>}
+            </div>}
             {/* Quick Material Mapping Summary Banner */}
             {mappedFiles.length > 0 && (
                 <div className="bg-[#0f1422] text-white p-3 rounded-[12px] flex flex-wrap items-center justify-between gap-4 shadow-sm">
@@ -1585,7 +1607,7 @@ export function StructuralComponentsSection({
 
             {/* Bilateral Handing Configuration Card (IMP-MS78) */}
             {isAccessory && mappedFiles.length > 0 && (
-                <div className="bg-white p-5 rounded-[16px] border border-neutral-200 shadow-sm space-y-4">
+                <div data-onboarding-target="admin-setup-accessory-handing" className="bg-white p-5 rounded-[16px] border border-neutral-200 shadow-sm space-y-4">
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                             <Sparkles className="size-5 text-[#07b6d3]" />
@@ -1730,7 +1752,7 @@ export function StructuralComponentsSection({
             {mappedFiles.length > 0 && (
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 border border-neutral-200 rounded-[16px] overflow-hidden bg-white shadow-sm lg:h-[min(760px,calc(100vh-150px))]">
                     {/* Left Side: 3D Viewport (60% / 7 cols) */}
-                    <div className="lg:col-span-7 bg-[#f2f4f7] relative h-[480px] lg:h-full min-h-0 flex flex-col justify-between border-b lg:border-b-0 lg:border-r border-neutral-200">
+                    <div data-onboarding-target="admin-setup-3d-viewport" className="lg:col-span-7 bg-[#f2f4f7] relative h-[480px] lg:h-full min-h-0 flex flex-col justify-between border-b lg:border-b-0 lg:border-r border-neutral-200">
                         <div className="absolute top-3 right-3 z-10 bg-white/90 backdrop-blur-md p-1 rounded-[10px] inline-flex border border-neutral-200 shadow-xs">
                             <button
                                 type="button"
@@ -1813,7 +1835,7 @@ export function StructuralComponentsSection({
                     </div>
 
                     {/* Right Side: Part Inspector Drawer (40% / 5 cols) */}
-                    <div className="lg:col-span-5 bg-white flex flex-col min-h-0 lg:h-full lg:overflow-y-auto">
+                    <div data-onboarding-target="admin-setup-part-inspector" className="lg:col-span-5 bg-white flex flex-col min-h-0 lg:h-full lg:overflow-y-auto">
                         <PartInspectorDrawer
                             selectedParts={selectedPartConfigs}
                             allParts={mappedFiles}
@@ -1833,7 +1855,7 @@ export function StructuralComponentsSection({
 
             {/* Component Summary List / Batch Table */}
             {mappedFiles.length > 0 && (
-                <div className="border border-neutral-200 rounded-[12px] overflow-hidden bg-white shadow-sm">
+                <div data-onboarding-target="admin-setup-components-save" className="border border-neutral-200 rounded-[12px] overflow-hidden bg-white shadow-sm">
                     <div className="p-3 bg-[#fcfcfc] border-b border-neutral-200 flex items-center justify-between">
                         <h3 className="text-xs font-semibold text-neutral-800 uppercase tracking-wider">
                             Uploaded Components ({mappedFiles.length})

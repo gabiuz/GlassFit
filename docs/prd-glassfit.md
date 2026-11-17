@@ -5,7 +5,7 @@
 **Version:** 1.0 (Capstone Production Release)  
 **Owner:** Reynard John B. Rabanal (Lead Product / Systems Architect) & GlassFit Capstone Team (PUP CCIS)  
 **Status:** Locked  
-**Last reconciled:** October 1, 2026 (Added IMP-MS37 mobile visualization workspace requirements and IMP-MS40 neutral perspective-fit orientation)
+**Last reconciled:** November 16, 2026 (Implemented IMP-MS89 Work Packages 1 through 5; automated unit, lint, typecheck, build, and CV health passed; live browser/device and usability acceptance pending)
 **BRD:** N/A (Capstone Specification & PUP CCIS Manuscript Chapters 1-3)
 
 ---
@@ -586,3 +586,13 @@ PRD-F3 and PRD-F4 (fix-14 follow-up): A photo dominated by a known non-space sub
 ## IMP-MS88: Post-Fit Product Facing
 
 PRD-F5, PRD-F6, PRD-F9: Each fitted product offers Front (Exterior) and Back (Interior) facing in Placement. Facing is independent of manual angles, image flip, dimensions, physical add-on mounting and pricing. New and legacy configurations default to front; duplication inherits facing and refit preserves it. See [MS88](implementation/ms88.md), QAD-TC103.1 through QAD-TC103.12.
+
+## IMP-MS89: Context-Aware Visualization Onboarding
+
+**Status:** Implemented (November 16, 2026); automated unit, lint, typecheck, production build, and CV health passed; live browser/device and first-time usability acceptance pending. See [MS89](implementation/ms89.md), QAD-TC104.1 through QAD-TC104.14.
+
+PRD-F3 and PRD-F6, supporting BRD-M4: Both photo-first and product-first entry show optional, step-by-step popup tour guidance with darkened backdrop emphasis for the next unfinished task. Paper-mode intake keeps the existing pre-upload guidelines and adds a first-time Paper Calibration Review popup tour after upload; automatic mode remains paper-free. Photo-first users choose Add Product; product-first users proceed to Fit or canvas movement/resize while retaining their configured selections. Successful Fit advances the tour; Next advances intermediate steps and Got it completes the tour. Skip dismisses the current run, Don't show again and completion suppress later automatic replay, and Help starts a manual run without changing the design.
+
+Explicit Cabinet products use free placement regardless of door/sill names. Preserve existing Fit eligibility for other product types, unrelated sizing/estimation behavior, and all previously stored cabinet placement geometry. New Cabinet Fit/refit operations are unavailable; customers may retain the restored pose or explicitly select Free Place. This is a bounded correction under PRD-F6, not a broader product-category redesign.
+
+Preserve PRD-F5 structural guards, PRD-F9 snapshot integrity, PRD-F10 measurement confirmation, PRD-F15 comparison, and PRD-F16 independent product instances. Guide progress is presentation state and never proof of calibration, measurement accuracy, or confirmed quotation dimensions. No new account requirement, continuous AR, backend service, or database entity is introduced.

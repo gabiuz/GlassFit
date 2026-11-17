@@ -48,6 +48,12 @@ const accessoryGltfLoader = new GLTFLoader();
 export type ValidationWorkspaceSectionProps = {
   productId: string;
   onSave: () => void;
+  onOnboardingStateChange?: (state: {
+    activeTab: "dimensions" | "materials";
+    isLoading: boolean;
+    hasError: boolean;
+    hasDefinition: boolean;
+  }) => void;
 };
 
 // Internal component for React Three Fiber rendering
@@ -216,7 +222,7 @@ function synthesizeBenchmarkMaterials(pricingInputs: ComponentPricingInput[]) {
   });
 }
 
-export function ValidationWorkspaceSection({ productId, onSave }: ValidationWorkspaceSectionProps) {
+export function ValidationWorkspaceSection({ productId, onSave, onOnboardingStateChange }: ValidationWorkspaceSectionProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -235,6 +241,15 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
   // Step 6 Material Sandbox State (IMP-MS65)
   const [materialOverrides, setMaterialOverrides] = useState<Record<string, string>>({});
   const [activeTab, setActiveTab] = useState<"dimensions" | "materials">("dimensions");
+
+  useEffect(() => {
+    onOnboardingStateChange?.({
+      activeTab,
+      isLoading,
+      hasError: errorMsg !== null,
+      hasDefinition: definition !== null,
+    });
+  }, [activeTab, isLoading, errorMsg, definition, onOnboardingStateChange]);
   const [activeAddon, setActiveAddon] = useState<"screen" | "grill" | "none">("none");
   const [addonAlumFinish, setAddonAlumFinish] = useState<string>("analok");
   const [selectedScreenProductId, setSelectedScreenProductId] = useState<string>("");
@@ -1822,7 +1837,14 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
 
               {/* Hardware Accessories & Handing Test Dock (IMP-MS75) */}
               {dockComponents.length > 0 && (
-                <div className="bg-white border border-neutral-200 rounded-[12px] p-4 shadow-xs space-y-3.5">
+                <div
+                  data-onboarding-target={
+                    definition?.product?.isAccessory
+                      ? "admin-setup-validation-accessory-dock"
+                      : undefined
+                  }
+                  className="bg-white border border-neutral-200 rounded-[12px] p-4 shadow-xs space-y-3.5"
+                >
                   <div className="flex items-center justify-between border-b border-neutral-100 pb-2.5">
                     <div className="flex items-center gap-2">
                       <Sliders className="size-4 text-[#07b6d3]" />
@@ -2000,7 +2022,7 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
               )}
 
               {/* Interactive Parameter Controls */}
-              <div className="bg-white border border-neutral-200 rounded-[12px] p-4 shadow-xs">
+              <div data-onboarding-target="admin-setup-validation-sliders" className="bg-white border border-neutral-200 rounded-[12px] p-4 shadow-xs">
                 <h3 className="font-semibold text-xs text-[#0f1422] uppercase tracking-wider mb-3 flex items-center justify-between">
                   <span>Interactive Sizing Sandbox</span>
                   <Calculator className="size-3.5 text-[#07b6d3]" />
@@ -2078,19 +2100,21 @@ export function ValidationWorkspaceSection({ productId, onSave }: ValidationWork
               </div>
             </>
           ) : (
-            <PartMaterialsSandbox
-              components={definition.components}
-              rawMaterials={rawMaterials}
-              materialOverrides={materialOverrides}
-              onMaterialChange={handleMaterialChange}
-              onResetToDefaults={handleResetToDefaults}
-              onApplyFramingFinish={handleApplyFramingFinish}
-            />
+            <div data-onboarding-target="admin-setup-validation-materials-sandbox">
+              <PartMaterialsSandbox
+                components={definition.components}
+                rawMaterials={rawMaterials}
+                materialOverrides={materialOverrides}
+                onMaterialChange={handleMaterialChange}
+                onResetToDefaults={handleResetToDefaults}
+                onApplyFramingFinish={handleApplyFramingFinish}
+              />
+            </div>
           )}
 
           {/* Live Bill of Materials (BOM) Output Card */}
           {bomCalculation && (
-            <div className="bg-gradient-to-b from-white to-[#fcfcfc] border border-neutral-200 rounded-[12px] p-4 shadow-xs space-y-3">
+            <div data-onboarding-target="admin-setup-validation-bom" className="bg-gradient-to-b from-white to-[#fcfcfc] border border-neutral-200 rounded-[12px] p-4 shadow-xs space-y-3">
               <div className="flex items-center justify-between border-b border-neutral-100 pb-2">
                 <h3 className="font-semibold text-xs text-[#0f1422] uppercase tracking-wider">
                   Live BOM Cost Breakdown

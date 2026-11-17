@@ -5,7 +5,7 @@
 **Version:** 1.0 (Capstone Production Release)  
 **Owner:** Reynard John B. Rabanal (Lead Product / Systems Architect) & GlassFit Capstone Team (PUP CCIS)  
 **Status:** Locked  
-**Last reconciled:** October 21, 2026 (Updated SDD-C2/SDD-C3 for IMP-MS63 resilient HEIC ingestion, early WebP generation, downscaled paper detection, and /snap-paper)
+**Last reconciled:** November 16, 2026 (Implemented IMP-MS89 Work Packages 1 through 5; automated unit, lint, typecheck, build, and CV health passed; live browser/device and usability acceptance pending)
 **PRD:** docs/prd-glassfit.md
 
 ---
@@ -198,3 +198,13 @@ SDD-C2 and SDD-C3 (fix-14 follow-up): The suitability gate exposes `SPACE_PHOTO_
 ## IMP-MS88: Post-Fit Product Facing
 
 SDD-C4, SDD-C5, SDD-C6: Compose productFacing as a local vertical half-turn around the structural installation center before relative manual yaw/pitch. Use the same face in active renders, overlay restoration, variation recipes and flattened capture. Validate front/back at configuration boundaries; do not rebuild geometry or CV evidence on a facing change. See [MS88](implementation/ms88.md), QAD-TC103.1 through QAD-TC103.12.
+
+## IMP-MS89: Visualization Guidance State and Capability Boundaries
+
+**Status:** Implemented (November 16, 2026); automated unit, lint, typecheck, production build, and CV health passed; live browser/device and first-time usability acceptance pending. See [MS89 Sections 4.1 through 4.3](implementation/ms89.md#41-shared-fit-capability-and-bounded-correction), QAD-TC104.1 through QAD-TC104.14.
+
+SDD-C2 and SDD-C5: Use a pure next-action resolver and a feature-owned provider mounted above route pages inside the existing visualization provider. Identify the photo by spaceImageSession.sessionId and retain guide progress when setPreparedSpaceImage creates a new assetSessionId. Reserve first-product guide identity before navigation. Keep a stable guide instance ID with explicit active/placed/comparison overlay aliases, since capture generates new overlay UUIDs. Duplicate instances remain distinct; async advancement requires matching image, guide generation, instance, and action attempt. Existing domain cancellation remains authoritative.
+
+Separate the versioned localStorage display preference from the small sessionStorage progress record. Shared memory preserves client-side navigation when storage is unavailable. Restore guidance only against a valid matching domain session; guide data cannot restore missing images or confer measurement validity. Preserve renderer/cache identifiers and calibration contracts. Guide state must not enter ERD-E10/ERD-E11 persistence, quotation payloads, or snapshot rendering.
+
+One shared pure Fit-capability helper drives guide decisions, both toolbars, refit entry points, and action guards. Explicit Cabinet definitions reject new Fit/refit operations even with door/sill name matches. Preserve the prior predicate for every non-cabinet category and keep existing sizing, sill-option, labeling, and estimate consumers unchanged. Restore legacy cabinet fit geometry without mutation; retain explicit Free Place recovery. Characterize these boundaries before integration.

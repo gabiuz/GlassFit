@@ -10,6 +10,7 @@ import {
   AlertTriangle,
   Sparkles,
   Loader2,
+  HelpCircle,
 } from "lucide-react";
 import type {
   FiducialPaperStandard,
@@ -25,6 +26,11 @@ import {
 } from "@/lib/visualization/scaleEstimation";
 import { isValidQuadrilateral } from "@/lib/visualization/perspectiveTransform";
 import { useDocumentScrollLock } from "../hooks/useDocumentScrollLock";
+import { useCompactViewport } from "../hooks/useCompactViewport";
+import { useOptionalVisualizationOnboarding } from "../onboarding/VisualizationOnboardingProvider";
+import { resolveNextGuideAction } from "../onboarding/resolver";
+import { OnboardingTourPopup } from "../onboarding/OnboardingTourPopup";
+import type { PaperTourStepIndex } from "../onboarding/types";
 import { mapPointerToCanvas, TOUCH_PROXY_OFFSET_CSS_PX } from "../mobileConfiguratorGeometry";
 import {
   computeMagneticSnap,
@@ -70,12 +76,64 @@ export interface PaperDetectionConfirmationModalProps {
   onCancel: () => void;
 }
 
+const EMPTY_CANDIDATES: PaperCandidate[] = [];
+
 const CORNER_NAMES = [
   "1: Top-Left",
   "2: Top-Right",
   "3: Bottom-Right",
   "4: Bottom-Left",
 ] as const;
+
+const PAPER_TOUR_STEPS: ReadonlyArray<{
+  title: string;
+  description: string;
+  helperNote: string;
+  targetSelector: string;
+  preferredPlacement: "left" | "right" | "top" | "bottom" | "auto";
+}> = [
+  {
+    title: "Select Paper Format",
+    description:
+      "Click the actual paper size you taped to the wall (Short Bond, A4, or Long Bond).",
+    helperNote: "Selecting a format automatically moves to the corner check.",
+    targetSelector: '[data-onboarding-target="paper-format-options"]',
+    preferredPlacement: "left",
+  },
+  {
+    title: "Check 4-Corner Boundaries",
+    description:
+      "Tap directly on the paper sheet to snap corners, or drag any corner pin to line up with your sheet edges.",
+    helperNote:
+      "Adjust any corner pin freely without leaving this step, then click Corners look good when your outline matches.",
+    targetSelector: '[data-onboarding-target="paper-corners-canvas"]',
+    preferredPlacement: "right",
+  },
+  {
+    title: "Select Sheet Orientation",
+    description:
+      "Click Portrait or Landscape so edge 1 to 2 matches the physical short or long side of your paper.",
+    helperNote: "Selecting orientation automatically moves to the wall plane check.",
+    targetSelector: '[data-onboarding-target="paper-orientation-options"]',
+    preferredPlacement: "left",
+  },
+  {
+    title: "Confirm Wall Plane",
+    description:
+      "Select whether the paper was taped flat against the same wall surface as the opening.",
+    helperNote: "Choosing an option highlights the final confirmation button.",
+    targetSelector: '[data-onboarding-target="paper-plane-options"]',
+    preferredPlacement: "left",
+  },
+  {
+    title: "Apply or Preview",
+    description:
+      "Click Confirm & Enter Workspace to apply your calibrated scale, or Continue Approximate Preview if the paper was not flat on the opening wall.",
+    helperNote: "Click the highlighted button below to enter the workspace.",
+    targetSelector: '[data-onboarding-target="paper-confirm-action"]',
+    preferredPlacement: "left",
+  },
+];
 
 type ActiveCornerDrag = {
   pointerId: number;
@@ -129,7 +187,7 @@ export function PaperDetectionConfirmationModal({
   initialCorners,
   paperStandard = "short",
   confidence = 0,
-  candidates = [],
+  candidates = EMPTY_CANDIDATES,
   selectedCandidateId = null,
   paperStandardConfirmed = false,
   suggestedPaperStandard = null,
@@ -142,6 +200,101 @@ export function PaperDetectionConfirmationModal({
   onCancel,
   onRetake,
 }: PaperDetectionConfirmationModalProps) {
+  const onboarding = useOptionalVisualizationOnboarding();
+  const { isCompactViewport } = useCompactViewport();
+  const [paperTourStep, setPaperTourStep] = useState<PaperTourStepIndex>(0);
+  const [localPaperTourOpen, setLocalPaperTourOpen] = useState(false);
+
+  const paperGuideResolution = useMemo(() => {
+    if (!onboarding) {
+      return null;
+    }
+    return resolveNextGuideAction({
+      isSessionHydrated: onboarding.isHydrated,
+      hasValidImage: Boolean(sessionId || backgroundImageUrl),
+      imageId: sessionId ?? onboarding.imageId ?? "pending-paper-session",
+      calibrationMode: "paper_fiducial",
+      isUploadingOrAnalyzing: false,
+      isModelLoading: false,
+      hasError: false,
+      activeBlockingModal: "paper_review",
+      isComparisonPreparing: onboarding.isComparisonPreparing,
+      activeProduct: null,
+      placedProductCount: 0,
+      preferenceStatus: onboarding.preferenceStatus,
+      runSkipped: onboarding.runSkipped,
+      comparisonSuspended: onboarding.comparisonSuspended,
+      manualRunActive: onboarding.manualRunActive,
+      paperTourCompletedForRun: onboarding.paperTourCompletedForRun,
+      instanceProgress: null,
+    });
+  }, [backgroundImageUrl, onboarding, sessionId]);
+
+  const isPaperTourOpen = isOpen && (
+    onboarding
+      ? Boolean(paperGuideResolution?.shouldShowPaperTour)
+      : localPaperTourOpen
+  );
+  const isPaperTourOpenRef = useRef(isPaperTourOpen);
+  useEffect(() => {
+    isPaperTourOpenRef.current = isPaperTourOpen;
+  }, [isPaperTourOpen]);
+
+  const finishPaperTour = useCallback(() => {
+    if (onboarding) {
+      onboarding.completePaperTourForRun();
+    } else {
+      setLocalPaperTourOpen(false);
+    }
+    setPaperTourStep(0);
+  }, [onboarding]);
+
+  const advancePaperTourTo = useCallback(
+    (nextStep: PaperTourStepIndex, onlyIfAtOrBefore?: PaperTourStepIndex) => {
+      if (!isPaperTourOpenRef.current) return;
+      setPaperTourStep((prev) => {
+        if (onlyIfAtOrBefore !== undefined && prev > onlyIfAtOrBefore) {
+          return prev;
+        }
+        return nextStep;
+      });
+    },
+    [],
+  );
+
+  const handlePaperTourNext = useCallback(() => {
+    if (paperTourStep < 4) {
+      setPaperTourStep((prev) => (prev + 1) as PaperTourStepIndex);
+      return;
+    }
+    finishPaperTour();
+  }, [finishPaperTour, paperTourStep]);
+
+  const handlePaperTourSkip = useCallback(() => {
+    if (onboarding) {
+      onboarding.skipCurrentRun();
+    } else {
+      setLocalPaperTourOpen(false);
+    }
+  }, [onboarding]);
+
+  const handlePaperTourDontShowAgain = useCallback(() => {
+    if (onboarding) {
+      onboarding.optOutDontShowAgain();
+    } else {
+      setLocalPaperTourOpen(false);
+    }
+  }, [onboarding]);
+
+  const handlePaperTourHelp = useCallback(() => {
+    setPaperTourStep(0);
+    if (onboarding) {
+      onboarding.restartGuideManually();
+    } else {
+      setLocalPaperTourOpen(true);
+    }
+  }, [onboarding]);
+
   const [firstEdge, setFirstEdge] = useState<"short" | "long">("short");
   const [orientationConfirmed, setOrientationConfirmed] = useState(false);
   const [formatConfirmed, setFormatConfirmed] = useState(paperStandardConfirmed);
@@ -301,6 +454,9 @@ export function PaperDetectionConfirmationModal({
     const focusables = () => Array.from(dialog?.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled), [tabindex=\"0\"]") ?? []);
     focusables()[0]?.focus();
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (isPaperTourOpenRef.current) {
+        return;
+      }
       if (e.key === "Tab") {
         const items = focusables();
         const first = items[0], last = items[items.length - 1];
@@ -454,16 +610,26 @@ export function PaperDetectionConfirmationModal({
     setSnapGradientStrength(0);
   };
 
-  const selectCandidate = (candidate: PaperCandidate) => {
-    setOrientationConfirmed(false);
-    setPoints(orderPaperCorners(candidate.corners.map(([x, y]) => ({ x, y }))));
-    setCandidateId(candidate.id);
-    setManualMode(false);
-    setHasBoundarySeed(true);
-    setHasUserAdjusted(false);
-    setAdjustedIndices([]);
-    setNextManualCorner(null);
-  };
+  const selectCandidate = useCallback(
+    (
+      candidate: PaperCandidate,
+      options: { advanceTour?: boolean } = {},
+    ) => {
+      const { advanceTour = false } = options;
+      setOrientationConfirmed(false);
+      setPoints(orderPaperCorners(candidate.corners.map(([x, y]) => ({ x, y }))));
+      setCandidateId(candidate.id);
+      setManualMode(false);
+      setHasBoundarySeed(true);
+      setHasUserAdjusted(false);
+      setAdjustedIndices([]);
+      setNextManualCorner(null);
+      if (advanceTour) {
+        advancePaperTourTo(2, 1);
+      }
+    },
+    [advancePaperTourTo],
+  );
 
   const handleTapToSnap = useCallback(
     async (canvasX: number, canvasY: number) => {
@@ -483,7 +649,7 @@ export function PaperDetectionConfirmationModal({
       // Tier 1 Fast Proposal Spatial Query (Instant < 100ms)
       const matched = findSeedEnclosingCandidate(activeCandidates, { x: canvasX, y: canvasY }, diagonal);
       if (matched) {
-        selectCandidate(matched);
+        selectCandidate(matched, { advanceTour: false });
         setCurrentReferenceSource("click_guided");
         setSnapNotice({
           type: "success",
@@ -515,7 +681,7 @@ export function PaperDetectionConfirmationModal({
             const filtered = prev.filter((c) => c.id !== newCandidate.id);
             return [newCandidate, ...filtered];
           });
-          selectCandidate(newCandidate);
+          selectCandidate(newCandidate, { advanceTour: false });
           setCurrentReferenceSource("click_guided");
           setSnapNotice({
             type: "success",
@@ -524,7 +690,7 @@ export function PaperDetectionConfirmationModal({
         } else {
           setSnapNotice({
             type: "info",
-            message: "No paper boundary detected near tap. Tap directly on the sheet or adjust pins manually.",
+            message: "No paper boundary detected near tap. Tap Map 4 corners manually to place each corner yourself.",
           });
         }
       } catch (err: unknown) {
@@ -533,13 +699,13 @@ export function PaperDetectionConfirmationModal({
         }
         setSnapNotice({
           type: "error",
-          message: "Detection was interrupted. Adjust pins manually or tap again.",
+          message: "Detection was interrupted. Tap Map 4 corners manually or try tapping the sheet again.",
         });
       } finally {
         setIsSnapping(false);
       }
     },
-    [activeCandidates, effectiveImageUrl, sessionId, canvasHeight, canvasWidth, selectedStandard],
+    [activeCandidates, effectiveImageUrl, sessionId, canvasHeight, canvasWidth, selectCandidate, selectedStandard],
   );
 
   const handleSvgPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
@@ -555,7 +721,9 @@ export function PaperDetectionConfirmationModal({
       });
       setAdjustedIndices((indices) => [...indices, index]);
       setNextManualCorner(index === 3 ? null : index + 1);
-      if (index === 3) setHasBoundarySeed(true);
+      if (index === 3) {
+        setHasBoundarySeed(true);
+      }
       return;
     }
     handleTapToSnap(coord.x, coord.y);
@@ -583,6 +751,7 @@ export function PaperDetectionConfirmationModal({
     try {
       const ordered = points;
       const scaleResult = computeScaleFromPaperCorners(ordered, selectedStandard);
+      finishPaperTour();
       onConfirm(ordered, { ...scaleResult, confidence: 0,
         referenceSource: manualMode
           ? "manual_corners"
@@ -677,12 +846,24 @@ export function PaperDetectionConfirmationModal({
     >
       {/* ── Left Pane: Maximized Room Photo Canvas ── */}
       <div className="relative flex-1 h-[45vh] lg:h-full min-w-0 flex flex-col items-center justify-center p-2 sm:p-4 lg:p-6 overflow-hidden bg-light">
+        <button
+          type="button"
+          data-onboarding-target="paper-tour-help-trigger"
+          onClick={handlePaperTourHelp}
+          className="absolute top-3 left-3 sm:top-4 sm:left-4 z-30 inline-flex min-h-9 cursor-pointer items-center gap-1.5 rounded-full border border-neutral-200 bg-white/95 backdrop-blur-md px-3.5 py-1.5 text-xs font-medium text-[#0f1422] shadow-md hover:bg-white transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07b6d3]"
+          aria-label="Help with paper calibration review"
+        >
+          <HelpCircle className="size-3.5 text-green" aria-hidden="true" />
+          <span>Help</span>
+        </button>
+
         <div
           ref={containerRef}
           className="relative w-full h-full flex items-center justify-center overflow-hidden"
         >
           {fittedCanvasSize.width > 0 && fittedCanvasSize.height > 0 && (
             <div
+              data-onboarding-target="paper-corners-canvas"
               className="relative rounded-2xl overflow-hidden shadow-xl bg-white border border-green/20 ring-1 ring-white"
               style={{
                 width: fittedCanvasSize.width,
@@ -697,7 +878,7 @@ export function PaperDetectionConfirmationModal({
               />
 
               {/* Floating Top Hint (GlassFit Light Chip) */}
-              <div className="absolute top-3 left-3 z-20 hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/90 backdrop-blur-md border border-neutral-200 text-black text-xs shadow-md">
+              <div className="absolute top-3 right-3 z-20 hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/90 backdrop-blur-md border border-neutral-200 text-black text-xs shadow-md">
                 <Sparkles className="size-3.5 text-green" />
                 <span className="font-medium">Drag corner pins to align | Tap sheet to re-snap</span>
               </div>
@@ -1010,7 +1191,7 @@ export function PaperDetectionConfirmationModal({
             </div>
 
             {/* Standard selector pills/cards */}
-            <div className="grid grid-cols-1 gap-1.5">
+            <div data-onboarding-target="paper-format-options" className="grid grid-cols-1 gap-1.5">
               {(["short", "a4", "long"] as const).map((std) => {
                 const isBestMatch = effectiveSuggestedStandard === std && effectiveMatchConfidence >= 0.85;
                 const isSelected = selectedStandard === std;
@@ -1023,6 +1204,7 @@ export function PaperDetectionConfirmationModal({
                       setSelectedStandard(std);
                       setFormatConfirmed(true);
                       setOrientationConfirmed(false);
+                      advancePaperTourTo(1, 0);
                     }}
                     className={`cursor-pointer rounded-xl p-2.5 text-xs transition-all flex items-center justify-between border ${
                       isSelected
@@ -1062,13 +1244,14 @@ export function PaperDetectionConfirmationModal({
                   {curWidthMm}mm W x {curHeightMm}mm H
                 </span>
               </div>
-              <div className="grid grid-cols-2 gap-2">
+              <div data-onboarding-target="paper-orientation-options" className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
                   onClick={() => {
                     userOrientationToggledRef.current = true;
                     setFirstEdge("short");
                     setOrientationConfirmed(true);
+                    advancePaperTourTo(3, 2);
                   }}
                   className={`cursor-pointer rounded-xl py-2 px-3 text-xs font-medium border transition-all text-center ${
                     firstEdge === "short"
@@ -1084,6 +1267,7 @@ export function PaperDetectionConfirmationModal({
                     userOrientationToggledRef.current = true;
                     setFirstEdge("long");
                     setOrientationConfirmed(true);
+                    advancePaperTourTo(3, 2);
                   }}
                   className={`cursor-pointer rounded-xl py-2 px-3 text-xs font-medium border transition-all text-center ${
                     firstEdge === "long"
@@ -1235,7 +1419,7 @@ export function PaperDetectionConfirmationModal({
               <legend className="text-xs text-neutral-600 mb-2 leading-relaxed">
                 Was the paper flat against the same surface as the opening? Holding it in front can change the measurements.
               </legend>
-              <div className="space-y-1.5">
+              <div data-onboarding-target="paper-plane-options" className="space-y-1.5">
                 {([
                   ["user_confirmed_same_plane", "Flat against the same installation surface"],
                   ["mismatch_reported", "Held in front, another wall, or known offset"],
@@ -1253,7 +1437,10 @@ export function PaperDetectionConfirmationModal({
                       type="radio"
                       name="paper-placement"
                       checked={placement === value}
-                      onChange={() => setPlacement(value)}
+                      onChange={() => {
+                        setPlacement(value);
+                        advancePaperTourTo(4, 3);
+                      }}
                       className="accent-green size-3.5 cursor-pointer"
                     />
                     <span>{label}</span>
@@ -1289,7 +1476,7 @@ export function PaperDetectionConfirmationModal({
         </div>
 
         {/* Studio Panel Footer Actions */}
-        <div className="p-4 sm:p-5 border-t border-neutral-200 bg-white shrink-0 space-y-2 shadow-xs">
+        <div data-onboarding-target="paper-confirm-action" className="p-4 sm:p-5 border-t border-neutral-200 bg-white shrink-0 space-y-2 shadow-xs">
           <button
             type="button"
             onClick={handleConfirm}
@@ -1301,13 +1488,93 @@ export function PaperDetectionConfirmationModal({
           </button>
           <button
             type="button"
-            onClick={() => onSkip(recoveryReview)}
+            onClick={() => {
+              finishPaperTour();
+              onSkip(recoveryReview);
+            }}
             className="w-full flex cursor-pointer items-center justify-center py-2 text-xs text-neutral-500 hover:text-black hover:bg-neutral-100 rounded-lg transition-colors font-medium"
           >
             <span>Continue Approximate Preview</span>
           </button>
         </div>
       </div>
+      {/* ── First-Time Paper Calibration Review Popup Tour (IMP-MS89) ── */}
+      {(() => {
+        const baseStep = PAPER_TOUR_STEPS[paperTourStep];
+        const isManualCornerStep = paperTourStep === 1 && nextManualCorner !== null;
+        const cornerLabel =
+          nextManualCorner !== null
+            ? CORNER_NAMES[nextManualCorner].split(": ")[1]
+            : "";
+
+        const tourTitle = isManualCornerStep
+          ? `Tap Corner ${nextManualCorner + 1} of 4: ${cornerLabel}`
+          : baseStep.title;
+
+        const tourDescription = isManualCornerStep
+          ? `Click on the ${cornerLabel.toLowerCase()} corner of your paper sheet. Drag any placed pin anytime if you need to adjust it.`
+          : paperTourStep === 1 && snapNotice
+            ? snapNotice.type === "success"
+              ? `${snapNotice.message}. Verify the 4 corners on your sheet, then click Corners look good or drag a pin.`
+              : snapNotice.message
+            : baseStep.description;
+
+        const tourHelperNote = isManualCornerStep
+          ? "After placing all 4 corners, fine-tune any pin if needed and click Corners look good to continue."
+          : baseStep.helperNote;
+
+        const tourPrimaryLabel =
+          paperTourStep === 4
+            ? "Got it"
+            : paperTourStep === 1 && nextManualCorner === null
+              ? "Corners look good"
+              : paperTourStep === 0 || paperTourStep === 2 || paperTourStep === 3
+                ? "Next"
+                : undefined;
+
+        const tourPrimaryAction =
+          paperTourStep === 4 ||
+          paperTourStep === 0 ||
+          paperTourStep === 2 ||
+          paperTourStep === 3
+            ? handlePaperTourNext
+            : paperTourStep === 1 && nextManualCorner === null
+              ? () => advancePaperTourTo(2, 1)
+              : undefined;
+
+        const tourSecondaryLabel =
+          paperTourStep === 1
+            ? nextManualCorner !== null
+              ? "Restart 4 corners"
+              : "Map 4 corners manually"
+            : undefined;
+
+        const tourSecondaryAction =
+          paperTourStep === 1 ? handleResetCorners : undefined;
+
+        return (
+          <OnboardingTourPopup
+            isOpen={isPaperTourOpen}
+            title={tourTitle}
+            description={tourDescription}
+            helperNote={tourHelperNote}
+            stepIndex={paperTourStep}
+            totalSteps={PAPER_TOUR_STEPS.length}
+            targetSelector={baseStep.targetSelector}
+            preferredPlacement={baseStep.preferredPlacement}
+            primaryActionLabel={tourPrimaryLabel}
+            onPrimaryAction={tourPrimaryAction}
+            secondaryActionLabel={tourSecondaryLabel}
+            onSecondaryAction={tourSecondaryAction}
+            onSkip={handlePaperTourSkip}
+            onDontShowAgain={handlePaperTourDontShowAgain}
+            variant={isCompactViewport ? "mobile" : "desktop"}
+            blocking={paperTourStep < 4}
+            zIndexBase={190}
+            restoreFocusSelector='[data-onboarding-target="paper-tour-help-trigger"]'
+          />
+        );
+      })()}
     </div>
   );
 }
