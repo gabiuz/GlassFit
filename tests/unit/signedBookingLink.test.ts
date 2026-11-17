@@ -10,6 +10,7 @@ import {
   GenerateBookingLinkInputSchema,
   GeneratedBookingLinkResultSchema,
   PublicQuotationSummarySchema,
+  normalizeQuotationItemGroupName,
 } from "../../src/lib/booking/types.js";
 import { resolveSnapshotUrl } from "../../src/lib/booking/snapshotStorage.js";
 import { formatBookingShareMessage } from "../../src/lib/pricing/quotationPdfGenerator.js";
@@ -424,6 +425,25 @@ describe("Milestone 13: Signed Consultation Reference Link Generation & Resoluti
 
       assert.strictEqual(resolveSnapshotUrl(null), null);
       assert.strictEqual(resolveSnapshotUrl(undefined), null);
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // TC-MS13-08: Item Group Name Normalization (ERD-E14, quotation_items_group_name_check)
+  // --------------------------------------------------------------------------
+  describe("TC-MS13-08: Item Group Name Normalization", () => {
+    it("should preserve canonical database group names", () => {
+      assert.strictEqual(normalizeQuotationItemGroupName("Aluminum Framing"), "Aluminum Framing");
+      assert.strictEqual(normalizeQuotationItemGroupName("Glass Infill"), "Glass Infill");
+      assert.strictEqual(normalizeQuotationItemGroupName("Hardware & Accessories"), "Hardware & Accessories");
+      assert.strictEqual(normalizeQuotationItemGroupName("Labor & Installation"), "Labor & Installation");
+      assert.strictEqual(normalizeQuotationItemGroupName("Miscellaneous"), "Miscellaneous");
+    });
+
+    it("should map non-standard and allowance groups to Miscellaneous", () => {
+      assert.strictEqual(normalizeQuotationItemGroupName("Material Allowances"), "Miscellaneous");
+      assert.strictEqual(normalizeQuotationItemGroupName("Contractor Margin"), "Miscellaneous");
+      assert.strictEqual(normalizeQuotationItemGroupName("Custom Fee"), "Miscellaneous");
     });
   });
 });

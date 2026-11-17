@@ -54,6 +54,7 @@ import {
   type DeleteBookingQuotationInput,
   type DeleteBookingQuotationResult,
   areTimestampsEquivalent,
+  normalizeQuotationItemGroupName,
 } from "./types";
 
 export { areTimestampsEquivalent };
@@ -184,12 +185,13 @@ export async function generateSignedBookingLink(
 
     for (const group of item.groups) {
       const isThisAddonRow = isAddonActive && group.description === addonTitle;
+      const normalizedGroupName = normalizeQuotationItemGroupName(group.groupName);
 
       if (isThisAddonRow) {
         quotationItemRows.push({
           quotation_id: quotationId,
           item_name: `${item.productName} - ${addonTitle}`,
-          item_group_name: group.groupName,
+          item_group_name: normalizedGroupName,
           quantity: group.quantity,
           unit: group.unit,
           unit_price: group.unitPrice,
@@ -199,6 +201,7 @@ export async function generateSignedBookingLink(
             item_type: "addon_attachment",
             addon_type: item.selectedAddon,
             addon_name: addonTitle,
+            original_group_name: group.groupName,
             dimensions: item.dimensionsFormatted,
             unit_price: item.addonPrice,
             subtotal: group.subtotal,
@@ -212,7 +215,7 @@ export async function generateSignedBookingLink(
         quotationItemRows.push({
           quotation_id: quotationId,
           item_name: `${item.productName} (${group.description})`,
-          item_group_name: group.groupName,
+          item_group_name: normalizedGroupName,
           quantity: group.quantity * item.quantity,
           unit: group.unit,
           unit_price: group.unitPrice,
@@ -239,6 +242,7 @@ export async function generateSignedBookingLink(
             structural_waiver: item.structuralWaiver,
             image_url: item.imageSource,
             is_multi_product: quotationDocument.items.length > 1,
+            original_group_name: group.groupName,
             dimension_source: item.dimensionSource ?? "heuristic",
             calibration_provenance: item.calibrationProvenance ?? null,
             paper_standard: item.calibrationProvenance?.paper_standard ?? null,

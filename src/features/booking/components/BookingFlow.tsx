@@ -399,6 +399,17 @@ export function BookingFlow() {
     setErrorMessage("");
 
     try {
+      const supabase = createSupabaseBrowserClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        setErrorMessage("Authentication required to generate consultation booking link. Please log in or register.");
+        setIsGeneratingLink(false);
+        return;
+      }
+
       const result = await generateSignedBookingLink({
         widthMm,
         heightMm,
@@ -429,7 +440,23 @@ export function BookingFlow() {
       setIsLinkGenerated(true);
     } catch (err: unknown) {
       console.error("Failed to generate signed reference link:", err);
-      const msg = err instanceof Error ? err.message : "Failed to generate consultation reference link.";
+      const rawMsg = err instanceof Error ? err.message : "Failed to generate consultation reference link.";
+      let msg = rawMsg;
+      if (rawMsg.includes("Server Components render") || rawMsg.includes("digest")) {
+        try {
+          const supabase = createSupabaseBrowserClient();
+          const {
+            data: { user },
+          } = await supabase.auth.getUser();
+          if (!user) {
+            msg = "Authentication required to generate consultation booking link. Please log in or register.";
+          } else {
+            msg = "Failed to generate consultation reference link. Please check your connection and try again.";
+          }
+        } catch {
+          msg = "Failed to generate consultation reference link. Please try again.";
+        }
+      }
       setErrorMessage(msg);
     } finally {
       setIsGeneratingLink(false);
