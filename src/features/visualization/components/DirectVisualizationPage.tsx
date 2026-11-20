@@ -11,7 +11,7 @@ import { ImageSuccessModal } from "./ImageSuccessModal";
 import { PaperDetectionConfirmationModal } from "./PaperDetectionConfirmationModal";
 import { ProductModelWorkspace } from "./ProductModelWorkspace";
 import { UploadImage } from "./UploadImage";
-import { analyzeImage, SpacePhotoError, type SpaceImageSession, type UploadProgressStage } from "@/lib/imageApi";
+import { analyzeImage, type SpaceImageSession, type UploadProgressStage } from "@/lib/imageApi";
 import type { CatalogProduct } from "@/lib/products/types";
 import {
   type CalibrationMode,
@@ -40,8 +40,6 @@ export function DirectVisualizationPage({
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [status, setStatus] = useState<UploadStatus>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [photoErrorCode, setPhotoErrorCode] = useState<SpacePhotoError["code"] | null>(null);
-  const [browseRequestKey, setBrowseRequestKey] = useState(0);
   const [uploadStage, setUploadStage] = useState<UploadProgressStage | null>(null);
   const [retryAttempt, setRetryAttempt] = useState<number>(0);
 
@@ -61,7 +59,6 @@ export function DirectVisualizationPage({
     setUploadStage("uploading");
     setRetryAttempt(0);
     setErrorMessage(null);
-    setPhotoErrorCode(null);
     onboarding?.resetForFreshImage(null);
 
     try {
@@ -89,7 +86,6 @@ export function DirectVisualizationPage({
 
       setPendingSession(null);
       setStatus("error");
-      setPhotoErrorCode(error instanceof SpacePhotoError ? error.code : null);
       setErrorMessage(
         error instanceof Error ? error.message : "Unable to analyze the image.",
       );
@@ -150,16 +146,10 @@ export function DirectVisualizationPage({
     setPendingFile(null);
     setStatus("idle");
     setErrorMessage(null);
-    setPhotoErrorCode(null);
     onboarding?.resetForFreshImage(null);
   };
 
   const handleTryAgain = () => {
-    if (photoErrorCode === "SPACE_PHOTO_REJECTED" || photoErrorCode === "SPACE_PHOTO_TOO_CLOSE") {
-      handleCancelModal();
-      setBrowseRequestKey((value) => value + 1);
-      return;
-    }
     if (pendingFile) {
       void runAnalysis(pendingFile);
       return;
@@ -207,14 +197,12 @@ export function DirectVisualizationPage({
               onPaperStandardChange={setPaperStandard}
             />
             <UploadImage
-              key={browseRequestKey}
               mode={calibrationMode}
               uploadStage={uploadStage}
               retryAttempt={retryAttempt}
-          onRetry={photoErrorCode === "SPACE_PHOTO_REJECTED" || photoErrorCode === "SPACE_PHOTO_TOO_CLOSE" ? undefined : (file) => void runAnalysis(file)}
-          browseRequestKey={browseRequestKey}
-          onImageRemoved={handleCancelModal}
-          onSelectionStart={handleCancelModal}
+              onRetry={(file) => void runAnalysis(file)}
+              onImageRemoved={handleCancelModal}
+              onSelectionStart={handleCancelModal}
               errorMessage={errorMessage}
               onImageSelected={(file) => void runAnalysis(file)}
             />
@@ -297,14 +285,6 @@ export function DirectVisualizationPage({
         onCancel={handleCancelModal}
         onTryAgain={handleTryAgain}
         errorMessage={errorMessage ?? undefined}
-        actionLabel={photoErrorCode === "SPACE_PHOTO_REJECTED" || photoErrorCode === "SPACE_PHOTO_TOO_CLOSE" ? "Choose Another Photo" : undefined}
-        guidance={photoErrorCode === "SPACE_PHOTO_REJECTED"
-          ? "This is not a room or opening photo. Choose a photo of the space where the product will be installed."
-          : photoErrorCode === "SPACE_PHOTO_TOO_CLOSE"
-            ? "Move back to include the wall or opening and some surrounding room in your next photo."
-          : photoErrorCode === "SPACE_PHOTO_UNVERIFIABLE"
-            ? "We could not verify this photo right now. Please retry or choose another photo."
-            : undefined}
       />
     </main>
   );

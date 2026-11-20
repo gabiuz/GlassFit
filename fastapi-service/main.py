@@ -16,9 +16,8 @@ from depth import estimate_depth, get_depth_pipeline
 from exif_extraction import extract_exif_camera_info
 from image_preparation import ImagePreparationError, prepare_workspace_image, save_oriented_upload
 from scale_estimation import estimate_scale_from_objects
-from scene_detection import detect_scene_regions, get_scene_model, independent_scene_evidence
+from scene_detection import detect_scene_regions, get_scene_model
 from segmentation import SegmentationError, analyze_objects
-from photo_suitability import assess_photo_suitability
 
 BASE_DIR = Path(__file__).resolve().parent
 GENERATED_DIR = (
@@ -324,39 +323,10 @@ async def analyze_image(
             scene_module._scene_model = None
             gc.collect()
 
-        semantic_map = scene_result.pop("_semantic_map", None)
-        geometric_opening = scene_result.pop("_geometric_opening", False)
-        independent_scene = independent_scene_evidence(
-            semantic_map, objects, original_metadata["width"], original_metadata["height"],
-        )
-        suitability = assess_photo_suitability(
-            objects, segmentation, scene_result,
-            original_metadata["width"], original_metadata["height"],
-            brightness.get("mean_pixel_intensity"),
-            independent_scene=independent_scene,
-            geometric_opening=geometric_opening,
-        )
-        if suitability["status"] != "accepted":
-            rejected = suitability["status"] == "rejected"
-            too_close = suitability["status"] == "too_close"
-            raise HTTPException(
-                status_code=422 if rejected or too_close else 503,
-                detail={
-                    "code": (
-                        "SPACE_PHOTO_REJECTED" if rejected else
-                        "SPACE_PHOTO_TOO_CLOSE" if too_close else
-                        "SPACE_PHOTO_UNVERIFIABLE"
-                    ),
-                    "message": (
-                        "This does not appear to be a space photo. Upload the room or opening where the product will be installed."
-                        if rejected else
-                        "Move farther back and include more of the room or opening where the product will be installed."
-                        if too_close else
-                        "We could not verify this space photo. Retake the photo or try again."
-                    ),
-                    "reason": suitability["reason"],
-                },
-            )
+        # QAD-TC3 / fix-MS-35: private model arrays must never enter JSON.
+        for key in tuple(scene_result):
+            if key.startswith("_"):
+                scene_result.pop(key)
 
         _map_artifacts_to_workspace(
             session_mask_dir=session_mask_dir,

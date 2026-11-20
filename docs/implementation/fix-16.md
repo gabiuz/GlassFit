@@ -1,5 +1,7 @@
 # Implementation Specification: Independent Space Evidence for Dominant Subjects (fix-16)
 
+> Historical record: fix-MS-35 retired the scene suitability admission gate on November 20, 2026. See [fix-MS-35](fix-ms35.md) for the active upload contract.
+
 **Project:** GlassFit (Web-Based Client-Space Visualization System for Customized Glass & Aluminum)
 **Document ID:** fix-16
 **Document Function:** Technical plan for preventing a screen or other dominant non-space subject from supplying its own apparent architectural evidence

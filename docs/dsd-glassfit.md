@@ -185,9 +185,9 @@ DSD-UI3, DSD-UI4, and DSD-UI7 (IMP-MS62 / QAD-TC77): reuse the existing two-mode
 
 Automatic upload guidance and workspace controls must not request paper or expose paper confirmation, Pin Paper, Adjust Marker, or paper-specific tooltips. Preserve approximate/manual tape wording, measurement confirmation, keyboard navigation, focus behavior, cancellation, and retry. Paper Reference Calibration keeps its paper standard selection, review dialog, manual recovery when detection fails, skip action, and voluntary workspace paper adjustment. No new screen, dialog, or visual style is introduced.
 
-DSD-UI3 and DSD-UI4 (fix-14): Both upload entry paths keep the user on upload when the service rejects or cannot verify a space photo. Reuse the existing error modal and design tokens. Semantic rejection explains that a room or installation opening is required and offers Choose Another Photo; temporary verification failure offers retry. Neither state exposes the paper review, success modal, or workspace. Restore focus to the upload control for another selection.
+DSD-UI3 and DSD-UI4 (fix-MS-35): Both upload entry paths allow any supported, decodable image within the limit to proceed through the existing success or paper review flow. Keep the existing error modal and design tokens for technical file and service failures, and restore focus to the upload control for another selection when needed.
 
-DSD-UI3 (fix-14 follow-up): Confirmed non-space images say that the upload is not a room or opening photo. A surface photo taken too close asks the user to step back and include the surrounding wall or opening. Both offer Choose Another Photo; classifier outages and ambiguous evidence retain distinct verification guidance.
+DSD-UI3 (fix-MS-35 reversal of fix-14): Retire scene-specific rejection, move-back, and classifier verification guidance. A missing room, object, or paper sheet cannot block upload; existing calibration review and manual pinning remain available.
 
 
 ## IMP-MS88: Post-Fit Product Facing
