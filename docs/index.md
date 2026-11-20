@@ -38,6 +38,7 @@ GlassFit is a responsive, web-based photo-simulation and consultation-support pl
 | IMP-MS32 | Admin Data Management, Business Intelligence Exports, Native Analytics, and System Backup | `docs/implementation/ms32.md` | Implemented | September 30, 2026 | GlassFit Capstone Team |
 | IMP-MS33 | Unified Cross-Browser GlassFit Brand Theme Scrollbar System | `docs/implementation/ms33.md` | Implemented | September 30, 2026 | GlassFit Capstone Team |
 | IMP-MS35 | Multi-Format Space Image Ingestion for WebP and HEIC/HEIF | `docs/implementation/ms35.md` | Ready for Implementation | September 30, 2026 | GlassFit Capstone Team |
+| FIX-MS35 | Restore Image Uploads Regardless of Scene Content | `docs/implementation/fix-ms35.md` | Implemented; browser acceptance pending | November 20, 2026 | GlassFit Capstone Team |
 | IMP-MS36 | Admin Product Type and Status Filters | `docs/implementation/ms36.md` | Ready for Implementation | September 30, 2026 | GlassFit Capstone Team |
 | IMP-MS37 | Mobile Visualization Workspace Viewport, Scroll Isolation, and Touch Ergonomics | `docs/implementation/ms37.md` | Ready for Implementation | October 1, 2026 | GlassFit Capstone Team |
 | IMP-MS38 | Quotation Preview and Browser-Saved PDF Reliability | `docs/implementation/ms38.md` | Ready for Implementation | October 1, 2026 | GlassFit Capstone Team |
@@ -194,7 +195,7 @@ MS63 traceability: BRD-M1, BRD-M4, BRD-M6 -> PRD-F3, PRD-F4, PRD-F10 -> SDD-C2, 
 MS71 traceability: IMP-MS71 / BRD-M2, BRD-M3, BRD-M5 -> PRD-F2, PRD-F5, PRD-F6, PRD-F10, PRD-F11, PRD-F14 -> SDD-C4, SDD-C7, SDD-C9 -> DSD-UI4, DSD-UI7, DSD-UI10 -> ERD-E6, ERD-E13, ERD-E14, ERD-E17 -> QAD-TC86.1 through QAD-TC86.10. Implemented on October 26, 2026. Parametric linear-meter security grille pricing engine, automated 3D sub-bar geometry analyzer, and dynamic pattern repetition metric engine. See [MS71](implementation/ms71.md).
 
 
-fix-14 traceability: PRD-F3, PRD-F4, PRD-F6 -> SDD-C2, SDD-C3, SDD-C5 -> DSD-UI3, DSD-UI4 -> QAD-TC3, QAD-TC4, QAD-TC50, QAD-TC77, QAD-TC78. The service now gates visualization sessions on space-photo suitability and the upload screens show recoverable rejection or verification errors. The supplied portrait was validated locally in both modes and both upload routes. Broader consented-scene accuracy, format parity, and performance release evidence remains pending.
+fix-MS-35 traceability: PRD-F3, PRD-F4, PRD-F6 -> SDD-C2, SDD-C3, SDD-C5 -> DSD-UI3, DSD-UI4 -> QAD-TC3, QAD-TC4, QAD-TC50, QAD-TC77, QAD-TC78. Supported, decodable images within the upload limit create usable visualization sessions regardless of subject or optional classifier availability. This supersedes the fix-14 and fix-16 suitability gate. Browser acceptance remains pending. See [fix-MS-35](implementation/fix-ms35.md).
 
 
 MS85 traceability: IMP-MS85 / BRD-M2, BRD-M4, BRD-M5 -> PRD-F10, PRD-F14, PRD-F19 -> SDD-C7, SDD-C9 -> DSD-UI7, DSD-UI10 -> ERD-E6, ERD-E14, ERD-E17 -> QAD-TC100.1 through QAD-TC100.14. See [MS85](implementation/ms85.md) for BOM consolidation, extrusion count isolation, fixture profile suitability and sill omission disclosure. No database migration is required.
