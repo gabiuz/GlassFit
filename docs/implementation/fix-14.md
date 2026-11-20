@@ -1,5 +1,7 @@
 # Implementation Specification: Reject Non-Space Photos During Visualization Upload (fix-14)
 
+> Historical record: fix-MS-35 superseded the scene suitability admission criteria on November 20, 2026. See [fix-MS-35](fix-ms35.md) for the active upload contract.
+
 **Project:** GlassFit (Web-Based Client-Space Visualization System for Customized Glass & Aluminum)  
 **Document ID:** fix-14  
 **Document Function:** Technical plan for preventing portraits, selfies, ID photos, and other unsuitable images from entering the visualization workspace  

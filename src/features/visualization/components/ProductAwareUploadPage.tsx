@@ -14,7 +14,7 @@ import {
   PaperDetectionConfirmationModal,
   UploadImage,
 } from "@/features/visualization";
-import { analyzeImage, SpacePhotoError, type SpaceImageSession, type UploadProgressStage } from "@/lib/imageApi";
+import { analyzeImage, type SpaceImageSession, type UploadProgressStage } from "@/lib/imageApi";
 import { useVisualizationSession } from "@/lib/visualization/visualizationSession";
 import { useOptionalVisualizationOnboarding } from "../onboarding/VisualizationOnboardingProvider";
 import {
@@ -42,8 +42,6 @@ export function ProductAwareUploadPage({
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [status, setStatus] = useState<UploadStatus>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [photoErrorCode, setPhotoErrorCode] = useState<SpacePhotoError["code"] | null>(null);
-  const [browseRequestKey, setBrowseRequestKey] = useState(0);
   const [uploadStage, setUploadStage] = useState<UploadProgressStage | null>(null);
   const [retryAttempt, setRetryAttempt] = useState<number>(0);
 
@@ -63,7 +61,6 @@ export function ProductAwareUploadPage({
     setUploadStage("uploading");
     setRetryAttempt(0);
     setErrorMessage(null);
-    setPhotoErrorCode(null);
     onboarding?.resetForFreshImage(null);
 
     try {
@@ -91,7 +88,6 @@ export function ProductAwareUploadPage({
 
       setPendingSession(null);
       setStatus("error");
-      setPhotoErrorCode(error instanceof SpacePhotoError ? error.code : null);
       setErrorMessage(error instanceof Error ? error.message : "Unable to analyze the image.");
     } finally {
       if (requestIdRef.current === requestId) {
@@ -139,16 +135,10 @@ export function ProductAwareUploadPage({
     setPendingFile(null);
     setStatus("idle");
     setErrorMessage(null);
-    setPhotoErrorCode(null);
     onboarding?.resetForFreshImage(null);
   };
 
   const handleTryAgain = () => {
-    if (photoErrorCode === "SPACE_PHOTO_REJECTED" || photoErrorCode === "SPACE_PHOTO_TOO_CLOSE") {
-      handleCancelModal();
-      setBrowseRequestKey((value) => value + 1);
-      return;
-    }
     if (pendingFile) {
       void runAnalysis(pendingFile);
       return;
@@ -209,12 +199,10 @@ export function ProductAwareUploadPage({
           onPaperStandardChange={setPaperStandard}
         />
         <UploadImage
-          key={browseRequestKey}
           mode={calibrationMode}
           uploadStage={uploadStage}
           retryAttempt={retryAttempt}
-          onRetry={photoErrorCode === "SPACE_PHOTO_REJECTED" || photoErrorCode === "SPACE_PHOTO_TOO_CLOSE" ? undefined : (file) => void runAnalysis(file)}
-          browseRequestKey={browseRequestKey}
+          onRetry={(file) => void runAnalysis(file)}
           onImageRemoved={handleCancelModal}
           onSelectionStart={handleCancelModal}
           errorMessage={errorMessage}
@@ -295,14 +283,6 @@ export function ProductAwareUploadPage({
         onCancel={handleCancelModal}
         onTryAgain={handleTryAgain}
         errorMessage={errorMessage ?? undefined}
-        actionLabel={photoErrorCode === "SPACE_PHOTO_REJECTED" || photoErrorCode === "SPACE_PHOTO_TOO_CLOSE" ? "Choose Another Photo" : undefined}
-        guidance={photoErrorCode === "SPACE_PHOTO_REJECTED"
-          ? "This is not a room or opening photo. Choose a photo of the space where the product will be installed."
-          : photoErrorCode === "SPACE_PHOTO_TOO_CLOSE"
-            ? "Move back to include the wall or opening and some surrounding room in your next photo."
-          : photoErrorCode === "SPACE_PHOTO_UNVERIFIABLE"
-            ? "We could not verify this photo right now. Please retry or choose another photo."
-            : undefined}
       />
     </main>
   );
